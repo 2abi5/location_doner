@@ -24,8 +24,8 @@ prose: paper
 	  && python3 $(S)/prose_metrics.py build/body.tex --no-strict
 
 cites:
-	cd manuscript && cat refs.bib generated/included.bib > build/all_refs.bib \
-	  && python3 $(S)/verify_citations.py build/all_refs.bib --report citation_report.md --no-strict
+	cd manuscript && mkdir -p build && cat refs.bib generated/included.bib > build/all_refs.bib \
+	  && python3 $(S)/verify_citations.py build/all_refs.bib --report citation_report.md --no-strict $(if $(MAILTO),--mailto $(MAILTO))
 
 tokens: paper
 	@grep -nE '\[(NEEDS SOURCE|TBD|NEEDS EXPERIMENT|AUTHOR DECISION|VERIFY)' manuscript/build/review_rendered.md \
