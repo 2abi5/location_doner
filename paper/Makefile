@@ -1,50 +1,35 @@
-# Distribution shift in agricultural machine learning: a systematic review and quantitative synthesis
-# S is this machine's path to the research-pro scripts. Override per machine with
-#   make check S=/your/path/to/skills/research-pro/scripts
-S      ?= ../abinash_research/skills/research-pro/scripts
-VENUE  ?= neurips
-MAIN   ?= main
-TARGET_PT ?= 237     # one column of a two-column paper
+# Distribution shift in agricultural machine learning — systematic review
+# Pipeline: extraction CSVs -> review/scripts/synthesis.py -> analysis/results.json + figures
+#           -> manuscript/build.py (renders every number from results.json) -> output/*.docx, *.pdf
+# S is the path to the research-pro scripts:  make check S=/path/to/abinash_research/skills/research-pro/scripts
+S       ?= $(abspath ../../abinash_research/skills/research-pro/scripts)
+VERSION ?= v1.0
 
-.PHONY: pdf check cites prose figs lint venue score tokens tables clean overleaf-pull overleaf-push
+.PHONY: all synthesis paper check prose cites tokens score
 
-pdf:
-	latexmk -pdf -interaction=nonstopmode $(MAIN).tex
+all: synthesis paper
 
-tables:
-	python3 scripts/make_tables.py && python3 scripts/make_figures.py
+synthesis:
+	cd review && python3 scripts/synthesis.py
 
-check: lint cites prose figs venue tokens
-	@echo "--- all checks run ---"
+paper:
+	cd manuscript && python3 build.py --version $(VERSION)
 
-lint:
-	python3 $(S)/latex_lint.py $(MAIN).tex --venue $(VENUE) --no-strict
+check: prose cites tokens
+
+prose: paper
+	cd manuscript && python3 -c "s=open('build/review_rendered.md').read().split('# References {-}')[0]; \
+	  open('build/body.md','w').write('\n'.join(l for l in s.split('\n') if not l.startswith(('|', ': Table', '!['))))" \
+	  && python3 -c "import pypandoc; pypandoc.convert_file('build/body.md', 'latex', outputfile='build/body.tex')" \
+	  && python3 $(S)/prose_metrics.py build/body.tex --no-strict
 
 cites:
-	python3 $(S)/verify_citations.py refs.bib --tex $(MAIN).tex sections/*.tex \
-	  --report out/citations.md --no-strict
+	cd manuscript && mkdir -p build && cat refs.bib generated/included.bib > build/all_refs.bib \
+	  && python3 $(S)/verify_citations.py build/all_refs.bib --report citation_report.md --no-strict $(if $(MAILTO),--mailto $(MAILTO))
 
-prose:
-	python3 $(S)/prose_metrics.py $(MAIN).tex --no-strict
-
-figs:
-	python3 $(S)/figure_audit.py figures/out --target-pt $(TARGET_PT) --no-strict
-
-venue:
-	python3 $(S)/venue_check.py --venue $(VENUE) --paper $(MAIN).tex --no-strict
+tokens: paper
+	@grep -nE '\[(NEEDS SOURCE|TBD|NEEDS EXPERIMENT|AUTHOR DECISION|VERIFY)' manuscript/build/review_rendered.md \
+	  || echo "no gate tokens"
 
 score:
-	python3 $(S)/score_readiness.py readiness.json --venue $(VENUE)
-
-tokens:
-	@grep -rnE '\[(NEEDS SOURCE|TBD|NEEDS EXPERIMENT|AUTHOR DECISION|VERIFY)\]' \
-	  sections/ *.tex 2>/dev/null || echo "no gap tokens"
-
-overleaf-pull:
-	git pull --no-rebase
-
-overleaf-push:
-	$(MAKE) check && git add -A && git commit -m "$(M)" && git push
-
-clean:
-	latexmk -C
+	python3 $(S)/score_readiness.py readiness.json
