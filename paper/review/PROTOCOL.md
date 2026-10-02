@@ -131,7 +131,7 @@ that version. A sensitivity analysis excludes preprints.
 ## 5. Screening
 
 Two stages: title/abstract, then full text. Records were screened against §4 by an
-LLM-assisted screener (Claude Opus 5.5, Anthropic; prompts = the criteria above),
+LLM-assisted screener (Claude, Anthropic; prompts = the criteria above),
 which records a decision and a criterion code for every record.
 
 `[TBD]` Human verification before submission: the author independently re-screens a
