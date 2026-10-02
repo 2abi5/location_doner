@@ -1,0 +1,1024 @@
+     The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                                XXIV ISPRS Congress (2021 edition)
+
+
+
+     TOWARDS LIFELONG CROP RECOGNITION USING FULLY CONVOLUTIONAL
+            RECURRENT NETWORKS AND SAR IMAGE SEQUENCES
+
+                                      J. A. Chamorroa,∗, R. Q. Feitosaa, P. N. Happa, J. D. Bermudeza
+                a
+                    Dept. of Electrical Engineering, Pontifical Catholic University of Rio de Janeiro (PUC-Rio), Brazil
+
+                                                       Commission III, WG III/10
+
+KEY WORDS: Fully convolutional recurrent networks, crop recognition, SAR, remote sensing
+
+
+ABSTRACT:
+
+Recent works have studied crop recognition in regions with highly complex spatio-temporal dynamics typical of a tropical climate.
+However, most proposals have only been evaluated in a single agricultural year, and their capabilities to generalize to dates outside
+the temporal sequence have not been properly addressed thus far. This work assesses the generalization capabilities of a recent
+convolutional recurrent architecture, testing it in a temporal sequence two years ahead of the sequence with which it was trained.
+Furthermore, a N-to-1 variant of such network is proposed, which is able to produce classification outcomes for every month in
+the agricultural year, and it is compared with two baselines designed in a more traditional approach, in which a separate specific
+network is trained for each month of the year. The approaches are evaluated on two public datasets from a tropical region. The
+first dataset comprehends the period from June 2017 to May 2018, while the second goes from October 2019 to September 2020.
+Results show a decrease of up to 24.6% in per-date average F1 score when training the network with data of an agricultural year
+different from the one it is tested on, which indicates a domain shift that demands further research. Additionally, the proposed
+approach presented only a slight decrease in performance compared to its baseline when trained on the same dataset, with a 2.7%
+drop in average F1 score. This performance drop is a small cost in exchange for its operational advantages, such as reduced training
+time and a more straightforward pipeline.
+
+
+                       1. INTRODUCTION                                  2017). Such methods can be roughly grouped into Convolu-
+                                                                        tional Neural Networks (CNN) and Recurrent Neural Networks
+Crop monitoring involves several factors that might vary from           (RNN). A recent work compared a CNN and a more spatially
+one region to another. In tropical areas, the favorable climate         efficient Fully Convolutional Network (FCN) for crop recogni-
+allows more flexibility regarding the seeding and harvest times,        tion in a tropical climate in the Municipality of Campo Verde,
+making the modeling of crops’ dynamics more complex (Sanc-              Brazil (La Rosa et al., 2018). Despite the reported high accur-
+hes et al., 2018b). Notably, tropical areas generally exhibit           acy values, these approaches require specific training for each
+complex spatio-temporal dynamics of culture because of their            date in which a result is desired, which represents an operational
+favorable climate and crop rotation practices. In Brazil, for ex-       disadvantage.
+ample, the favourable climate allows up to 3 harvests per year,         The second group of techniques involves recurrent neural net-
+and the plantation and harvesting dates for the same crop type          works (RNNs). A type of RNN called ConvLSTM was pro-
+may greatly vary. Thus, it is necessary to map crops in trop-           posed by (Shi et al., 2015), which replaces the LSTM internal
+ical regions several times throughout the year, unlike temperate        operations with convolutional layers, allowing it to consider the
+areas, where a single classification result may be sufficient for       spatio-temporal context in the input sequence. ConvLSTM net-
+the entire agricultural year.                                           works have recently been used for crop recognition applications
+                                                                        (Rußwurm and Körner, 2018, Teimouri et al., 2019, Martinez et
+Several works have addressed the crop recognition problem us-           al., 2021). (Rußwurm and Körner, 2018) reports an evaluation
+ing classical machine learning techniques. In (Tardy et al.,            of a ConvLSTM network for crop recognition in a temperate re-
+2017), the authors used a Random Forest algorithm for multi-            gion. (Martinez et al., 2021) proposed a network that combines
+temporal crop mapping and evaluated fusion techniques to                a ConvLSTM with an Unet-like encoder-decoder network (UN-
+leverage information from multiple past agricultural years to           etConvLSTM). The authors tested the proposed network in pub-
+classify unlabeled data from the current period. The authors in         lic datasets from a tropical climate. This network was trained
+(Ajadi et al., 2021) proposed a large scale crop mapping scheme         as a unique, end-to-end network and can produce classification
+leveraging auxiliary data from the United States, using a XG-           results for every date represented in the temporal sequence.
+Boost model. Similarly, the authors in (Santos et al., 2021)
+used self-organizing maps (SOMs) to classify crop types us-             To our knowledge, all previous works evaluate the network per-
+ing MODIS time series. However, their training features only            formance in the same temporal sequence used for training. Such
+considered the temporal dimension, leaving the spatial context          an analysis is insufficient to assess how well the networks gen-
+unexplored.                                                             eralize on dates outside the period covered by the training’s
+                                                                        temporal sequence.
+In recent years, deep learning techniques have been success-
+fully applied to crop recognition applications (Audebert et al.,        The first contribution of this work is an evaluation of a Unet-
+                                                                        ConvLSTM network at dates not used for training. A second
+∗ Corresponding author                                                  contribution is a novel N-to-1 variant of the UnetConvLSTM
+
+
+                                                   This contribution has been peer-reviewed.
+                    https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.              923
+      The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                                 XXIV ISPRS Congress (2021 edition)
+
+
+
+network from (Martinez et al., 2021), which is trained in a slid-     sequences of vectors. To overcome this issue, (Shi et al., 2015)
+ing window manner to produce outcomes for any date along the          proposed the ConvLSTM, which replaces all the LSTM internal
+temporal sequence using a single, end-to-end network called           fully connected layers with convolutional layers. As a result,
+VUnetConvLSTM.                                                        its input, hidden states, and output correspond to sequences of
+                                                                      tensors with spatial dimensions.
+This work also evaluates the performance of the proposed net-
+work at dates outside the temporal sequence used for training.        2.2   UnetConvLSTM
+We used two open-access datasets for this purpose. Both refer
+to the municipality of Luis Eduardo Magalhães, Bahia state,          This architecture was introduced in (Martinez et al., 2021). It
+Brazil. The dataset refers to two temporal sequences separ-           combines the ConvLSTM with the Unet network (Ronneber-
+ated in about one year from each other. The first dataset, called     ger et al., 2015), which considers the spatial context at multiple
+hereafter LEM 17/18, comprises SAR images acquired between            spatial scales. The block diagram for this network is presen-
+2017 and 2018. We used this dataset for training. The second          ted in Figure 2. The input to this network is a sequence of
+dataset, called henceforth LEM 19/20, comprehends a temporal          images. First, an encoder stage is applied to each of the im-
+sequence between 2019 and 2020, and it was used for testing.          ages in the sequence. This encoder consists of successive con-
+                                                                      volutional layers and downsampling operations, which extract
+The remainder of this work is organized in the following sec-         more coarse feature representations. The resulting sequence of
+tions. Section 2 briefly explains some fundamental concepts           feature maps produced by the encoder is then passed to a uni-
+required to understand the evaluated networks, such as LSTM,          directional ConvLSTM network, which effectively considers
+ConvLSTM and UnetConvLSTM. Section 3 presents the pro-                the spatio-temporal context. The ConvLSTM is configured as
+posed VUnetConvLSTM architecture. Section 4 details the               N-to-1, and thus only the last element in the sequence pro-
+datasets used in this work, the baseline architectures, and the       duced at the RNN output is considered. This feature map is
+experimental protocol. In Section 5, the results are presented        then passed to a decoder stage. In the decoder stage, success-
+and discussed. Finally, Section 7 describes the final conclusions     ive convolutional layers and upsampling operations are applied
+and discusses possible future directions.                             to recover the original spatial resolution. Skip connections are
+                                                                      used to preserve fine details. Afterward, a convolutional layer
+                                                                      with a 1x1 filter and a softmax activation function produces the
+                    2. FUNDAMENTALS                                   final class probabilities. At inference, the patch outcomes in
+                                                                      the test area are stitched together in a mosaic to form the final
+2.1   LSTM and ConvLSTM                                               result.
+Recurrent Neural Networks are a class of neural networks de-
+signed to handle data that exhibits a time/sequence dependency.                INPUT IMAGES                         SOFTMAX
+The RNN’s output at a specific time step t, depends on the data
+                                                                                                                  1x1
+from the current data observation xt and the information stored                Convolution                        Convolution
+in the network’s hidden state ht , which is updated at each time
+step. A modern type of RNN called Long Short-Term Memory
+(LSTM) introduces trainable gates in its architecture to control               Convolution                       Upsampling
+the information flow of the network’s memory ct (Hochreiter
+and Schmidhuber, 1997). In particular, gates are shallow neural              Downsampling                         Convolution
+networks with sigmoid activation function as output and para-
+meterized by Wf , Wi , and Wo , respectively, which regulate the
+                                                                               Convolution
+information accessed, cleared, and added to ct (see Figure 1).                                                   Upsampling
+This architecture allows LSTMs to be capable of modeling both                 Downsampling                        Convolution
+long and short-term time dependencies.
+
+                                                                               Convolution                        Upsampling
+                                                                             Downsampling
+                                                                                                                  Convolution
+
+                                                                                                 ConvLSTM
+
+
+                                                                                   Convolution
+                                                                                   Skip Connection           Concatenation
+
+                                                                       Figure 2. UnetConvLSTM architecture. Input is a sequence of
+                                                                         images. The output corresponds to the class probabilities
+                                                                             predicted for each pixel location in the last image.
+
+
+                                                                       3. PROPOSED VARIABLE SEQUENCE NETWORK
+               Figure 1. LSTM structure diagram.
+                                                                      The majority of works on multi-date crop recognition for trop-
+The major drawback of LSTMs for image sequence processing             ical regions are designed to produce classification outcomes for
+is that their internal operations are fully connected layers, which   a single date in the dataset (Castro et al., 2017, La Rosa et al.,
+means that their input, hidden states, and output correspond to       2018, Martinez et al., 2019). In those works, separate network
+
+
+                                                This contribution has been peer-reviewed.
+                 https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.               924
+      The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                                 XXIV ISPRS Congress (2021 edition)
+
+
+
+architectures need to be trained for each date to be predicted.                INPUT IMAGES                        SOFTMAX
+However, this results in operational disadvantages such as lar-
+                                                                                                                  1x1
+ger training times and a more complex pipeline.                                Convolution                       Convolution
+
+The proposed variable sequence network, called VUnetCon-
+vLSTM, attempts to solve this problem by training a unique,                    Convolution                       Upsampling
+end-to-end architecture capable of producing classification out-
+comes for every month of the year. The UnetConvLSTM net-                     Downsampling                        Convolution
+work is configured with an input sequence of length 12 with one
+image per month, corresponding to a year before the desired
+                                                                               Convolution
+output month. Therefore, the network’s output corresponds to                                                     Upsampling
+the class probabilities for the last image in the sequence. Dur-             Downsampling                        Convolution
+ing training, the network is trained with a different target month
+from the available labeled dates in each mini-batch. Consid-
+ering our works focus on obtaining the classification outcomes                 Convolution                       Upsampling
+for the last date in the sequence, we did not use the bidirectional
+variant because our model does not employ future information.                Downsampling
+                                                                                                                  Convolution
+
+At test time, the network is capable of producing outcomes for                                       ConvLSTM
+every month of the year. Thus, this architecture addresses the
+issues presented in the aforementioned previous works, associ-                                     Sin/Cos
+ated with the need to train separate networks for each month of              Day of the year                      Upsampling
+                                                                                                  Transform
+the year. Nonetheless, this approach may result in a perform-
+ance decrease, given that the network needs to learn the specific                  Convolution
+classification patterns for the entire year.                                       Skip Connection            Concatenation
+
+For each image in the input sequence, the day of the year was           Figure 3. Modified UnetConvLSTM architecture, with the
+added as metadata for the network to better understand the se-            images’ day of the year as additional input. The output
+quence’s temporal structure. First, the sine and cosine opera-         corresponds to the class probabilities predicted for each pixel
+tions were computed on the day of the year to preserve its cyc-                         location in the last image.
+lical nature. The resulting values are of shape T × 2, where T
+is the sequence length. Spatial dimensions were added to this
+representation, resulting in a sequence of shape T × 1 × 1 × 2.
+The result was spatially upsampled, concatenated with the net-
+work encoder’s outcomes, and then used as an input to the Con-
+vLSTM block. The modified UnetConvLSTM is presented in
+Figure 3.
+
+
+                     4. EXPERIMENTS
+
+4.1   Study Area
+
+The proposed approaches were evaluated in two publicly avail-
+able multi-date crop recognition datasets with complex spatio-
+temporal dynamics due to their tropical climate. Both data-
+sets are located in Luis Eduardo Magalhães municipality, Bahia          Figure 4. Luis Eduardo Magalhães (LEM) municipality.
+state, Brazil (See Figure 4). The first dataset, called LEM 17/18     Polygons correspond to the ground truth parcels in LEM 17/18
+(Sanches et al., 2018a), comprises a monthly sequence of 12                                      dataset.
+pre-processed Sentinel-1 images and their ground truth labels,
+corresponding to the period between June 2017 and May 2018.           Experiments were carried out considering the most represent-
+In this work, the dataset was extended with additional monthly        ative classes. We grouped classes with an overall percentage
+images, for a total of 21 monthly images from September 2016          of samples lower than 5.3% into a single class called Other
+to May 2018 (See Table 1). Reference information is not avail-        classes. In all cases, the Sentinel-1 images were resampled to a
+able for these additional images.                                     10m resolution, and the VV and VH bands were used. No spe-
+                                                                      cific filtering was considered towards reducing speckle noise.
+The second dataset, called LEM 19/20, consists of 12 pre-
+processed Sentinel-1 images from October 2019 to September            4.2   Baseline
+2020, together with their corresponding ground truth (Oldoni et
+al., 2020). As in the previous case, this dataset was extended        We compared the proposed approach with two baseline meth-
+by using additional monthly images, without references, from          odologies. In the first one, called Baseline 1, we trained sep-
+November 2018 until the beginning of the dataset (See Table           arate UnetConvLSTM networks specifically for each month of
+2). Although it covers a larger area compared to the LEM 17/18        the year. The input sequence length is the same in each of these
+dataset, we cropped its input and ground truth images to match        networks, corresponding to an input sequence of one year in
+the same extension of LEM 17/18. The class distribution for           the past with respect to the desired output month. At inference,
+each month in both cases is presented in Figure 5.                    outcomes for each month are produced using each of the separ-
+
+
+                                                This contribution has been peer-reviewed.
+                 https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.               925
+                                    The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                                                               XXIV ISPRS Congress (2021 edition)
+
+
+
+                                   Soybean     Maize           Millet   Cerrado      Uncul�vated soil     Other classes                                          Soybean     Corn    Millet          Cerrado         Uncul�vated soil      Other classes
+                                                                                  (a)                                                                                                                          (b)
+                                  100%                                                                                                                          100%
+Percentage of samples per class
+
+
+
+
+                                                                                                                              Percentage of samples per class
+                                   90%                                                                                                                           90%
+                                   80%                                                                                                                           80%
+                                   70%                                                                                                                           70%
+                                   60%                                                                                                                           60%
+                                   50%                                                                                                                           50%
+                                   40%                                                                                                                           40%
+                                   30%                                                                                                                           30%
+                                   20%                                                                                                                           20%
+                                   10%                                                                                                                           10%
+                                    0%                                                                                                                            0%
+                                                                      17
+                                         17
+
+
+
+
+                                                                                                                                                                                                                                              20
+                                                          17
+
+
+
+
+                                                                     17
+
+
+
+
+                                                                                                         8
+
+
+
+
+                                                                                                                                                                                                                                20
+                                                                                           18
+
+
+
+
+                                                                                                                                                                         19
+
+
+
+
+                                                                                                                                                                                                                                              20
+                                                                                                                                                                                                       0
+                                                   7
+
+
+
+
+                                                                                                                                                                                        20
+                                                                                                         8
+
+
+
+
+                                                                                                                                                                                                                                               0
+                                                                                                         8
+
+
+
+
+                                                                                                                                                                                                       0
+
+
+
+
+                                                                                                                                                                                                       0
+                                                                       7
+
+                                                                     17
+
+
+
+
+                                                                                                         8
+
+
+
+
+                                                                                                                                                                          9
+
+                                                                                                                                                                        19
+
+
+
+
+                                                                                                                                                                                                       0
+                                                                                                       -1
+
+
+
+
+                                                                                                                                                                                                    -2
+                                              l-1
+
+
+
+
+                                                                                                      -1
+
+
+
+
+                                                                                                                                                                                                                                            l-2
+                                                                                                      -1
+
+
+
+
+                                                                                                                                                                                                    -2
+
+
+
+
+                                                                                                                                                                                                    -2
+                                                                   t-1
+
+
+
+
+                                                                                                     r-1
+
+
+
+
+                                                                                                                                                                      t-1
+
+
+
+
+                                                                                                                                                                                                   r-2
+                                                                  p-
+                                         n-
+
+
+
+
+                                                                                                                                                                                                                                           p-
+                                                        g-
+
+
+
+
+                                                                   c-
+
+
+
+
+                                                                                                                                                                                                                               n-
+                                                                                         n-
+
+
+
+
+                                                                                                                                                                                                                                           g-
+                                                                                                                                                                      c-
+
+                                                                                                                                                                                      n-
+                                                                  v-
+
+
+
+
+                                                                                                                                                                     v-
+                                                                                                    ar
+                                                                                                   b
+
+
+
+
+                                                                                                                                                                                                  ar
+                                                                                                    ay
+
+
+
+
+                                                                                                                                                                                                 b
+
+
+
+
+                                                                                                                                                                                                 ay
+                                              Ju
+
+
+
+
+                                                                                                                                                                                                                                      Ju
+                                                                Oc
+
+
+
+
+                                                                                                                                                                   Oc
+                                                                                                  Ap
+
+
+
+
+                                                                                                                                                                                                Ap
+                                                                De
+
+
+
+
+                                                                                                                                                                   De
+                                                       Au
+
+
+
+
+                                                                No
+
+
+
+
+                                                                                                                                                                   No
+
+
+
+
+                                                                                                                                                                                                                                        Au
+                                                               Se
+                                     Ju
+
+
+
+
+                                                                                                                                                                                                                                        Se
+                                                                                                Fe
+
+
+
+
+                                                                                                                                                                                                                             Ju
+                                                                                         Ja
+
+
+
+
+                                                                                                                                                                                              Fe
+                                                                                                                                                                                     Ja
+                                                                                                  M
+
+
+
+
+                                                                                                                                                                                                M
+                                                                                                  M
+
+
+
+
+                                                                                                                                                                                                M
+                                                                                  Date                                                                                                                         Date
+                                                                                          Soybean       Corn    Millet    Cerrado                                 Uncul�vated soil   Other classes
+
+
+                                                                    Figure 5. Class percentages per date for (a) LEM 17/18 and (b) LEM 19/20 datasets
+
+                                              Year            Month               Date        Labeled                                                                      Year        Month                   Date         Labeled
+                                                            September              27                                                                                                November                   10
+                                                             October               15                                                                                      2018      December                   16
+                                              2016
+                                                            November               20                                                                                                 January                   21
+                                                            December               14                                                                                                 February                  14
+                                                             January               19                                                                                                  March                    22
+                                                             February              12                                                                                                   April                   15
+                                                              March                08                                                                                                   May                     21
+                                                               April               13                                                                                      2019         June                    14
+                                                               May                 19                                                                                                   July                    20
+                                                               June                12             X                                                                                    August                   13
+                                              2017
+                                                               July                06             X                                                                                  September                  18
+                                                              August               11             X                                                                                   October                   12                X
+                                                            September              16             X                                                                                  November                   17                X
+                                                             October               10             X                                                                                  December                   23                X
+                                                            November               15             X                                                                                   January                   16                X
+                                                            December               09             X                                                                                   February                  21                X
+                                                             January               14             X                                                                                    March                    16                X
+                                                             February              19             X                                                                                     April                   21                X
+                                              2018            March                15             X                                                                        2020         May                     15                X
+                                                               April               20             X                                                                                     June                    20                X
+                                                               May                 14             X                                                                                     July                    14                X
+                                                                                                                                                                                       August                   19                X
+Table 1. Acquisition dates for LEM 17/18 dataset, comprising                                                                                                                         September                  12                X
+21 images, whereby the ground truth is available for the last 12
+                            dates.                                                                                                   Table 2. Acquisition dates for LEM 19/20 dataset, comprising
+                                                                                                                                     23 images, whereby the ground truth is available for the last 12
+ately trained networks. The networks were trained and tested in                                                                                                  dates.
+the same LEM 19/20 dataset. Because this approach does not
+need to generalize to unseen dates at test time, it is expected                                                               sampling operator. Table 3 presents the filter number we used
+to outperform the remaining approaches, and we used it as an                                                                  at every stage.
+upper bound for comparison purposes.
+                                                                                                                              In each dataset, agricultural crop parcels were represented as
+As in the previous approach, Baseline 2 consists of multiple                                                                  polygons. We used 100% of the LEM 17/18 dataset polygons
+identical UnetConvLSTM networks, each one trained for a spe-                                                                  for training the Baseline 1 and the proposed approach. In LEM
+cific month of the year. Input continues to be a sequence of                                                                  19/20, the polygons intersecting with the train area of LEM
+images corresponding to one year in the past with respect to                                                                  17/18 were used for training, and the remaining polygons were
+the corresponding output month. In this case, the networks are                                                                used for testing. The train and test areas for both datasets are
+trained on the LEM 17/18 dataset, while at inference the net-                                                                 presented in Figure 6 and Figure 7.
+works are tested on the LEM 19/20 dataset. Thus, this model
+evaluates the baseline’s generalization capabilities in the tem-                                                              Patches of spatial dimensions 32-by-32 were used, with an in-
+poral domain. One should expect Baseline 2 to perform better                                                                  put sequence length of 12. We used zero padding for the in-
+than our proposed network because it trains a specialized classi-                                                             put images that were not available and were required during the
+fier for each specific date. Notice that the advantage of the pro-                                                            training of the LEM 17/18 early dates. Such unavailable images
+posed model compared to this baseline is operational because                                                                  correspond to the months of July and August 2016.
+it requires a unique network to produce classification outcomes
+                                                                                                                              We used focal loss cost function and Adam optimizer with a
+for all dates.
+                                                                                                                              learning rate of 0.001. Mini-batches of 16 samples were used
+4.3                                 Experimental protocol                                                                     during training. The networks were trained on an NVIDIA
+                                                                                                                              GTX 1080Ti GPU.1
+For the UnetConvLSTM network, we used average pooling                                                                         1                            Code   available at  https://github.com/DiMorten/FCN_
+as downsampling operator, and transposed convolution as up-                                                                                                ConvLSTM_Crop_Recognition_Generalized
+
+
+
+                                                                                      This contribution has been peer-reviewed.
+                                                       https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.                                                                                          926
+    The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                               XXIV ISPRS Congress (2021 edition)
+
+
+
+            Layer               Processing                                                                         5. RESULTS
+            Input            T ×H ×W ×D
+            Conv             T × H × W × 16
+          Downsampl.       T × H/2 × W/2 × 16                      Figure 8 and Figure 9 summarize the performance of the as-
+          Downsampl.       T × H/4 × W/4 × 32                      sessed methods in terms of per-date Overall Accuracy (OA) and
+          Downsampl.       T × H/8 × W/8 × 64                      F1-score, respectively. The corresponding rates were obtained
+          ConvLSTM         T × H/8 × W/8 × 256                     by evaluating the models on the LEM 19/20 dataset on the se-
+           Upsampl.          H/4 × W/4 × 64                        quence from October 2019 to September 2020. As expected,
+           Upsampl.          H/2 × W/2 × 32                        Baseline 1 produced the highest OA metrics with values up to
+           Upsampl.            H × H × 16
+            Conv               H × H × 16                          93.3%. Even so, it produced relatively low OA values for some
+            Conv               H ×H ×C                             months such as March, with an OA value of 58.2%.
+
+Table 3. Parameter configuration used in all experiments. T is     The other two methods, Baseline 2 and VUnetConvLSTM, per-
+ the temporal sequence length, H and W indicate height and         formed similarly for most dates, but produced lower OA val-
+width, D is the input dimensionality, and C is the class number    ues than Baseline 1. However, the drop in performance regard-
+(H=32, W =32, D=2, C=6). In VUnetConvLSTM, the day of              ing Baseline 1 is not constant over the dates for both methods.
+      the year was used as an additional input, which was          The differences are more remarkable in January, February, and
+       concatenated to the input of the ConvLSTM layer.            between May and July, where the decrease can be up to 39.9%.
+                                                                   These results are understandable considering the time-shift of
+                                                                   two years between the training and test sets, which is also ac-
+                                                                   centuated by the high dynamics that characterize the tropical re-
+                                                                   gions. In this sense, domain adaptation techniques would help
+                                                                   in reducing the gap between both datasets.
+
+                                                                   Recall that Baseline 2 involves specific classifiers for each date,
+                                                                   while VUnetConvLSTM consists of a single classifier for all
+                                                                   dates. Note that the performance gap between these two ap-
+                                                                   proaches was relatively small, with an average reduction of
+                                                                   2.7% in the F1 score.
+
+                                                                   On some dates, the proposed VUnetConvLSTM outperformed
+                                                                   Baseline 2 in terms of F1 score and OA, e.g., in May. On this
+                                                                   date, there were few training samples of Class Millet for LEM
+                                                                   17/18 dataset, which might have led to a low F1 score at that
+                                                                   date for Baseline 2. In contrast, the proposed network leveraged
+                                                                   the labeled data from other dates to learn a proper representa-
+                                                                   tion for Millet, leading to a better F1 score in May. The same
+                                                                   behaviour occurred in August, where the Millet percentage was
+Figure 6. Reference crop parcels in LEM 17/18 dataset. All the     4.9% in the LEM 17/18 dataset and 14.7% in the LEM 19/20
+      polygons were used for training the Baseline 2 and           dataset.
+                 VUnetConvLSTM networks                                                               Baseline 1          Baseline 2        VUnetConvLSTM
+
+                                                                                      100
+                                                                                       90
+                                                                                       80
+                                                                   Overall Accuracy
+
+
+
+
+                                                                                       70
+                                                                                       60
+                                                                                       50
+                                                                                       40
+                                                                                       30
+                                                                                       20
+                                                                                       10
+                                                                                        0
+                                                                                                                                                         0
+                                                                                                  19
+
+
+
+
+                                                                                                                                                                       20
+                                                                                                             20
+
+
+
+
+                                                                                                                                                                  0
+                                                                                                                                0
+
+
+
+
+                                                                                                                                                                                0
+                                                                                                                                                0
+                                                                                                                      0
+                                                                                                   9
+
+                                                                                                 19
+
+
+
+
+                                                                                                                                       0
+
+
+
+
+                                                                                                                                                       2
+
+                                                                                                                                                             l-2
+                                                                                                                               -2
+
+
+
+
+                                                                                                                                                                              -2
+                                                                                                                                               -2
+                                                                                                                     -2
+                                                                                               t-1
+
+
+
+
+                                                                                                                                      r-2
+
+
+
+
+                                                                                                                                                    n-
+
+
+
+
+                                                                                                                                                                       g-
+                                                                                               c-
+
+                                                                                                           n-
+                                                                                              v-
+
+
+
+
+                                                                                                                             ar
+
+
+
+
+                                                                                                                                             ay
+
+
+
+
+                                                                                                                                                                               p
+                                                                                                                      b
+
+
+
+
+                                                                                                                                                             Ju
+                                                                                        Oc
+
+
+
+
+                                                                                                                                    Ap
+                                                                                            De
+                                                                                            No
+
+
+
+
+                                                                                                                                                                      Au
+                                                                                                                                                    Ju
+                                                                                                          Ja
+
+
+
+
+                                                                                                                                                                            Se
+                                                                                                                   Fe
+
+                                                                                                                            M
+
+
+
+
+                                                                                                                                            M
+
+
+
+
+                                                                                                                              Date Classiﬁed
+
+                                                                                            Figure 8. Per-date Overall Accuracy for the proposed
+                                                                                                                approaches.
+
+                                                                   Results regarding the F1 score metric are consistent with the
+                                                                   ones reported in terms of OA. For most of the dates, the highest
+                                                                   F1 scores were obtained with Baseline 1, followed by Baseline
+                                                                   2 and VUnetConvLSTM approaches, which performed simil-
+ Figure 7. Reference crop parcels in LEM 19/20 dataset. Blue       arly on most dates. However, it can be noticed that the decrease
+polygons were used for training the Baseline 1. Green polygons     in performance for both methods, regarding Baseline 1, is signi-
+         were used for testing the proposed networks.              ficant for the entire sequence. An exception occurred in April,
+                                                                   in which Baseline 2 outperformed Baseline 1 by a margin of
+                                                                   7.5%. For Baseline 2, May was the most affected month, with a
+
+
+                                              This contribution has been peer-reviewed.
+               https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.                                                                927
+                The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                                           XXIV ISPRS Congress (2021 edition)
+
+
+
+drop of 31% in F1 score, while for VUnetConvLSTM, the ma-                                         Future works will focus on evaluating domain adaptation tech-
+jor reduction occurred in July and August, with a decrease of                                     niques such as Colormapgan (Tasar et al., 2020) to address the
+24.1% and 24.6% respectively.                                                                     domain gap between the assessed datasets. Data fusion between
+                          Baseline 1          Baseline 2       VUnetConvLSTM                      optical and SAR images will also be considered for improving
+                                                                                                  the classification metrics. Likewise, the inclusion of other deep
+           80
+                                                                                                  learning networks such as Unet3D and Transformers will be
+           70
+                                                                                                  evaluated.
+           60
+           50
+F1 score
+
+
+
+
+           40                                                                                                    7. ACKNOWLEWDGMENTS
+           30
+           20
+                                                                                                  The authors would like to acknowledge the valuable support of
+           10
+                                                                                                  CNPq, CAPES, FAPERJ and DAAD.
+            0
+
+
+
+                                                                                   0
+
+
+
+
+                                                                                             20
+                                                                                 20
+                     19
+
+
+
+
+                                                                                 20
+                                           0
+                     19
+
+
+
+
+                                  0
+
+
+
+
+                                                               0
+                                                   0
+
+
+
+
+                                                                       0
+                       9
+
+
+
+
+                                                                               l-2
+                                         -2
+                                 2
+
+
+
+
+                                                           r-2
+                                                   -2
+
+
+
+
+                                                                     -2
+                   t-1
+
+
+
+
+                                                                                           p-
+                                                                             n-
+
+
+
+
+                                                                              g-
+                   c-
+                  v-
+
+
+
+
+                              n-
+
+
+
+
+                                                 ar
+                                          b
+
+
+
+
+                                                                   ay
+
+
+
+
+                                                                            Ju
+                                                        Ap
+            Oc
+
+
+
+
+                De
+                No
+
+
+
+
+                                                                           Au
+
+                                                                                       Se
+                                                                           Ju
+                                       Fe
+                             Ja
+
+
+
+
+                                                                                                                          REFERENCES
+                                               M
+
+
+
+
+                                                                   M
+
+
+
+
+                                                 Date Classiﬁed
+
+Figure 9. Per-date average F1 score for the proposed approaches.                                  Ajadi, O. A., Barr, J., Liang, S.-Z., Ferreira, R., Kumpatla, S. P.,
+                                                                                                  Patel, R., Swatantran, A., 2021. Large-scale crop type and crop
+Table 4 presents the result in terms of F1 score and OA aver-                                     area mapping across Brazil using synthetic aperture radar and
+aged over the entire temporal sequence. Notice that metrics are                                   optical imagery. International Journal of Applied Earth Obser-
+consistent with results reported in Figure 8 and Figure 9, where                                  vation and Geoinformation, 97, 102294.
+the highest values of F1 and OA were obtained by Baseline 1.
+Baseline 2 resulted in a decrease of 17% and 14% in terms of F1                                   Audebert, N., Boulch, A., Randrianarivo, H., Le Saux, B.,
+score and OA, respectively. Interestingly, the proposed VUn-                                      Ferecatu, M., Lefèvre, S., Marlet, R., 2017. Deep learning for
+etConvLSTM only presented a slight reduction in both metrics                                      urban remote sensing. 2017 Joint Urban Remote Sensing Event
+regarding Baseline 2, with a drop of 2.7% and 0.5% for F1 score                                   (JURSE), IEEE, 1–4.
+and OA, respectively. The aforementioned table also presents
+                                                                                                  Castro, J. D. B., Feitosa, R. Q., La Rosa, L. C., Diaz, P.
+training times. Both Baseline 1 and Baseline 2 presented the
+                                                                                                  M. A., Sanches, I. D. A., 2017. A comparative analysis of
+highest times because they required to train a separate network
+                                                                                                  deep learning techniques for sub-tropical crop types recogni-
+for each date in the sequence. The proposed VUnetConvLSTM
+                                                                                                  tion from multitemporal optical/sar image sequences. 2017 30th
+reduced training times by approximately 74.3% compared to
+                                                                                                  SIBGRAPI Conference on Graphics, Patterns and Images (SIB-
+the baseline approaches.
+                                                                                                  GRAPI), IEEE, 382–389.
+                    Method                        F1          OA            Training [h]
+                   Baseline 1                    61.7         77.3              14.6              Hochreiter, S., Schmidhuber, J., 1997. Long short-term
+                   Baseline 2                    44.7         63.3              14.6              memory. Neural computation, 9(8), 1735–1780.
+                 VUnetConvLSTM                    42          62.8               3.8
+                                                                                                  La Rosa, L. E. C., Happ, P. N., Feitosa, R. Q., 2018. Dense
+            Table 4. Performance metrics averaged over the temporal                               fully convolutional networks for crop recognition from multi-
+                          sequence, and training time.                                            temporal sar image sequences. IGARSS 2018-2018 IEEE In-
+                                                                                                  ternational Geoscience and Remote Sensing Symposium, IEEE,
+                                6. CONCLUSIONS                                                    7460–7463.
+
+                                                                                                  Martinez, J. A. C., Happ, P. N., Feitosa, R. Q., 2019. A
+This work evaluated the capabilities of a convolutional recur-
+                                                                                                  comparison of fully convolutional and recurrent networks for
+rent crop mapping architecture adapted to tropical regions, to
+                                                                                                  multi-temporal crop recognition using sar images. Anais do XIX
+generalize to future agricultural years in dates unseen during
+                                                                                                  Simpósio Brasileiro de Sensoriamento Remoto.
+training. Results suggest that merely training a network in
+a specific agricultural year might not be enough for the ar-                                      Martinez, J. A. C., La Rosa, L. E. C., Feitosa, R. Q., Sanches,
+chitecture to correctly generalize to future unseen dates. The                                    I. D., Happ, P. N., 2021. Fully convolutional recurrent networks
+Baseline 2 and the proposed VUnetConvLSTM model, which                                            for multidate crop recognition from multitemporal image se-
+were trained in LEM 17/18 and tested two years ahead in time                                      quences. ISPRS Journal of Photogrammetry and Remote Sens-
+using the LEM 19/20 dataset, presented a significant perform-                                     ing, 171, 188–201.
+ance drop compared to Baseline 1, which was trained and tested
+on the same temporal sequence. This indicated a domain gap                                        Oldoni, L. V., Sanches, I. D., Picoli, M. C. A., Covre, R. M.,
+between the datasets, which was not addressed in this work.                                       Fronza, J. G., 2020. LEM+ dataset: For agricultural remote
+                                                                                                  sensing applications. Data in Brief, 33, 106553.
+Furthermore, this work compared the generalization capabilit-
+ies of a network trained to produce an outcome on a specific                                      Ronneberger, O., Fischer, P., Brox, T., 2015. U-net: Convo-
+date (Baseline 2) and the proposed VUnetConvLSTM, trained                                         lutional networks for biomedical image segmentation. Interna-
+to produce outcomes for all the months of the agricultural year                                   tional Conference on Medical image computing and computer-
+in an end-to-end fashion. Results showed that the proposed                                        assisted intervention, Springer, 234–241.
+VUnetConvLSTM presented only slight performance decreases
+compared to Baseline 1, which might be a small cost in ex-                                        Rußwurm, M., Körner, M., 2018. Multi-temporal land cover
+change for the operational advantages brought by the end-to-                                      classification with sequential recurrent encoders. ISPRS Inter-
+end approach.                                                                                     national Journal of Geo-Information, 7(4), 129.
+
+
+                                                         This contribution has been peer-reviewed.
+                          https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.                                    928
+     The International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume XLIII-B2-2021
+                                                XXIV ISPRS Congress (2021 edition)
+
+
+
+Sanches, I., Feitosa, R., Achanccaray, P., Montibeller, B., Luiz,
+A., Soares, M., Prudente, V., Vieira, D., Maurano, L., 2018a.
+Lem Benchmark Database for Tropical Agricultural Remote
+Sensing Application. ISPRS-International Archives of the Pho-
+togrammetry, Remote Sensing and Spatial Information Sci-
+ences, 621, 387–392.
+
+Sanches, I., Feitosa, R., Achanccaray, P., Soares, M., Luiz, A.,
+Schultz, B., Maurano, L., 2018b. Campo Verde Database: Seek-
+ing to Improve Agricultural Remote Sensing of Tropical Areas.
+IEEE Geoscience and Remote Sensing Letters, 15(3), 369–373.
+
+Santos, L. A., Ferreira, K., Picoli, M., Camara, G., Zurita-
+Milla, R., Augustijn, E.-W., 2021. Identifying Spatiotemporal
+Patterns in Land Use and Cover Samples from Satellite Image
+Time Series. Remote Sensing, 13(5), 974.
+
+Shi, X., Chen, Z., Wang, H., Yeung, D.-Y., Wong, W.-K.,
+Woo, W.-c., 2015. Convolutional LSTM network: A machine
+learning approach for precipitation nowcasting. arXiv preprint
+arXiv:1506.04214.
+
+Tardy, B., Inglada, J., Michel, J., 2017. Fusion approaches for
+land cover map production using high resolution image time
+series without reference data of the corresponding period. Re-
+mote Sensing, 9(11), 1151.
+
+Tasar, O., Happy, S., Tarabalka, Y., Alliez, P., 2020. Colormap-
+gan: Unsupervised domain adaptation for semantic segment-
+ation using color mapping generative adversarial networks.
+IEEE Transactions on Geoscience and Remote Sensing, 58(10),
+7178–7193.
+
+Teimouri, N., Dyrmann, M., Jørgensen, R. N., 2019. A Novel
+Spatio-Temporal FCN-LSTM Network for Recognizing Vari-
+ous Crop Types Using Multi-Temporal Radar Images. Remote
+Sensing, 11(8), 990.
+
+
+
+
+                                               This contribution has been peer-reviewed.
+                https://doi.org/10.5194/isprs-archives-XLIII-B2-2021-923-2021 | © Author(s) 2021. CC BY 4.0 License.           929
+

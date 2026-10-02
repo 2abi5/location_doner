@@ -1,0 +1,788 @@
+                                         DExNet: Combining Observations of Domain Adapted
+                                        Critics for Leaf Disease Classification with Limited Data
+
+                                                Sabbir Ahmed1          , Md. Bakhtiar Hasan1 , Tasnim Ahmed1,2 , and
+                                                                          Md. Hasanul Kabir1
+                                                    1
+                                                  Department of CSE, Islamic University of Technology, Bangladesh
+                                        {sabbirahmed, bakhtiarhasan, tasnimahmed, hasanul}@iut-dhaka.edu
+                                                   2
+arXiv:2506.18173v2 [cs.CV] 1 Sep 2025
+
+
+
+
+                                                     School of Computing, Queen’s University, Ontario, Canada
+                                                                tasnim.ahmed@queensu.ca
+
+                                               Abstract. While deep learning-based architectures have been widely used for
+                                               correctly detecting and classifying plant diseases, they require large-scale datasets
+                                               to learn generalized features and achieve state-of-the-art performance. This poses
+                                               a challenge for such models to obtain satisfactory performance in classifying leaf
+                                               diseases with limited samples. This work proposes a few-shot learning frame-
+                                               work, Domain-adapted Expert Network (DExNet), for plant disease classification
+                                               that compensates for the lack of sufficient training data by combining observa-
+                                               tions of a number of expert critics. It starts with extracting the feature embeddings
+                                               as ‘observations’ from nine ‘critics’ that are state-of-the-art pre-trained CNN-
+                                               based architectures. These critics are ‘domain adapted’ using a publicly available
+                                               leaf disease dataset having no overlapping classes with the specific downstream
+                                               task of interest. The observations are then passed to the ‘Feature Fusion Block’
+                                               and finally to a classifier network consisting of Bi-LSTM layers. The proposed
+                                               pipeline is evaluated on the 10 classes of tomato leaf images from the PlantVil-
+                                               lage dataset, achieving promising accuracies of 89.06%, 92.46%, and 94.07%,
+                                               respectively, for 5-shot, 10-shot, and 15-shot classification. Furthermore, an ac-
+                                               curacy of 98.09 ± 0.7% has been achieved in 80-shot classification, which is only
+                                               1.2% less than state-of-the-art, allowing a 94.5% reduction in the training data
+                                               requirement. The proposed pipeline also outperforms existing works on leaf dis-
+                                               ease classification with limited data in both laboratory and real-life conditions in
+                                               single-domain, mixed-domain, and cross-domain scenarios.
+
+                                               Keywords: Few-Shot Learning · Domain adaptation · CNN Feature Fusion ·
+                                               Plant Disease Classification · Plantvillage.
+
+
+                                        1   Introduction
+                                        The decline in agricultural production due to diseases is a major threat to food security
+                                        worldwide, causing severe losses for all stakeholders [34]. Traditional disease detec-
+                                        tion methods are limited due to their low detection efficiency and poor reliability [10].
+                                        This is compounded by the lack of professional knowledge of farmers and the scarcity
+                                        of agricultural experts in remote locations. As a result, the need for developing smart
+                                        systems that can enable early detection and classification of diseases using tools and
+                                        technologies available to the farmers can be pivotal [26].
+                                            Recent advancements in Deep Learning (DL) approaches using Convolutional Neu-
+                                        ral Networks (CNN) have become a powerful tool for several downstream classification
+2       S. Ahmed et al.
+
+tasks [6,48,8,36,23]. In particular, the utilization of transfer learning techniques using
+pre-trained architectures has provided numerous solutions in plant disease detection
+[12,9,29,28,1]. However, most of these solutions propose deep and complex networks
+focusing on increasing detection accuracy, requiring a huge number of training images.
+Moreover, the challenge is exacerbated by the absence of substantial public datasets
+for categorizing rare plant diseases [47]. Thus, developing effective algorithms that can
+accurately detect diseases with limited data is crucial to improve the situation. One
+promising approach is Few-Shot Learning (FSL), which aims to enable models to gen-
+eralize effectively from only a small number of labeled examples [40,2]. Although some
+FSL-based solutions for classifying leaf diseases have been suggested in the literature
+[7,46,27,33], most of them have not demonstrated satisfactory performance and have
+proven ineffective in applications outside their original domain.
+     To this end, we utilize nine different state-of-the-art CNN-based feature extractors
+that are adapted to extract generalized features in the agriculture domain. These ex-
+tracted features are then combined and passed through a classification block for effec-
+tive disease prediction. Given the limited number of samples per class, we adopt an
+ensemble strategy leveraging multiple CNN-based feature extractors to obtain diverse
+and complementary representations of the input data. Each model contributes distinct
+feature perspectives, and their integration enhances the overall discriminative capac-
+ity of the system. This approach enables improved prediction performance despite the
+scarcity of labeled samples. Our contributions can be summarized as follows:
+  1. We introduced domain-specific knowledge into pre-trained Deep CNN-based fea-
+     ture extractors in order to adapt them to the agriculture domain to compensate for
+     target domain data scarcity.
+  2. We incorporated a feature fusion block to combine extracted features from the crit-
+     ics to provide multi-faceted observation from limited samples.
+  3. We utilized a Bi-LSTM architecture to capture the dependencies among the com-
+     bined features to effectively classify leaf diseases.
+  4. We outperformed the existing state-of-the-art FSL-based implementations in both
+     laboratory and real-life conditions in single, multi, and cross-domain tasks.
+
+
+2   Related Work
+The progressive integration of Deep Learning in agriculture requires a large amount of
+data to achieve reliable generalization, high classification accuracy, and resilience to
+variability in environmental conditions, crop types, and disease manifestations [5,18].
+However, collecting and annotating such large-scale agricultural datasets is often labor-
+intensive, time-consuming, and infeasible for many real-world applications, particularly
+in regions with limited technical resources [35]. However, few-shot learning (FSL) al-
+gorithms have shown promise in addressing this limitation by mimicking the human
+capacity to learn quickly with just a few labeled examples [50]. Different branches of
+FSL algorithms include metric-learning-based methods, parameter optimization, and
+data augmentation [3].
+    In few-shot leaf image classification, a small labeled support set provides reference
+samples for each disease class, while an unlabeled query set is classified by compar-
+ing its images to the support set using distance metrics that are critical for accurate
+                    DExNet: Domain Adapted Critics for Leaf Disease Classification      3
+
+prediction under limited data scenarios[43]. Metric-learning-based approaches utilize
+distance functions to measure the similarity and dissimilarity between leaf samples in
+the support set and the query set [49]. The model produces an embedding vector from
+the input image, which is compared with the embeddings of other classes to predict the
+disease.
+    Metric-based FSL approaches, such as Siamese Networks [24], Prototypical Net-
+works [39], MatchingNet [44], etc., have shown superior performance over conven-
+tional CNN-based methods when dealing with limited data. Argüeso et al.[7] employed
+an InceptionV3 backbone [41] trained on 32 leaf disease classes to extract features for
+a Siamese Network using triplet loss, achieving competitive results with up to 90% less
+training data. Similarly, Wang et al.[45] utilized a Siamese architecture with shared
+weights to extract features from image pairs, learning a similarity metric optimized via
+a contrastive loss, followed by K-NN classification. However, the high inter-class vari-
+ation in their dataset reduced task complexity. To address more challenging scenarios,
+Egusquiza et al.[14] curated a real-world dataset of 5 crops and 17 diseases captured un-
+der varied and complex conditions, demonstrating that metric-based models outperform
+traditional CNNs even with fewer than 200 samples per class. Li et al.[27] proposed a
+task-adaptive meta-learning framework for crop and pest classification, evaluating it
+under single-domain, mixed-domain, and cross-domain settings. Although their dataset
+aggregated samples from multiple public sources, its relatively low intra-class similarity
+simplified classification; nonetheless, performance degraded notably in cross-domain
+scenarios.
+    Parameter optimization-based techniques in FSL entail learning how to tune the pa-
+rameters of a DL network using optimizers. Finn et al.[15] proposed Model Agnostic
+Meta-learning (MAML), which solves few-shot tasks by learning an initialization pa-
+rameter θ. Once learned, new tasks can be solved with a few gradient updates. MAML
+is independent of the meta-learner algorithm used, making it ideal for machine learn-
+ing algorithms that require quick adaptation. Other improvements on MAML include
+TAML [22], Reptile [31], etc. In this regard, Wang et al.[46] exploited the MAML ap-
+proaches with soft-center loss function and PReLU activation function for leaf disease
+classification. The proposed method outperformed other FSL approaches and achieved
+63.8%, 91.35%, and 96.0% accuracy for 1-shot, 15-shot, and 80-shot classification, re-
+spectively. However, the approach requires a large number of tasks and consumes high
+computational resources, and further optimization is needed to increase speed and re-
+duce computational overhead.
+    Expanding the number of samples via data augmentation can solve the lack of la-
+beled samples to some extent. Hu et al.[19] proposed an FSL method for tea leaf disease
+identification that uses SVM for feature extraction and C-DCGAN for data augmenta-
+tion. The augmented samples were used to train the VGG16 architecture [38], achieving
+an accuracy of up to 90% on a self-curated dataset of three tea leaf diseases. In another
+work, Nesteruk et al.[30] claimed that the use of such augmentation techniques can
+improve the performance of other downstream tasks involving leaf diseases, such as
+object detection, segmentation, contouring, denoising, etc. However, the authenticity of
+the augmented samples in reflecting real-world data distributions remains uncertain.
+4       S. Ahmed et al.
+
+     Recent studies have demonstrated that transfer learning with pre-trained architec-
+tures can effectively generate generalizable feature representations for few-shot learn-
+ing tasks. Chen et al.[11] proposed a simple transfer learning-based approach using pre-
+trained CNN and linear classifiers that outperforms traditional FSL methods. Kolesnikov
+et al.[25] suggested that a high-quality feature extractor is the best way to solve FSL
+tasks and proposed an approach to train a large model on a large dataset to learn the
+feature space. Yonglong et al.[42] also demonstrated that a simple transfer-based ap-
+proach can outperform advanced meta-learners. Dvornik et al.[13] introduced diversity
+in feature extraction by using a set of feature extractors trained on different datasets.
+They used ensembling to train multiple deep CNNs during the meta-training phase and
+encouraged diversity in the learned representations.
+     In the domain of agriculture, Nuthalapati et al.[33] proposed a method for FSL that
+utilizes a ResNet18-based feature extractor pre-trained on ImageNet. A transformer
+block is used to further enhance the feature embeddings of all support set samples. Dur-
+ing classification, similarity between the query image embedding and the class proto-
+types is computed using the Mahalanobis distance. The effectiveness of the model was
+shown using mixed-domain and cross-domain experiments using the Plant and Pest [27]
+and the Tomato leaf subset of the Plantvillage dataset [21]; where the proposed model
+achieved up to 14% and 24% performance gain compared to the earlier works. More-
+over, to validate the performance of the model in real-world images, the authors curated
+the ‘Plants in Wild’ dataset and provided a baseline.
+     While transfer learning-based approaches have gained traction in the FSL domain,
+their performance remains constrained, particularly in real-world scenarios, due to re-
+stricted feature diversity from relying on a single pre-trained model. To address these
+challenges, we integrate multiple pre-trained feature extractors adapted with domain-
+specific knowledge, followed by feature fusion and classification modules. This en-
+ables robust and generalizable leaf disease classification under limited data conditions,
+achieving state-of-the-art performance.
+
+3   Task Formulation
+Few-shot learning (FSL) experiments have two phases: meta-training and meta-testing.
+The datasets used in these two phases have non-overlapping classes. Each of them is
+divided into Support sets (S) and Query sets (Q), similar to the train-test splits of the
+traditional DL experiments.
+    The meta-training set is used to train feature extractors that learn to generate dis-
+criminative embeddings from limited samples, with no restriction on the number of
+classes or examples, provided there is no overlap with the meta-testing set. The meta-
+testing set contains N classes, each represented using k labeled examples extracted
+from the Support set (i.e., k-shot). After training the classifier using these few samples,
+performance is evaluated on Q unseen examples per class drawn from the Query set. To
+ensure statistical robustness, models are evaluated across multiple tasks, each defined
+by randomly sampled Support and Query sets.
+    To comprehensively assess the FSL pipeline, single-domain, mixed-domain, and
+cross-domain experiments are conducted. In single-domain settings, the meta-training
+and meta-testing datasets originate from similar domains with disjoint classes. Cross-
+                       DExNet: Domain Adapted Critics for Leaf Disease Classification    5
+
+domain experiments involve meta-training and meta-testing datasets drawn from dis-
+tinct domains, presenting increased difficulty due to significant domain distribution dis-
+crepancies. Mixed-domain experiments include classes from multiple domains in both
+meta-training and meta-testing phases.
+    For the single-domain experiments, we have used the PlantVillage Dataset [21], the
+largest open-access repository of expertly curated samples for leaf disease classification
+tasks, consisting of 38 classes. Out of these classes, we have picked the 10 classes of
+tomato leaf images for the meta-testing phase and used the rest of the 28 classes for
+domain adaptation. In the meta-training phase, the 28 classes have been used to fine-
+tune the feature extractors to enhance their capabilities for leaf disease identification.
+On the other hand, the 10 classes of tomato leaf samples have been divided into Support
+and Query sets with an 80 : 20 ratio following the work of Ahmed et al.[4] Hence, out
+of the 18160 samples of tomato leaf images, 3629 samples have been considered as
+the available samples as the Query set, and the remaining images have been used as
+the Support set. For each task, k Support samples and Q query samples per class are
+randomly picked from the available images. To remove biases, this process has been
+repeated 100 tasks, and the average performance has been reported.
+    For the Mixed-domain and Cross-domain experiments, we have utilized the ‘Plants
+& Pest’ dataset proposed by Li et al.[27]. The dataset consists of 20 classes in total,
+out of which 10 classes belong to different kinds of plants, such as apple, blueberry,
+cherry, grape, etc. The other 10 classes contain images of different kinds of pests, such
+as cydia-pomonella, fruit-fly, gryllotalpa, snail, etc. Each of the classes contains 300
+images. We have followed the recommended splits by the original authors for the mixed
+and cross-domain experiments [27]. In the mixed-domain tasks, we have taken 5 plants
+and 5 pest classes for meta-training and the rest of the classes for meta-testing. For the
+Cross-domain experiments, we have conducted two kinds of experiments. In the first
+one, the meta-training set consists of the 10 pest classes, and in another cross-domain
+scenario, we have considered all 10 plant classes for meta-training and the remaining
+classes for meta-testing.
+    Furthermore, to evaluate the efficacy of the proposed pipeline in real-world field
+images, we conducted experiments on two publicly available datasets, ‘Potato Leaf Dis-
+ease Classification’3 [37] and ‘Cotton Leaf Disease’4 [32], consisting of diversified sam-
+ples collected from the field. All these experiments ensure that our proposed pipeline
+has been validated under diverse and challenging conditions, demonstrating its robust-
+ness, adaptability, and generalization capabilities across single-domain, mixed-domain,
+cross-domain, and real-world field scenarios.
+
+4      DExNet
+The Domain-adapted Expert Network (DExNet) pipeline addresses the challenge of
+limited labeled samples per class by aggregating insights from multiple specialized ex-
+pert models, or “critics.” These critics are exposed to a broad distribution of leaf images
+during domain adaptation, enabling them to learn generalizable features of diseased
+ 3
+     https://github.com/rizqiamaliatuss/PotatoLeafDiseaseClassification
+ 4
+     https://www.kaggle.com/datasets/seroshkarim/cotton-leaf-disease-dataset
+6       S. Ahmed et al.
+
+             Domain Adaptation                                Classifier Block
+
+
+
+
+                                                                LSTM            LSTM      LSTM
+
+
+
+
+                                                                                                                  Fully-Connected
+
+                                                                                                                                    Class Label
+                                                                                                        Flatten
+                                   Pre-trained CNN-             LSTM            LSTM      LSTM
+                                     based Feature
+          Samples of Widely        Extraction Block
+           Available Crops
+
+
+
+
+              Feature Fusion Block
+
+
+
+
+                                      Domain-Adapted
+                                      Feature Extraction
+              Samples of the                Block
+              Target Classes
+
+
+
+                                                           Extracted Features          Fused Features
+
+
+
+
+                               Fig. 1. Overview of the Proposed Pipeline DExNet
+
+leaves. Although they are not trained on the target classes, their learned representations
+remain descriptive and informative, allowing the model to perform effectively even with
+very few target samples.
+    DExNet comprises three main components: the Domain Adaptation Block (DAB),
+the Feature Fusion Block (FFB), and the Classifier Block (CB). In the DAB, we fine-
+tune nine pre-trained deep CNN models (referred to as critics) using a diverse set of
+publicly available leaf images. This domain adaptation process enables the critics to
+specialize in extracting disease-relevant features, effectively transforming them into ex-
+perts. In the FFB, feature representations (termed observations) are extracted by pass-
+ing target-class samples through each of the domain-adapted experts. The resulting nine
+feature vectors are then concatenated to form a unified representation. Finally, the CB
+employs a Bi-LSTM layer with 1024 nodes followed by a fully-connected layer to per-
+form the final classification. Figure 1 illustrates the proposed pipeline DExNet.
+
+4.1   CNN-Based Feature Extractor
+
+While conventional DL methods rely on large amounts of data to achieve satisfactory
+performance, such data requirements are impractical in FSL scenarios. To address this
+limitation, we combine the extracted features from several Deep CNN architectures,
+                    DExNet: Domain Adapted Critics for Leaf Disease Classification       7
+
+each with its unique method of feature extraction, to generate multiple observations. We
+hypothesize that showing a few samples to multiple critics and deciding the result based
+on their aggregated observations can provide a better understanding of the samples.
+Here, the feature extractor is compared to a critic, and the features produced are the
+observations of the leaf images. This approach enables using spatial information in the
+image to generate feature vectors for training an FSL pipeline.
+    Our CNN-based Feature Extraction Block consists of state-of-the-art pre-trained
+residual and dense CNN architectures. The Residual Networks (ResNets) [17] offer
+significant improvements over previous architectures to facilitate the training of many
+stacked layers by introducing residual connections between layers, allowing informa-
+tion to flow from shallow layers to deeper layers and gradients to flow back, skipping a
+few layers. We incorporated five pre-trained variants of ResNets in our domain-adapted
+expert feature extractor block, namely ResNet-18, ResNet-34, ResNet-50, ResNet-101,
+and ResNet-152. Expanding on this idea, Dense Convolutional Network (DenseNet)
+[20] connects all layers with matching feature-map sizes directly with each other. Here,
+each layer receives input from all the previous layers and sends its output to all the sub-
+sequent layers via concatenation. Creating a dense connection between all the layers
+ensures the maximum flow of information and gradient between layers. Four variants of
+the DenseNet architecture were chosen based on the number of layers and their compu-
+tational complexity: DenseNet-121, DenseNet-161, DenseNet-169, and DenseNet-201.
+Each of the models is pre-trained on the ILSVRC2012 dataset, and the final prediction
+layers were removed from the feature extractors to retain the feature embeddings.
+
+4.2 Domain Adaptation
+The feature extraction architectures are capable of extracting highly sophisticated fea-
+tures that can be utilized for any classification problem. When these networks are used
+for any classification task, a common practice is to fine-tune the architectures based
+on the available training images. However, in the FSL problems, it is not possible to
+fine-tune such deep models due to the limited number of samples in the Support set. An
+alternative solution to this problem is to provide knowledge of a similar domain so that,
+despite the model having never directly seen the target classes, it can have some idea
+about their general characteristics— a process we term as Domain Adaptation.
+    To apply domain adaptation in the proposed pipeline, we have trained the CNN-
+based architectures with a substantial amount of leaf images containing healthy and
+diseased samples. For this, we used the 28 classes of the PlantVillage dataset except for
+the samples of the tomato leaves. We hypothesize that since the models were already
+capable of extracting useful features, this knowledge base can be further enriched by
+fine-tuning them using a lot of leaf samples. After fine-tuning, even though the model
+has never seen any ‘tomato leaf samples’, it knows what a healthy or diseased leaf looks
+like, what features to look for in a leaf image, and how to differentiate the classes of
+diseases, etc, turning it into an expert model. Thus, when limited samples are provided,
+the expert models can extract even better features compared to their earlier states.
+
+4.3 Feature Fusion Block (FFB)
+We leverage nine domain-adapted expert models for feature extraction, resulting in nine
+distinct feature vectors for each input image. These feature vectors (referred to as ob-
+8       S. Ahmed et al.
+
+servations) reflect the individual perspectives of the experts, with each model capturing
+unique characteristics of the input. To enhance the representational power, we concate-
+nate all nine observations into a single 13, 984-dimensional feature vector per sample.
+This fusion approach preserves the distinct information captured by each expert, en-
+abling the model to learn complex interactions among the features and facilitating the
+extraction of more informative and comprehensive representations.
+
+4.4   Classifier Block (CB)
+The Classifier Block processes the concatenated feature vector from FFB using a Bi-
+LSTM layer with 1024 units [16], followed by a fully connected layer to produce the
+final classification output. The main purpose of this block is to effectively combine the
+diverse observations from the expert models and capture intricate relationships within
+the high-dimensional feature vector. The Bi-LSTM layer consists of two LSTM net-
+works running in parallel, processing the inputs in opposite directions. This structure
+allows the model to capture both local dependencies between adjacent elements and the
+broader contextual information of the entire sequence, enhancing the model’s ability to
+learn complex interactions. Upon empirical evaluation with varying dimensions (e.g.,
+256, 512, 1024, 2048), we found that 1024 units provided the best performance.
+
+5     Results & Discussions
+5.1   Single vs Ensemble Feature Extractor
+The performance of each of the feature extractors was thoroughly analyzed for different
+choices of k shots. Along with finding the performance of the individual networks, we
+also considered an ensemble of ResNets, an ensemble of DenseNets, and finally, the en-
+semble of all nine architectures. Since the focus was on finding the best combination of
+feature extractors, we only added a Dense layer of 1024 hidden units after the flattened
+feature vector from the pretrained extractors, followed by a softmax layer. We exper-
+imented with four combinations of k = 1, 5, 10, &15. For the test samples, Q = 50
+images per class were taken at random. To remove any bias, this random sampling was
+repeated for 100 separate trials, and the average value was reported. The findings of this
+experiment are shown in Table 1.
+    The objective was to find the feature extractor that works best with the provided
+‘few-shots’. Since the performance of the individual networks was close to each other,
+we hypothesized that ensembling them could provide better results because each of
+them has unique strengths in extracting certain types of features useful for detecting
+specific types of diseases. By ensembling similar types of networks, we achieved better
+performance than the individual ones. The best performance was achieved by combin-
+ing all nine feature extractors.
+
+5.2   Combination of the Extracted Features
+The features extracted from the domain-adapted feature extraction blocks are subse-
+quently combined and passed to the classifier block for both training and evaluation
+phases. To identify an effective feature integration strategy, we consider two approaches:
+                    DExNet: Domain Adapted Critics for Leaf Disease Classification            9
+
+               Table 1. Performance of Single vs Ensemble Feature Extractors
+
+Feature Extractor            k=1              k=5              k = 10             k = 15
+ResNet18                 34.36 ± 0.82     55.42 ± 0.77      62.56 ± 0.67       66.76 ± 0.62
+ResNet34                 29.65 ± 0.91     49.93 ± 0.81      57.93 ± 0.56       63.69 ± 0.54
+ResNet50                 30.62 ± 0.88     54.24 ± 0.92      61.79 ± 0.65       65.99 ± 0.64
+ResNet101                29.64 ± 0.93     52.73 ± 0.79      61.61 ± 0.74       65.79 ± 0.68
+ResNet152                29.75 ± 0.84     52.61 ± 0.86      61.39 ± 0.74       66.44 ± 0.68
+DenseNet121              32.48 ± 0.99     54.93 ± 0.89      64.09 ± 0.72       68.21 ± 0.56
+DenseNet161              32.29 ± 1.07     56.58 ± 0.88      65.59 ± 0.71       70.56 ± 0.66
+DenseNet169              32.89 ± 0.97     55.39 ± 0.78      64.09 ± 0.72        69.39 ± 0.7
+DenseNet201              33.51 ± 0.94     57.21 ± 0.87      65.71 ± 0.86       70.77 ± 0.73
+Ensemble of ResNets      36.34 ± 1.01     60.04 ± 0.91      68.74 ± 0.71       73.84 ± 0.68
+Ensemble of DenseNets    35.94 ± 1.03     61.47 ± 0.96      70.26 ± 0.79       75.42 ± 0.65
+Ensemble of Nine        37.89 ± 0.99     62.07 ± 0.98      72.33 ± 0.81        76.93 ± 0.66
+Extractors
+
+
+‘Parallel Observation’ and ‘Concatenated Observation’. In the Parallel Observation ap-
+proach, each of the nine feature vectors, one from each feature extractor, is treated as
+an independent input to the classifier. This can be viewed as nine distinct observers of-
+fering complementary perspectives on the same image. In contrast, the Concatenated
+Observation approach merges all nine extracted features into a single high-dimensional
+representation by concatenation, resulting in a 13, 985-dimensional vector per sample.
+This unified representation enables the classifier to learn cross-feature dependencies
+and integrate multi-perspective cues into a single, discriminative embedding. In both
+cases, given the architectural heterogeneity of the feature extractors, each vector en-
+codes unique complementary information, which enhances the classifier’s ability to
+generalize by implicitly increasing the diversity of the input space.
+    For each approach, two types of classifiers have been used: Dense Classifier with
+1024 nodes, and Bi-LSTM classifier with 1024 units. We have also considered the im-
+pact of domain adaptation for each of the combinations. For this experiment, we have
+considered the values of k as 1, 5, 10&15 and Q = 50 applied for 100 tasks. The find-
+ings are mentioned in Table 2. For each combination, the domain-adapted feature ex-
+tractors have provided 5 − 10% performance improvement compared to the pre-trained
+ones. The Dense classifier is a better fit for the parallel observation approach, whereas
+the Bi-LSTM classifier is more suitable for the feature concatenation approach. Out
+of all the experiments, the Domain Adapted Concatenated feature extraction approach
+with Bi-LSTM classifier is the best performing one, having an accuracy as high as
+90.97% and 94.02% respectively for 10-shot and 15-shot classification.
+
+5.3   Selection of Classifier Network
+The performance of Dense, LSTM, GRU, Bi-GRU, and Bi-LSTM classifiers was evalu-
+ated to determine the most effective classifier network. Each of the classifiers consisted
+10       S. Ahmed et al.
+
+     Table 2. Performance of Various Combinations of Features in Different FSL Scenarios
+
+       Observation Classifier Domain        k=1        k=5          k = 10    k = 15
+       Type                    Adopt
+       Parallel            Dense    ×       40.2 ±    72.95 ±        82.6 ±   85.71 ±
+                                             1.46      0.97           0.97      0.78
+       Parallel            Dense           50.38 ±    83.78 ±       89.07 ±   92.79 ±
+                                             1.68      1.16           0.91      0.69
+       Parallel       Bi-LSTM       ×      39.84 ±    48.27 ±       52.66 ±   63.42 ±
+                                             1.65      2.20           1.75      1.78
+       Parallel       Bi-LSTM               53.4 ±    74.75 ±        79.3 ±   81.99 ±
+                                             1.74      1.68           1.90      1.81
+       Concatenated        Dense    ×      37.89 ±    62.07 ±       72.33 ±   76.93 ±
+                                             0.99      0.98           0.81      0.66
+       Concatenated        Dense           46.56 ±    72.17 ±       81.18 ±   85.12 ±
+                                             1.07      1.04           0.68      1.02
+       Concatenated Bi-LSTM         ×      42.53 ± 81.9 ± 87.80 ± 89.06 ±
+                                             1.25    1.37    1.23    1.22
+       Concatenated Bi-LSTM                51.36 ± 89.19 ± 90.75 ± 94.02 ±
+                                             1.54    1.20   1.09     0.86
+
+
+
+of 1024 nodes followed by a softmax layer of 10 nodes, representing the 10 classes
+of the target samples. Experiments have been conducted on the base feature extrac-
+tors without applying domain adaptation, with k = 1, 5, 10, and 15. For this analysis,
+we considered the entire test set, comprising a total of 3629 images (Q = F ull). The
+findings have been reported in Table 3.
+
+
+                    Table 3. Performance of Different Classifier Networks
+
+     Classifier            k=1           k = 10            k = 15             k = 80
+     Dense Layer     37.73 ± 0.49     61.08 ± 0.88     73.54 ± 0.72       75.79 ± 0.81
+     LSTM            43.24 ± 1.72     69.16 ± 1.75     74.15 ± 1.52       72.84 ± 1.02
+     GRU             40.21 ± 1.55     68.15 ± 1.54     78.97 ± 1.54       81.08 ± 1.56
+     Bi-GRU          43.03 ± 0.51     72.69 ± 1.28     85.53 ± 1.26       90.94 ± 1.03
+     Bi-LSTM        48.02 ± 1.63     84.36 ± 1.62     88.97 ± 1.80       91.22 ± 1.67
+
+
+    RNN-based classifiers are typically better suited for tasks that involve sequential
+data, as they can capture long-term dependencies and relationships between elements
+in a sequence. However, dense classifiers provide higher importance to each feature
+separately, but they are unable to capture spatial relationships among them. In our case,
+capturing the spatial relationships among the concatenated features can provide a better
+understanding of the leaf samples from which they were extracted. Since RNN-based
+architectures are better suited for capturing important information from the observations
+of the expert critics, their performances are significantly better than Dense classifiers.
+                    DExNet: Domain Adapted Critics for Leaf Disease Classification     11
+
+     Among RNN variants, Bi-LSTM offers additional benefits by processing the input
+in both forward and backward directions, which is particularly useful in our context
+where the disease class may depend on interactions across the entire feature sequence.
+Furthermore, Bi-LSTM demonstrates improved performance when handling long input
+vectors, as is the case with our high-dimensional concatenated features, outperforming
+both unidirectional LSTM and GRU classifiers. We also explored attention-based clas-
+sifier variants but observed degraded performance, likely due to the limited size of the
+training data. As a result, we adopted Bi-LSTM as the classifier of choice.
+
+5.4   Impact of Domain Adaptation
+The baseline CNN-based feature extractors are pre-trained on large-scale ImageNet
+datasets with the capability of extracting useful features from any input samples. How-
+ever, to make them even more specialized in finding appropriate leaf features, we ap-
+plied domain adaptation, which significantly improved the overall performance of the
+pipeline. We have used the Bi-LSTM classifier since it is most useful on the feature
+concatenation approach. The experimental findings are available in Table 4.
+
+
+                            Table 4. Impact of Domain Adaptation
+
+                   k-shot             Domain            Q = F ull
+                                     Adaptation
+                                          ×            48.02 ± 1.63
+                   k=1
+                                                       56.19 ± 1.72
+                                          ×            84.36 ± 1.62
+                   k=5
+                                                       89.06 ± 1.30
+                                          ×            88.97 ± 1.80
+                   k = 10
+                                                       92.46 ± 1.75
+                                          ×            91.22 ± 1.67
+                   k = 15
+                                                       94.07 ± 1.40
+                                          ×            92.66 ± 1.87
+                   k = 20
+                                                       95.68 ± 1.20
+                                          ×             93.7 ± 1.66
+                   k = 40
+                                                       97.04 ± 0.98
+                                          ×            97.38 ± 1.48
+                   k = 80
+                                                       98.09 ± 0.77
+
+    In this experiment, we have also considered larger values of k such as 20, 40, and 80,
+along with considering the entire test set containing 3629 images. The trained models
+have been tested using all the samples from the meta-testing set. After domain adapta-
+tion, the models were already capable of distinguishing different types of leaf disease.
+Hence, even though it never saw any tomato leaf samples, it could achieve high ac-
+curacy like 89.06%, 92.46%, 94.07% respectively, for the 5-shot, 10-shot, and 15-shot
+classification tasks. The results were even more promising as the number of samples
+12      S. Ahmed et al.
+
+increased. We achieved 98.09% accuracy with 20× fewer data compared to the existing
+works. One obvious observation was that, as the value of k goes higher, the significance
+of Domain adaptation becomes lower. Our conclusion from this experiment is that do-
+main adaptation is an effective approach that enables the model to use 20× fewer data,
+compromising only 1.22% accuracy.
+
+
+5.5   Performance comparison with Related Works
+To evaluate the robustness of our proposed pipeline in different circumstances, we con-
+ducted experiments in single-domain and cross-domain environments. In the first exper-
+iment, we used the dataset of the few-shot task proposed by Argueso et al.[7]. In this
+task, the target classes contained 6 leaf diseases of apple, blueberry, and cherry plants.
+The experiments were conducted on Q = 50 for 20 randomly sampled tasks. We ap-
+plied the model under similar experimental setups, and it significantly outperformed the
+state-of-the-art. The results are mentioned in Table 5.
+
+        Table 5. Performance Comparison with Related works on PlantVillage Dataset
+
+          Approach                   k=1       k = 10      k = 15     k = 80
+          Argüeso et al.[7]          55.5       77.0        80.0       90.0
+          Wang et al.[46]            63.8        ×          91.3       96.0
+          Ours                     74.7 ±     99.73 ±     99.92 ±    99.9 ±
+                                    3.12        0.24        0.09      0.07
+
+
+
+    Afterward, the robustness of the pipeline was shown with the single-domain and
+cross-domain tasks as proposed in [27]. For this task, the ‘Plants & Pest’ dataset has
+been utilized. Following the authors [27], this experiment has been conducted keeping
+three tasks in mind, named as, single-mixed domain, cross-domain1, and cross-domain2
+(results in Table 6). In the single-mixed domain experiment, the source class contained
+
+
+                   Table 6. Single-Domain and Cross-Domain Experiments
+
+      k-shots    Approach             Single-Mixed Cross-Domain Cross-Domain
+                                         Domain          1            2
+                 Li et al.[27]              81.1         72.1         44.1
+      K=1        Nuthalapati et al.[33]     84.1         79.2          52
+                 Ours                   95.56 ± 0.91 90.29 ± 0.91 90.05 ± 1.06
+                 Li et al.[27]               87            84.9          53.1
+      K=5        Nuthalapati et al.[33]     91.2           93.7          66.5
+                 Ours                   99.97 ± 0.03    99.8 ± 0.1   99.51 ± 0.14
+                 Li et al.[27]              90.4         87.1         55.8
+      K = 10     Nuthalapati et al.[33]     92.9         95.5         71.6
+                 Ours                   99.97 ± 0.03 99.89 ± 0.05 99.41 ± 0.28
+                    DExNet: Domain Adapted Critics for Leaf Disease Classification      13
+
+                   Table 7. Performance comparison on Field Conditions
+
+                 k-shot        Potato Disease         Cotton Disease
+                                  Dataset                Dataset
+                 k=1            48.61 ± 3.68           63.88 ± 2.54
+                 k=5            76.96 ± 1.84           97.58 ± 0.45
+                 k = 10         89.61 ± 2.03           99.40 ± 0.49
+                 k = 15         92.95 ± 2.07           99.28 ± 0.56
+
+
+samples of both leaves and pests. Although the target classes contained different types
+of leaves or pests, the classification task was simpler. In the cross-domain 1 experiment,
+the pest classes were chosen as the source class and the plant classes as the target class.
+The cross-domain 2 experiment was the other way around. The merit of these experi-
+ments is that, if the model can learn leaves after only being trained on pest samples, it
+signifies that it has learned very good feature representation. Regardless of the single
+or cross-domain tasks, the pipeline has outperformed the works of [27,46] by a good
+margin. This shows the generalizing ability of the model under different circumstances.
+    The existing literature used samples that were mostly taken in laboratory conditions.
+Hence, to further investigate the robustness of the pipeline in different field conditions,
+we tested the performance on two more datasets, namely the ‘Potato Leaf Disease’
+[37] and ‘Cotton Leaf Disease’ [32]. To the best of our knowledge, this is the first
+few-shot benchmark for these two datasets. We took the results for k = 1, 5, 10, &15,
+considered all the remaining images as Query samples, and repeated the evaluation
+for 100 tasks. The findings presented in Table 7 shows that the proposed pipeline has
+achieved satisfactory performance even with the samples taken under real-world field
+conditions with diversified backgrounds.
+
+
+6   Conclusion
+
+The limited availability of large-scale, diverse leaf disease datasets has motivated the
+development of models capable of achieving high accuracy with a minimal amount of
+samples. In this work, we proposed DExNet, an FSL pipeline for leaf disease clas-
+sification under data-scarce conditions. Our approach leverages a CNN-based feature
+extraction block composed of nine state-of-the-art architectures, each contributing a
+distinct representation of the input. These multi-perspective features are fused and pro-
+cessed by a Bi-LSTM-based classifier for final prediction. To enhance generalization to
+unseen classes, we incorporate domain adaptation, enabling feature extractors to cap-
+ture domain-specific cues. The proposed method achieves competitive accuracy sub-
+stantially outperforming baseline FSL approaches. The strength of DExNet is further
+demonstrated through solid performance on mixed-domain and cross-domain tasks.
+This work offers a scalable and data-efficient solution for plant disease diagnosis, with
+potential applications in real-world agricultural settings. Future work could extend the
+framework to few-shot segmentation or detection and explore lightweight feature ex-
+tractors for deployment on edge devices.
+14       S. Ahmed et al.
+
+References
+
+ 1. Abbas, A., Jain, S., Gour, M., Vankudothu, S.: Tomato plant disease detection using trans-
+    fer learning with C-GAN synthetic images. Computers and Electronics in Agriculture 187,
+    106279 (2021)
+ 2. Ahamed, M., Kabir, R.B., Dipto, T.T., Al Mushabbir, M., Ahmed, S., Kabir, M.H.: Perfor-
+    mance analysis of few-shot learning approaches for bangla handwritten character and digit
+    recognition. In: 2024 6th International Conference on Sustainable Technologies for Industry
+    5.0 (STI). pp. 1–6 (2024)
+ 3. Ahmed, S.: Classification of Plant Disease from Leaf Images Using Few-Shot Learning.
+    Msc thesis, Department of Computer Science and Engineering (CSE), Islamic University of
+    Technology (2022)
+ 4. Ahmed, S., Hasan, M.B., Ahmed, T., Sony, M.R.K., Kabir, M.H.: Less is more: Lighter
+    and faster deep neural architecture for tomato leaf disease classification. IEEE Access 10,
+    68868–68884 (2022)
+ 5. Ahmed, T., Hasan, M.B., Ahmed, S., Kabir, M.H.: Exe-net: Explainable ensemble network
+    for potato leaf disease classification. In: 2024 IEEE Canadian Conference on Electrical and
+    Computer Engineering (CCECE). pp. 335–339 (2024)
+ 6. Alanezi, M.A., Shahriar, M.S., Hasan, M.B., Ahmed, S., Sha’aban, Y.A., Bouchekara,
+    H.R.E.H.: Livestock management with unmanned aerial vehicles: A review. IEEE Access
+    10, 45001–45028 (2022)
+ 7. Argüeso, D., Picon, A., Irusta, U., Medela, A., San-Emeterio, M.G., Bereciartua, A., Alvarez-
+    Gila, A.: Few-shot learning approach for plant disease classification using images taken in
+    the field. Computers and Electronics in Agriculture 175, 105542 (2020)
+ 8. Ashikur Rahman, A.B.M., Hasan, M.B., Ahmed, S., Ahmed, T., Ashmafee, M.H., Kabir,
+    M.R., Kabir, M.H.: Two decades of bengali handwritten digit recognition: A survey. IEEE
+    Access 10, 92597–92632 (2022)
+ 9. Ashmafee, M.H., Ahmed, T., Ahmed, S., Hasan, M.B., Jahan, M.N., Ashikur Rahman, A.:
+    An efficient transfer learning-based approach for apple leaf disease classification. In: In-
+    ternational Conference on Electrical, Computer and Communication Engineering (ECCE).
+    pp. 1–6 (2023)
+10. Buja, I., Sabella, E., Monteduro, A.G., Chiriacò, M.S., De Bellis, L., Luvisi, A., Maruccio,
+    G.: Advances in plant disease detection and monitoring: From traditional assays to in-field
+    diagnostics. Sensors 21(6) (2021)
+11. Chen, W., Liu, Y., Kira, Z., Wang, Y.F., Huang, J.: A closer look at few-shot classification.
+    CoRR abs/1904.04232 (2019)
+12. Chowdhury, R.H., Ahmed, S.: Mangoleafvit: Leveraging lightweight vision transformer with
+    runtime augmentation for efficient mango leaf disease classification. In: 2024 27th Interna-
+    tional Conference on Computer and Information Technology (ICCIT). pp. 699–704 (2024).
+    https://doi.org/10.1109/ICCIT64611.2024.11022482
+13. Dvornik, N., Schmid, C., Mairal, J.: Selecting relevant features from a multi-domain rep-
+    resentation for few-shot classification. In: Computer Vision – ECCV 2020. pp. 769–786.
+    Springer International Publishing (2020)
+14. Egusquiza, I., Picon, A., Irusta, U., Bereciartua-Perez, A., Eggers, T., Klukas, C., Navarra-
+    Mestre, R.: Analysis of few-shot techniques for fungal plant disease classification and eval-
+    uation of clustering capabilities over real datasets. Frontiers in Plant Science 13 (2022)
+15. Finn, C., Abbeel, P., Levine, S.: Model-agnostic meta-learning for fast adaptation of deep net-
+    works. In: Proceedings of the 34th International Conference on Machine Learning. vol. 70,
+    pp. 1126–1135. PMLR (06–11 Aug 2017)
+                      DExNet: Domain Adapted Critics for Leaf Disease Classification           15
+
+16. Graves, A., Schmidhuber, J.: Framewise phoneme classification with bidirectional lstm and
+    other neural network architectures. Neural networks 18(5-6), 602–610 (2005)
+17. He, K., Zhang, X., Ren, S., Sun, J.: Deep Residual Learning for Image Recognition. In: IEEE
+    Conference on Computer Vision and Pattern Recognition (CVPR). pp. 770–778 (2016)
+18. Herok, A., Ahmed, S.: Cotton leaf disease identification using transfer learning. In: 2023
+    International Conference on Information and Communication Technology for Sustainable
+    Development (ICICT4SD). pp. 158–162 (2023)
+19. Hu, G., Wu, H., Zhang, Y., Wan, M.: A low shot learning method for tea leaf’s disease
+    identification. Computers and Electronics in Agriculture 163, 104852 (2019)
+20. Huang, G., Liu, Z., Van Der Maaten, L., Weinberger, K.Q.: Densely Connected Convolu-
+    tional Networks. In: IEEE Conference on Computer Vision and Pattern Recognition (CVPR).
+    pp. 2261–2269 (2017)
+21. Hughes, D.P., Salathé, M.: An open access repository of images on plant health to enable the
+    development of mobile disease diagnostics through machine learning and crowdsourcing.
+    arXiv - Computing Research Repository (2015)
+22. Jamal, M.A., Qi, G.J.: Task agnostic meta-learning for few-shot learning. In: Proceedings of
+    the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2019)
+23. Khan, A.M., Ashrafee, A., Sayera, R., Ivan, S., Ahmed, S.: Rethinking cooking state recog-
+    nition with vision transformers. In: 25th International Conference on Computer and Infor-
+    mation Technology (ICCIT). pp. 170–175 (2022)
+24. Koch, G., Zemel, R., Salakhutdinov, R.: Siamese neural networks for one-shot image recog-
+    nition. In: Proceedings of the 32nd Int. Conference on Machine Learning. JMLR (2015)
+25. Kolesnikov, A., Beyer, L., Zhai, X., Puigcerver, J., Yung, J., Gelly, S., Houlsby, N.: Big
+    transfer (bit): General visual representation learning. In: ECCV 2020. pp. 491–507 (2020)
+26. Li, L., Zhang, S., Wang, B.: Plant Disease Detection and Classification by Deep Learning—A
+    Review. IEEE Access 9, 56683–56698 (2021)
+27. Li, Y., Yang, J.: Meta-learning baselines and database for few-shot classification in agricul-
+    ture. Computers and Electronics in Agriculture 182, 106055 (2021)
+28. Maeda-Gutierrez, V., Galvan-Tejada, C.E., Zanella-Calzada, L.A., Celaya-Padilla, J.M.,
+    Galván-Tejada, J.I., Gamboa-Rosales, H., Luna-Garcia, H., Magallanes-Quintanar, R., Guer-
+    rero Mendez, C.A., Olvera-Olvera, C.A.: Comparison of Convolutional Neural Network Ar-
+    chitectures for Classification of Tomato Plant Diseases. Applied Sciences 10(4) (2020)
+29. Morshed, M.S., Ahmed, S., Ahmed, T., Islam, M.U., Ashikur Rahman, A.: Fruit quality
+    assessment with densely connected convolutional neural network. In: 2022 12th International
+    Conference on Electrical and Computer Engineering (ICECE). pp. 1–4 (2022)
+30. Nesteruk, S., Shadrin, D., Pukalchik, M.: Image augmentation for multitask few-shot learn-
+    ing: Agricultural domain use-case. CoRR abs/2102.12295 (2021)
+31. Nichol, A., Achiam, J., Schulman, J.: On first-order meta-learning algorithms. CoRR
+    abs/1803.02999 (2018)
+32. Noon, S.K., Amjad, M., Ali Qureshi, M., Mannan, A.: Computationally light deep learning
+    framework to recognize cotton leaf diseases. Journal of Intelligent & Fuzzy Systems 40,
+    12383–12398 (2021), 6
+33. Nuthalapati, S.V., Tunga, A.: Multi-domain few-shot learning and dataset for agricultural
+    applications. In: Proceedings of the IEEE/CVF International Conference on Computer Vision
+    (ICCV) Workshops. vol. abs/2109.09952, pp. 1399–1408 (October 2021)
+34. Panno, S., Davino, S., Caruso, A.G., Bertacca, S., Crnogorac, A., Mandić, A., Noris, E.,
+    Matić, S.: A Review of the Most Common and Economically Important Diseases That Un-
+    dermine the Cultivation of Tomato Crop in the Mediterranean Basin. Agronomy (2021)
+35. Rafi, M.H., Ratul Mahjabin, M., Rahman, M.S., Hasanul Kabir, M., Ahmed, S.: A critical
+    analysis of deep learning applications in crop pest classification: Promising pathways and
+16       S. Ahmed et al.
+
+    limitations. In: 2023 26th International Conference on Computer and Information Technol-
+    ogy (ICCIT). pp. 1–6 (2023)
+36. Raiyan, S.R., Amio, Z.Z., Ahmed, S.: Hasper: An image repository for hand shadow puppet
+    recognition. In: ICCV 2025 Workshop on Cultural Continuity of Artists (2025)
+37. Sholihati, R.A., Sulistijono, I.A., Risnumawan, A., Kusumawati, E.: Potato leaf disease clas-
+    sification using deep learning approach. In: International Electronics Symposium (IES). pp.
+    392–397 (2020)
+38. Simonyan, K., Zisserman, A.: Very deep convolutional networks for large-scale image recog-
+    nition. arXiv preprint arXiv:1409.1556 (2014)
+39. Snell, J., Swersky, K., Zemel, R.: Prototypical networks for few-shot learning. In: Advances
+    in Neural Information Processing Systems. vol. 30. Curran Associates, Inc. (2017)
+40. Sun, J., Cao, W., Fu, X., Ochi, S., Yamanaka, T.: Few-shot learning for plant disease recog-
+    nition: A review. Agronomy Journal 116(3), 1204–1216 (2024)
+41. Szegedy, C., Vanhoucke, V., Ioffe, S., Shlens, J., Wojna, Z.: Rethinking the inception archi-
+    tecture for computer vision. In: IEEE Conference on Computer Vision and Pattern Recogni-
+    tion (CVPR). pp. 2818–2826 (2016)
+42. Tian, Y., Wang, Y., Krishnan, D., Tenenbaum, J.B., Isola, P.: Rethinking few-shot image
+    classification: A good embedding is all you need? In: Computer Vision – ECCV 2020. pp.
+    266–282. Springer International Publishing (2020)
+43. Uskaner Hepsağ, P.: Efficient plant disease identification using few-shot learning: a transfer
+    learning approach. Multimedia Tools and Applications 83(20), 58293–58308 (Jun 2024)
+44. Vinyals, O., Blundell, C., Lillicrap, T., kavukcuoglu, k., Wierstra, D.: Matching networks for
+    one shot learning. In: Advances in Neural Information Processing Systems. vol. 29. Curran
+    Associates, Inc. (2016)
+45. Wang, B., Wang, D.: Plant leaves classification: A few-shot learning method based on
+    siamese network. IEEE Access 7, 151754–151763 (2019)
+46. Wang, Y., Wang, S.: Imal: An improved meta-learning approach for few-shot classification of
+    plant diseases. In: IEEE 21st International Conference on Bioinformatics and Bioengineering
+    (BIBE). pp. 1–7 (2021)
+47. Xu, M., Kim, H., Yang, J., Fuentes, A., Meng, Y., Yoon, S., Kim, T., Park, D.S.: Embracing
+    limited and imperfect training datasets: opportunities and challenges in plant disease recog-
+    nition using deep learning. Frontiers in Plant Science Volume 14 - 2023 (2023)
+48. Yasmeen, A., Rahman, F.I., Ahmed, S., Kabir, M.H.: Csvc-net: Code-switched voice com-
+    mand classification using deep cnn-lstm network. In: 2021 Joint 10th International Confer-
+    ence on Informatics, Electronics & Vision (ICIEV) and 2021 5th International Conference
+    on Imaging, Vision & Pattern Recognition (icIVPR). pp. 1–8 (2021)
+49. Zabihzadeh, D., Masoudifar, M.: Zs-dml: Zero-shot deep metric learning approach for plant
+    leaf disease classification. Multimedia Tools and Applications 83(18), 54147–54164 (2024)
+50. Zhao, J., Kong, L., Lv, J.: An overview of deep neural networks for few-shot learning. Big
+    Data Mining and Analytics 8(1), 145–188 (2025)
+

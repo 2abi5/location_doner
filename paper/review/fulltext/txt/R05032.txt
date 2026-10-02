@@ -1,0 +1,745 @@
+                                            Unsupervised Domain Adaptation For Plant
+                                                         Organ Counting
+
+                                                  Tewodros W. Ayalew, Jordan R. Ubbens, and Ian Stavness
+
+                                                   University of Saskatchewan, Saskatoon SK, S7N 5A8, Canada
+                                                   {tewodros.ayalew,jordan.ubbens,ian.stavness}@usask.ca
+arXiv:2009.01081v1 [cs.CV] 2 Sep 2020
+
+
+
+
+                                              Abstract. Supervised learning is often used to count objects in im-
+                                              ages, but for counting small, densely located objects, the required image
+                                              annotations are burdensome to collect. Counting plant organs for image-
+                                              based plant phenotyping falls within this category. Object counting in
+                                              plant images is further challenged by having plant image datasets with
+                                              significant domain shift due to different experimental conditions, e.g.
+                                              applying an annotated dataset of indoor plant images for use on out-
+                                              door images, or on a different plant species. In this paper, we propose a
+                                              domain-adversarial learning approach for domain adaptation of density
+                                              map estimation for the purposes of object counting. The approach does
+                                              not assume perfectly aligned distributions between the source and target
+                                              datasets, which makes it more broadly applicable within general object
+                                              counting and plant organ counting tasks. Evaluation on two diverse ob-
+                                              ject counting tasks (wheat spikelets, leaves) demonstrates consistent per-
+                                              formance on the target datasets across different classes of domain shift:
+                                              from indoor-to-outdoor images and from species-to-species adaptation.
+
+
+
+                                        1   Introduction
+
+                                        Object counting is an important task in computer vision with a wide range of
+                                        applications, including counting the number of people in a crowd [21,42,34], the
+                                        number of cars on a street [37,46], and the number of cells in a microscopy
+                                        image [44,49,32]. Object counting is a relevant task in image-based plant pheno-
+                                        typing, notably for counting plants in the field to estimate the rate of seedling
+                                        emergence, and counting plant organs to estimate traits relevant for selection in
+                                        crop breeding programs. For example, counting spikes or heads in cereal crops is
+                                        a relevant trait for estimating grain yield [33,27,2], counting flowers for estimat-
+                                        ing the start and duration of flowering is relevant for demarcating plant growth
+                                        stages [23,3,45], and counting leaves and tillers is a relevant trait to assess plant
+                                        health [16,1]. Leaf counting, in particular, has been a seminal plant phenotyping
+                                        task, thanks to the CVPPP leaf counting competition dataset [30,29].
+                                        Convolutional neural networks (CNN) provide state-of-the-art performance for
+                                        object counting tasks. Supervised learning is most common in previous work,
+                                        but object detection [22,20] and density estimation [21,31,27] approaches both
+                                        require fairly tedious annotation of training images with either bounding boxes
+2       T. Ayalew et al.
+
+or dots centered on each object instance. In the context of plant phenotyping,
+plant organ objects are often small and densely packed making the annotation
+process even more laborious. In addition, unlike general objects which can be
+annotated reliably by any individual, identifying and annotating plant organs in
+images often requires specialized training and experience in plant science [14,48].
+This makes it difficult to obtain large annotated plant image datasets.
+
+Another challenge for computer vision tasks in plant phenotyping is that, un-
+like large image datasets of general objects, plant image datasets usually include
+highly self-similar images with a small amount of variation among images within
+the dataset. An individual plant image dataset is often acquired under similar
+conditions (single crop type, same field) and therefore trying to directly use a
+CNN trained on a single dataset to new images from a different crop, field, or
+growing season will likely fail. This is because a model trained to count objects on
+one dataset (source dataset) will not perform well on a different dataset (target
+dataset) when these datasets have different prior distributions. This challenge is
+generally called domain-shift. An extreme case of domain shift in plant pheno-
+typing is using a source dataset of plant images collected in an indoor controlled
+environment, which can be more easily annotated because plants are separated
+with controlled lighting on a blank background, and attempting to apply the
+model to a target dataset of outdoor field images with multiple, overlapping
+plants with variable lighting and backgrounds, and blur due to wind motion.
+Domain shift is often handled by fine-tuning a model, initially trained on a
+source dataset, with samples taken from a target dataset. Fine-tuning, however,
+still requires some annotated images in the target dataset. Another approach
+used to solve this problem is domain adaptation. Domain adaptation techniques
+typically try to align the source and the target data distributions [15].
+
+In this paper, we propose a method that applies an unsupervised domain adap-
+tation technique, first proposed for image classification [9], to jointly train a
+CNN to count objects from images with dot annotations (i.e., source domain)
+and adapt this knowledge to related sets of images (i.e., target domain) where
+labels are absent. We modeled the object counting problem as a density map
+estimation problem. We evaluated our proposed domain adaptation method on
+two object counting tasks (wheat spikelet counting and rosette leaf counting)
+each with a different challenge. The wheat spikelet counting task adapts from
+indoor images to outdoor images and presents challenges due to self-similarity,
+self-occlusion, and appearance variation [33,2]. The leaf counting task adapts
+from one plant species to a different plant species and presents variability in
+leaf shape and size, as well as overlapping and occluded leaves [19]. Results show
+consistent improvements over the baseline models and comparable results to pre-
+vious domain adaptation work in leaf counting. The contributions of our paper
+include: 1) the extension of an adversarial domain adaptation method for den-
+sity map estimation that learns and adapts in parallel, 2) the evaluation of our
+method on two diverse counting tasks, and 3) a new public dataset of annotated
+wheat spikelets imaged in outdoor field conditions.
+                                   Domain Adaptation for Organ Counting         3
+
+2   Related Work
+
+Object Counting. A number of approaches have been proposed to train CNNs
+for object counting tasks. Among these, the most prominent methods are count-
+ing by regression [16,8,40,1], counting by object detection [28,13,12], and count-
+ing by density estimation [21,11,36,33]. Here, we focus on density estimation
+methods, which estimate a count by generating a continuous density map and
+then summing over the pixel values of the density map. Density estimation uses
+weak labels (dot annotations on object centers), which are less tedious to anno-
+tate than bounding boxes or instance segmentation masks. Density estimation
+based counting was first proposed by Lempitsky & Zisserman [21] who demon-
+strated higher counting accuracy with smaller amounts of data.
+Spikelet Counting. Pound et al. [33] presented a method for counting and
+localizing spikes and spikelets using stacked hourglass networks. They trained
+and evaluated their model on spring wheat plant images taken in a controlled
+environment. Their approach achieved a 95.91% accuracy for spike counting and
+a 99.66% accuracy for spikelet counting. Even though their results show high
+accuracy, counting spikelets from real field images requires further fine-tuning
+of their model. Alkhudaydi et al. [2] proposed a method to count spikelets from
+infield images using a fully convolutional network named SpikeletFCN. They
+compared the performance of training SpikeletFCN from scratch on infield im-
+ages and fine-tuning the model, which was initially trained using images taken in
+a controlled setting [33]. They also showed that manually segmenting the back-
+ground increased performance, but manually annotating spikelets and manually
+removing backgrounds for field images is a time-consuming process.
+Leaf Counting. Leaf counting in rosette plants has been performed with CNN-
+based regression approaches. Dobrescu et al. [8] used a pre-trained ResNet archi-
+tecture fine-tuned on rosette images to demonstrate state-of-the-art leaf counting
+performance in the CVPPP 2017 leaf counting competition. Aich & Stavness [1]
+presented a two-step leaf counting method, first using an encoder-decoder net-
+work to segment the plant region from the background, and then using a VGG-
+like CNN to estimate the count. Giuffrida et al. [16] extended the CNN regression
+method to show that using multiple image modalities can improve counting accu-
+racy. They also demonstrated the generality of the approach by evaluating with
+different plant species and image modalities. Itzhaky et al. [18] proposed two
+deep learning based approaches that utilize a Feature Pyramid Network (FPN)
+for counting leaves, namely using direct regression and density map estimation.
+Their density map based approach achieved 95% average precision.
+Domain Adaptation. In recent years, a number of deep domain adaptation
+approaches have been proposed to minimize the domain shift between a source
+dataset and a target dataset [17,38,26,5,39,25]. Tzeng et al. [39] proposed an
+adversarial approach for an unsupervised domain adaptation named Adversarial
+Discriminative Domain Adaptation (ADDA). ADDA minimizes the represen-
+tation shift between the two domains using a Generative Adversarial Network
+4      T. Ayalew et al.
+
+(GAN) loss function where the domains are allowed to have independent map-
+pings. As an alternative to a GAN loss, Ganin & Lempitsky [9] presented an un-
+supervised domain adaptation technique by creating a network that has a shared
+feature extraction layers and two classifiers. The adaptation process works by
+minimizing the class label prediction loss and maximizing the domain confusion.
+These previous works have only been evaluated on image classification problems.
+Domain adaptation has garnered less attention for other computer vision tasks,
+such as density estimation or regression problems.
+Domain Adaptation in Plant Phenotyping. Giuffrida et al. [15] proposed
+a method to adapt a model trained to count leaves in a particular dataset to
+an unseen dataset in an unsupervised manner. Under the assumption that the
+images in the source domain are private, their method uses the representations
+of images from the source domain (from a pretrained network) to adapt to the
+target domain. They employed the Adversarial Discriminative Domain Adap-
+tation approach to solving the domain shift problem in the leaf counting task
+across different datasets. Their method aligns the predicted leaf count distri-
+bution with the source domain’s prior distribution, which limits the adapted
+model to learning a leaf count distribution similar to the source domain. They
+have shown their method achieved a mean square error of 2.36 and 1.84 for
+intra-species and inter-species domain adaptation experiments, respectively. For
+fruit counting in orchard images, Bellocchio et al. [4] proposed a Cycle-GAN
+based domain adaptation method combined with weak presence/absence labels.
+They demonstrated state-of-the-art counting results for many combinations of
+adapting between plant species (almond, apple, olive).
+These promising results on leaf and fruit counting motivate a broader investiga-
+tion of different domain adaptation approaches, which could be used for counting
+different plant organs and different categories of domain shift, e.g. from indoor
+image to field images. To the best of our knowledge, this is the first work that
+has applied domain adaptation to wheat spikelet counting and to a counting
+task with an indoor-to-outdoor domain shift.
+
+
+3     Method
+
+In this section, we discuss the problem setting for our proposed method, fol-
+lowed by a description of the proposed architecture and cost function. Finally
+we describe the training procedures used for all experiments.
+
+
+3.1   Problem Setting
+
+We model the task of domain adaptation in object counting as an unsupervised
+domain adaptation problem. We assume that the data is sampled from two
+domains: a source domain (Ds ) and a target domain (Dt ). We also assume that
+                                   Domain Adaptation for Organ Counting          5
+
+labels only exist for the images sampled from the source domain. Therefore, the
+source domain is composed of a set of images (X s ) and their corresponding labels
+(Y s ). Whereas, the target domain only has images (X t ) without labels.
+
+
+3.2   Architecture
+
+
+
+
+Fig. 1. The proposed Domain-Adversarial Neural Network composed of two networks
+that share weights between Conv1 and Conv8. The downsampling subnetwork (Gd ),
+the upsampling subnetwork (Gu ), and the domain classifier (Gc ) are denoted by the
+blue, red, and green boxes respectively. The red arrow shows the Gradient Reversal
+Layer used to reverse the gradient in the backpropagation step as proposed by [9].
+
+
+
+Our proposed model is a Domain-Adversarial Neural Network (DANN), a class of
+models designed for unsupervised domain adaptation tasks [10]. These networks
+are commonly characterized by two parallel classification networks that share
+weights in the first n layers and a custom layer called Gradient Reversal Layer
+(GRL) [43]. One of the parallel networks is designed for the main classification
+task, while the second network is a classifier designed to discriminate whether
+an input is sampled from the source domain or from the target domain. We
+customize this general architecture by replacing the main classification network
+with a U-Net network [35] that is used for density map estimation.
+Our proposed architecture is a fully convolutional network composed of two par-
+allel networks, as can be seen in Figure 1. These parallel networks share weights
+from Conv1 to Conv8. Given these shared weights, the architecture can be seen
+as one network containing three subnetworks: the downsampling subnetwork
+(Gd ), the upsampling subnetwork (Gu ), and the domain classifier subnetwork
+(Gc ). In Figure 1 these subnetworks are denoted by different color boxes. The
+model takes an image xj and predicts a density map as ŷdensity = Gu (Gd (xj ))
+and a class probability prediction representing whether xj is sampled from the
+source domain or from the target domain given by ŷdomain = Gc (Gd (xj )).
+6      T. Ayalew et al.
+
+A downsampling subnetwork followed by an upsampling subnetwork (sometimes
+referred to as an Hourglass network or encoder-decoder network) is a commonly
+used architecture for density estimation tasks[24,44]. The general structure for
+the Hourglass network we used is adapted from U-Net [35] with slight mod-
+ifications. The downsampling subnetwork is composed of blocks of two 3 × 3
+padded convolutions followed by a 2 × 2 max pooling layer with a stride of 2.
+The upsampling network is composed of blocks of 2 × 2 transpose convolutions
+followed by a pair of 3 × 3 padded convolutions. The feature maps generated
+from each convolution preceded by a transpose convolution are concatenated
+with their corresponding feature maps from the upsampling subnetwork (shown
+in Figure 1 as dashed boxes). The domain classifier subnetwork is formed from
+3 × 3 unpadded convolutions, a 2 × 2 maxpooling layers, and a 1 × 1 convolution
+(which is used to reduce the dimension of the output to a single value). All of
+the convolutions in our network, with the exception of the ones in the output
+layers, are followed by batch normalization and a ReLU activation. The output
+layer is followed by a sigmoid activation function.
+
+The output of the downsampling subnetwork passes through a Gradient Reversal
+Layer (GRL) before passing through to the domain classifier subnetwork. The
+GRL, a custom layer proposed by [9], is designed to reverse the gradient in
+the backpropagation step by multiplying the gradient by a negative constant
+(−λ). The purpose of reversing the gradient is to force the network into finding
+domain-invariant features common to both the source- and the target- domain.
+This aligns the distributions of the feature representations of images sampled
+from the two domains.
+
+
+
+3.3   Cost Function
+
+
+The parameters in our proposed model are optimized by minimizing a two-part
+cost function, as follows:
+
+                            N
+                        1 X
+      Ldensity = log(         (Gu (Gd (xsi )) − yis )2 )                             (1)
+                        N i=0
+
+      Ldomain = −Exs ∼X s [log(Gc (Gd (xsi ))] − Ext ∼X t [1 − log(Gc (Gd (xti ))]   (2)
+             L = Ldensity + Ldomain                                                  (3)
+
+where (xsi , yis ) represents the ith image and density map label sampled from the
+source domain (Ds ). The first part (Ldensity ) accounts for errors in the density
+map estimation for samples taken from the source domain. This is implemented
+as the logarithm of mean square error between the ground truth sampled from
+the source dataset and the predicted density map from the model. The second
+part (Ldomain ) is a Binary Cross-Entropy loss for domain classification.
+                                    Domain Adaptation for Organ Counting           7
+
+3.4   Training
+
+Conceptually, the general training scheme we use to train our model can be
+decomposed into two sub-tasks: supervised density estimation on the source
+dataset, and domain classification on the merged source and target datasets.
+The goal of this training scheme is to extract relevant features for the density
+estimation task and, in parallel, condition the downsampling network to extract
+domain-invariant features.
+In all experiments, we randomly partitioned the source domain dataset into
+training and validation sets. Since we only have ground truth density maps for
+the source domain, in-training validations are carried out using the validation
+set taken from the source domain.
+The model was trained with a batch size of 8. The input images in the training set
+were resized to 256×256 pixels. We used the Adam optimizer with tuned learning
+rates for each subnetwork. We used a learning rate of 10−3 for the downsampling
+and upsampling subnetworks, and 10−4 for the domain classifier.
+The constant parameter λ — which multiplies the gradient in the GRL layer — is
+updated on each iteration during training. Following [10], the value is provided to
+the network as a scheduler in an incremental manner ranging from 0 to 1.
+
+
+4     Experiments
+
+In this section, we present two object counting tasks to evaluate the proposed
+method: wheat spikelet counting and leaf counting.
+Our proposed method’s performance in all of the experiments is evaluated using
+target domain data as our test set. Our experiments are mainly assessed using
+Root Mean Square Error (RMSE) and Mean Absolute Error (MAE):
+                                    v
+                                    u
+                                    u1 X N
+                        RM SE = t           (yˆi − yi )2
+                                      N i=0
+
+                                           N
+                                       1 X
+                             M AE =          |yˆi − yi |
+                                       N i=0
+
+where N represents the number of test images, yˆi and yi represent the predicted
+value and the ground truth for the ith sample, respectively.
+In addition to these metrics, we include task-specific metrics that are commonly
+used in the literature for each task. For the wheat spikelet task, we provide coeffi-
+cient of determination (R2 ) between the predicted and ground truth counts. For
+the leaf counting task, we report metrics that are provided for the CVPPP 2017
+8       T. Ayalew et al.
+
+
+
+
+Fig. 2. Example images for wheat spikelet counting experiments. Top: Source dataset,
+ACID [33]. Middle: Target dataset 1, Global Wheat Head Dataset [7]. Bottom: Target
+dataset 2, CropQuant dataset [47].
+
+
+leaf counting competition. These metrics are Difference in Count (DiC), abso-
+lute Difference in Count (|DiC|), mean squared error (M SE) and percentage
+agreement(%).
+To demonstrate the counting performance improvement provided by domain
+adaptation, we use a vanilla U-Net as a baseline model by removing the domain
+classifier sub-network from our proposed architecture. We train this baseline
+model exclusively on the source domain and evaluate performance on the target
+domain data. All experiments were performed on a GeForce RTX 2070 GPU with
+8GB memory using the Pytorch framework. The implementation is available at:
+https://github.com/p2irc/UDA4POC
+
+
+4.1   Wheat Spikelet Counting
+
+For the wheat spikelet counting task, we used the general problem definition of
+wheat spikelet counting as stated in [2]. Under this setting, our second exper-
+iment tries to adapt the wheat spikelet counting task from images taken in a
+greenhouse to images captured in an outdoor field. The datasets used for this
+task are as follows:
+                                   Domain Adaptation for Organ Counting         9
+
+1. ACID dataset [33]: This dataset is composed of wheat plant images taken
+   in a greenhouse setting. Each image has dot annotations representing the
+   position of each spikelet. The ground truth density maps were generated by
+   filtering the dot annotations with a 2D gaussian filter with σ = 1.
+2. Global Wheat Head Dataset (GWHD) [7]: A dataset presented in the Kaggle
+   wheat head detection competition. The dataset comes with bounding box
+   annotations for each wheat head, but these are not used in the present study.
+3. CropQuant dataset [47]: This dataset is composed of images collected by
+   the Norwich Research Park (NRP). As a ground truth, we used the dot
+   annotations created by [2], where they annotated 15 of the images from the
+   CropQuant dataset. The ground truth has a total of 63,006 spikelets.
+We chose the ACID dataset as the source domain and the GWHD dataset as the
+target domain. Sample images from these datasets are displayed in Figure 2. We
+randomly sampled 80% of the images in the source dataset for training. These
+images were mixed with 200 images taken from the target dataset, making up
+the training set. Using this training set, the network is trained on the ACID
+dataset for spikelet counting and, in parallel, adapted to the GWHD. To evaluate
+our method, we created dot annotations for 67 images from the GWHD which
+are used as ground truth. These annotations are made publicly available at
+https://doi.org/10.6084/m9.figshare.12652973.v2.
+In the second experiment, we used the CropQuant dataset as the target domain.
+To be consistent with the experiments presented in [2], we randomly extracted
+512×512 sized patches from each image in the CropQuant dataset. We generated
+300 patches as the target domain. We partitioned the source domain with 80:20
+training-validation split. We merged the training split with the generated patches
+and trained the model.
+
+
+4.2   Leaf Counting
+
+For the leaf counting task, we follow [15] in order to compare to their baseline
+results. Therefore, we used the following datasets:
+1. CVPPP 2017 LCC Dataset [30,29]: A dataset compiled for the CVPPP leaf
+   counting competition, containing top-view images of Arabidopsis thaliana
+   and tobacco plants. To be consistent with [15], we use the A1, A2 and A4
+   Arabidopsis image subsets. The dataset includes annotations for leaf seg-
+   mentation masks, leaf bounding boxes, and leaf center dot annotations. We
+   use the leaf center annotations and generate the groudtruth density map by
+   filtering the center points with a 2D gaussian filter with σ = 3.
+2. KOMATSUNA Dataset [41]: Top-view images of Komatsuna plants devel-
+   oped for 3D plant phenotyping tasks. We use the RGB images for the ex-
+   periments presented here.
+10      T. Ayalew et al.
+
+
+
+
+Fig. 3. Example images for leaf counting experiments. Top: Source dataset, Arabidop-
+sis, CVPPP Dataset [30,29]. Middle: Target dataset 1, KOMATSUNA Dataset [41].
+Bottom: Target dataset 2, Arabidopsis MSU-PID Dataset [6].
+
+
+
+ 3. MSU-PID[6]: A multi-modal imagery dataset which contains images of Ara-
+    bidopsis and bean plants. Among these, we used the RGB images of the
+    Arabidopsis subset.
+Figure 3 shows sample images from these datasets. Using these datasets, we per-
+formed three leaf-counting experiments in total. In all experiments, the CVPPP
+dataset was used as the source domain.
+The first experiment involved adapting leaf counting from the CVPPP dataset
+to the KOMATSUNA dataset. For this experiment, we randomly selected 80%
+of the images from the CVPPP dataset and merged them with the images from
+the KOMATSUNA dataset. The remaining 20% of the source domain is used for
+validation. With this setting, we trained our model for 150 epochs. Finally, we
+evaluated performance on the images from the KOMATSUNA dataset.
+In the second experiment, we used the MSU-PID dataset as the target domain.
+The data from the source domain was partitioned into training and validation
+sets in a similar procedure as experiment 1. The model was evaluated using the
+MSU-PID dataset.
+                                    Domain Adaptation for Organ Counting          11
+
+In the final experiment, we aimed to verify that our domain adaptation scheme
+is independent of the leaf count distributions in the source domain. To test this,
+we took the model trained in the first experiment and evaluated it on composite
+images created from KOMATSUNA containing multiple plants. The composite
+images are generated by randomly selecting four images from the KOMATSUNA
+dataset and stitching them together form a 2 × 2 grid.
+
+
+5     Results
+
+In this section, we present the performance of the proposed model on two count-
+ing tasks. We also compare these results with the baseline model and with other
+existing methods, where possible.
+
+
+      Table 1. Domain adaptation results for the wheat spikelet counting tasks.
+
+                                               M AE     RM SE     R2
+                ACID to GWHD
+                Baseline (No Adaptation)       91.65    114.4    0.005
+                Our method                     29.48    35.80     0.66
+                ACID to CropQuant
+                Baseline (No Adaptation)       443.61   547.98   -1.70
+                SpikeletFCN [2] (Scratch)      498.0    543.5       -
+                SpikeletFCN [2] (Fine-tuned)   77.12    107.1       -
+                Our method                     180.69   230.12    0.43
+
+
+
+
+5.1   Wheat Spikelet Counting
+
+Table 1 summarizes the results from the wheat spikelet counting adaptation
+experiment. Figure 4 provides a qualitative comparison of example density maps
+output by the baseline model and by the proposed model.
+ACID to GWHD: On the GWHD, our method reduced the MAE by 67.8% and
+the RMSE by 68.7% as compared to the baseline model without adaptation. The
+proposed method also achieved an R2 value of 0.66 on the target domain.
+ACID to CropQuant: On patches extracted from the CropQuant dataset, our
+method reduced the MAE by 59.3% and the RMSE by 58.0% as compared to
+the baseline model. The proposed method was also compared to two supervised
+methods from [2]. One was trained solely on the target domain (from scratch),
+and the other was pre-trained on the ACID dataset and fine-tuned on the target
+domain (fine-tuned). Our model outperformed the SpikeletFCN trained from
+12      T. Ayalew et al.
+
+scratch by 63.72%, while the fine-tuned SpikeletFCN model provides better per-
+formance than the proposed method. However, both of the reference methods
+require annotated datasets in the target domain while ours does not.
+
+
+       (a) Input             (b) GT            (c) Baseline          (d) Ours
+
+
+
+
+Fig. 4. Qualitative results for density map estimation. The first two rows are sampled
+from the Global Wheat Head Dataset and the last two are 512 × 512 patches extracted
+from CropQuant dataset (a) Input images. (b) Ground truth. (c) Predicted density
+map from the baseline model. (d) Predicted density map from the proposed model.
+
+
+
+
+5.2   Leaf Counting
+
+Figure 5 provides sample images taken from the KOMOTSUNA and MSU-PID
+datasets and shows that the proposed method accurately produces hot spots in
+the density map at the center of each leaf.
+                                    Domain Adaptation for Organ Counting          13
+
+
+
+
+         (a) Input                   (b) Baseline                  (c) Ours
+
+
+
+
+Fig. 5. Sample input images (left) and density map estimations generated from the
+baseline model (middle) and from the adapted model (right) in the leaf counting task.
+Top row: CVPPP to KOMATSUNA experiment. Bottom row: CVPPP to MSU-
+PID experiment.
+14      T. Ayalew et al.
+
+Table 2. Domain adaptation results for the leaf counting tasks. XE is cross-entropy
+loss, LS is least-squares loss, ↓ denotes lower is better, ↑ denotes higher is better.
+
+                                         DiC ↓         |DiC| ↓    %↑      M SE ↓
+      CVPPP to KOMATSUNA
+        Baseline (No Adaptation)        4.09 (1.32)   4.09 (1.32)   0     18.49
+        Giuffrida, et al. [15] (XE)    -0.78 (1.12)   1.04 (0.87)  26      1.84
+        Giuffrida, et al. [15] (LS)    -3.72 (1.93)   3.72 (1.93)   2      17.5
+               Our method              -0.95 (2.09)   1.56 (1.67) 29.33    5.26
+         CVPPP to MSU-PID
+        Baseline (No Adaptation)        1.21 (2.04)   1.83 (1.52)   0      5.65
+        Giuffrida, et al. [15] (XE)    -0.81 (2.03)   1.68 (1.39)  20      4.78
+        Giuffrida, et al. [15] (LS)    -0.39 (1.49)   1.18 (0.98)  26      2.36
+               Our method               1.17 (1.85)   1.63 (1.62) 23.96    4.25
+
+
+
+CVPPP to KOMATSUNA: We report results from the baseline model trained
+without adaptation, a previously proposed domain adaptation method [15], and
+the proposed method (Table 2). The adapted model resulted in a 71.6% drop in
+MSE, while the percentage agreement increased from 0% to 29.33%. Addition-
+ally, we compared the proposed approach with a previous domain adaptation
+technique proposed by [15]. Our method outperformed the previous result when
+using the least-squares adversarial loss (LS), and achieves similar performance
+when using the cross-entropy loss (XE).
+
+
+
+
+Fig. 6. Sample composite image with multiple plants (left) and density map estimation
+(right) generated from the model trained to adapt leaf counting using domain and
+target datasets with one plant per image.
+                                    Domain Adaptation for Organ Counting         15
+
+CVPPP to MSU-PID: On the MSU-PID dataset, our method outperformed
+the no-adaptation baseline model in all metrics (Table 2). The proposed model
+provided a 23.9% increase in percentage agreement and a 10.93% decrease in
+|DiC|. The proposed method outperformed the previous domain adaptation
+technique in this task when using the least-squares (LS) loss function, but under-
+performed it when using the cross-entropy (XE) loss.
+
+Composite-KOMATSUNA: Applying the model from CVPPP to KOMAT-
+SUNA to composite images of multiple plants without retraining resulted in a
+mean DiC of 9.89 and mean |DiC| of 9.90. Figure 6 shows a sample output from
+our model on the composite dataset. These results show that our model does
+not rely on assumptions about the distribution of object counts in the source
+domain, whereas previous work [15] used a KL divergence loss between the dis-
+tribution of leaf counts in the source domain and the predictions of their model
+to avoid posterior collapse.
+
+
+
+6   Summary
+
+
+In this paper, we attempted to address performance problems that arise in image-
+based plant phenotyping due to domain shift. Our study focused specifically on
+density estimation based object counting, which is a common method for plant
+organ counting. We proposed a custom Domain-Adversarial Neural Network ar-
+chitecture and trained it using the unsupervised domain adaptation technique
+for density estimation based organ counting. Our evaluation showed performance
+improvements compared to baseline models trained without domain adaptation
+for both wheat spikelet and leaf counting. For leaf counting, our results show sim-
+ilar performance to a previously proposed domain adaptation approach without
+the need to manually select a loss function for each dataset. This study is also the
+first to investigate the use of domain adaptation from an indoor source dataset
+to an outdoor target dataset. This may be a viable method for many plant
+phenotyping contexts, such as plant breeding experiments with both controlled
+environment and field trials. We plan to confirm this indoor-to-outdoor adapta-
+tion approach through additional testing with different plant species, different
+organ counting tasks, and additional field conditions, as future work.
+
+
+
+7   Acknowledgement
+
+
+This research was undertaken thanks in part to funding from the Canada First
+Research Excellence Fund.
+16      T. Ayalew et al.
+
+References
+ 1. Aich, S., Stavness, I.: Leaf counting with deep convolutional and deconvolutional
+    networks. In: IEEE International Conference on Computer Vision Workshops (IC-
+    CVW). pp. 2080–2089 (2017)
+ 2. Alkhudaydi, T., Zhou, J., De La Iglesia, B.: Spikeletfcn: Counting spikelets from
+    infield wheat crop images using fully convolutional networks. In: International Con-
+    ference on Artificial Intelligence and Soft Computing. pp. 3–13. Springer (2019)
+ 3. Aslahishahri, M., Paul, T., Stanley, K.G., Shirtliffe, S., Vail, S., Stavness, I.: Kl-
+    divergence as a proxy for plant growth. In: IEEE Information Technology, Elec-
+    tronics and Mobile Communication Conference (IEMCON). pp. 120–126 (2019)
+ 4. Bellocchio, E., Costante, G., Cascianelli, S., Fravolini, M.L., Valigi, P.: Combining
+    domain adaptation and spatial consistency for unseen fruits counting: a quasi-
+    unsupervised approach. IEEE Robotics and Automation Letters 5(2), 1079–1086
+    (2020)
+ 5. Bousmalis, K., Silberman, N., Dohan, D., Erhan, D., Krishnan, D.: Unsupervised
+    pixel-level domain adaptation with generative adversarial networks. In: IEEE Con-
+    ference on Computer Vision and Pattern Recognition (CVPR). pp. 3722–3731
+    (2017)
+ 6. Cruz, J.A., Yin, X., Liu, X., Imran, S.M., Morris, D.D., Kramer, D.M., Chen,
+    J.: Multi-modality imagery database for plant phenotyping. Machine Vision and
+    Applications 27(5), 735–749 (2016)
+ 7. David, E., Madec, S., Sadeghi-Tehran, P., Aasen, H., Zheng, B., Liu, S., Kirchgess-
+    ner, N., Ishikawa, G., Nagasawa, K., Badhon, M.A., Pozniak, C., de Solan, B.,
+    Hund, A., Chapman, S.C., Baret, F., Stavness, I., Guo, W.: Global wheat head de-
+    tection (gwhd) dataset: a large and diverse dataset of high resolution rgb labelled
+    images to develop and benchmark wheat head detection methods. Plant Phenomics
+    in press (2020)
+ 8. Dobrescu, A., Valerio Giuffrida, M., Tsaftaris, S.A.: Leveraging multiple datasets
+    for deep leaf counting. In: IEEE International Conference on Computer Vision
+    Workshops (ICCVW). pp. 2072–2079 (2017)
+ 9. Ganin, Y., Lempitsky, V.: Unsupervised domain adaptation by backpropagation.
+    In: International Conference on Machine Learning (ICML). pp. 1180–1189 (2015)
+10. Ganin, Y., Ustinova, E., Ajakan, H., Germain, P., Larochelle, H., Laviolette, F.,
+    Marchand, M., Lempitsky, V.: Domain-adversarial training of neural networks. The
+    Journal of Machine Learning Research 17(1), 2096–2030 (2016)
+11. Gao, G., Gao, J., Liu, Q., Wang, Q., Wang, Y.: Cnn-based density estimation and
+    crowd counting: A survey. arXiv preprint arXiv:2003.12783 (2020)
+12. Ghosal, S., Zheng, B., Chapman, S.C., Potgieter, A.B., Jordan, D.R., Wang, X.,
+    Singh, A.K., Singh, A., Hirafuji, M., Ninomiya, S., et al.: A weakly supervised deep
+    learning framework for sorghum head detection and counting. Plant Phenomics
+    2019, 1525874 (2019)
+13. Gibbs, J.A., Burgess, A.J., Pound, M.P., Pridmore, T.P., Murchie, E.H.: Recover-
+    ing wind-induced plant motion in dense field environments via deep learning and
+    multiple object tracking. Plant Physiology 181(1), 28–42 (2019)
+14. Giuffrida, M.V., Chen, F., Scharr, H., Tsaftaris, S.A.: Citizen crowds and experts:
+    observer variability in plant phenotyping. Plant Methods 14, 12 (2018)
+15. Giuffrida, M.V., Dobrescu, A., Doerner, P., Tsaftaris, S.A.: Leaf counting without
+    annotations using adversarial unsupervised domain adaptation. In: IEEE Confer-
+    ence on Computer Vision and Pattern Recognition Workshops. pp. 1–8 (2019)
+                                      Domain Adaptation for Organ Counting           17
+
+16. Giuffrida, M.V., Doerner, P., Tsaftaris, S.A.: Pheno-deep counter: a unified and
+    versatile deep learning architecture for leaf counting. The Plant Journal 96(4),
+    880–890 (2018)
+17. Hu, J., Lu, J., Tan, Y.P.: Deep transfer metric learning. In: IEEE conference on
+    computer vision and pattern recognition. pp. 325–333 (2015)
+18. Itzhaky, Y., Farjon, G., Khoroshevsky, F., Shpigler, A., Bar-Hillel, A.: Leaf count-
+    ing: Multiple scale regression and detection using deep cnns. In: British Machine
+    Vision Conference Workshops (BMVCW). p. 328 (2018)
+19. Kuznichov, D., Zvirin, A., Honen, Y., Kimmel, R.: Data augmentation for leaf seg-
+    mentation and counting tasks in rosette plants. In: IEEE Conference on Computer
+    Vision and Pattern Recognition Workshops. pp. 0–0 (2019)
+20. Leibe, B., Seemann, E., Schiele, B.: Pedestrian detection in crowded scenes. In:
+    IEEE Conference on Computer Vision and Pattern Recognition (CVPR). vol. 1,
+    pp. 878–885 (2005)
+21. Lempitsky, V., Zisserman, A.: Learning to count objects in images. In: Advances
+    in Neural Information Processing Systems. pp. 1324–1332 (2010)
+22. Li, M., Zhang, Z., Huang, K., Tan, T.: Estimating the number of people in crowded
+    scenes by mid based foreground segmentation and head-shoulder detection. In:
+    IEEE International Conference on Pattern Recognition (CVPR). pp. 1–4 (2008)
+23. Lin, P., Chen, Y.: Detection of strawberry flowers in outdoor field by deep neu-
+    ral network. In: IEEE International Conference on Image, Vision and Computing
+    (ICIVC). pp. 482–486 (2018)
+24. Liu, M., Jiang, J., Guo, Z., Wang, Z., Liu, Y.: Crowd counting with fully convo-
+    lutional neural network. In: IEEE International Conference on Image Processing
+    (ICIP). pp. 953–957. IEEE (2018)
+25. Liu, M.Y., Tuzel, O.: Coupled generative adversarial networks. In: Advances in
+    Neural Information Processing Systems. pp. 469–477 (2016)
+26. Long, M., Zhu, H., Wang, J., Jordan, M.I.: Deep transfer learning with joint adap-
+    tation networks. In: International Conference on Machine Learning (ICML). pp.
+    2208–2217 (2017)
+27. Lu, H., Cao, Z., Xiao, Y., Zhuang, B., Shen, C.: Tasselnet: counting maize tassels
+    in the wild via local counts regression network. Plant Methods 13, 79 (2017)
+28. Madec, S., Jin, X., Lu, H., De Solan, B., Liu, S., Duyme, F., Heritier, E., Baret,
+    F.: Ear density estimation from high resolution rgb imagery using deep learning
+    technique. Agricultural and Forest Meteorology 264, 225–234 (2019)
+29. Minervini, M., Fischbach, A., Scharr, H., Tsaftaris, S.: Plant phenotyping datasets
+    (2015), http://www.plant-phenotyping.org/datasets
+30. Minervini, M., Fischbach, A., Scharr, H., Tsaftaris, S.A.: Finely-grained an-
+    notated datasets for image-based plant phenotyping. Pattern Recognition Let-
+    ters pp. – (2015). https://doi.org/http://dx.doi.org/10.1016/j.patrec.2015.10.013,
+    http://www.sciencedirect.com/science/article/pii/S0167865515003645
+31. Olmschenk, G., Tang, H., Zhu, Z.: Crowd counting with minimal data using gen-
+    erative adversarial networks for multiple target regression. In: IEEE Winter Con-
+    ference on Applications of Computer Vision (WACV). pp. 1151–1159 (2018)
+32. Paul Cohen, J., Boucher, G., Glastonbury, C.A., Lo, H.Z., Bengio, Y.: Count-
+    ception: Counting by fully convolutional redundant counting. In: IEEE Interna-
+    tional Conference on Computer Vision Workshops. pp. 18–26 (2017)
+33. Pound, M.P., Atkinson, J.A., Wells, D.M., Pridmore, T.P., French, A.P.: Deep
+    learning for multi-task plant phenotyping. In: IEEE International Conference on
+    Computer Vision Workshops (ICCVW). pp. 2055–2063 (2017)
+18      T. Ayalew et al.
+
+34. Ranjan, V., Le, H., Hoai, M.: Iterative crowd counting. In: European Conference
+    on Computer Vision (ECCV). pp. 270–285 (2018)
+35. Ronneberger, O., Fischer, P., Brox, T.: U-net: Convolutional networks for biomedi-
+    cal image segmentation. In: International Conference on Medical Image Computing
+    and Computer-Assisted Intervention (MICCAI). pp. 234–241. Springer (2015)
+36. Sindagi, V.A., Patel, V.M.: A survey of recent advances in cnn-based single image
+    crowd counting and density estimation. Pattern Recognition Letters 107, 3–16
+    (2018)
+37. Tayara, H., Soo, K.G., Chong, K.T.: Vehicle detection and counting in high-
+    resolution aerial images using convolutional regression neural network. IEEE Ac-
+    cess 6, 2220–2230 (2017)
+38. Tzeng, E., Hoffman, J., Darrell, T., Saenko, K.: Simultaneous deep transfer across
+    domains and tasks. In: IEEE International Conference on Computer Vision. pp.
+    4068–4076 (2015)
+39. Tzeng, E., Hoffman, J., Saenko, K., Darrell, T.: Adversarial discriminative domain
+    adaptation. In: IEEE Conference on Computer Vision and Pattern Recognition
+    (CVPR). pp. 7167–7176 (2017)
+40. Ubbens, J.R., Stavness, I.: Deep plant phenomics: a deep learning platform for
+    complex plant phenotyping tasks. Frontiers in Plant Science 8, 1190 (2017)
+41. Uchiyama, H., Sakurai, S., Mishima, M., Arita, D., Okayasu, T., Shimada, A.,
+    Taniguchi, R.i.: An easy-to-setup 3d phenotyping platform for komatsuna dataset.
+    In: IEEE International Conference on Computer Vision Workshops. pp. 2038–2045
+    (2017)
+42. Wang, C., Zhang, H., Yang, L., Liu, S., Cao, X.: Deep people counting in extremely
+    dense crowds. In: ACM International Conference on Multimedia. pp. 1299–1302
+    (2015)
+43. Wang, M., Deng, W.: Deep visual domain adaptation: A survey. Neurocomputing
+    312, 135–153 (2018)
+44. Xie, W., Noble, J.A., Zisserman, A.: Microscopy cell counting and detection with
+    fully convolutional regression networks. Computer Methods in Biomechanics and
+    Biomedical Engineering: Imaging & Visualization 6(3), 283–292 (2018)
+45. Zhang, C., Craine, W.A., McGee, R.J., Vandemark, G.J., Davis, J.B., Brown, J.,
+    Hulbert, S.H., Sankaran, S.: Image-based phenotyping of flowering intensity in
+    cool-season crops. Sensors 20(5), 1450 (2020)
+46. Zhang, S., Wu, G., Costeira, J.P., Moura, J.M.: Fcn-rlstm: Deep spatio-temporal
+    neural networks for vehicle counting in city cameras. In: IEEE International Con-
+    ference on Computer Vision (ICCV). pp. 3667–3676 (2017)
+47. Zhou, J., Reynolds, D., Cornu, T.L., Websdale, D., Orford, S., Lister, C., Gonzalez-
+    Navarro, O., Laycock, S., Finlayson, G., Stitt, T., Clark, M.D., Bevan, M.W.,
+    Griffiths, S.: Cropquant: An automated and scalable field phenotyping platform
+    for crop monitoring and trait measurements to facilitate breeding and digital agri-
+    culture. bioRxiv (2017). https://doi.org/10.1101/161547
+48. Zhou, N., Siegel, Z.D., Zarecor, S., Lee, N., Campbell, D.A., Andorf, C.M., Net-
+    tleton, D., Lawrence-Dill, C.J., Ganapathysubramanian, B., Kelly, J.W., et al.:
+    Crowdsourcing image analysis for plant phenomics to generate ground truth data
+    for machine learning. PLOS Computational Biology 14(7), e1006337 (2018)
+49. Zhu, R., Sui, D., Qin, H., Hao, A.: An extended type cell detection and counting
+    method based on fcn. In: IEEE International Conference on Bioinformatics and
+    Bioengineering (BIBE). pp. 51–56 (2017)
+

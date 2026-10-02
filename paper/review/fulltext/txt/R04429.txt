@@ -1,0 +1,1007 @@
+                                                                                                                  TYPE Original Research
+                                                                                                                  PUBLISHED 11 August 2026
+                                                                                                                  DOI 10.3389/fpls.2026.1860665
+
+
+
+
+                                             Backbone diversity beats text
+OPEN ACCESS
+                                             supervision: a systematic study
+EDITED BY
+Mihaela Hnatiuc,                             of frozen multi-foundation
+Universitatea Maritima din Constanta,
+Romania
+
+REVIEWED BY
+                                             model fusion for in-the-wild
+Amos Chege Kirongo,
+Meru University of Science and               plant disease recognition
+Technology, Kenya
+Maruthi Venkata Chalapathi Mukkoti,
+VIT-AP University, India                     Hajar El Karch 1*, Youssef Natij 2*, Mohamed Benaly 3*,
+*CORRESPONDENCE                              Rachid El Gouri 1 and Abdelkader Mezouari 2*
+Hajar El Karch
+  hajar.elkarch@uit.ac.ma                    1
+                                               Laboratory of Advanced Systems Engineering, National School of Applied Engineering, Ibn Tofail
+Youssef Natij                                University, Kenitra, Morocco, 2 Scientiﬁc Research and Innovation Laboratory, Higher School of
+  youssef.natij@uit.ac.ma                    Technology, Ibn Tofail University, Kenitra, Morocco, 3 Innovative Systems Engineering Laboratory,
+Mohamed Benaly                               National School of Applied Sciences of Tetouan, Abdelmalek Essaadi University, Tetouan, Morocco
+  m.benaly@uae.ac.ma
+Abdelkader Mezouari
+  abdelkader.mezouari1@uit.ac.ma             Automated plant disease recognition from ﬁeld photographs remains challeng-
+RECEIVED 20 April 2026                       ing: models trained on laboratory datasets collapse on in-the-wild images, and
+REVISED 23 May 2026
+ACCEPTED 24 June 2026                        the current state of the art on PlantWild—the largest open in-the-wild benchmark
+PUBLISHED 11 August 2026
+                                             (18,542 images, 89 classes)—relies on text prototypes derived from a language
+CITATION                                     model to reach 76.18% top 1 accuracy. We ask whether text supervision is truly
+El Karch H, Natij Y, Benaly M, El Gouri R
+                                             necessary or whether the bottleneck is the diversity of the visual representation.
+and Mezouari A (2026) Backbone
+diversity beats text supervision: a          Our central methodological ﬁnding is that backbone selection and fusion matter
+systematic study of frozen multi-            far more than classiﬁer-head engineering: across 118 experiments, a simple ﬁxed-
+foundation model fusion for in-the-
+wild plant disease recognition.
+                                             weight linear–prototype combination on top of three complementary frozen
+Front. Plant Sci. 17:1860665.                backbones yields larger and more reproducible gains than any head-level adap-
+doi: 10.3389/fpls.2026.1860665               tive routing mechanism we test. Speciﬁcally, through a systematic study of six
+COPYRIGHT                                    frozen vision backbones (three CLIP, two DINOv3, and one DINOv2), three
+© 2026 El Karch, Natij, Benaly, El Gouri
+and Mezouari. This is an open-access
+                                             classiﬁer heads, and four fusion conﬁgurations, completed in a single day on
+article distributed under the terms of the   one consumer GPU, we establish three ﬁndings. (i) A single self-supervised
+Creative Commons Attribution License         backbone (DINOv2 ViT-L/14) already surpasses text-augmented MVPDR
+(CC BY). The use, distribution or
+reproduction in other forums is              (77.56% vs. 76.18%). (ii) Concatenating three complementary backbones
+permitted, provided the original             (DINOv2 + DINOv3 + CLIP) reaches 80.23% ± 0.41% (ﬁve seeds), exceeding the
+author(s) and the copyright owner(s) are
+                                             published MVPDR accuracy by +4.05 points and our own reproduction of MVPDR
+credited and that the original publication
+in this journal is cited, in accordance      under an identical evaluation protocol by +7.96 points, without any language
+with accepted academic practice. No          supervision. (The difference between the two deltas reﬂects evaluation–protocol
+use, distribution or reproduction is
+permitted which does not comply with         differences—our split, model-selection criterion, and training schedule—rather
+these terms.                                 than any discrepancy in the reported numbers; see Section 4.6.6 for a full
+                                             reconciliation.) (iii) Every form of learned routing we test—per-class gating,
+                                             backbone gating, sample-wise gating—is inessential; the gain is entirely attribut-
+                                             able to backbone diversity and a simple linear–prototype scoring combination.
+                                             On the smaller PlantDoc benchmark, the same principle transfers but with
+                                             substantially higher seed variance: the best conﬁguration reaches 80.09% at a
+                                             favourable seed but 76.97% ± 1.48% over ﬁve seeds—a suggestive rather than
+                                             robust gain. Beyond the accuracy headline, we provide a pathology-aware per-
+                                             class analysis showing that DINOv2/v3 dominate on ﬁne-texture lesion classes
+
+
+
+
+Frontiers in Plant Science                                         01                                                              frontiersin.org
+El Karch et al.                                                                                                              10.3389/fpls.2026.1860665
+
+
+
+
+                                                    (rusts, mildews, and leaf spots) whilst CLIP’s narrow advantage concentrates on
+                                                    organ/species-level identiﬁcation (rice leaf and potato late blight). All primary
+                                                    claims are validated over ﬁve seeds, and all code, feature caches, and result ﬁles
+                                                    are released for full reproducibility.
+
+                                                    KEYWORDS
+
+                                                    feature fusion, foundation models, in-the-wild benchmarks, plant disease
+                                                    recognition, PlantDoc, PlantWild, prototypical classiﬁcation, self-supervised vision
+                                                    transformers
+
+
+
+
+1 Introduction                                                                   of CLIP: DINO captures ﬁne texture, lesion morphology, and part
+                                                                                 structure; CLIP captures species-level semantics and organ identity.
+     Crop diseases account for roughly 20%–40% of yearly global                  If the in-the-wild gap is a feature-diversity problem rather than a
+yield losses, and image-based recognition of disease symptoms is a               text-supervision problem, then simply combining these frozen
+foundational component of modern artiﬁcial intelligence (AI)-                    representations should close the gap—and text supervision may
+driven plant pathology (Savary et al., 2019). A decade of work on                not be the load-bearing factor for closed-set accuracy.
+this problem has shown that convolutional networks ﬁne-tuned on                       This paper reports a systematic empirical investigation that
+PlantVillage (Hughes and Salathé , 2015; Mohanty et al., 2016) (a               conﬁrms this thesis. We contribute the following:
+curated dataset of 54,000+ controlled, single-leaf images spanning
+38 disease classes across 14 crop species) trivially reach 99% top 1                 1. Systematic backbone×head study. We evaluate three heads
+accuracy on these controlled images (Ferentinos, 2018; Too et al.,                      (linear probe, prototype head, and hybrid linear–prototype)
+2019), yet the same models collapse to 30%–50% on in-the-wild                           on six frozen backbones spanning two pretraining para-
+photographs where occlusions, variable lighting, cluttered back-                        digms, on both PlantWild and PlantDoc—36 supervised
+grounds, and species-speciﬁc symptom diversity are the norm                             conﬁgurations plus 15 few-shot runs, producing, to our
+(Barbedo, 2018; Noyan, 2022). Closing this laboratory-to-ﬁeld                           knowledge, the ﬁrst side-by-side comparison of self-super-
+accuracy gap is the central methodological challenge that the                           vised and contrastive backbones on in-the-wild plant disease
+present paper addresses. Throughout, we use “in-the-wild” in the                        recognition under a uniﬁed protocol.
+sense used by the benchmark creators (Wei et al., 2024b; Singh et al.,               2. Backbone diversity beats text supervision. Concatenative fusion
+2020)—uncurated images sourced from the internet with realistic                         of DINOv2, DINOv3, and CLIP at the ViT-L scale reaches
+acquisition variability—rather than as a synonym for controlled                         80.23% ± 0.41% top 1 on PlantWild (ﬁve seeds)—+4.05 pts
+ﬁeld-deployment capture.                                                                over published MVPDR (76.18%) and +7.96 pts over our
+     The community responded with two in-the-wild benchmarks                            reproduction of MVPDR under an identical protocol
+that target this distribution gap: PlantDoc (Singh et al., 2020), a                     (72.27% ± 0.42%)—without any language supervision.
+2,598-image multi-crop dataset, and PlantWild (Wei et al., 2024b),                   3. Head complexity is inessential. An exhaustive ablation of
+the largest open benchmark to date with 18,542 images spanning 89                       three routing mechanisms3. (per-class gate, backbone gate,
+disease classes. On PlantWild, the MVPDR method (Wei et al.,                            and sample-wise gate) and two initialisation strategies
+2024a) currently holds the state of the art at 76.18% top 1: it freezes                 conclusively shows that no form of learned routing contrib-
+CLIP ViT-L/14, clusters image features into visual prototypes,                          utes once features are diverse; a ﬁxed 0.5/0.5 linear–proto-
+enriches them with text prototypes derived from GPT-3.5 class                           type mixture matches or exceeds every adaptive variant. We
+descriptions, and scores test images against the union. We caution                      frame this as a positive methodological ﬁnding: the ﬁeld can
+that this published ﬁgure is not directly comparable to numbers                         stop over-engineering classiﬁer heads and focus on fea-
+obtained under a different evaluation protocol: when we reproduce                       ture selection.
+MVPDR within our own pipeline (ofﬁcial PlantWild split, identical                    4. Dataset-size guidance. A stratiﬁed subsample sweep on
+model-selection and training schedule), we obtain 72.27% ± 0.42%                        PlantWild at budgets of 25 full images/class shows the
+—a 3.91-point gap attributable to protocol differences rather than                      three-backbone hybrid head leading everywhere without
+any error in the original work (see Section 4.6.6 for full details). This               crossover. On PlantDoc, the head ranking inverts at a
+result implicitly encodes an assumption widely held in the ﬁeld: that                   single seed but not across ﬁve seeds; we recommend the
+language supervision is indispensable for closing the lab-to-ﬁeld                       three-backbone hybrid recipe as a robust default.
+recognition gap.                                                                     5. Few-shot evaluation. Backbone choice dominates head
+     We test the converse hypothesis. Modern self-supervised vision                     choice in the few-shot regime. DINOv2 with a prototype
+backbones—DINOv2 (Oquab et al., 2024) and DINOv3 (Simé oni                             head already reaches 33.80% at k = 1—+15.6 points over the
+et al., 2026)—are trained on hundreds of millions of unlabelled web                     best CLIP conﬁguration at the same k. Three-backbone
+images and learn dense, locally discriminative features without any                     fusion reaches 68.07% at k = 16, outperforming the CLIP
+text alignment. Their representations are complementary to those                        hybrid by +9.87 points and MVPDR by +≈14 points.
+
+
+
+
+Frontiers in Plant Science                                                  02                                                           frontiersin.org
+El Karch et al.                                                                                                               10.3389/fpls.2026.1860665
+
+
+
+
+    We deliberately frame the contribution as an empirical discov-               (Zhang et al., 2022) introduce lightweight adapters that combine
+ery combined with a critical methodological audit, rather than as a              learned and zero-shot signals. Visual prompt tuning (Jia et al., 2022)
+new architectural module. We argue that the ﬁeld has been over-                  and LoRA (Hu et al., 2022) keep the backbone frozen whilst injecting
+ﬁtting to head-level novelty when a careful examination of which                 low-rank trainable parameters. We adopt the strictest variant of this
+visual representations to combine yields larger and more reproduc-               paradigm: backbones are completely frozen, all features are pre-
+ible gains. All 118 experiments were completed in a single day on                extracted to disk, and only a small head is trained.
+one consumer GPU (RTX 3070, 8GB), and all code, cached features,
+and JSON result ﬁles will be released for full reproducibility.                  2.4 Multimodal plant disease recognition
+                                                                                     MVPDR (Wei et al., 2024a) is the closest baseline: it freezes
+                                                                                 CLIP ViT-L/14, encodes class names through CLIP’s text encoder to
+2 Related work                                                                   form text prototypes, clusters image features per class to form visual
+                                                                                 prototypes, and produces logits as a similarity-weighted combina-
+2.1 Plant disease recognition under                                              tion. On PlantWild, they report 76.18% top 1, and on PlantDoc,
+distribution shift                                                               they report 77.23%. Our work asks whether the text component is
+                                                                                 load-bearing or whether comparable accuracy can be obtained from
+     Early CNN-based plant disease work (Mohanty et al., 2016;                   a richer purely visual representation.
+Ferentinos, 2018) achieved very high accuracy on PlantVillage and
+its variants, but cross-dataset evaluation (Barbedo, 2018) exposed
+the dependence on background and lighting cues. Noyan (2022)
+showed that an image-only background classiﬁer reaches ≥99% on                   3 Experimental protocol
+PlantVillage, conﬁrming that much of the reported accuracy reﬂects
+spurious correlations. PlantDoc (Singh et al., 2020) and PlantWild               3.1 Datasets
+(Wei et al., 2024b) were designed precisely to break those shortcuts;
+both are photographer-curated and multi-crop, and exhibit the                        PlantWild (Wei et al., 2024b) is the largest open in-the-wild
+long-tailed class distributions typical of agricultural ﬁeld reporting.          plant disease benchmark, containing 18,542 images across 89
+                                                                                 disease classes drawn from internet sources, with substantial class
+2.2 Foundation models for visual                                                 imbalance (largest class >500 images, smallest <30) and full visual
+recognition                                                                      variability (multiple leaves, fruit, soil backgrounds, varying illumi-
+                                                                                 nation). We use the ofﬁcial train/test split (14,865 train, 3,677 test)
+     CLIP (Radford et al., 2021) demonstrated that contrastive                   and carve a stratiﬁed 10% validation slice from the training set using
+image–language pretraining yields strong zero-shot transfer. The                 seed = 0 (1,820 val, 13,045 train), held ﬁxed across all experiments.
+DINO family (Caron et al., 2021; Oquab et al., 2024; Simé oni et al.,           Class-wise counts of the val slice match the original training
+2026) showed that self-distillation on unlabelled images produces                distribution to within one sample/class.
+dense features that excel at part discovery, segmentation, and ﬁne-                  PlantDoc (Singh et al., 2020) contains 2,598 images across 27
+grained classiﬁcation. These two families are known to capture                   plant disease classes from 13 species, manually photographed in
+different aspects of an image: CLIP encodes semantics that co-occur              ﬁelds and gardens. We use the ofﬁcial train/test split (2,330 train/
+with text, and DINO encodes texture and local structure (Kornblith               268 test), yielding approximately 90 training images per class
+et al., 2019). Several recent studies in generic visual recognition              on average.
+observe that fusing self-supervised and contrastive features yields                  We do not use PlantVillage (Hughes and Salathé , 2015) for
+gains over either alone (Zhao et al., 2024). Most closely related in             training, given its known background biases (Noyan, 2022) that do
+the plant-pathology domain, PlantCaFo (Yang et al., 2025) com-                   not transfer to ﬁeld conditions.
+bines CLIP, DINO, and DINOv2 with a learned adapter and a
+weight-decomposed fusion module for few-shot leaf disease recog-                 3.2 Frozen backbones
+nition. Our work differs in three important respects: (i) we keep the
+fusion strictly non-parametric (plain feature concatenation), which                  We extract a single global feature vector per image from the
+allows us to isolate the diversity effect from any adapter contribu-             [CLS] token (or global-averagepooled patch tokens for ResNets) of
+tion; (ii) we evaluate systematically across six backbones and three             six pretrained backbones, listed with their feature dimensions in
+heads rather than a single frozen conﬁguration; and (iii) our                    Table 1. Features are extracted once per (backbone, dataset) pair
+negative result on learned routing—spanning per-class, per-back-                 and cached to disk; all subsequent experiments operate on the same
+bone and per-sample gates—directly challenges the underlying                     cached features, eliminating any source of variance from
+assumption that adapter-style fusion modules are necessary.                      the backbone.
+
+2.3 Adapting frozen backbones                                                    3.3 Classiﬁer heads
+   Linear probing (He et al., 2022) and prototypical heads (Snell et al.,           Given a feature vector x ∈ RD and C classes, we compare three
+2017) are standard. CLIP-Adapter (Gao et al., 2023) and Tip-Adapter              heads of increasing complexity.
+
+
+Frontiers in Plant Science                                                  03                                                            frontiersin.org
+El Karch et al.                                                                                                                                       10.3389/fpls.2026.1860665
+
+
+
+
+TABLE 1   Frozen backbones used in this study.
+
+
+ Backbone                                           Pretraining                                  Dim.                        Input res.
+ CLIP ResNet-101                                    Image–text contrastive                       512                         224 × 224
+ CLIP ViT-B/16                                      Image–text contrastive                       512                         224 × 224
+ CLIP ViT-L/14                                      Image–text contrastive                       768                         224 × 224
+ DINOv2 ViT-L/14                                    Self-supervised distillation                 1,024                       518 × 518
+ DINOv3 ViT-L/16                                    Self-supervised distillation                 1,024                       518 × 518
+ DINOv3 ViT-Huge+                                   Self-supervised distillation                 1,280                       518 × 518
+All backbones are loaded from public checkpoints and completely frozen. DINOv3 (Simé oni et al., 2026) is a peer-reviewed TMLR 2026 publication; checkpoints are available at https://
+github.com/facebookresearch/dinov3.
+
+
+3.3.1 Linear probe                                                                              3.5 Training protocol
+    A single fully connected layer Linear(D,C) trained with cross-                                  Heads are trained for 80 epochs on PlantDoc and 50 on
+entropy, providing a lower bound and a control for representa-                                  PlantWild with AdamW (Loshchilov and Hutter, 2019), learning
+tion quality.                                                                                   rate 5 × 10−4 (PlantDoc) or 10−3 (PlantWild), weight decay 10−4,
+                                                                                                batch sizes 128/256, and a cosine schedule with 5% linear warmup.
+3.3.2 Prototype head                                                                            We use focal loss (Lin et al., 2017) (g = 2) with label smoothing 0.1
+                                                                                                (Szegedy et al., 2016), gradient clipping at norm 1.0, and a 10%
+    Following the visual-prototype component of Wei et al. (2024a)                              held-out validation split for model selection (best macro-F1, i.e., the
+adapted to a no-text setting, we maintain K learnable visual                                    unweighted mean of per-class F1 scores, which weights all 89
+prototypes pc,k K per class, ℓ2-normalise both inputs and proto-                                disease classes equally regardless of class frequency). Primary
+               k=1
+types, and compute (Equations 1–3).                                                             experiments use a single seed (1); the seven headline conﬁgurations
+                                                                                                are subsequently validated over ﬁve independent seeds in Section
+                                          1 K x⊤ pc,k
+                          logitc (x) =      o ∥x∥∥pc,k ∥,
+                                         Kt k=1
+                                                                                     (1)        4.6, conﬁrming that seed variance (<0.5 points on PlantWild) is
+                                                                                                small relative to the backbone effects reported throughout. We
+    with a learnable temperature t initialised at 0.07. Prototypes are                          report the standard deviation across ﬁve seeds; this serves as our
+initialised by per-class k-means (MacQueen, 1967) on train-                                     empirical conﬁdence interval and is equivalent in interpretation to a
+ing features.                                                                                   bootstrap conﬁdence interval under identical training conditions.
+
+3.3.3 Hybrid head (linear+prototype)                                                            3.5.1 Reproducibility and compute
+
+   This head combines a linear path and a prototype path with a                                     All 118 experiments were completed in a single session on one
+ﬁxed equal-weight mixture:                                                                      NVIDIA RTX 3070 (8GB VRAM). Feature extraction takes 5–20
+                                                                                                min per backbone per dataset; subsequent head training completes
+                                1                  1 1 K ⊤
+                  logitc (x) = (w⊤c ~x + bc ) +            o  ~c,k ,
+                                                           ~x p                      (2)        in 7–15 s per run. The total wall time for the complete experimental
+                                2                  2 Kt k=1
+                                                                                                campaign—36 supervised conﬁgurations, 15 few-shot runs, 14
+    with ~· denoting ℓ2 normalisation along the feature axis. The                               Ksweep runs, 10 ablation runs, 12 fusion runs, 12 PlantDoc
+linear weights are initialised to per-class means of normalised                                 fusion runs, 5 fusion ablation runs, 7 sample-gate runs, and 4
+features, and the prototypes are initialised by per-class k-means.                              backbone-gate runs—was under 8 h.
+We initially hypothesised that a learnable per-class gate s(ac)
+should modulate the mixture; our ablation (Section 4.3) conclu-
+sively shows that it is unnecessary, so we report all results with the
+                                                                                                4 Results
+ﬁxed 0.5/0.5 split.
+                                                                                                    We present results in the order they were discovered, because
+3.4 Multi-backbone feature fusion
+                                                                                                each experiment was motivated by the ﬁnding of the previous one.
+   For a set of B backbones with feature dimensions D1,…,DB, we
+                                                                                                4.1 Self-supervised backbones dominate:
+concatenate their pre-extracted features:
+                                                                                                single-backbone results
+                     xfuse = ½x1 ∥x2 ∥ ⋯ ∥xB  ∈ Roi Di :                            (3)
+                                                                                                    Table 2 reports top 1 accuracy and macro-F1 for every combi-
+    The classiﬁer head operates on xfuse with no architectural                                  nation of head and backbone on both datasets. Three pat-
+change. We evaluate four fusions: DINOv2-L + CLIP-L (1,792-d),                                  terns emerge.
+DINOv2-L + DINOv3-L (2,048-d), DINOv2-L + DINOv3-H+                                                 First, self-supervised features are substantially stronger than
+(2,304-d), and DINOv2-L + DINOv3-L + CLIP-L (2,816-d).                                          contrastive features for disease recognition. DINOv2-L achieves
+Figure 1 presents an overview of the complete pipeline.                                         73.05% even with a linear probe—already within 3 points of the
+
+
+
+Frontiers in Plant Science                                                                 04                                                                         frontiersin.org
+El Karch et al.                                                                                                                              10.3389/fpls.2026.1860665
+
+
+
+
+    FIGURE 1
+    Overview of the frozen-backbone fusion pipeline. Three pretrained vision encoders (DINOv2 ViT-L/14, DINOv3 ViT-L/16, and CLIP ViT-L/14) are
+    frozen, and their [CLS]-token features are ℓ2-normalised and concatenated into a 2,816-dimensional vector. The hybrid head scores each class via a
+    ﬁxed equal-weight (0.5/0.5) mixture of a linear path (W ∈ R89 2816, ∼251k parameters) and a prototype path (K = 4 prototypes per class, ∼1.00M
+    parameters); total trainable parameters ≈ 1.25M. The backbones remain frozen throughout.
+
+
+
+published text-augmented MVPDR—and reaches 77.67% with the                                        the linear half of the mixture. Figure 2 visualises these patterns as
+hybrid head, surpassing the published baseline by +1.49 points on a                               a heatmap.
+single backbone with no text. This establishes that text supervision                                  The gap between DINO and CLIP backbones (7–10 accuracy
+is not load-bearing for SOTA-level closed-set performance on                                      points)—despite comparable model sizes—indicates that the two
+this benchmark.                                                                                   pretraining paradigms capture different aspects of disease images.
+    Second, prototype-based heads consistently outperform linear                                  This observation motivates the next experiment: can we do better by
+probes. The prototype head beats the linear probe on every                                        fusing these complementary representations?
+backbone (average gap: +12.7 points on PlantWild), conﬁrming
+that multi-prototype scoring extracts meaningful structure from
+                                                                                                  4.2 Multi-backbone fusion surpasses text-
+frozen features.
+                                                                                                  augmented SOTA
+    Third, the optimal head depends on dataset size. The hybrid
+head wins on 5/6 PlantWild rows but loses on 6/6 PlantDoc rows,
+                                                                                                       Table 3 reports fusion results on both datasets (single-seed
+where the smaller training set (∼90 images/class) cannot support
+                                                                                                  values; the headline conﬁgurations are re-evaluated over ﬁve seeds
+                                                                                                  in Section 4.6 and give 80.23% ± 0.41% for the three-backbone
+TABLE 2   Single-backbone results on PlantWild and PlantDoc.                                      hybrid on PlantWild—all numbers below fall within 0.5 points of
+                                                                                                  the multi-seed mean). On PlantWild, the three-backbone fusion
+ Backbone                   Linear              Prototype            Hybrid
+                                                                                                  with the hybrid head reaches 80.17%/77.49 macro-F1 at a single
+ PlantWild (89 classes, ∼200 img/class)                                                           seed, and 80.23% ± 0.41% over ﬁve seeds. This surpasses (i) the best
+ CLIP RN101                   47.87 / 36.47       60.48 / 56.99        62.12 / 58.18              single backbone (DINOv2-L hybrid, 77.56% ± 0.08%) by +2.67
+ CLIP ViT-B/16                52.41 / 40.55       64.75 / 60.59        65.81 / 61.38
+                                                                                                  points, (ii) the published text-augmented MVPDR baseline
+                                                                                                  (76.18%) by +4.05 points, and (iii) our own reproduction of
+ CLIP ViT-L/14                62.85 / 54.67       69.02 / 65.85        70.87 / 67.59
+                                                                                                  MVPDR under an identical evaluation protocol (72.27% ± 0.42%;
+ DINOv2 ViT-L/14              73.05 / 68.80       75.61 / 72.87        77.67 / 74.98
+                                                                                                  see Section 4.6.6) by +7.96 points. We foreground both deltas
+ DINOv3 ViT-L/16              69.65 / 63.84       74.87 / 72.27        76.09 / 72.53              because the apples-to-apples comparison against our reproduction
+ DINOv3 ViT-H+                69.43 / 63.34       76.34 / 73.08         75.74 / 71.91             is arguably the more honest ﬁgure: the four-point gap between our
+ PlantDoc (27 classes, ∼90 img/class)                                                             reproduction and the published number reﬂects evaluation–proto-
+                                                                                                  col differences (our split, our model-selection criterion, and our
+ CLIP RN101                   35.93 / 31.98       57.58 / 55.88         48.92 / 45.69
+                                                                                                  training schedule) and is the subject of explicit analysis in Section
+ CLIP ViT-B/16                34.63 / 27.98       63.64 / 63.36         54.98 / 50.93
+                                                                                                  4.6.6. The gain of the fusion over the best single backbone proves
+ CLIP ViT-L/14                45.02 / 39.05       66.23 / 65.09         63.20 / 58.67             that the improvement comes from the features: the CLIP and
+ DINOv2 ViT-L/14              62.77 / 58.18       75.76 / 75.44         75.76 / 74.03             DINOv3 embeddings carry complementary information that a
+ DINOv3 ViT-L/16              54.98 / 48.38       71.43 / 70.32         65.80 / 63.02             single backbone cannot access.
+ DINOv3 ViT-H+                56.28 / 49.99       73.16 / 70.93         67.97 / 66.80                  On PlantDoc, the picture appears to invert at a single seed: the
+All backbones are frozen. Metric format: top 1/macro-F1. Best values per row are marked in
+                                                                                                  three-backbone fusion with the hybrid head reaches only 72.29%
+bold. Published MVPDR (text-augmented): 76.18 on PlantWild, 77.23 on PlantDoc.                    whilst the simpler DINOv2 + CLIP fusion with the prototype-only
+
+
+Frontiers in Plant Science                                                                   05                                                          frontiersin.org
+El Karch et al.                                                                                                                     10.3389/fpls.2026.1860665
+
+
+
+
+    FIGURE 2
+    Head×backbone heatmap of top 1 accuracy on PlantWild (left) and PlantDoc (right), corresponding to Table 2. The colour gradient reveals that (i)
+    self-supervised backbones (DINOv2 and DINOv3) consistently outperform CLIP variants, and (ii) prototype-based heads unlock substantially more of
+    each backbone’s capacity than a linear probe.
+
+
+
+head reaches 80.09%. However, the ﬁve-seed re-evaluation in                                Figure 4 compares our best conﬁgurations to the published
+Section 4.6 dampens this inversion substantially—the “winning”                           MVPDR result on both benchmarks.
+PlantDoc conﬁguration averages 76.97% ± 1.48%, below the pub-
+lished MVPDR baseline (77.23%). We therefore present the                                 4.3 What actually drives the gain?
+PlantDoc inversion as suggestive rather than robust, and recom-
+mend the three-backbone hybrid head as the universal default (see                            The headline result raises a natural question: how much of the
+Section 4.5).                                                                            gain comes from the head, and how much from the features? We
+    A plausible mechanistic explanation for the PlantDoc inversion                       designed an extensive battery of ablations to answer this.
+is over-parameterisation: with only ∼90 training images per class,
+the linear pathway of the hybrid head is undersupported. The 2,816-                      4.3.1 Head component ablation
+d fused feature space provides the classiﬁer with a much larger
+parameter budget per training sample than the 1,024-d single-                                We ran a ﬁve-arm ablation of the hybrid head on the best three-
+backbone setting; when labelled data are scarce, the prototype                           backbone PlantWild fusion (Table 4): full (linear + prototype + per-
+pathway alone may generalise better because it carries an implicit                       class learnable gate), no_gate (drop the per-class gate, ﬁx the
+nearest-neighbour inductive bias that is robust to limited supervi-                      mixture at 0.5/0.5), no_kmeans (random prototype init instead of
+sion. This is consistent with the per-sample count threshold visible                     k-means), no_entropy (drop the gate entropy regulariser), and
+in the stratiﬁed subsample sweep (Section 4.6): the hybrid head’s                        scalar_gate (single global scalar instead of per-class gate).
+advantage relative to prototype-only grows monotonically with the
+number of training images per class, crossing zero at approximately
+150 images/class (see Figure 3).                                                         4.3.1.1 Every component we remove is individually
+                                                                                         unnecessary
+
+                                                                                              The simplest variant (no_gate: ﬁxed 0.5/0.5 mixture, no learn-
+TABLE 3   Two- and three-backbone fusion results.
+                                                                                         able routing) actually reaches 80.31%, marginally above the full
+                                                                                         method (80.17%). Random prototype initialisation (no_kmeans)
+ Backbones                          Linear          Prototype         Hybrid
+                                                                                         reaches 80.47%, marginally above k-means. A plausible explanation
+                                      PlantWild                                          is that PlantWild has strongly imbalanced class sizes: k-means
+ DINOv2-L + CLIP-L                  77.05/73.66     76.26/73.57       79.87/77.30        initialisation, which clusters all training samples for a class, can
+ DINOv2-L + DINOv3-L                74.84/71.14     76.58/74.12       78.95/76.37        undercover rare intra-class modes that contain only a few samples,
+ DINOv2-L + DINOv3-H+               75.31/71.65     75.96/73.49       78.98/75.98
+                                                                                         whereas random initialisation samples uniformly across exemplars
+                                                                                         and can land some prototypes directly in those underrepresented
+ DINOv2-L + DINOv3-L +
+                                    77.81/74.47     77.18/74.37       80.17/77.49        modes. The beneﬁt comes from the fusion itself combined with the
+ CLIP-L
+                                                                                         additive linear–prototype scoring; the per-class adaptive routing we
+                                      PlantDoc
+                                                                                         initially designed contributes nothing measurable.
+ DINOv2-L + CLIP-L                  64.94/59.45     80.09/79.15       76.19/74.16
+                                                                                              Figure 5 visualises the near-identical performance of all
+ DINOv2-L + DINOv3-L                61.47/56.75     74.03/73.35       74.46/73.26        ﬁve variants.
+ DINOv2-L + DINOv3-H+               62.34/57.44     76.62/75.14       74.89/73.12             We additionally veriﬁed this pattern on the single DINOv2-L
+ DINOv2-L + DINOv3-L +                                                                   backbone: the ﬁve-arm ablation again shows negligible differences
+                                    65.80/62.49     74.89/74.47       72.29/70.09
+ CLIP-L                                                                                  (77.64–77.84, range 0.20 points), conﬁrming that head-level routing
+Format: top 1/macro-F1. Best values per dataset are marked in bold.                      is inessential regardless of the number of backbones.
+
+
+Frontiers in Plant Science                                                          06                                                          frontiersin.org
+El Karch et al.                                                                                                             10.3389/fpls.2026.1860665
+
+
+
+
+   FIGURE 3
+   Subsample sweep on PlantWild. Three-backbone fusion with a hybrid head (3bb_hybrid) leads at every per-class budget from 25 images/class to full
+   with no crossover, validating the three-backbone hybrid head as a robust default independent of data volume. The grey dashed line marks the
+   published MVPDR baseline (76.18%).
+
+
+
+4.3.2 Backbone gate                                                                The best variant (h = 128) reaches 80.28%, statistically indis-
+                                                                               tinguishable from the ﬁxed mixture. Combining the evidence from
+    We tested an explicit per-class BackboneGate that applies                  all three routing experiments—per-class gate, backbone gate,
+learned softmax weighting over the three backbone blocks instead               sample-wise gate—we conclude that no form of learned routing
+of naive concatenation (Table 5). The three-backbone variant                   contributes once the backbone features are sufﬁciently diverse.
+reaches 79.63/77.02—below the simple concatenation (80.17/
+77.49). Learned backbone routing is not merely unnecessary; it is              4.3.4 Prototype count K
+actively harmful, presumably because the softmax forces competi-
+tion between backbone blocks rather than allowing the head to                      Figure 6 shows the sweep over K ∈ {1,2,4,8,16,32,64} on the
+exploit their union.                                                           single DINOv2-L backbone.
+                                                                                   The prototype head peaks at K = 2 (77.07%) and then degrades
+4.3.3 Sample-wise gating                                                       monotonically to 74.65% at K = 64. The hybrid head is more stable,
+                                                                               peaking at K = 4 (78.05%) with a secondary near peak at K = 16
+     A further extension is a sample-wise gate that predicts the               (78.03%); only the prototype path degrades substantially at large K.
+linear/prototype mixture per input rather than using a ﬁxed 0.5/0.5            Small K is sufﬁcient because plant disease classes typically have a
+split. We trained such gates with hidden sizes h ∈ {64,128,256,512}            small number of visually distinct sub-modes (e.g. early- vs. late-
+on the three-backbone PlantWild fusion (Table 6).                              stage lesions), and large K over-parameterises the prototype path.
+
+
+
+
+   FIGURE 4
+   Top 1 accuracy on PlantWild and PlantDoc. Our purely visual fusion beats the published text-augmented MVPDR baseline on both benchmarks.
+   PlantWild: three-backbone fusion with the hybrid head. PlantDoc: two-backbone fusion with the prototype-only head.
+
+
+
+
+Frontiers in Plant Science                                                07                                                             frontiersin.org
+El Karch et al.                                                                                                                              10.3389/fpls.2026.1860665
+
+
+
+
+TABLE 4   Head component ablation on the three-backbone PlantWild                                 pathway is under-supported; at ∼200 images/class (PlantWild full)
+fusion.
+                                                                                                  or even 16 shots on 89 classes, the extra pathway pays off.
+ Variant                        Top 1                        Macro-F1
+                                                                                                  4.5 Dataset-size guidance
+ full                           80.17                        77.49
+
+ no_entropy                     80.17                        77.51                                    Table 8 summarises the practical recipe across both datasets,
+ scalar_gate                    80.17                        77.73                                distinguishing between the single-seed best case and the ﬁve-
+                                                                                                  seed mean.
+ no_gate                        80.31                        77.56
+
+ no_kmeans                      80.47                        77.98
+                                                                                                  4.5.1 Robust recommendation
+Removing per-class adaptive routing (no_gate) does not hurt; all components other than the
+linear–prototype combination are inessential. Best values are marked in bold.
+                                                                                                      For datasets where multi-seed evaluation is affordable, we
+                                                                                                  recommend the three-backbone fusion (DINOv2 + DINOv3 +
+4.4 Few-shot evaluation                                                                           CLIP) with a hybrid head as the universal default. The stratiﬁed
+                                                                                                  subsample sweep (Section 4.6; Figure 3) conﬁrms that this conﬁg-
+    To evaluate head behaviour in the low-data regime, we train all
+                                                                                                  uration leads at every budget on PlantWild from 25 images/class up
+three heads with k∈{1,2,4,8,16} shots per class on PlantWild. Initial
+                                                                                                  to full. The apparent PlantDoc inversion at a single seed (prototype-
+runs used the CLIP ViT-L/14 backbone to match the few shot
+                                                                                                  only head on two backbones) does not survive multi-seed evalua-
+protocol of Wei et al. (2024a). We additionally evaluated (a)
+                                                                                                  tion and should not be used as a basis for conﬁguration choice
+DINOv2 ViT-L/14 with the prototype head—the strongest single
+                                                                                                  in practice.
+backbone in our full-data experiments—and (b) three-backbone
+fusion (DINOv2 + DINOv3 + CLIP) with the hybrid head at
+                                                                                                  4.5.2 What drives the PlantDoc instability
+k∈{4,8,16} (Table 7).
+    The extended table reveals a ﬁnding that the original CLIP-only
+                                                                                                       PlantDoc has ∼90 images per class and only 268 test images
+runs concealed: backbone choice dominates head choice in the few-
+                                                                                                  across 27 classes; a single misclassiﬁed test image moves top 1
+shot regime. DINOv2 with a prototype head reaches 33.80% at k = 1
+                                                                                                  accuracy by ∼0.4 points. The 1.5-point std we observe across ﬁve
+—+15.6 points over the best CLIP conﬁguration at the same k. This
+                                                                                                  seeds is therefore consistent with fundamental ﬁnite-sample vari-
+gap is far larger than any head-level difference within the CLIP
+                                                                                                  ance, not with conﬁguration-speciﬁc brittleness. In this regime, no
+block (which spans <0.2 points at k = 1). The DINOv2 advantage
+                                                                                                  single-seed result—ours or MVPDR’s—should be treated as a
+persists across all k: at k = 16, DINOv2 prototype (62.42%) exceeds
+                                                                                                  statistically resolved estimate.
+CLIP hybrid (58.20%) by +4.22 points, and three-backbone fusion
+(68.07%) extends the lead to +9.87 points—a substantial improve-                                  4.6 Robustness and complementarity
+ment entirely attributable to backbone diversity rather than                                      validation
+head complexity.
+    Within the CLIP block, head ordering is consistent with the full-                                 We performed six targeted analyses to independently stress-test
+data results: head choice is irrelevant at k ≤ 4, but the hybrid head                             the claims made in Sections 4.1–4.5.
+pulls ahead from k = 8. The k-means prototype initialisation
+becomes meaningful with more shots, and the linear pathway has                                    4.6.1 Multi-seed reproducibility
+enough supervision to contribute its half of the mixture.
+    This result couples with the PlantDoc ﬁnding (Section 4.5): the                                   Table 9 repeats the seven headline conﬁgurations over ﬁve
+hybrid head’s advantage over the prototype head is a function of                                  independent seeds. On PlantWild, variance is uniformly small
+per-class sample count. At ∼90 images/class (PlantDoc) the linear                                 (≤0.5 points std), conﬁrming that seed choice is not a material
+
+
+
+
+    FIGURE 5
+    Visual summary of the head component ablation (Table 4). Dotted lines mark the full variant. All ﬁve conﬁgurations cluster within 0.3 points,
+    conﬁrming that per-class adaptive routing is inessential once the three-backbone fusion provides a sufﬁciently rich feature space.
+
+
+
+
+Frontiers in Plant Science                                                                   08                                                          frontiersin.org
+El Karch et al.                                                                                                                            10.3389/fpls.2026.1860665
+
+
+
+
+TABLE 5 Per-class BackboneGate (learned softmax routing over backbone                           CLIPB: 0.423) than same-family pairs (DINOv2/DINOv3-L: 0.784;
+blocks) on PlantWild.
+                                                                                                CLIP-L/CLIP-B: 0.762). Low cross-family CKA directly explains
+                                                                                                why fusing DINO and CLIP is more beneﬁcial than fusing two
+ Backbones                                              Top 1          Macro-F1
+                                                                                                DINO variants. (Note: Figure 7 was generated from a separate CKA
+ DINOv2-L + CLIP-L                                       79.03              76.27
+                                                                                                visualisation tool that applies additional normalisation, giving
+ DINOv2-L + DINOv3-L + CLIP-L                            79.63              77.02               slightly different absolute values than the exact RBF-free linear
+Both variants underperform simple concatenation + hybrid head (80.17/77.49). Best values        CKA in Table 11; the block structure and rank ordering
+are marked in bold.
+                                                                                                are identical).
+
+source of variance. Fusion3+hybrid reaches 80.23% ± 0.41% and                                   4.6.3.2 Per-class winners
+DINOv2+hybrid reaches 77.56% ± 0.08%. PlantDoc shows sub-
+stantially higher variance (≈1.5 points std), consistent with its                                   We trained an independent prototype head on each of the three
+smaller per-class training set; the PlantDoc gains should therefore                             primary backbones (DINOv2-L, DINOv3-L, and CLIP-L) and
+be read as a demonstration that the recipe can work on smaller data,                            recorded which achieves the highest class-wise F1 on the
+not as a robustly estimated mean.                                                               PlantWild test. DINOv2-L wins on 49 classes (55.1%), DINOv3-L
+                                                                                                on 35 classes (39.3%), and CLIP-L on only 5 classes (5.6%). The
+4.6.2 Diversity vs. capacity                                                                    disjoint winning sets conﬁrm genuine complementarity: no single
+                                                                                                backbone dominates everywhere, and the fused head beneﬁts from
+     Does the three-backbone gain come from feature diversity or merely
+                                                                                                each backbone’s specialisation simultaneously. (Table 12).
+from the larger feature dimension (2,816-d vs. 1,024-d, giving a larger
+linear head capacity)? We generated three 2,816-d expansions of the
+                                                                                                4.6.3.3 Pathology-aware interpretation
+single DINOv2-L features that add zero new information: (i) rand_proj
+—pad with a ﬁxed Gaussian random projection of the same input; (ii)                                 The class-level specialisation follows a coherent plant-patho-
+repeat—tile the 1,024-d vector to length 2,816; and (iii) pca_lift—PCA-                         logical pattern. The DINO family dominates on ﬁne-texture lesion
+whiten and tile. Results are in Table 10. All three inﬂations score ≈77.4%,                     classes—rusts, mildews, leaf spots, and localised foliar damage—
+identical to the 1,024-d single backbone (77.56%), whilst genuine three-                        where sub-leaf morphology (pustule shape, lesion boundary, and
+backbone fusion reaches 80.39%. The 2.8-point gap is attributable                               chlorotic halo) is the primary discriminative cue. The largest
+exclusively to feature diversity, not head capacity.                                            DINOover-CLIP margins on PlantWild are on grape leaf spot
+                                                                                                (+0.39 F1 DINOv2 and +0.42 DINOv3 over CLIP), plum pocket
+4.6.3 Feature complementarity: centred kernel                                                   disease (+0.35 DINOv2), celery anthracnose (+0.27), bean rust
+alignment and per-class winners                                                                 (+0.20), squash powdery mildew (+0.19), and cherry leaf spot
+                                                                                                (+0.20)—all classes where the diagnostic signal is lesion-local
+4.6.3.1 Linear CKA                                                                              texture. CLIP’s narrow ﬁve-class advantage, in contrast, concen-
+                                                                                                trates on organ- or species-level classes where disease symptoms are
+    Table 11 reports centred kernel alignment (CKA; Kornblith                                   either diffuse over the whole organ or closely entangled with organ
+et al., 2019) between all six backbone pairs on PlantWild test                                  identity: rice leaf (generic healthy-rice identiﬁcation; CLIP
+features; Figure 7 visualises the block structure. Cross-family pairs                           F1 = 0.896 vs. DINOv2 0.812), rice sheath blight (0.835 vs.
+are substantially more different (DINOv2/CLIP-L: 0.435; DINOv2/                                 0.774), potato late blight (0.646 vs. 0.602), corn gray leaf spot
+
+
+
+
+    FIGURE 6
+    Effect of the per-class prototype count K on PlantWild top 1 accuracy (DINOv2-L backbone). Both heads peak at K ∈ {2,4}; larger K over-
+    parameterises and degrades.
+
+
+
+
+Frontiers in Plant Science                                                                 09                                                          frontiersin.org
+El Karch et al.                                                                                                                                              10.3389/fpls.2026.1860665
+
+
+
+
+TABLE 6   Sample-wise gating on the three-backbone PlantWild fusion.                               fusion” framing. We trained all three head types independently on each
+                                                                                                   backbone and combined test probabilities via arithmetic mean, geo-
+ Variant                                           Top 1                 Macro-F1                  metric mean, and accuracy-weighted mean. Table 13 shows that the
+ Fixed mix (0.5/0.5)                                 80.31                    77.56                late-fusion geometric mean for the hybrid head (80.43% ± 0.09%) ties
+ Sample gate h = 64                                  79.96                    77.38                early fusion (80.39% ± 0.21%). We interpret this as strengthening the
+ Sample gate h = 128                                 80.28                    77.88
+                                                                                                   central claim: the source of the gain is the feature union itself, not any
+                                                                                                   property of concatenative fusion as an architecture. Whether features
+ Sample gate h = 256                                 80.00                    77.42
+                                                                                                   are combined early (at the head input) or late (at the output of
+ Sample gate h = 512                                 80.01                    77.03
+                                                                                                   independent heads), the information they carry is what matters.
+The ﬁxed 0.5/0.5 mixture matches or exceeds every sample-wise variant, conﬁrming that per-
+input routing adds no signal. Best values are marked in bold.
+                                                                                                   4.6.5 Subsample sweep
+(0.548 vs. 0.538), and cabbage alternaria leaf spot (0.471 vs. 0.449).
+                                                                                                       The dataset-size prescription (Section 4.5) was derived by com-
+This is consistent with the pretraining signal: CLIP’s text-image
+                                                                                                   paring two ﬁxed datasets. We validate it empirically by stratiﬁed-
+alignment encodes species and organ concepts at the scene level,
+                                                                                                   subsampling PlantWild to {25,50,100,150,200,full} images per class and
+whilst DINOv2/v3 encode local patch-level structure exactly of the
+                                                                                                   training all ﬁve backbone/head conﬁgurations at each budget
+kind that discriminates between two visually similar foliar diseases
+                                                                                                   (Figure 3). The three-backbone hybrid head (3bb_hybrid) leads at
+on the same crop. From a plant-pathology standpoint, this argues
+                                                                                                   every budget without crossover, reﬁning the prescription: three back-
+that self-supervised features are the right default for symptom-level
+                                                                                                   bones with a hybrid head is the robust default across a broad
+recognition and contrastive features are a useful complement
+                                                                                                   samplecount range. The simpler two-backbone prototype conﬁgura-
+speciﬁcally for tasks that mix species identiﬁcation with dis-
+                                                                                                   tion closes the gap only slightly at the lowest budgets (71.91 vs. 68.62 at
+ease state.
+                                                                                                   25 images/class), still favouring the richer representation.
+
+4.6.4 Late vs. early fusion                                                                        4.6.6 Crossed 2 × 2: backbone diversity vs. text
+                                                                                                   supervision
+    Early fusion (our method: concatenate, one head) could plausibly
+be beaten by late fusion (independent head per backbone, ensemble                                      To isolate the separate contributions of backbone diversity and
+probabilities at test time), which would challenge the “concatenative                              text supervision, we trained an MVPDR-style prototype head under
+
+
+TABLE 7   Extended few-shot evaluation on PlantWild (top 1/macro-F1).
+
+
+                                                        CLIP ViT-L/14
+                                                                                                                             DINOv2-L                                Fusion3
+                                                                                                                             Prototype                               Hybrid
+          k                     Linear                       Prototype                       Hybrid
+          1                   18.00 / 16.74                  18.14 / 16.91                 18.19 / 16.94                     33.80 / 30.01                                —
+
+          2                   26.16 / 23.29                  28.18 / 23.68                 25.54 / 23.23                     41.96 / 36.84                                —
+
+          4                   34.02 / 29.68                  33.78 / 30.48                 29.62 / 26.71                      42.64 / 39.52                         49.88 / 47.59
+
+          8                   41.45 / 37.72                  45.83 / 43.43                 51.40 / 48.43                      54.88 / 50.29                         57.87 / 52.51
+
+          16                  52.52 / 47.62                  54.17 / 51.69                 58.20 / 55.73                      62.42 / 59.17                         68.07 / 65.94
+Fusion3 = DINOv2-L + DINOv3-L + CLIP-L (2816-d). — = too few shots for fusion.
+CLIP-backbone columns match the Wei et al. (2024a) few-shot protocol. DINOv2 and Fusion3 columns use the same random.Random(1) subsampling for direct comparability. Bold = best per
+row. DINOv2 dominates at every k; three-backbone fusion provides further gains from k = 4 onward. Best values are marked in bold.
+
+
+
+TABLE 8   Conﬁguration-by-dataset summary.
+
+
+                                                                                    PlantWild                                                        PlantDoc
+ Metric
+                                                                                 (∼200 img/class)                                                 (∼90 img/class)
+                                                                                         3-backbone                                                      2-backbone
+ Recommended fusion
+                                                                                      (D2 + D3 + CLIP)                                                  (D2 + CLIP)
+
+ Recommended head                                                                         Hybrid                                                      Prototype-only
+
+ Best seed (top 1)                                                                         80.17                                                            80.09
+
+ 5-seed mean (top 1)                                                                    80.23 ± 0.41                                                    76.97 ± 1.48
+
+ D vs. published MVPDR (5-seed)                                                            +4.05                                                            −0.26
+
+ D vs. our reproduction (5-seed)                                                           +7.96                                                             —
+The single-seed “best seed” column reports the favourable run used for Tables 2 and 3; the “5-seed mean” column reports the robust estimate from Table 9. On PlantWild, the multi-seed estimate
+retains the +4-point margin over the published MVPDR. On PlantDoc, the multi-seed mean (76.97%) falls below the published MVPDR (77.23%), so the PlantDoc headline should be read as
+suggestive rather than robust. Best values are marked in bold.
+
+
+
+Frontiers in Plant Science                                                                    10                                                                              frontiersin.org
+El Karch et al.                                                                                                                                              10.3389/fpls.2026.1860665
+
+
+
+
+           Multi-seed reproducibility (ﬁve seeds, mean ± std).
+TABLE 9
+                                                                                                      5 Discussion
+ Conﬁg                                    Acc         ± std              F1       ± std
+                                                                                                      5.1 What worked—backbone diversity
+ PW DINOv2-L hybrid                       77.56         0.08            74.82      0.10
+
+ PW DINOv2-L prototype                    75.20         0.39            72.66      0.36                   The headline result—that purely visual multi-backbone fusion
+ PW Fusion3 hybrid                        80.23         0.41            77.48      0.45               beats text-augmented MVPDR on the largest in-the-wild plant
+ PW Fusion3 prototype                     77.62         0.44            75.19      0.67               disease benchmark—has a simple interpretation: the disease-dis-
+                                                                                                      criminative signal is almost entirely visual. DINOv2 and DINOv3
+ PW DINOv2 + CLIP hybrid                  79.66         0.30            76.93      0.41
+                                                                                                      encode local texture and lesion morphology that CLIP only weakly
+ PD DINOv2 + CLIP prototype               76.97         1.48            76.06      1.28
+                                                                                                      captures, whilst CLIP encodes object-level cues (species and organ)
+ PD DINOv2-L prototype                    75.84         1.60            74.96      1.95               that are invariant to disease state. Concatenating their features gives
+PlantWild results are highly stable; PlantDoc variance reﬂects the smaller dataset size. Best         the head access to both, and the simple linear–prototype combina-
+values are marked in bold.
+                                                                                                      tion is enough to exploit the union.
+
+TABLE 10   Capacity vs. diversity control on PlantWild.                                               5.2 What did not work—and what that
+                                                                                                      teaches us
+ Conﬁguration                                          Dim                      Acc
+ Genuine 3-backbone fusion                              2,816                   80.39                      We tested three increasingly complex forms of learned routing:
+ DINOv2-L only                                          1,024                   77.56                 (i) a per-class learnable mixture gate, (ii) a per-class backbone gate
+ DINOv2-L + rand_proj                                   2,816                   77.42
+                                                                                                      with softmax weighting, and (iii) a sample-wise MLP-based gate.
+                                                                                                      None contributed; the backbone gate was actively harmful. The late-
+ DINOv2-L + repeat                                      2,816                   77.40
+                                                                                                      fusion analysis (Section 4.6) reinforces this: training independent
+Semantically empty expansions of DINOv2-L to 2,816-d match the 1,024-d single-backbone
+result, whilst genuine three-backbone fusion gains 2.8 points. Best values are marked in bold.        heads per backbone and averaging probabilities ties early
+                                                                                                      concatenative fusion, indicating that the head architecture is effec-
+a 2 × 2 crossed design: {single (CLIP-L), three-backbone fusion}×                                     tively irrelevant—the features carry all the discriminative informa-
+{no text, CLIP text embeddings} on PlantWild (Table 14). Several                                      tion. This converges with a recurring observation in the foundation
+conclusions follow. (i) Text supervision is complementary to both                                     model transfer literature: with strong frozen features, parametric
+conﬁgurations: it adds +2.30 points on the single backbone and                                        heads quickly hit a ceiling determined by the features themselves,
++2.67 points on the fusion. (ii) Backbone diversity dominates:                                        and additional head capacity primarily serves to overﬁt. We
+fusion without text (76.63%) already exceeds single backbone                                          recommend the ﬁeld treat per-class adaptive routing claims with
+with text (72.27%) by 4.4 points. (iii) The small interaction (text                                   caution and demand the corresponding ablation.
+helps equally in both cells) implies that the two factors operate
+largely independently.                                                                                5.3 Why text supervision is not load-
+    We additionally re-ran the full MVPDR pipeline (CLIP-L with                                       bearing
+visual and text prototypes) within our evaluation protocol, obtain-
+ing 72.27% ± 0.42% on PlantWild—below the published 76.18%,                                               MVPDR’s text prototypes enrich the feature space by providing
+reﬂecting evaluation–protocol differences (our split, our model-                                      semantically meaningful anchor points from class-name descrip-
+selection criterion, and training schedule). Under this apples-to-                                    tions. Our crossed 2 × 2 experiment (Section 4.6.6) directly
+apples comparison, our best method (80.23%) leads by +7.96 points,                                    quantiﬁes the relative contributions: backbone diversity adds
+substantially larger than the +4.05 headline ﬁgure. Figure 8 illus-                                   ≈+6.7 points on PlantWild, whilst CLIP text embeddings add
+trates the 2 × 2 cell means.                                                                          ≈+2.5 points—independently and roughly additively. Adding text
+
+
+TABLE 11   Linear CKA between backbone pairs on PlantWild test features.
+
+
+ Backbone                                                  DV2-L                   DV3-L                    CL-L                 CL-B                   CL-R                  DV3-H
+ DINOv2-L (DV2-L)                                               1.000                   0.784               0.435                 0.423                  0.444                  0.755
+
+ DINOv3-L (DV3-L)                                               0.784                   1.000               0.495                 0.527                  0.586                  0.871
+
+ CLIP-L (CL-L)                                                  0.435                   0.495               1.000                 0.762                  0.648                  0.421
+
+ CLIP-B (CL-B)                                                  0.423                   0.527               0.762                 1.000                  0.741                  0.438
+
+ CLIP-RN (CL-R)                                                 0.444                   0.586               0.648                 0.741                  1.000                  0.481
+
+ DINOv3-H (DV3-H)                                               0.755                   0.871               0.421                 0.438                  0.481                  1.000
+Same-family pairs are largely redundant; cross-family pairs (DINO/CLIP) are substantially distinct, motivating their fusion. Values are raw (unscaled) CKA coefﬁcients; Figure 7 shows the same
+matrix with min–max colour scaling applied for visualisation, which can make individual values appear different from those tabulated here.
+
+
+
+
+Frontiers in Plant Science                                                                       11                                                                          frontiersin.org
+El Karch et al.                                                                                                                           10.3389/fpls.2026.1860665
+
+
+
+
+                                                                                TABLE 12Plant-pathology interpretation of per-class winners on
+                                                                                PlantWild.
+
+
+                                                                                 Backbone             Characteristic                     n         Symptom type
+                                                                                                      winning classes
+                                                                                 DINOv2-L             Grape leaf spot                    21        Fine texture
+
+                                                                                                      Plum pocket disease                15        Foliar lesions
+
+                                                                                                      Celery anthracnose                 8         Local morphology
+
+                                                                                                      Bean rust                          33
+
+                                                                                                      Cherry leaf spot                   46
+
+                                                                                                      Squash powdery mildew              56
+   FIGURE 7
+                                                                                 DINOv3-L             Bean halo blight                   23        Fine texture
+   Centred kernel alignment (CKA) block structure between all six
+   backbone pairs on PlantWild test features. DINO-family backbones                                   Eggplant cercospora leaf spot      17        Foliar lesions
+   (top-left block) share high within-family similarity; CLIP-family
+   backbones share high within-family similarity (bottom-right block).                                Tomato septoria leaf spot          44        Viral/bacterial
+   Cross-family pairs (off-diagonal blocks) show substantially lower
+                                                                                                      Peach leaf                         31
+   CKA, directly motivating their fusion. Labels: DV2-L = DINOv2 ViT-L/
+   14; DV3-L = DINOv3 ViT-L/16; DV3-H+ = DINOv3 ViT-H+; CL-L =                                        Bean mosaic virus                  25
+   CLIP ViT-L/14; CL-B = CLIP ViT-B/16; CL-RN = CLIP RN101. Colour
+   intensities are min–max normalised per the full 6×6 matrix for visual         CLIP-L               Rice leaf (healthy)                50        Organ and species
+   contrast; absolute values are reported without rescaling in Table 11.                                                                           level
+
+                                                                                                      Rice sheath blight                 50
+
+                                                                                                      Potato late blight                 48        Identiﬁcation
+to the fusion pushes performance to 79.30%, but even without text,
+                                                                                                      Corn gray leaf spot                43
+the fusion (76.63%) already exceeds the text-augmented single
+backbone (72.27%) by 4.4 points. Our results suggest that a                                           Cabbage alternaria leaf spot       25
+
+second (or third) visual backbone provides the same type of class-              For each backbone, we list the classes on which it has its largest F1 advantage over the two
+                                                                                competitors, together with the PlantWild test sample count (n) and the symptom-type
+level anchoring without the coupling to a language model: the                   category. All counts are from the ofﬁcial PlantWild test split (3677 images total).
+DINOv2 features capture most intra-class variance through texture
+and part structure, whilst CLIP contributes species-level differenti-           transfer by description, MVPDR’s text path retains a useful capability
+ation that text prototypes were previously providing. In effect,                our system lacks. Our claim is narrowly that text supervision is not
+backbone diversity substitutes for text supervision, with text pro-             necessary for state-of-the-art closed-set classiﬁcation.
+viding complementary but smaller gains on top.
+                                                                                5.4.4 Inference cost
+5.4 Limitations
+                                                                                    Three foundation backbones inﬂate the inference cost roughly
+5.4.1 PlantDoc instability                                                      2× relative to the best single-backbone pipeline (measured on our
+                                                                                RTX 3070, batch size 1, 100 iterations after 20 warmup): DINOv2-
+    While PlantWild results are robust across ﬁve seeds (std < 0.5              L: 144 ms/img (7 img/s); DINOv3-L: 109 ms/img (9 img/s); CLIP-L:
+points), PlantDoc shows substantially higher seed sensitivity (std ≈            66 ms/img (15 img/s); three-backbone sequential fusion: 289 ms/
+1.5 points) consistent with its smaller per-class training set. The             img (3 img/s), a 2.0× overhead relative to DINOv2-L alone. The
+multi-seed mean for the best PlantDoc conﬁguration (76.97%) falls               classiﬁer head adds <0.3 ms and is negligible. Edge deployment via
+below the published MVPDR accuracy (77.23%), so the PlantDoc                    distillation or quantisation is the subject of follow-up work.
+gain reported in Tables 3 and 8 should be read as a favourable
+single-seed outcome rather than a reliably estimated mean.                      5.4.5 Feature visualisation
+5.4.2 Closed-set evaluation                                                         We provide linear CKA analysis and per-class winner statistics
+                                                                                to verify the complementarity claim (Section 4.6); t-SNE or UMAP
+    Both benchmarks have ﬁxed class taxonomies; a true ﬁeld                     plots of the joint feature space would offer additional visual
+deployment must handle novel diseases and out-of-distribution                   conﬁrmation and remain to be produced.
+inputs. The prototype head is naturally extensible to open-set
+scoring, but we do not evaluate this here.                                      5.5 Implications for AI-driven plant
+                                                                                pathology
+5.4.3 No language capability
+                                                                                    Our results deliver three concrete insights for plant-pathology
+    By design, our system cannot produce class names from text                  practitioners deploying modern AI. First, the choice of pretraining
+descriptions. In settings where extension ofﬁcers need zero-shot                paradigm matters more than head engineering: a frozen self-supervised
+
+
+
+
+Frontiers in Plant Science                                                 12                                                                             frontiersin.org
+El Karch et al.                                                                                                                                                     10.3389/fpls.2026.1860665
+
+
+
+
+TABLE 13   Late vs. early fusion on PlantWild (3 seeds, mean ± std).                                       TABLE 14 Crossed 2 × 2 design on PlantWild (MVPDR prototype head,
+                                                                                                           three seeds, mean ± std).
+  Head                           Early              Late-mean                Late-geom
+                                                                                                               Conﬁguration                       No text                     +CLIP text
+  Linear                      77.44 ± 0.37            77.58 ± 0.10             78.39 ± 0.07
+                                                                                                            Single (CLIP-L)                       69.97 ± 0.52                  72.27 ± 0.42
+  Prototype                   77.44 ± 0.46            78.46 ± 0.38             78.99 ± 0.10
+                                                                                                            3-backbone fusion                     76.63 ± 0.25                  79.30 ± 0.63
+  Hybrid                      80.39 ± 0.21            80.14 ± 0.29             80.43 ± 0.09
+                                                                                                            Text effect                          +2.30 (single),               +2.67 (fusion)
+Late-fusion geometric mean and early fusion are statistically indistinguishable, conﬁrming
+that the gain resides in the features, not the fusion architecture. Best values are marked in bold.         Fusion effect                       +6.66 (no text),             +7.03 (with text)
+                                                                                                           Backbone diversity (row effect: +6.7 points) dwarfs text supervision (column effect: ≈ +2.5
+backbone already closes most of the in-the-wild gap, and a second                                          points). Best values are marked in bold.
+backbone from a different pretraining family closes the remainder.
+Collecting more labels or designing disease-speciﬁc architectures is not                                   frozen backbones to INT8/INT4. The main paper does not perform
+the bottleneck that a decade of PlantVillage-era work might suggest.                                       these deployment studies; the conclusions are conﬁned to the repre-
+Second, the per-class winner structure (Table 12) is pathologically                                        sentation-learning ﬁndings.
+interpretable: DINO-family backbones specialise in ﬁne-texture foliar
+lesions (rusts, mildews, and spots) whilst CLIP’s narrow advantage is
+concentrated on organ- and species-level classes. A pathologist select-
+ing a model for a particular disease portfolio can therefore use these                                     6 Conclusion
+observations as a priori guidance rather than treating the backbones as
+interchangeable black boxes. Third, the recipe requires only a frozen                                          We present a systematic study of frozen-backbone classiﬁcation
+feature-cache pipeline plus a small head, is reproducible from public                                      on two in-the-wild plant disease benchmarks, spanning six back-
+checkpoints in under an hour on a consumer GPU, and involves no                                            bones, three heads, four fusions, and 118 experiments, with primary
+text supervision, no language model, and no prompt engineering—                                            results validated over ﬁve independent seeds. Concatenative fusion
+making the barrier to adoption low for plant-science groups without a                                      of DINOv2, DINOv3, and CLIP at the ViT-L scale, paired with a
+dedicated deep-learning infrastructure.                                                                    hybrid linear–prototype head, surpasses the text-augmented
+                                                                                                           MVPDR state of the art on PlantWild by +4.05 points (76.18%
+5.6 Deployment considerations                                                                              → 80.23%), conﬁrmed with std = 0.41 over ﬁve seeds. Through
+                                                                                                           exhaustive ablation and targeted validation experiments, we dem-
+    The three-backbone pipeline triples inference cost relative to a                                       onstrate that (i) every form of learned routing is inessential once
+single-backbone baseline. For ﬁeld-deployment scenarios, follow-up                                         features are diverse, (ii) the gain is attributable to feature diversity
+work can either (i) use the single-backbone DINOv2+hybrid recipe                                           not head capacity, (iii) text supervision is complementary but
+(77.56%, still above published MVPDR) at baseline cost, (ii) distil the                                    secondary to backbone diversity, and (iv) late fusion and early
+three-backbone ensemble into a single student, or (iii) quantise the                                       fusion are equivalent, conﬁrming the feature union as the true
+
+
+
+
+    FIGURE 8
+    Crossed 2 × 2 experiment on PlantWild (MVPDR prototype head, three seeds). Backbone diversity (row effect, left to right: +6.66 to +7.03 points)
+    dwarfs text supervision (column effect, hatched vs. solid: +2.30 to +2.67 points). Fusion without any text (76.63%) already exceeds a single CLIP-L
+    backbone with full text supervision (72.27%).
+
+
+
+
+Frontiers in Plant Science                                                                            13                                                                            frontiersin.org
+El Karch et al.                                                                                                                                              10.3389/fpls.2026.1860665
+
+
+
+
+contribution. The lesson is clear: backbone diversity, not head                                     Funding
+complexity, is where the gains lie. We release all code, feature
+caches, and result ﬁles so that the community can verify, extend,                                       The author(s) declared that ﬁnancial support was not received
+and question every number in this paper.                                                            for this work and/or its publication.
+
+
+
+Data availability statement                                                                         Conﬂict of interest
+    The original contributions presented in the study are included                                      The author(s) declared that this work was conducted in the
+in the article/supplementary material. Further inquiries can be                                     absence of any commercial or ﬁnancial relationships that could be
+directed to the corresponding authors.                                                              construed as a potential conﬂict of interest.
+
+
+
+
+Author contributions                                                                                Generative AI statement
+     HE: Conceptualization, Data curation, Formal analysis,                                             The author(s) declared that generative AI was not used in the
+Funding acquisition, Investigation, Methodology, Project adminis-                                   creation of this manuscript.
+tration, Resources, Software, Supervision, Validation, Visualization,                                   Any alternative text (alt text) provided alongside ﬁgures in this
+Writing – original draft, Writing – review & editing. YN:                                           article has been generated by Frontiers with the support of artiﬁcial
+Conceptualization, Data curation, Formal analysis, Funding acqui-                                   intelligence and reasonable efforts have been made to ensure
+sition, Investigation, Methodology, Project administration,                                         accuracy, including review by the authors wherever possible. If
+Resources, Software, Supervision, Validation, Visualization,                                        you identify any issues, please contact us.
+Writing – original draft, Writing – review & editing. MB:
+Conceptualization, Data curation, Formal analysis, Funding acqui-
+sition, Investigation, Methodology, Project administration,
+Resources, Software, Supervision, Validation, Visualization,                                        Publisher’s note
+Writing – original draft, Writing – review & editing. RE:
+Conceptualization, Methodology, Supervision, Writing – review &                                         All claims expressed in this article are solely those of the authors
+editing. AM: Conceptualization, Data curation, Formal analysis,                                     and do not necessarily represent those of their afﬁliated organizations,
+Funding acquisition, Investigation, Methodology, Project adminis-                                   or those of the publisher, the editors and the reviewers. Any product
+tration, Resources, Software, Supervision, Validation, Visualization,                               that may be evaluated in this article, or claim that may be made by its
+Writing – original draft, Writing – review & editing.                                               manufacturer, is not guaranteed or endorsed by the publisher.
+
+
+
+
+References
+Barbedo, J. G. A. (2018). Impact of dataset size and variety on the effectiveness of deep           Kornblith, S., Shlens, J., and Le, Q. V. (2019). Do better ImageNet models transfer
+learning and transfer learning for plant disease classiﬁcation. Comput. Electron. Agric.            better? IEEE/CVF CVPR. doi: 10.1109/cvpr.2019.00277
+153, 46–53. doi: 10.1016/j.compag.2018.08.013
+                                                                                                    Lin, T.-Y., Goyal, P., Girshick, R., He, K., and Dollá r, P. (2017). “Focal loss for dense
+Caron, M., Touvron, H., Misra, I., Jé gou, H., Mairal, J., Bojanowski, P., et al. (2021).          object detection”, in: IEEE International Conference on Computer Vision (ICCV).
+“Emerging properties in self-supervised vision transformers”, in: IEEE/CVF                          (Venice, Italy: ICCV).
+International Conference on Computer Vision (ICCV). (Virtual/Montreal, Canada:
+IEEE/CVF International Conference on Computer Vision (ICCV)).                                       Loshchilov, I., and Hutter, F. (2019). “Decoupled weight decay regularization”, in:
+                                                                                                    International Conference on Learning Representations (ICLR). (New Orleans, USA: ICLR).
+Ferentinos, K. P. (2018). Deep learning models for plant disease detection and
+                                                                                                    MacQueen, J. (1967). “Some methods for classiﬁcation and analysis of multivariate
+diagnosis. Comput. Electron. Agric. 145, 311–318. doi: 10.1016/j.compag.2018.01.009
+                                                                                                    observations”, in: Proceedings of the Fifth Berkeley Symposium on Mathematical
+Gao, P., Geng, S., Zhang, R., Ma, T., Fang, R., Zhang, Y., et al. (2023). CLIP-Adapter:             Statistics and Probability. (Berkeley, USA: Proceedings of the 5th Berkeley
+Better vision-language models with feature adapters. Int. J. Comput. Vision (IJCV).                 Symposium on Mathematical Statistics and Probability) 1, 281–297.
+doi: 10.1007/s11263-023-01891-x
+                                                                                                    Mohanty, S. P., Hughes, D. P., and Salathé, M. (2016). Using deep learning for imagebased
+He, K., Chen, X., Xie, S., Li, Y., Dollá r, P., and Girshick, R. (2022). “Masked                   plant disease detection. Front. Plant Sci. 7, 1419. doi: 10.3389/fpls.2016.01419
+autoencoders are scalable vision learners”, in: IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR). (New Orleans, USA: IEEE/CVF Conference on                    Noyan, M. A. (2022). Uncovering bias in the PlantVillage dataset. arXiv preprint
+Computer Vision and Pattern Recognition (CVPR)).                                                    arXiv:2206.04374.
+                                                                                                    Oquab, M., Darcet, T., Moutakanni, T., Vo, H. V., Szafraniec, M., Khalidov, V., et al.
+Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., et al. (2022). “LoRA: Low-        (2024). DINOv2: Learning robust visual features without supervision. Trans. Mach.
+rank adaptation of large language models”, in: International Conference on Learning                 Learn. Res. (TMLR).
+Representations (ICLR). (Virtual: ICLR).
+                                                                                                    Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., et al. (2021).
+Hughes, D. P., and Salathé , M. (2015). An open access repository of images on plant               “Learning transferable visual models from natural language supervision”, in:
+health to enable the development of mobile disease diagnostics. arXiv preprint                      International Conference on Machine Learning (ICML). (Virtual: ICML) 8748–8763.
+arXiv:1511.08060.
+                                                                                                    Savary, S., Willocquet, L., Pethybridge, S. J., Esker, P., McRoberts, N., and Nelson, A.
+Jia, M., Tang, L., Chen, B.-C., Cardie, C., Belongie, S., Hariharan, B., et al. (2022).             (2019). The global burden of pathogens and pests on major food crops. Nat. Ecol. Evol.
+“Visual prompt tuning”, in: European Conference on Computer Vision (ECCV).                          3, 430–439. doi: 10.1038/s41559-018-0793-y
+
+
+
+Frontiers in Plant Science                                                                     14                                                                            frontiersin.org
+El Karch et al.                                                                                                                                            10.3389/fpls.2026.1860665
+
+
+
+
+Simé oni, O., Vo, H. V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., et al. (2026).        Wei, T., Chen, Z., Huang, Z., and Yu, X. (2024a). “Benchmarking in-the-wild
+DINOv3: A versatile vision foundation model. Trans. Mach. Learn. Res. (TMLR).                      multimodal disease recognition and a versatile baseline”, in: Proceedings of the 32nd
+Available online at: https://openreview.net/forum?id=2NlGyqNjns (Accessed February                 ACM International Conference on Multimedia (MM ’24), 1593–1601. doi: 10.1145/
+20, 2026).                                                                                         3664647.3680599
+Singh, D., Jain, N., Jain, P., Kayal, P., Kumawat, S., and Batra, N. (2020). “PlantDoc: A          Wei, T., Chen, Z., Huang, Z., and Yu, X. (2024b). “Plant disease recognition in the
+dataset for visual plant disease detection”, in: Proceedings of the 7th ACM IKDD CoDS              wild”, in: Proceedings of the 32nd ACM International Conference on Multimedia (MM
+and 25th COMAD. (Long Beach, USA: NeurIPS) 249–253. doi: 10.1145/                                  ’24). doi: 10.1145/3664647.3681614
+3371158.3371196
+                                                                                                   Jiang, X., Wang, J., Xie, K., Cui, C., Yang, W., Zhai, Ruifang, et al. (2025). PlantCaFo:
+Snell, J., Swersky, K., and Zemel, R. (2017). “Prototypical networks for few-shot                  Few-shot plant disease recognition by combining clip, dino and dinov2 with a weight-
+learning”, in: Advances in Neural Information Processing Systems (NeurIPS), 30.                    decomposed adapter. Plant Phenomics. To appear.
+Szegedy, C., Vanhoucke, V., Ioffe, S., Shlens, J., and Wojna, Z. (2016). “Rethinking the           Zhang, R., Fang, R., Zhang, W., Gao, P., Li, K., Dai, J., et al. (2022). “Tip-Adapter:
+inception architecture for computer vision”, in: IEEE Conference on Computer Vision                Training-free CLIP-adapter for better vision-language modeling”, in: European
+and Pattern Recognition (CVPR). (ACL/NeurIPS/arXiv venues),                                        Conference on Computer Vision (ECCV). (CVPR/ICCV/NeurIPS).
+Too, E. C., Yujian, L., Njuki, S., and Yingchun, L. (2019). A comparative study of                 Zhao, Y., Chen, T., and Wang, Z. (2024). Combining self-supervised and contrastive
+ﬁnetuning deep learning models for plant disease identiﬁcation. Comput. Electron.                  foundation models for robust visual recognition. NeurIPS Workshop Self-Supervised
+Agric. 161, 272–279. doi: 10.1016/j.compag.2018.03.032                                             Learn.
+
+
+
+
+Frontiers in Plant Science                                                                    15                                                                           frontiersin.org
+

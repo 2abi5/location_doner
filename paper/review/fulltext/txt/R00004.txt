@@ -1,0 +1,553 @@
+                                                     Fully Convolutional Networks with Sequential Information
+                                                     for Robust Crop and Weed Detection in Precision Farming
+                                                     Philipp Lottes                    Jens Behley                  Andres Milioto                   Cyrill Stachniss
+
+                                                                                                                                     selected image sequence           classiﬁed
+                                           Abstract— Reducing the use of agrochemicals is an important                                from acquisition history           image
+                                        component towards sustainable agriculture. Robots that can
+                                        perform targeted weed control offer the potential to contribute                RGB
+                                        to this goal, for example, through specialized weeding ac-
+                                        tions such as selective spraying or mechanical weed removal.                   NIR
+                                        A prerequisite of such systems is a reliable and robust plant
+arXiv:1806.03412v1 [cs.CV] 9 Jun 2018
+
+
+
+
+                                        classification system that is able to distinguish crop and weed
+                                        in the field. A major challenge in this context is the fact that               time
+                                        different fields show a large variability. Thus, classification
+                                        systems have to robustly cope with substantial environmental
+                                        changes with respect to weed pressure and weed types, growth
+                                        stages of the crop, visual appearance, and soil conditions.
+                                           In this paper, we propose a novel crop-weed classification
+                                        system that relies on a fully convolutional network with an
+                                        encoder-decoder structure and incorporates spatial information
+                                        by considering image sequences. Exploiting the crop arrange-
+                                        ment information that is observable from the image sequences               Fig. 1: The image depicts the BoniRob platform perceiving
+                                        enables our system to robustly estimate a pixel-wise labeling of           RGB+NIR images along the crop row as well as crop-weed
+                                        the images into crop and weed, i.e. , a semantic segmentation.             classification results by exploiting the repetitive plant arrangement
+                                        We provide a thorough experimental evaluation, which shows                 information. Our approach analyzes image sequences from the
+                                        that our system generalizes well to previously unseen fields               acquisition history and provides a pixel-wise image labeling of the
+                                        under varying environmental conditions—a key capability to                 field under the robot. The lower right image shows a mechanical
+                                        actually use such systems in precision framing. We provide                 actuator stamping the detected weeds into the ground.
+                                        comparisons to other state-of-the-art approaches and show that
+                                        our system substantially improves the accuracy of crop-weed
+                                        classification without requiring a retraining of the model.                in the plant appearance and soil conditions between training
+                                                                                                                   and testing phase. This generalization capabilities to new
+                                                                I. I NTRODUCTION
+                                                                                                                   fields, however, is essential for actually deploying precision
+                                           A sustainable agriculture is one of the seventeen sus-                  farming robots with selective intervention capabilities. Also
+                                        tainable development goals of the United Nations. A key                    Slaughter et al. [9] conclude in their review about robotic
+                                        objective is to reduce the reliance on agrochemicals such                  weed control systems that the missing generalization capa-
+                                        as herbicides or pesticides due to its side-effects on the                 bilities of the crop-weed classification technology is a major
+                                        environment, biodiversity, and partially human health. Au-                 problem with respect to the deployment and commercial-
+                                        tonomous precision farming robots have the potential to                    ization of such systems. Precision farming robots need to
+                                        address this challenge by performing targeted and plant-                   operate in different fields on a regular basis. Thus, it is
+                                        specific interventions in the field. These interventions can be            crucial for the classification system to provide robust results
+                                        selective spraying or mechanical weed stamping, see Fig. 1.                under changing conditions such as differing weed density
+                                        A crucial prerequisite for selective treatments through robots             and weed types as well as appearance, growth stages of the
+                                        is a plant classification system that enables robots to identify           plants, and finally soil conditions and types. Purely visual
+                                        individual crop and weed plants in the field. This is the basis            crop-weed classification systems often degrade due to such
+                                        for any following targeted treatment action [1], [2].                      environmental changes as these correlate with the underlying
+                                           Several vision-based learning methods have been proposed                data distribution of the images.
+                                        in the context of crop and weed detection [3], [4], [5], [6],                 In this work, we aim at overcoming the performance loss
+                                        [7], [8]. Typically, such methods are based on supervised                  in crop-weed detection due to changes in the underlying
+                                        learning methods and report high classification performances               distribution of the image data. To achieve that, we exploit
+                                        in the order of 80-95% in terms of accuracy. However, we                   geometric patterns that result from the fact that several crops
+                                        see a certain lack in the evaluation of several methods with               are sowed in rows. Within a field of row crops (such as sugar
+                                        respect to the generalization capabilities to unseen situations,           beets or corn), the plants share a similar lattice distance along
+                                        i.e., the classification performance under substantial changes             the row, whereas weeds appear more randomly. In contrast
+                                                                                                                   to the visual cues, this geometric signal is much less affected
+                                           All authors are with the University of Bonn, Institute of Geodesy and
+                                        Geoinformation, Bonn, Germany. This work has partly been supported by      by changes in the visual appearance. Thus, we propose
+                                        the EC under the grant number H2020-ICT-644227-Flourish.                   an approach to exploit this information as an additional
+
+                                                                Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+signal by analyzing image sequences that cover a local strip      can therefore use information from the whole image. The
+of the field surface in order to improve the classification       encoder-decoder architecture of SegNet [17] is nowadays
+performance. Fig. 1 depicts the employed farming robot            a common building block of semantic segmentation ap-
+during operation in the field and an example of an image          proaches [18], [19]. Sa et al. [20] propose to use the SegNet
+sequence consisting of 4-channel images, i.e., conventional       architecture for multi-spectral crop-weed classification from
+red, green, and blue (RGB) channels as well as an additional      a micro aerial vehicle. Milioto et al. [5] use a similar
+near infra-red (NIR) channel.                                     architecture, but combine RGB images with background
+   The main contribution of this work is a novel, vision-based    knowledge encoded in additional input channels.
+crop-weed classification approach that operates on image             All systems share the need for tedious re-labeling effort
+sequences. Our approach performs pixel-wise semantic seg-         to generalize to a different field. To alleviate this burden,
+mentation of images into soil, crop, and weed. Our proposed       Wendel and Underwood [21] enable self-supervised learning
+method is based on a fully convolutional network (FCN) with       by exploiting plant arrangement in rows. Recently, we [22]
+an encoder-decoder structure and incorporates information         proposed to exploit the plant arrangement to re-learn a ran-
+about the plant arrangement by a novel extension. This            dom forest with minimal labeling effort in a semi-supervised
+extension, called sequential module, enables the usage of         way. Hall et al. [23] minimize the labeling effort through
+image sequences to implicitly encode the local geometry.          an unsupervised weed scouting process [24] that clusters
+This combination leads to better generalization performance       visually similar images and allows to assign labels only to
+even if the visual appearance or the growth stage of the          a small number of candidates to label the whole acquired
+plants changes between training and test time. Our system         data. Cicco et al. [12] showed that a SegNet-based crop-weed
+is trained end-to-end and relies neither on pre-segmentation      segmentation can be learned using only synthetic images.
+of the vegetation nor on any kind of handcrafted features.           In contrast to the aforementioned prior work, we combine
+   We make the following two key claims about our ap-             a FCN with sequential information to exploit the repetitive
+proach. First, it generalizes well to data acquired from unseen   structure of the plant arrangement leading to better general-
+fields and robustly classifies crops at different growth stages   ization performance without re-labeling effort. To the best of
+without the need for retraining (we achieve an average recall     our knowledge, we are therefore the first to propose an end-
+of more than 94% for crops and over 91% for weeds even in         to-end learned semantic segmentation approach exploiting
+challenging settings). Second, our approach is able to extract    the spatial arrangement of row plants.
+features about the spatial arrangement of the plantation from
+image sequences and can exploit this information to detect        III. S EQUENTIAL C ROP - WEED C LASSIFICATION S YSTEM
+crops and weeds solely based on geometric cues. These two
+claims are experimentally validated on real-world datasets,          The primary objective of our approach is to enable robots
+which are partially publicly available [10]. We compare our       to robustly identify crops and weeds during operation in
+approach to other state-of-the-art approaches and to a non-       the field, even when the visual appearance of the plants
+sequential FCN model. Through simulations, we furthermore         and soil has changed. We propose a sequential FCN-based
+demonstrate the approach’s ability to learn plant arrangement     classification model for pixel-wise semantic segmentation of
+information. We plan to publish our code.                         the classes (i) background, i.e. mostly soil, (ii) crops (sugar
+                                                                  beet), and (iii) weeds. The key idea is to exploit information
+                    II. R ELATED W ORK                            about the plant arrangement, which is given by the planting
+   While there has recently been significant progress towards     process. We let the classification model learn this information
+robust vision-based crop-weed classification, many systems        from image sequences representing a part of the crop row and
+rely on handcrafted features [3], [11], [4]. However, the         fuse the arrangement information with visual features. With
+advent of convolution neural networks (CNN) also spurred          this novel combination, we can improve the performance and
+increasing interest in end-to-end crop-weed classification        generalization capabilities of our classification system.
+systems [12], [13], [14], [5], [6], [8] to overcome the              Fig. 2 depicts the S = 5 selected RGB+NIR images
+inflexibility and limitations of handcrafted vision pipelines.    for building the sequence I = {It , . . . , It−4 } as input to
+   In this context, CNNs are often applied in pixel-wise          our pipeline as well as exemplary predictions and their
+fashion operating on image patches provided by a sliding          corresponding ground truth label masks. To exploit as much
+window approach. Using this principle, Potena et al. [8] use      spatial information as possible with a small number of
+a cascade of CNNs for crop-weed classification, where the         images, we select those images along the traversed trajectory
+first CNN detects vegetation and then only the vegetation         that do not overlap in object space. For the image selection
+pixels are classified by a deeper crop-weed CNN. McCool           procedure, we use the odometry information and the known
+et al. [13] fine-tune a very deep CNN [15] and attain             calibration parameters of the camera. The rightmost image
+practical processing times by compression of the fine-tuned       It refers to the current image, whereas It−1 , . . . , It−4 are
+network using a mixture of small, but fast networks, without      selected non-overlapping images from the history of acquired
+sacrificing too much classification accuracy.                     images. The output of the proposed network is a label mask
+   Fully convolutional networks (FCN) [16] directly esti-         representing a probability distribution over the class labels
+mate a pixel-wise segmentation of the complete image and          for each pixel position.
+
+                     Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+Fig. 2: Left: BoniRob acquiring images while driving along the crop row. Our approach exploits an image sequence by selecting those
+image from the history that do not overlap in object space. Right: Exemplary prediction of crop and weed for an image sequence captured
+on a field near Stuttgart where the classification model was solely trained on data acquired in Bonn; top row: RGB images; middle row:
+predicted label mask projected on the NIR image (crop in green, weed in red, background transparent); bottom row: ground truth.
+
+
+A. General Architectural Concept                                     preprocessing independently for each image and moreover
+   Fig. 3 depicts the conceptual graph and the information           separately on all channels, i.e. red, green, blue, and near
+flow from the input to the output for a sequence I of                infra-red. For each channel, we (i) remove noise by per-
+length S = 5. We divide the model into three main blocks:            forming a blurring operation using a [5 × 5] Gaussian kernel
+(i) the preprocessing block (green), (ii) the encoder-decoder        given by the standard normal distribution, i.e., µ = 0 and
+FCN (orange), and (iii) the sequential module (blue). We             σ 2 = 1, (ii) standardize the data by the mean and standard
+extend the encoder-decoder FCN with our proposed sequen-             deviation, and (iii) normalize and zero-center the values to
+tial module. Thus, we transform the FCN model for single             the interval [−1, 1] as it is common practice for training
+images into a sequence-to-sequence model.                            FCNs. Fig. 4 illustrates the effect of our preprocessing for
+   The visual encoder of the FCN shares its weights along            exemplary images captured with different sensor setups.
+the time axis such that we reuse it as a task-specific feature       C. Encoder-Decoder FCN
+encoder for each image separately. This leads to the com-
+putation of S visual codes being a compressed, but highly               It has been shown that FCNs for semantic segmenta-
+informative representation of the input images. We route the         tion tasks achieve high performance for a large number
+visual code along two different paths within the architecture.       of different applications [17], [18], [19], [25]. Commonly,
+First, each visual code is passed to the decoder of the              FCN architectures follow the so-called “hourglass” structure
+encoder-decoder FCN sharing also its weights along the               referring to a downsampling of the resolution in the encoder
+time axis. This leads to S decoded visual features volumes.          followed by a complementary upsampling in the decoder to
+Thus, the encoder-decoder FCN is applied to each images              regain the full resolution of the input image for the pixel-wise
+separately. Second, all visual code volumes of sequence I are        segmentation. We design our network architecture keeping
+passed to the sequential module. The sequential module pro-          in mind that the classification needs to run in near real-time
+cesses the S visual codes jointly as a sequence by using 3D          such that an actuator can directly act upon the incoming
+convolutions and outputs a sequence code, which contains             information. In addition to that we use a comparably small
+information about the sequential content. The sequence code          number of learnable parameters to obtain a model capacity
+is then passed through a spatio-temporal decoder to upsample         which is sufficient for the three class prediction problem.
+it to the same image resolution as the visual features, the          Thus, we design a lightweight network for our task.
+sequence features. The resulting visual feature maps and the            As a basic building block in our encoder-decoder FCN,
+sequential feature maps are then merged to obtain the desired        we follow the so-called Fully Convolutional DenseNet (FC-
+label mask output.                                                   DenseNet) [26], which combines the recently proposed
+                                                                     densely connected CNNs organized as dense blocks [25] with
+B. Preprocessing                                                     fully convolutional networks (FCN) [16]. The key idea is a
+   Preprocessing the input can help to improve the gener-            dense connectivity pattern which iteratively concatenates all
+alization capabilities of a classification system by aligning        computed feature maps of subsequent convolutional layers in
+the training and test data distribution. The main goal of            a feed forward fashion. These “dense” connections encourage
+our preprocessing is to minimize the diversity of the inputs         deeper layers to reuse features produced by earlier layers and
+as much as possible in a data-driven way. We perform the             additionally supports the gradient flow in the backward pass.
+
+                      Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+                                                                                                                          Spatio-                    Spatio-Temporal Decoder
+                 Preprocessing                                                                                           Temporal
+                 FCN                                                                                                      Fusion
+
+
+
+
+                                                                                                                                                                                                Sequence Features
+                 Sequential Module
+                                                                                                                                                                                    384 x 512
+                 Train and test time
+                                                                               Dense Block
+                                                                                                                            48 x 64                                     192 x 256
+                 Train time only                                                (L=3, G=4)                                                             96 x 128
+                                                                                                                         12 16 16 16   Seq.
+          Dense Block         Bottleneck                                                                                               Code
+                                                                                                                                                      12     12         12   12     12    12                          Merge
+          Downsampling        Upsampling                                                                                 k 5 7 9
+                                                                                 F         F                             d 1 2 4
+          Concatenate         Softmax                            F         8   4
+                                                                                 +4
+                                                                                    8    4
+                                                                                           +8
+                                                                                              8       4 12                                                                                                            384 x 512   384 x 512 x 3
+          3D Convolution      2D Convolution
+
+
+
+
+              384 x 512                                   384 x 512                                                                                                           384 x 512                              24 24 3 3
+                                                                                                                                                                                                                       12 12
+
+
+
+
+                                                                                                                                                                                                   Visual Features
+                                                                               192 x 256
+  RGB + NIR
+
+
+
+
+                                  Preprocessing
+
+
+
+
+                                                                                                                                                           192 x 256
+                                                                                                  96 x 128                              96 x 128
+                                                                                                                  48 x 64
+                                                     32     8   44 22 22       12    34 17 17   12     29 14 14
+                                                                                                                              Visual   12 41   12      12 46      12          12 56 12
+                                                                                                                    12
+                                                                                                L=3                L=3        Code                                                                                                     Output
+                                                                                                                                               L=3
+                                                                               L=3                                                                                L=3
+                                                                                                                                                                                                                                     Label Mask
+                                                          L=2                                                                                                                       L=2
+
+
+
+
+         Input
+    Image Sequence                                                     Visual Encoder                                                                 Visual Decoder
+Fig. 3: Architecture of our approach as described in Sec. III-A. Given a sequence of S images, we first compute the visual code through
+the visual encoder. The visual code is then again upsampled with the visual decoder resulting in the visual features. The spatio-temporal
+fusion uses S visual codes to encode the sequential context from multiple images resulting in the sequence code. Using the spatio-temporal
+decoder, we upsample the sequence code again resulting in the sequence features. Finally, the visual and sequence features are merged
+resulting in a pixel-wise label mask. In the figure, we included the size of the feature maps above the layers and the number of feature
+maps produced by each layer inside the layer. In the spatio-temporal fusion, we included the parameters k and d of the dilated convolution.
+
+
+   As commonly used in practice, we define our 2D convo-                                                                               axis. In the decoder, we revert the downsampling by a strided
+lutional layer as a composition of the following components:                                                                           transposed convolution [28] with a [2 × 2] kernel and a stride
+(1) 2D convolution, (2) rectified linear unit (ReLU) as non-                                                                           of 2. To facilitate the recovery of spatial information, we
+linear activation, (3) batch normalization [15] and (4) dropout                                                                        concatenate feature maps produced by the dense blocks in the
+[27]. We repeatedly apply bottleneck layers to the feature                                                                             encoder with the corresponding feature maps produced by the
+volumes and thus keep the number of feature maps small                                                                                 learnable upsampling and feed them into a bottleneck layers
+while achieving a deep architecture. Our bottleneck is a 2D                                                                            followed by a dense blocks. Contrary to the encoder, we
+convolutional layer with a [1 × 1] kernel.                                                                                             reduce the expansion of the number of feature maps within
+   A dense block is given by a stack of L subsequent 2D                                                                                the decoder by omitting the concatenation of a dense blocks
+convolutional layers operating on feature maps with the same                                                                           input with its respective output.
+spatial resolution. Fig. 3 depicts the information flow in a
+dense block. The input of the lth 2D convolutional layer is                                                                            D. Sequential Module
+given by a concatenation of all feature maps produced by                                                                                  To learn information about the crop and weed arrange-
+the previous layers, whereas the output feature volume is                                                                              ment, the network needs to take the whole sequence corre-
+given by the concatenation of the newly computed feature                                                                               sponding to a crop row into account. The sequential module
+maps within the dense block. Here, all the concatenations                                                                              represents our key architectural design contribution to enable
+are performed along the feature axis. The number of the                                                                                sequential data processing. It can be seen as an additional
+produced feature maps is called the growth rate G of a dense                                                                           parallel pathway for the information flow and consists of
+block [25]. We consequently use 2G kernels for the bottle-                                                                             three subsequent parts, i.e. the (i) spatio-temporal fusion, the
+neck layers within a dense block to reduce the computational                                                                           (ii) spatio-temporal decoder and the (iii) merge layer.
+cost in the subsequent 2D convolutional layers.                                                                                           The spatio-temporal fusion is the core part of the se-
+   Fig. 3 illustrates the information flow through the FCN.                                                                            quential processing. First, we create a sequential feature
+The first layer in the encoder is a 2D convolutional layer                                                                             volume by concatenating all visual code volumes of the
+augmenting the 4-channel images using 32 [5 × 5] kernels.                                                                              sequence along an additional time dimension. Second, we
+The following operations in the encoder are given by a                                                                                 compute a spatio-temporal feature volume, the sequence
+recurring composition of dense blocks, bottleneck layers and                                                                           code, as we process the built sequential feature volume by
+downsampling operations, where we concatenate the input                                                                                a stack of three 3D convolutional layers. We define the 3D
+of a dense block with its output feature maps. We perform                                                                              convolutional layer analogous to the 2D convolutional layer,
+the downsampling by strided convolutions employing 2D                                                                                  i.e. a composition of convolution, ReLu, batch normalization
+convolutional layers with an [5 × 5] kernel and a stride of 2.                                                                         and dropout. In each 3D convolutional layer, we use 16 3D
+All bottleneck layers between dense blocks compress the                                                                                kernels with a size of [5 × 5 × S] to allow the network to
+feature volumes by a learnable halving along the feature                                                                               learn weight updates under consideration of the whole input
+
+                                                  Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+sequence. We apply the batch normalization to all feature                              TABLE I: Dataset Information
+maps jointly regardless of their position in the sequence.
+                                                                                           Bonn2016      Bonn2017       Stuttgart
+   As a further architectural design choice, we increase
+the receptive field for subsequent applied 3D convolutional                    # images       10,036         864          2,584
+                                                                             crop pixels       1.7%         0.3%          1.5%
+layers in their spatial domain. Thus, the network can po-              approx. crop size   0.5-100 cm2   0.5-3 cm2      3-25 cm2
+tentially exploit more context information to extract the                   weed pixels        0.7%        0.05%          0.7%
+geometric arrangement pattern of the plants. To achieve this,         approx. weed size    0.5-60 cm2    0.5-3 cm2      2-60 cm2
+we increased the kernel size k and the dilation rate d of
+the 3D kernels for subsequent 3D convolutional layers. More              Bonn2016               Bonn2017              Stuttgart
+concretely, we increase k and d only for the spatial domain of
+the convolutional operation, i.e. [k×k×S] with k = {5, 7, 9}
+and [d × d × 1] with d = {1, 2, 4}. This leads to a larger
+receptive field of the spatio-temporal fusion allowing the
+model to consider the whole encoded content of all images
+along the sequence. In our experiments, we show that the
+model gains performance by using an increasing receptive
+field within the spatio-temporal fusion.
+   The spatio-temporal decoder is the second part of the
+sequential module that upsamples the produced sequence
+code to the desired output resolution resulting in the sequence     Fig. 4: Top: RGB images from each dataset containing different
+features. Analogous to the visual decoder, we recurrently           crop growth stages, weed types, illumination conditions and soil
+perform the upsampling followed by a bottleneck layer and           types. Bottom: Example RGB images after preprocessing.
+a dense block to generate a pixel-wise sequence features
+map. To achieve an independent data processing of the               the BOSCH DeepField Robotics BoniRob platform. All
+spatio-temporal decoder and visual decoder, we neither share        robots use the 4-channel RGB+NIR camera JAI AD-130 GE
+weights between both pathways nor connect them via skip             mounted in nadir view, but with different lighting setups.
+connections with the encoder of the FCN.                            Every dataset contains crops of different growth stages, while
+   The last building block of the sequential module is the          the datasets differ from each other in terms of the weed and
+merge layer. Its main objectives are to merge the visual            soil types. The dataset collected in Bonn is publicly available
+features with the sequence features and to compute the label        and contains data collected over two month on a sugar beet
+mask as the output of the system. First, we concatenate the         field. A detailed description of the data, the setup for its
+input feature volumes along their feature axis and pass the         acquisition, and the robot is provided by Chebrolu et al. [10].
+result to a bottleneck layer using 12 kernels, where the actual        We evaluate our system in terms of an object-wise per-
+merge takes place. Then we pass the resulting feature volume        formance, i.e. a metric for measuring the performance on
+through a stack of two 2D convolutional layers. Finally, we         plant-level. Here, we compare the predicted label mask with
+convolve the feature volume into the label mask using a             the crop and weed objects given by the class-wise connected
+bottleneck layer with 3 kernels for respective class labels and     components from the corresponding ground truth segments.
+perform a pixel-wise softmax along the feature axis. Further        We consider plant segments with a minimum size of 0.5 cm2
+details on the specific number of layers and parameters can         in object space and consider smaller objects to be noise as
+be found in Fig. 3 and Sec. IV, where we also evaluate the          they are only represented by around 50 pixels and therefore
+influence of our key architectural design decisions.                would bias the performance. In all experiments, we only
+                                                                    consider non-overlapping images to have separate training,
+             IV. E XPERIMENTAL E VALUATION                          validation, and test data.
+   Our experiments are designed to show the capabilities of            We refer to the baseline approach as our encoder-decoder
+our method and to support our key claims, which are: (i) Our        FCN using the proposed preprocessing but without the
+approach generalizes well and robustly identifies the crops         sequential module. We refer to our approach as the combi-
+and weeds after the visual appearance of the plants and the         nation of the baseline with our proposed sequential module.
+soil has changed without the need for adapting the model            Note that we use a comparable number of parameters for the
+through retraining and (ii) is able to extract features about the   baseline approach to exclude that the performance is affected
+spatial arrangement of the plantation and is able to perform        by less capacity of the model.
+the crop-weed classification task solely using this geometric          For comparison, we also evaluate the performance on our
+information source.                                                 recently published approaches: (i) using a semi-supervised
+                                                                    vision and geometry based approach based on random forests
+A. Experimental Setup                                               [22] and (ii) employing a purely visual FCN classifier solely
+   The experiments are conducted on different sugar beet            based on RGB data [5], which additionally takes vegetation
+fields located near Bonn and near Stuttgart in Germany.             indices as additional plant features (PF) into account. We
+Each dataset has been recorded with different variants of           refer to these approaches with RF and FCN+PF respectively.
+
+                      Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+TABLE II: Cross-dataset performance (object-wise) when training                    TABLE III: Cross-dataset performance (object-wise) when training
+on Bonn2016 and testing on Stuttgart                                               on Bonn2016 and testing on Bonn2017
+
+     Approach           avg. F1 [%]        Recall [%]           Precision [%]           Approach           avg. F1 [%]        Recall [%]           Precision [%]
+                                        Crop    Weed          Crop     Weed                                                Crop    Weed          Crop     Weed
+       our                  92.4        95.4       87.8       89.1          97.9          our                  86.6        91.2       95.3       90.3          72.7
+     baseline               81.9        75.2       80.0       87.7          85.9        baseline               73.7        82.0       93.9       80.6          51.1
+     RF [22]                48.0        36.4       66.5       34.7          55.4        RF [22]                50.2        30.5       55.7       42.7          77.5
+   FCN+PF [5]               74.2        85.1       65.2       64.6          87.9      FCN+PF [5]               67.3        83.1       47.4       92.2          46.8
+     RF? [22]               91.8        95.1       92.2       85.2          95.4        RF? [22]               92.8        96.1       92.0       86.2          97.6
+   FCN+PF? [5]              90.5        91.4       89.1       86.6          95.5      FCN+PF? [5]              89.1        95.6       69.8       92.4          85.7
+ ? Approach with additional labeling effort and retraining of classifier.           ? Approach with additional labeling effort and retraining of classifier.
+
+
+B. Parameters                                                                      ods. We detect more than 95% of the crops and around 88%
+   In our experiments, we train all networks from scratch                          of the weeds and gain around 10% performance to the second
+using downsampled images with a resolution W = 512 and                             best in terms of the average F1-score. The results obtained on
+H = 384 which yields a ground resolution of around 1 pixel mm
+                                                              .                    the Bonn2017 dataset confirm this observation as we observe
+We use a sequence length S = 5 and use a grow rate G = 4                           a margin of around 5% to the second best approach with
+for the dense blocks. For training our architecture, we follow                     respect to the average F1-score. Tab. III shows the achieved
+the common best practices: we initialize the weights as                            performance for the Bonn2017 dataset. Here, our approach
+proposed by He et al. [29] and use the RMSPROP optimizer                           detects most of the plants correctly with a recall of 91% of
+with a mini-batch size of B = 2 leading to 10 images per                           the crops and 95% of the weeds.
+mini-batch. We use a weighted cross- entropy loss, where                              Fig. 2 illustrates the performance our our approach on the
+we penalize prediction errors for the crops and weeds by a                         Stuttgart dataset. Aside from the fact that we perform the
+factor of 10. We set the initial learning rate to 0.01 and                         classification in a sequence-to-one fashion, we present the
+divide it by 10 after 10 and 25 epochs respectively. We                            predictions over the whole sequence. This result supports
+stop the training after 200 epochs corresponding to a total                        the high recall obtained for the crop class. Furthermore, it
+duration of approx. 58 hours. We use dropout with a rate                           can be seen that the crops and weed pixels are precisely
+of 13 . We implemented our approach using Tensorflow and                           separated from the soil, which indicates a high performance
+it provides classification results with a processing rate of                       for the vegetation separation.
+approximately 5 Hz (200 ms) on a NVIDIA Geforce GTX                                   The changes in the visual appearance of the image data
+1080 Ti GPU. We selected the values for S, G, B and use                            of the Stuttgart and Bonn2017 datasets compared to the
+RMSPROP with the proposed learning rate schedule as this                           Bonn2016 training dataset lead to a substantial decrease of
+combination performs best within our hyperparameter search                         the obtained performance by the pure visual approaches, i.e.,
+on the Bonn2016 validation dataset. We choose S = 5 as it                          the baseline and FCN+PF [5]. The comparison suggests that
+is a good trade-off between the present spatial information                        the additional exploitation of the arrangement information
+and the computational cost per sequence.                                           leads to a better generalization to other field environments.
+                                                                                   The performance of the RF [22] breaks down due to a wrong
+C. Performance Under Changing Environmental Conditions                             initialization of the geometrical classifier induced by wrong
+   The first experiment is designed to support the claim of                        prediction of the visual classifier in the first iteration. Note
+superior generalization capabilities with a high performance                       that we executed a t-test for our approach and the respective
+of our approach, even when the training and test data notably                      baselines in Tab. II and Tab. III. In all experiments, our
+differ concerning the visual appearance in the image data.                         approach was significantly better than the baselines under
+Note that we do not perform retraining in this experiment                          a 99% confidence level.
+as its main purpose is to represent practical challenges                              The two bottom rows of the tables reflect the obtained
+for a crop-weed classification, as argued by Slaughter et                          performance for the FCN+PF? [5] and RF? [22], when
+al. [9]. We evaluate the performance in case that we operate                       the classification models have access to small amounts of
+with a different robotic system in previously unseen fields                        training data coming from the target field, e.g., to adapt
+with changes in the visual appearance in the image data                            their parameters to the data distribution through retraining.
+induced by different weed types and weed pressure and soil                         Therefore, we manually labeled 100 additional images from
+conditions. Therefore, we train the classification model on                        the test dataset and used this data to retrain the FCN+PF? [5]
+the entire data of the Bonn2016 dataset and evaluate the                           and RF? [22] classifier. Our approach obtains a comparable
+performance on the Stuttgart and Bonn2017 datasets. For a                          performance terms of the average F1-score, i.e., above 90 %,
+fair comparison with RF [22], we do not employ the online                          for the Stuttgart dataset. For the Bonn2017 dataset our
+learning and provide no labeled data from the targeted field                       approach cannot reach this level of performance. The results
+to initialize the random forest classifier.                                        indicate that retraining of classification models leads to a
+   Tab. II summarizes the obtained performance on the                              more reliable performance, but with our approach we make
+Stuttgart dataset. Our approach outperforms all other meth-                        a big step towards bridging this gap.
+
+                            Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+TABLE IV: Generalization capabilities: Test performance on data
+containing different growth stages of the sugar beets
+
+    Approach           avg. F1 [%]        Recall [%]             Precision [%]
+                                       Crop    Weed            Crop     Weed
+       our                 92.3         96.1       92.4        96.6          81.5
+     baseline              69.3         94.1       45.5        71.4          77.9
+
+                        TABLE V: Ablation Study
+
+     Approach                     Bonn2016 Bonn2017               Stuttgart         Fig. 5: Two realizations of simulated image sequences I1sim and
+                                                                                    I2sim with different properties as mentioned in Sec. IV-F. The blob
+    Vanilla FCN                     96.7          72.5                69.3
+  + Preprocessing                   96.5          79.1                77.8
+                                                                                    size is uniform within a sequence. The colored contours refer to
+  + Sequential                      97.5          83.0                89.2          the corresponding ground truth labels, i.e. crop (green), weed (red)
+  + Spatial Context (Our)           96.9          86.6                92.4          and intra-row weed (blue).
+  All classifiers are trained on the Bonn2016 training data.
+                                                                                    described in Sec. III-C. Then, we add our proposed pre-
+   Thus, this experiment clearly shows the superior gener-                          processing which helps to generalize to different fields. It
+alization capabilities of our approach and the impact of ex-                        minimizes the effect of different lighting conditions (see
+ploiting sequential data. However, we will further investigate                      Fig. 4) at the cost of a neglectable decrease in performance
+the influence of the sequential module and other key design                         on the Bonn2016 dataset. We can furthermore improve the
+decision in our ablation study in Sec. IV-E.                                        generalization capabilities by using the sequential module on
+D. Performance Under Changing Growth Stage                                          top. Adding then more spatial context by increasing the re-
+                                                                                    ceptive field of the sequential module by using bigger kernels
+   This experiment is designed to evaluate the generalization                       and dilated convolutions further improves the performance.
+capabilities of our approach regarding changes due the
+                                                                                       The high performance of all configurations on the held-
+growth stage. This scenario is typical in practical use cases,
+                                                                                    out Bonn2016 data indicates that FCNs generally obtain
+where the robot enters the same field again after some time.
+                                                                                    a stable and high performance under a comparably low
+We evaluate this by choosing training and test subsets from
+                                                                                    diversity in the data distribution. Thus, diversity between
+the Bonn2016 datasets with a temporal difference of around
+                                                                                    the training and test data is crucial to evaluate crop-weed
+10 days. The training data is given by around 1, 500 images
+                                                                                    classification system under practical circumstances. We con-
+acquired in early season at the two-leave growth stage with
+                                                                                    clude that preprocessing and exploitation of the repetitive
+an average leaf of around 1 cm2 . The test data is given by
+                                                                                    pattern given by the crop arrangement helps to improve the
+images from another location in the same field captured later
+                                                                                    generalization capabilities of our sequential FCN-based crop-
+in time, where the sugar beets have an average size of 6 cm2 ,
+                                                                                    weed classification system.
+i.e. about six times larger than the training examples.
+   Tab. IV shows the obtained performance of our approach                           F. Experiment on Learning the Crop-Weed Arrangement
+in comparison to the baseline model. With an average F1-
+score of 91%, our approach provides a solid performance                                Using experiments with simulated data, we finally demon-
+under changing growth stages. The results show that our                             strate the capability of our approach to extract information
+approach can exploit the repetitive arrangement pattern of the                      about the spatial arrangement of the crops and weeds. For
+sugar beets from the sequential data stream, since it better                        this purpose, we create input data providing solely the
+generalizes to other growth stages compared to the baseline                         signal of the plant arrangement as a potential information
+model. The performance of the baseline model suffers from                           to distinguish the crop and weeds.
+the different visual appearance as it solely relies on visual                          We render binary image sequences encoding the crops
+cues. The decrease in performance of the baseline model un-                         and weeds as uniform sized blobs while imitating (i) the
+derlines that exploiting sequential information compensates                         crop-weed arrangement and (ii) the acquisition setup of the
+for changes in the visual appearance.                                               robotic system in terms of the camera setup and its motion
+                                                                                    in space. Fig. 5 depicts two simulated sequences and their
+E. Ablation Study                                                                   corresponding ground truth information. Note that within a
+   In this experiment, we show the effect of the most central                       sequence, we only model blobs of uniform size. Thus, we
+architectural design choices resulting in the largest gain                          provide neither spectral nor shape information as a potential
+and improvement of the generalization capability. Therefore,                        input signal for the classification task. We hypothesize that an
+we evaluate different architectural configurations of our                           algorithm solving the classification task given the simulated
+approach using 75% of the Bonn2016 dataset for training                             data is also able to learn features describing the arrangement
+and evaluate the performance on (i) 20% held-out testset of                         of crops and weeds.
+Bonn2016, (ii) Stuttgart and (iii) Bonn2017.                                           We furthermore explicitly simulate intra-row weeds, i.e.,
+   Tab. V reports the obtained object-wise test performance                         weeds located close to the crop row. To properly detect
+with respect to the average F1-score. Here, we start with                           intra-row weeds, the classifier needs to learn the intra-row
+a vanilla FCN corresponding to our Encoder-Decoder FCN                              distance between crops instead of solely memorizing that
+
+                            Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+            TABLE VI: Test performance on simulated data                          [8] C. Potena, D. Nardi, and A. Pretto, “Fast and accurate crop and weed
+                                                                                      identification with summarized train sets for precision agriculture,” in
+               avg.       Recall [%]           Precision [%]                          Proc. of Int. Conf. on Intelligent Autonomous Systems (IAS), 2016.
+ Approach
+              F1 [%] Crop Weed Intra-Weed Crop Weed Intra-Weed                    [9] D. Slaughter, D. Giles, and D. Downey, “Autonomous robotic weed
+                                                                                      control systems: A review,” Computers and Electronics in Agriculture,
+   our         93.6   95.4    99.1      84.2      98.3    99.1      85.5              vol. 61, no. 1, pp. 63 – 78, 2008.
+ baseline      47.3   61.1    59.3       9.4      75.9    80.4       4.4         [10] N. Chebrolu, P. Lottes, A. Schaefer, W. Winterhalter, W. Burgard,
+                                                                                      and C. Stachniss, “Agricultural Robot Dataset for Plant Classification,
+                                                                                      Localization and Mapping on Sugar Beet Fields,” Intl. Journal of
+all vegetation growing close to the center line of a crop row                         Robotics Research (IJRR), 2017.
+belongs to the crop class. We model the following properties                     [11] P. Lottes, M. Hoeferlin, S. Sanders, and C. Stachniss, “Effective
+                                                                                      Vision-Based Classification for Separating Sugar Beets and Weeds for
+for creating the simulated sequences, as shown in Fig. 5:                             Precision Farming,” Journal of Field Robotics (JFR), 2016.
+(1) intra-row distance (15-25 cm), (2) inter-row distance (30-                   [12] M. Cicco, C. Potena, G. Grisetti, and A. Pretto, “Automatic Model
+60 cm), (3) weed pressure (0-200% w.r.t. the crops present                            Based Dataset Generation for Fast and Accurate Crop and Weeds
+                                                                                      Detection,” in Proc. of the IEEE/RSJ Intl. Conf. on Intelligent Robots
+in the sequence), (4) plant size (0.5-8.0 cm2 ), and (5) the                          and Systems (IROS), 2017.
+camera motion along the row by a slight variation of the                         [13] C. McCool, T. Perez, and B. Upcroft, “Mixtures of Lightweight Deep
+steering angle. We pertubate the plant locations by Gaussian                          Convolutional Neural Networks: Applied to Agricultural Robotics,”
+                                                                                      IEEE Robotics and Automation Letters (RA-L), 2017.
+noise (µ = 0 and σ 2 = 10% of the intra-row distance).                           [14] A. Milioto, P. Lottes, and C. Stachniss, “Real-time Blob-wise
+   Tab. VI shows the performance of our approach compared                             Sugar Beets vs Weeds Classification for Monitoring Fields using
+to the baseline approach. These results demonstrate that our                          Convolutional Neural Networks,” in Proc. of the Intl. Conf. on
+                                                                                      Unmanned Aerial Vehicles in Geomatics, 2017.
+approach can exploit the sequential information to extract the                   [15] C. Szegedy, V. Vanhoucke, S. Ioffe, J. Shlens, and Z. Wojna,
+pattern of the crop arrangement for the classification task. In                       “Rethinking the Inception Architecture for Computer Vision,” in
+contrast, the baseline model is unable to properly identify                           Proc. of the IEEE Conf. on Computer Vision and Pattern Recognition
+                                                                                      (CVPR), 2016.
+the crops and weeds due to missing shape information.                            [16] J. Long, E. Shelhamer, and T. Darrell, “Fully Convolutional Networks
+                                                                                      for Semantic Segmentation,” in Proc. of the IEEE Conf. on Computer
+                             V. C ONCLUSION                                           Vision and Pattern Recognition (CVPR), 2015.
+   In this paper, we presented a novel approach for preci-                       [17] V. Badrinarayanan, A. Kendall, and R. Cipolla, “SegNet: A Deep Con-
+                                                                                      volutional Encoder-Decoder Architecture for Image Segmentation,”
+sion agriculture robots that provides a pixel-wise semantic                           IEEE Trans. on Pattern Analalysis and Machine Intelligence (TPAMI),
+segmentation into crop and weed. It exploits a fully con-                             vol. 39, no. 12, pp. 2481–2495, 2017.
+volutional network integrating sequential information. We                        [18] A. Paszke, A. Chaurasia, S. Kim, and E. Culurciello, “ENet: Deep
+                                                                                      Neural Network Architecture for Real-Time Semantic Segmentation,”
+proposed to encode the spatial arrangement of plants in a row                         arXiv preprint, vol. abs/1606.02147, 2016.
+using 3D convolutions over an image sequence. Our thorough                       [19] O. Ronneberger, P.Fischer, and T. Brox, “U-Net: Convolutional
+experimental evaluation using real-world data demonstrates                            Networks for Biomedical Image Segmentation,” in Medical Image
+                                                                                      Computing and Computer-Assisted Intervention, ser. LNCS, vol.
+that our system (i) generalizes better to unseen fields in com-                       9351. Springer, 2015, pp. 234–241.
+parison to other state-of-the-art approaches and (ii) is able to                 [20] I. Sa, Z. Chen, M. Popvic, R. Khanna, F. Liebisch, J. Nieto, and
+robustly classify crop in different growth stages. Finally, we                        R. Siegwart, “weedNet: Dense Semantic Weed Classification Using
+                                                                                      Multispectral Images and MAV for Smart Farming,” IEEE Robotics
+show that the proposed sequential module actually encodes                             and Automation Letters (RA-L), vol. 3, no. 1, pp. 588–595, 2018.
+the spatial arrangement of the plants through simulation.                        [21] A. Wendel and J. Underwood, “Self-Supervised Weed Detection in
+                                                                                      Vegetable Crops Using Ground Based Hyperspectral Imaging,” in
+                              R EFERENCES                                             Proc. of the IEEE Intl. Conf. on Robotics & Automation (ICRA), 2016.
+                                                                                 [22] P. Lottes and C. Stachniss, “Semi-supervised online visual crop and
+ [1] M. Müter, P. S. Lammers, and L. Damerow, “Development of an intra-              weed classification in precision farming exploiting plant arrangement,”
+     row weeding system using electric servo drives and machine vision                in Proc. of the IEEE/RSJ Intl. Conf. on Intelligent Robots and
+     for plant detection,” in Proc. of the International Conf. on Agricultural        Systems (IROS), 2017.
+     Engineering LAND.TECHNIK (AgEng), 2013.                                     [23] D. Hall, F. Dayoub, T. Perez, and C. McCool, “A Transplantable
+ [2] F. Langsenkamp, F. Sellmann, M. Kohlbrecher, A. Kielhorn, W. Stroth-             System for Weed Classification by Agricultural Robotics,” in Proc. of
+     mann, A. Michaels, A. Ruckelshausen, and D. Trautz, “Tube stamp                  the IEEE/RSJ Intl. Conf. on Intelligent Robots and Systems (IROS),
+     for mechanical intra-row individual plant weed control,” in Proc. of             2017.
+     the International Conf. of Agricultural Engineering (CIGR), 09 2014.        [24] D. Hall, F. Dayoub, J. Kulk, and C. McCool, “Towards Unsupervised
+ [3] S. Haug, A. Michaels, P. Biber, and J. Ostermann, “Plant Classification          Weed Scouting for Agricultural Robotics,” in Proc. of the IEEE
+     System for Crop / Weed Discrimination without Segmentation,” in                  Intl. Conf. on Robotics & Automation (ICRA), 2017.
+     Proc. of the IEEE Winter Conf. on Applications of Computer Vision           [25] G. Huang, Z. Liu, L. v. d. Maaten, and K. Q. Weinberger, “Densely
+     (WACV), 2014.                                                                    Connected Convolutional Networks,” in Proc. of the IEEE Conf. on
+ [4] P. Lottes, R. Khanna, J. Pfeifer, R. Siegwart, and C. Stachniss,                 Computer Vision and Pattern Recognition (CVPR), 2017.
+     “UAV-Based Crop and Weed Classification for Smart Farming,” in              [26] S. Jégou, M. Drozdzal, D. Vázquez, A. Romero, and Y. Bengio,
+     Proc. of the IEEE Intl. Conf. on Robotics & Automation (ICRA),                   “The One Hundred Layers Tiramisu: Fully Convolutional DenseNets
+     2017.                                                                            for Semantic Segmentation,” arXiv preprint:1611.09326, 2017.
+ [5] A. Milioto, P. Lottes, and C. Stachniss, “Real-time Semantic                [27] N. Srivastava, G. Hinton, A. Krizhevsky, I. Sutskever, and
+     Segmentation of Crop and Weed for Precision Agriculture Robots                   R. Salakhutdinov, “Dropout: A Simple Way to Prevent Neural
+     Leveraging Background Knowledge in CNNs,” in Proc. of the IEEE                   Networks from Overfitting,” Journal of Machine Learning Research
+     Intl. Conf. on Robotics & Automation (ICRA), 2018.                               (JMLR), vol. 15, pp. 1929–1958, 2014.
+ [6] A. K. Mortensen, M. Dyrmann, H. Karstoft, R. N. Jörgensen, and             [28] V. Dumoulin and F. Visin, “A guide to convolution arithmetic for
+     R. Gislum, “Semantic Segmentation of Mixed Crops using Deep                      deep learning,” arXiv preprint, 2018.
+     Convolutional Neural Network,” in Proc. of the International Conf. of       [29] K. He, X. Zhang, S. Ren, and J. Sun, “Delving deep into rectifiers:
+     Agricultural Engineering (CIGR), 2016.                                           Surpassing human-level performance on imagenet classification,” in
+ [7] A. Nieuwenhuizen, “Automated detection and control of volunteer                  Proc. of the IEEE Intl. Conf. on Computer Vision (ICCV), 2015.
+     potato plants,” Ph.D. dissertation, Wageningen University, 2009.
+
+
+                          Copyright © IEEE 2018 All rights reserved. IEEE Robotics and Automation Letters 2018.
+

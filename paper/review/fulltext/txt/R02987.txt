@@ -1,0 +1,2334 @@
+                                         Turning spectra into images improves plant trait retrieval with
+                                                                   2D-CNNs
+                                                    Javier Lopatina,b,c,∗, Teja Kattenbornd , Eya Cherife , Sebastián Morenoa
+                                               a
+                                               Faculty of Engineering and Science, Adolfo Ibáñez University, Av. Diagonal Las Torres 2460,
+                                                                                 Santiago, Chile, 7941169
+                                          b
+                                            Data Observatory Foundation, ANID Technology Center No. DO210001, Santiago, Chile, 7510277
+                                             c
+                                               Center for Climate Resilience Research (CR)2, University of Chile, Santiago, Chile, 8370449
+                                             d
+                                               Sensor-based Geoinformatics (geosense), University of Freiburg, Freiburg, Breisgau, Germany
+                                                 e
+                                                   Institute for Earth System Science and Remote Sensing, Leipzig University, Germany
+
+
+
+
+                                         Abstract
+                                         Hyperspectral reflectance spectroscopy enables non-destructive estimation of plant func-
+                                         tional traits, yet current deep learning approaches process spectra as one-dimensional
+arXiv:2608.16661v1 [cs.CV] 17 Aug 2026
+
+
+
+
+                                         sequences, which limits their ability to capture long-range inter-band dependencies. We
+                                         asked whether transforming 1D spectra into 2D image representations improves multi-
+                                         trait prediction with convolutional neural networks (CNN). We compared nine transfor-
+                                         mations using EfficientNet-B0 on the GreenHyperSpectra dataset (7,897 labeled spectra,
+                                         eight traits, 400–2450 nm), benchmarked against published 1D CNN results on the same
+                                         split. Trained from scratch, the simplest transformation, a direct Reshape of the spectrum
+                                         into a 2D grid, performed best (R2 = 0.684 ± 0.001) and improved on the state-of-the-art
+                                         1D baseline (R2 = 0.587, +0.097). We then pretrained a 2D masked autoencoder (MAE-
+                                         2D) on 139,000 unlabeled spectral images. Linear probing, which freezes the encoder and
+                                         trains only a multilayer perceptron head, reached R2 = 0.646 and exceeded every 1D
+                                         self-supervised counterpart, including the fine-tuned MAE-1D (R2 = 0.641). We did not
+                                         find significant differences compared to the 1D baselines in cross-dataset evaluation. To
+                                         identify which wavelengths drive each prediction, we applied Integrated Gradients and
+                                         Grad-CAM and unfolded band importance back to the spectral axis. Protein (r = 0.45)
+                                         and leaf water (r = 0.33) agreed with sensitivities simulated by the PROSAIL radiative-
+                                         transfer model, while carotenoids (r = 0.06) and leaf area index (r = −0.11) did not,
+                                         showing that the model reads established leaf chemistry for traits with sharp absorption
+                                         features. The representational advantage of 2D spectral images, rather than architectural
+                                         complexity or ImageNet pretraining, drives the gain over 1D approaches.
+                                         Keywords: Imaging spectroscopy, Deep learning, Explainable AI, Radiative transfer
+                                         model (PROSAIL), Vegetation biochemistry
+
+
+                                         1. Introduction
+                                             Plant functional traits are measurable properties that influence how organisms re-
+                                         spond to and affect their environment, and are central to understanding ecosystem func-
+                                         tioning, biodiversity, and the global carbon cycle (Kattge et al., 2020). In particular, traits
+                                         such as leaf chlorophyll content, carotenoid concentration, leaf mass per area, and leaf
+
+                                           ∗
+                                               Corresponding author; javier.lopatin@uai.cl
+area index govern photosynthetic capacity, light interception, and nutrient cycling, mak-
+ing their accurate quantification essential for ecological research and precision agriculture
+(Homolova et al., 2013). To meet this need, hyperspectral reflectance spectroscopy offers
+a non-destructive pathway for estimating these traits at scale, since foliar biochemistry
+and canopy structure imprint characteristic absorption features across the 400–2500 nm
+spectral range (Curran, 1989; Fu et al., 2020).
+    Traditional approaches for deriving traits from spectra rely on vegetation indices,
+look-up table inversion of radiative transfer models such as PROSAIL (Féret et al., 2021;
+Ferreira et al., 2025), or statistical methods, principally partial least squares regres-
+sion (PLSR), that project the high-dimensional spectral space onto a low-dimensional
+latent representation (Fu et al., 2020; Ji et al., 2024). While effective, PLSR models
+are typically trained and validated on individual traits, require careful feature engineer-
+ing, and can struggle to capture the non-linear relationships between reflectance and
+biochemical concentrations that arise from multiple scattering and overlapping absorp-
+tion features (Verhoef et al., 2007). More recently, one-dimensional convolutional neural
+networks (1D-CNNs) have been applied directly to spectral vectors, learning hierarchi-
+cal features end-to-end and achieving state-of-the-art multi-trait retrieval performance
+without manual feature selection (Cherif et al., 2023; Furbank et al., 2021). For exam-
+ple, Cherif et al. (2023) demonstrated that a single EfficientNet-based 1D-CNN trained
+simultaneously on 20 traits across 42 heterogeneous field datasets outperformed PLSR
+baselines, establishing a benchmark for transferable multi-trait models. Their subsequent
+GreenHyperSpectra dataset (Cherif et al., 2025) further advanced this line of work by in-
+corporating semi-supervised and self-supervised pretraining strategies, with a 1D masked
+autoencoder (MAE) achieving the best results (R2 = 0.641) after fine-tuning on labeled
+data.
+    Despite this progress, 1D-CNNs process the spectrum as a flat sequence, inherently
+limiting their receptive field to local neighborhoods of adjacent bands. Spectral signa-
+tures of plant traits, however, arise from the interplay of multiple absorption features
+distributed across the full wavelength range, for example, the joint influence of pigment
+absorption in the visible, water absorption in the shortwave infrared, and structural
+scattering near the red edge (Curran, 1989; Homolova et al., 2013). Capturing these
+long-range inter-band dependencies within a 1D framework requires either very deep net-
+works or large kernel sizes, both of which increase the risk of overfitting when labeled
+training data are scarce.
+    An alternative strategy, increasingly explored in signal processing and chemometrics,
+is to transform one-dimensional signals into two-dimensional image representations and
+leverage the powerful feature extraction capabilities of 2D-CNNs originally developed for
+computer vision (Wang and Oates, 2015; Garcia et al., 2022; Tan et al., 2026). Several
+encoding methods have been proposed for this purpose. Gramian Angular Fields (GAF)
+and Markov Transition Fields (MTF) encode temporal or spectral correlations as square
+images by mapping signal values to angular or transition-probability spaces (Wang and
+Oates, 2015; Ganesan et al., 2021). Continuous wavelet transform (CWT) scalograms
+decompose signals across multiple frequency scales, producing time-frequency represen-
+tations that have proven effective for fault diagnosis, medical signal classification, and
+spectral analysis (Addison, 2017; Lopatin, 2023; Ong et al., 2025; Zhuang et al., 2023).
+Short-time Fourier transform spectrograms offer a complementary multi-window decom-
+position (Shuai et al., 2025), while direct reshaping, simply folding the 1D vector into a 2D
+matrix, has been shown to produce surprisingly competitive results by preserving wave-
+
+
+                                             2
+length adjacency as spatial texture (Yuan et al., 2022; Deev et al., 2024; Sharma et al.,
+2019). Building on this idea, band adjacency can be preserved more faithfully with alter-
+nating raster (serpentine) or space-filling (Hilbert-curve) layouts (Kamata et al., 1995),
+whereas all-band normalized-difference matrices instead encode every pair of bands, ex-
+tending the logic of two-band spectral indices (Inoue et al., 2008). More recently, these
+encoding techniques have begun to appear in spectroscopic applications, including GAF-
+based adulteration detection in food products (Zhang et al., 2025b) and CWT-assisted
+disease recognition from near-infrared spectra (Ong et al., 2025). Figure 1 shows seven
+transformation examples for three different vegetation signals. The central premise is that
+converting one-dimensional hyperspectral reflectance signals into two-dimensional image
+representations may reveal inter-band relationships, multi-scale spectral patterns, and
+structural regularities that conventional 1D convolutional architectures fail to capture.
+    However, the application of 1D-to-2D spectral transformations to vegetation trait
+retrieval from hyperspectral data remains largely unexplored. Existing studies in this
+domain have predominantly focused on classification tasks (e.g., species discrimination)
+rather than continuous regression of biophysical variables (Yuan et al., 2022), and no
+systematic comparison of multiple transformation methods under controlled experimen-
+tal conditions has been conducted. Furthermore, converting spectra into images enables
+the direct application of established 2D vision architectures and self-supervised learning
+frameworks. Among these, 2D masked autoencoders (i.e., MAEs; He et al., 2022) have
+demonstrated strong representation-learning capabilities using unlabeled image data.
+Although analogous 1D MAEs provide an effective alternative for spectral pretraining
+(Cherif et al., 2025), it remains unknown whether applying 2D MAEs to transformed
+spectral images offers representational advantages for vegetation trait retrieval.
+    In this study, we aim to: (i) systematically compare the performance of nine 1D-to-
+2D spectral transformation methods as spectral encoding strategies for 2D-CNN-based
+trait retrieval; (ii) assess whether converting spectra to 2D images enables self-supervised
+pretraining via masked autoencoders to improve trait predictions beyond what 1D pre-
+training achieves; (iii) assess whether the 2D representation improves the transferability
+to unseen sites; and (iv) create a variable importance visualization from the 2D represen-
+tations and test it against radiative-transfer sensitivity. We used the GreenHyperSpectra
+dataset to benchmark our 2D approach against the state-of-the-art 1D methods (Cherif
+et al., 2025).
+
+2. Methods
+2.1. Study Data
+    We used the GreenHyperSpectra dataset (Cherif et al., 2025), a large-scale multi-
+source hyperspectral collection recently published as a benchmarking resource for plant
+trait prediction. The dataset comprises two components: a labeled set of 7,897 vegetation
+canopy reflectance spectra with co-located measurements of seven functional plant traits,
+and an unlabeled set of 139,295 spectra collected from proximal, airborne, and spaceborne
+platforms across diverse continents, ecosystems, and sensor configurations. All spectra
+were resampled to a uniform wavelength grid spanning 400–2450 nm at 1 nm resolution.
+Regions of strong atmospheric water absorption (1351–1430 nm, 1801–2050 nm, and 2451–
+2500 nm) were removed, and a Savitzky-Golay smoothing filter (window = 65, polynomial
+order = 1) was applied per spectral segment, yielding 1721 spectral bands per sample
+(Cherif et al., 2025). Figure 1 a) shows an example of three input data points/spectra.
+
+
+                                             3
+  (a)
+
+                                                                                                                            Spectrum 1: High chlorophyll + high leaf area index
+                                                                                                                            Spectrum 2: Low chlorophyll + high leaf mass per area
+               0.5
+                                                                                                                            Spectrum 3: High anthocyanins
+
+
+               0.4
+ Reflectance
+
+
+
+
+               0.3
+
+
+               0.2
+
+
+               0.1
+
+
+               0.0
+(b)                               500       750            1000                  1250               1500         1750             2000                     2250
+                                                                                        Wavelength (nm)
+                                              Continuous                                 Two-Dimensional                                                       All-Band
+                                               Wavelet            Multi-Window             Correlation       Gramian               Markov                Normalized-Difference
+                                  Reshape     Transform           Spectrogram             Spectroscopy     Angular Fields      Transition Field                 Matrix
+                     Spectrum 1
+                     Spectrum 2
+                     Spectrum 3
+
+
+
+
+Figure 1: Illustration of seven of the nine 1D-to-2D spectral transformations applied to three representa-
+tive spectra with contrasting trait profiles. The Serpentine and Hilbert-curve variants are re-layouts of the
+same Reshape values and are not shown separately. (a) Original reflectance spectra: Spectrum 1 exhibits
+high chlorophyll content and high leaf area index (LAI); strong visible absorption and a near-infrared
+plateau. Spectrum 2 shows low chlorophyll and high leaf mass per area (reduced visible absorption,
+prominent dry matter features), and Spectrum 3 displays high anthocyanin content (elevated green-edge
+reflectance). (b) Corresponding 2D image representations produced by each transformation method.
+Each transformation encodes different aspects of the spectral information: Reshape preserves wave-
+length adjacency as spatial texture; Continuous wavelet transform (CWT) reveals multi-scale absorption
+features; Spectrogram captures localized frequency content through three complementary windows; 2D-
+COS highlights inter-band correlations; Gramian Angular Fields (GAF) encodes angular relationships
+between spectral values; Markov Transition Fields (MTF) represent transition dynamics between dis-
+cretized intensity bins; and the all-band normalized-difference matrix (NDI) encodes every pair of bands
+as a normalized-difference index. Reflectance is not available between 1351–1430 and 1801–2050 nm,
+where the water absorption regions were excluded from the dataset. The curves are drawn continuously
+across those two intervals, so the straight segments there are interpolation, not measured signal.
+                                                                                          .
+
+As can be observed, the wavelength ranges from 400 to 2450 nm and, for each wavelength,
+we show its corresponding reflectance value (the input data).
+    The labeled subset aggregates data from 50 field campaigns spanning forests, grass-
+lands, croplands, tundra, and pastures, with trait values harmonized to area-based units.
+The seven target traits, outputs to predict, correspond to parameters of the PROSAIL-
+PRO radiative transfer model (Féret et al., 2021): leaf chlorophyll content (Cab , µg cm−2 ),
+carotenoid content (Car , µg cm−2 ), anthocyanin content (Canth , µg cm−2 ), equivalent wa-
+ter thickness (Cw , g m−2 ), leaf mass per area (Cm , g m−2 ), leaf area index (LAI, m2 m−2 ),
+and protein content (Cp , g m−2 ). An eighth derived trait, carbon-based constituents (Cbc
+= Cm − Cp ), was additionally computed following Cherif et al. (2025). Not all samples
+possess measurements for every trait; the dataset is inherently sparse, with missing values
+
+
+                                                                                           4
+handled through masked loss functions during training (Section 2.4).
+
+2.2. 1D-to-2D Spectral Transformations
+    We evaluated nine transformation methods, each encoding different aspects of the
+spectral information into spatial image structure. All transformations produced images
+of 224×224 pixels (with varying numbers of channels) suitable for standard convolutional
+neural network architectures (Figure 1).
+
+2.2.1. Direct Reshape
+    The simplest transformation reshapes the 1D √spectral vector into a 2D matrix by
+computing the smallest integer side length s = ⌈ n⌉ where n = 1721 bands, yielding
+s = 42. The spectrum is zero-padded to 42 × 42 = 1764 elements (appending 43 zeros)
+and folded into a square matrix, which is then bilinearly resized to 224×224 and min-max
+normalized to [0, 1]. The scaling uses each image’s own minimum and maximum rather
+than statistics pooled over the training set, so the transform preserves spectral shape
+and discards overall amplitude. We also tested a global scaling fitted on the training
+set, which lowered accuracy for all eight traits (Table S7), so we kept the per-image
+version. Despite its simplicity, this transformation preserves the sequential ordering of
+wavelengths, such that spatially adjacent pixels correspond to spectrally proximate bands
+(Yuan et al., 2022). The resulting single-channel image encodes local spectral gradients
+as spatial texture that 2D convolutions can exploit.
+
+2.2.2. Serpentine and Hilbert-Curve Reshape
+    The direct Reshape preserves the global wavelength order, but its row-major raster
+breaks spectral adjacency at every row boundary, because the last band of one row and
+the first band of the next fall far apart in the image. We tested two reshape variants
+(Yuan et al., 2022) that remove this discontinuity. The Serpentine, or boustrophedon,
+reshape lays out consecutive rows in alternating direction, reversing every odd row, so that
+consecutive bands always map to spatially adjacent pixels, including across rows. The
+Hilbert-curve reshape instead places the bands along a Hilbert space-filling curve, which
+keeps points that are close along the spectrum close in the plane at every scale (Kamata
+et al., 1995). Because the Hilbert curve needs a power-of-two side, we resampled the
+spectrum to 64 × 64 = 4096 points by linear interpolation and filled the grid completely,
+avoiding a large zero-padded region. Both variants produce a single-channel 224 × 224
+image, normalized as for the direct Reshape.
+
+2.2.3. Continuous Wavelet Transform
+    The continuous wavelet transform (CWT) decomposes the spectral signal across multi-
+ple frequency scales simultaneously, producing a time-frequency (or in this case, wavelength-
+scale) representation known as a scalogram (Addison, 2017). We employed the Morlet
+wavelet across 128 logarithmically spaced scales ranging from 1 to 128, computed using
+the PyWavelets library (Lee et al., 2019). The absolute values of the wavelet coefficients
+form a 128 × 1721 scalogram that captures both narrow absorption features (at fine
+scales) and broad spectral trends (at coarse scales). The scalogram was bilinearly resized
+to 224 × 224 and min-max normalized, yielding a single-channel image. CWT approaches
+have proven effective in capturing multi-scale spectral features for trait retrieval at the
+canopy (Blackburn, 2007) and leaf (Lopatin, 2023) levels.
+
+
+
+                                             5
+2.2.4. Multi-Window Spectrogram
+    The short-time Fourier transform (STFT) was applied with three different window
+functions—Bartlett, Gaussian (σ = 12), and Blackman—each producing a complemen-
+tary time-frequency representation of the spectrum. We used a segment length of 64
+samples with 50% overlap (32 samples), following the multi-channel approach of Shuai
+et al. (2025). The magnitude of each STFT output was computed, bilinearly resized to
+224 × 224, and min-max normalized. The three resulting spectrograms were stacked as
+a three-channel (RGB-like) image, where each channel emphasizes different spectral fea-
+tures owing to the distinct frequency leakage and sidelobe characteristics of the respective
+windows.
+
+2.2.5. Two-Dimensional Correlation Spectroscopy
+    Two-dimensional correlation spectroscopy (2D-COS) generates synchronous and asyn-
+chronous correlation maps from perturbation-induced spectral variations (Noda, 2004). In
+classical 2D-COS, perturbation arises from external stimuli (e.g., temperature, concentra-
+tion) applied across multiple spectra. Here, we adapted the formulation for single-sample
+analysis by simulating perturbation through dividing each spectrum into 10 overlapping
+segments (50% overlap) and computing the cross-correlation between band intensities
+across segments. The synchronous correlation matrix Φ = XT X/(m − 1), where X is
+the mean-centered segment matrix and m is the number of segments, captures in-phase
+inter-band correlations. The asynchronous correlation matrix Ψ = XT NX/(m − 1) em-
+ploys the Hilbert-Noda transformation matrix Nij = 1/[π(j − i)] for i ̸= j (and zero
+otherwise), with i and j indexing segments, revealing sequential spectral changes. Both
+matrices were individually min-max normalized and bilinearly resized to 224 × 224, then
+stacked as a two-channel image.
+
+2.2.6. Gramian Angular Fields
+    Gramian Angular Fields (GAF) encode temporal (or spectral) correlations as angular
+relationships in a polar coordinate system (Wang and Oates, 2015). The spectrum is
+first downsampled to 224 values via linear interpolation and scaled to [−1, 1]. An angular
+representation φi = arccos(xi ) is computed for each spectral value, and two complemen-
+tary fields are generated: the Gramian Angular Summation Field (GASF), defined as
+GASFij = cos(φi + φj ), which captures in-phase spectral correlations; and the Gramian
+Angular Difference Field (GADF), defined as GADFij = sin(φi − φj ), which captures
+phase differences. The two fields were min-max normalized and stacked as a two-channel
+image.
+
+2.2.7. Markov Transition Field
+    The Markov Transition Field (MTF) encodes the transition dynamics between dis-
+cretized spectral value bins as a spatial image (Wang and Oates, 2015). The spectrum
+is downsampled to 224 values and discretized into 8 quantile-based bins. A first-order
+Markov transition matrix P is estimated, where Pij represents the conditional probability
+of transitioning from bin i to bin j across consecutive spectral positions. The MTF is
+then constructed as MTFij = P [qi , qj ], where qi and qj are the bin assignments at spectral
+positions i and j, respectively. The resulting 224×224 single-channel image was min-max
+normalized.
+
+
+
+
+                                             6
+2.2.8. All-Band Normalized-Difference Matrix
+    The all-band normalized-difference matrix (NDI) tests the inter-band interaction hy-
+pothesis directly, because every pixel is an explicit function of two arbitrarily distant
+bands. Following the logic of two-band normalized-difference indices, which have been
+optimized over all band pairs for trait retrieval (Inoue et al., 2008), each pixel (i, j) en-
+codes the relationship between bands λi and λj . We first downsampled the spectrum to
+224 bands by uniform index sampling to keep the all-pairs matrix tractable. Because
+the normalized difference discards absolute reflectance, we stacked three complementary
+channels: the normalized difference p(Ri − Rj )/(Ri + Rj + ε), the absolute difference
+|Ri − Rj |, and the geometric level Ri Rj , with ε = 10−8 . Each channel was min-max
+normalized to [0, 1] independently, giving a three-channel 224 × 224 image.
+
+2.2.9. Composite Input
+    We used a composite approach to test whether combining complementary encodings
+recovers information that any single transform misses, stacking several transforms as sep-
+arate image channels so one network sees them at once. Because the transforms encode
+overlapping information and yield highly correlated predictions, we let complementarity
+rather than individual accuracy guide the choice of channels. We grouped the trans-
+forms into three information families, a raw spatial-layout family (Reshape, Serpentine,
+Hilbert), a time-frequency family (CWT and spectrogram), and a pairwise inter-band
+family (NDI, GAF, and 2D-COS), and built a composite from the best-performing mem-
+ber of each family, as identified by the single-transform comparison (Section 3.1).
+
+2.3. Model Architectures
+    Having converted each spectrum into a 2D image, we now apply image models to
+predict the traits. We treated the task as a single multi-output regression, where one
+model predicts all eight traits (Section 2.1) at once instead of training eight separate
+models. We tested two settings. We first trained a supervised CNN from scratch. Then,
+we pretrained a self-supervised MAE on unlabeled images before fine-tuning it on the
+labeled data.
+
+2.3.1. Supervised Regression: EfficientNet-B0
+    For supervised multi-trait regression, we employed EfficientNet-B0 (Tan and Le, 2019)
+as the backbone architecture, instantiated through the timm library (Wightman, 2019)
+and trained from scratch. We selected EfficientNet-B0 for its favorable trade-off between
+model capacity (∼4 M trainable parameters) and computational efficiency, which proved
+critical given the moderate size of the labeled training set (n = 4,508). It is also the
+selected model for the 1D baseline in Cherif et al. (2025). We replaced the network’s
+final classification layer with a single linear head mapping to 8 output neurons (one per
+target trait), so one network predicts all traits jointly, and applied a dropout rate of
+0.3 before the output layer. For single-channel transformations (e.g., Reshape, CWT,
+MTF), we adapted the first convolutional layer from three to one input channel by aver-
+aging the randomly initialized channel weights along the input dimension. Multi-channel
+transformations (e.g., Spectrogram, 2D-COS, GAF) required analogous channel-count
+adjustments.
+
+2.3.2. Self-Supervised Pretraining: Masked Autoencoder (MAE-2D)
+    To leverage the 139,295 unlabeled spectra for representation learning, we implemented
+a two-dimensional Masked Autoencoder (MAE) following the framework of He et al.
+
+                                             7
+(2022). The MAE operates on 2D spectral images produced by the best-performing
+transformation (Reshape; see Section 3.1), enabling the use of standard vision transformer
+components.
+    The encoder follows a Vision Transformer (ViT) architecture (Dosovitskiy et al., 2021)
+with patch size 16 × 16, embedding dimension 192, 6 transformer blocks, and 3 attention
+heads per block, yielding 196 patches per 224 × 224 image. During pretraining, 75% of
+patches are randomly masked, and only the visible 25% are processed by the encoder,
+substantially reducing computational cost. Fixed sinusoidal 2D positional embeddings
+are added to all patch tokens, and a learnable class (CLS) token is prepended to the
+sequence. The CLS token plays no classification role here. It acts as a learned pooling
+operator that attends to every visible patch, and its output embedding serves as the
+global representation of the image, an alternative to averaging the patch tokens.
+    The decoder is a lightweight transformer with embedding dimension 96, 4 blocks, and
+3 attention heads. It receives the encoded visible patches along with learnable mask
+tokens that replace the masked positions. After processing through the decoder blocks, a
+linear projection maps each token to the pixel values of its corresponding 16 × 16 patch.
+The reconstruction loss is computed only on masked patches:
+                                         1 X
+                               LMAE =           ∥p̂i − pi ∥2                            (1)
+                                        |M| i∈M
+
+where M denotes the set of masked patch indices, p̂i is the reconstructed patch, and pi
+is the original patch. We did not apply any data augmentation beyond random masking
+during pretraining, consistent with the finding of He et al. (2022) that masking itself
+provides sufficient regularization, and following the protocol of Cherif et al. (2025) whose
+1D MAE likewise omitted augmentation.
+    The total model comprises approximately 3.3 M parameters (2.8 M encoder, 0.5 M de-
+coder). After pretraining, the decoder is discarded, and the encoder’s token representation
+serves as a global feature vector for downstream trait regression through an appended
+two-layer MLP head (192 → 192 → 8, with GELU activation and 10% dropout).
+
+2.4. Training Protocol
+    For model training and evaluation, we adopted the standardized data split released
+with GreenHyperSpectra, which partitions 5,635 of the labeled spectra with an 80/20
+hold-out into 4,508 training and 1,127 test samples, with stratification by source dataset
+to maintain proportional representation of vegetation types, sensors, and acquisition con-
+ditions across both subsets. This is the same fixed split, with identical training and test
+membership, that Cherif et al. (2025) used to report their 1D baselines, so our 2D models
+and their 1D results are trained and evaluated on exactly the same data. To quantify
+variability due to stochastic training effects, we trained all models under three random
+seeds, following the evaluation protocol of Cherif et al. (2025).
+    We implemented all models in PyTorch 2.6 (Paszke et al., 2019) using PyTorch Light-
+ning 2.6 for training orchestration, and stored the pre-computed 2D transformations as
+memory-mapped arrays to avoid recomputation during training.
+
+2.4.1. Supervised Training
+    We optimized the supervised EfficientNet-B0 models with AdamW (Loshchilov and
+Hutter, 2019) (β1 = 0.9, β2 = 0.999, weight decay = 10−4 ) under a cosine annealing
+learning rate schedule with initial rate 10−3 and minimum rate 10−6 . Training proceeded
+
+                                             8
+for a maximum of 100 epochs with early stopping (patience = 15 epochs, monitoring
+validation loss). Within the training set, we withheld 15% of samples for validation by
+random splitting and set the batch size to 16.
+    Because the trait label matrix is sparse—not all samples have measurements for all
+eight traits—we employed a masked mean squared error (MSE) loss that computes gra-
+dients only over observed trait values:
+                                                                2
+                                        P
+                                           i,j mij (ŷij − yij )
+                              Lmasked =        P                                    (2)
+                                                  i,j mij
+
+where ŷij and yij are the predicted and observed values for sample i and trait j, and mij
+is a binary mask indicating whether the observation is available. This mask flags missing
+trait labels and has no relation to the random patch masking of Equation 1, which hides
+parts of the input image. Similar to Cherif et al. (2023), during training, we applied
+two forms of data augmentation to the training set: (i) an additive baseline shift drawn
+uniformly from ±2% of the spectral range, and (ii) a multiplicative scaling factor drawn
+uniformly from [0.98, 1.02], both applied to the raw spectra before transformation. These
+perturbations are small and label-preserving, because they emulate illumination and sen-
+sor variation that leaves the underlying trait unchanged, so the trait label stays valid. For
+pre-computed (cached) images, we added small Gaussian noise (σ = 0.01) to the trans-
+formed images at each epoch. The transform comparison used the cached images, so every
+transform received the same image-space augmentation (Gaussian noise, σ = 0.01), while
+the spectrum-space baseline and multiplicative perturbations applied only to the on-the-
+fly path. Augmentation was therefore identical across the compared transforms.Prior to
+training, we transformed trait values with the Yeo-Johnson power transformation (Yeo
+and Johnson, 2000) fitted on the training set, which stabilizes variance and reduces the
+influence of skewed distributions. We inverse-transformed the predictions for evaluation
+in original units.
+
+2.4.2. MAE Pretraining
+    We pretrained the MAE-2D on Reshape images derived from the 139,295 unlabeled
+spectra (after filtering 375 samples with missing data, yielding 138,920 valid images).
+Training used AdamW (lr = 10−4 , weight decay = 10−4 ) with cosine annealing over 300
+epochs, a batch size of 32, and gradient clipping (max norm = 1.0). We used a 95/5
+train/validation split to monitor reconstruction loss, with early stopping at patience =
+30 epochs. The pretraining objective was pure MSE reconstruction of masked patches
+(Equation 1), without additional augmentation, as random masking already provides
+effective regularization (He et al., 2022).
+
+2.4.3. Fine-Tuning
+    After MAE pretraining, we discarded the decoder and equipped the encoder with
+a regression MLP head. We fine-tuned the full model, updating all encoder parame-
+ters jointly with the regression head (lr = 10−4 ). Fine-tuning used the same protocol
+as supervised training (AdamW, early stopping, masked MSE loss) with 100 maximum
+epochs. The head maps the 192-dimensional CLS embedding through a 192 → 192 → 8
+multilayer perceptron with GELU activation and dropout 0.1, whose eight outputs are
+the eight traits.
+
+
+
+                                             9
+2.5. Experimental Design
+    The experiments are organized into three complementary case studies that progres-
+sively demonstrate the advantages of 2D spectral representations.
+    Case Study 1: Transform comparison. We evaluated all nine 1D-to-2D transforma-
+tions (Section 2.2) with EfficientNet-B0 under identical supervised training conditions.
+The primary comparison is between our 2D approach and the supervised EfficientNet-1D
+baseline reported by Cherif et al. (2025) (mean R2 = 0.587 across eight traits).
+    Case Study 2: Self-supervised pretraining. Using the best transform methods, we
+assessed the impact of pretraining strategies. We used: (i) supervised training without
+pretraining (the Case Study 1 baseline); and (ii) MAE-2D pretraining on 139K unlabeled
+images followed by fine-tuning on real labeled data, compared against the MAE-1D of
+Cherif et al. (2025) (R2 = 0.641).
+    Case Study 3: Out-of-distribution generalization. We used the cross-dataset protocol
+of Cherif et al. (2025) to test whether our approach generalizes to unseen field campaigns.
+We held out five labeled sub-datasets at a time from the pool of 50 and trained on the
+rest with an internal 80/20 training and validation split, repeating over the 12 folds in
+which two datasets recur so that every one of the 50 is held out at least once. Because this
+used a single training run, the reported mean and standard deviation of R2 come from
+their five balanced subsamples rather than from repeated training. We compared our
+best transformation model and our MAE-2D encoder against their matching 1D regimes,
+the supervised 1D-CNN and the fine-tuned MAE-1D, respectively.
+
+2.6. Evaluation Metrics
+    We evaluated model performance with the coefficient of determination (R2 ) and the
+normalized root mean square error (nRMSE, expressed as a percentage of the 1st–99th
+percentile range of observed values), computed per trait on the held-out test set. We
+report the mean and standard deviation across the three random seeds. We averaged
+per-trait R2 values to obtain a single summary statistic for each method, enabling direct
+comparison with the baselines of Cherif et al. (2025). Per-trait and per-method nRMSE,
+using this same normalization, are reported in the supplementary material (Tables S1
+to S4). The remaining metrics, root mean square error, mean absolute error, and bias,
+are available in the code repository.
+    To assess significance, we compared each transform against the reported 1D baseline
+of Cherif et al. (2025) using a Wilcoxon signed-rank test on the per-trait R2 differences,
+paired across the eight traits. We chose a non-parametric paired test over a t-test because
+the eight traits are predicted jointly and are not independent, and we test against the
+published baseline rather than between our own transforms.
+
+2.7. Spectral Importance
+    We used an attribution approach to obtain the variable importance of the predicted
+traits. We specifically applied two standard interpretability methods to the best su-
+pervised model (Reshape + EfficientNet-B0), Integrated Gradients (IG) (Sundararajan
+et al., 2017) and Grad-CAM (Selvaraju et al., 2017). IG produces signed, input-level
+attributions, which we computed using the training-set mean image as the baseline and a
+50-step Riemann sum. We attributed on the normalized image that the network receives
+rather than on the raw spectrum. The Reshape transform applies a per-image min-max
+scaling, so differentiating through that step piles the gradient onto the few bands that
+set the scale. Attributing on the network input avoids this trait-agnostic artifact and
+
+                                            10
+preserves the IG completeness axiom. Grad-CAM produces region-level relevance over
+the final convolutional embedding.
+    We exploited the fact that the Reshape transform preserves band order (pixel (i, j)
+maps to band k = 42i + j) to unfold the IG attribution map back to the 1721-band wave-
+length axis. The 2D map, therefore, becomes a 1D importance profile directly comparable
+to classical band selection in remote sensing. We kept Grad-CAM in two dimensions, be-
+cause it operates on the 7 × 7 convolutional embedding and aliases into a comb pattern
+when forced onto the fine band axis. This pipeline is illustrated in Figure 2, where the
+green shadows show the most important features in the original data.
+    Finally, we compared the empirical band importance against a physically grounded
+reference derived from the PROSAIL radiative transfer model using the prosail package
+(Féret et al., 2021; Verhoef et al., 2007). For each trait, we swept its corresponding
+leaf or canopy parameter across the full range in 25 steps while holding the remaining
+leaf parameters at their GreenHyperSpectra mean. We fixed the structure, soil, and
+geometry parameters at the values that Cherif et al. (2025) used to build their look-
+up table, namely a leaf structure parameter of 1.5, a brown pigment fraction of 0.25,
+an average leaf angle of 57◦ , a hot-spot parameter of 0.01, a soil brightness of 0.8, and
+a viewing geometry of 0◦ view zenith, 30◦ solar zenith, and 0◦ relative azimuth. We
+smoothed the simulated spectra, removed the same three water-absorption ranges, and
+aligned them to the 1721-band axis of the model input. The theoretical sensitivity S(λ)
+of each trait is the coefficient of variation of reflectance across the swept curves at every
+band, normalized to the zero-to-one range. We used the relative coefficient of variation
+rather than the raw standard deviation, because the raw deviation peaks on the bright
+near-infrared plateau for every constituent, an absolute-magnitude artifact that masks the
+diagnostic absorption features. We then quantified the agreement between the unfolded
+IG importance and S(λ) with the Pearson correlation r and the Spearman correlation ρ
+over all 1721 bands, and averaged the IG profiles across the three random seeds.
+                                                                              From 1D spectrum to spectral band importance via 2D imaging (trait: Cab)
+
+                                                                                                            (c) Grad-CAM map
+
+
+
+                                                                                                   2D-CNN
+                       (a) 1D spectrum                                                                                                                    Region-level (7×7 embedding):
+                                                                                                                                                          localizes where the CNN looks,
+                                                                          (b) 2D image (Reshape)                                                          kept in 2D.
+                0.40
+
+
+                0.35
+
+
+                0.30
+                                                                reshape
+  Reflectance
+
+
+
+
+                0.25
+
+
+                0.20                                                                                                                                      (d) Band importance unfolded to the spectrum
+                                                                                                            (c) Integrated Gradients map
+                0.15                                                                                                                                1.0
+
+
+                0.10                                                                                                                                0.8
+                                                                                                                                           unfold
+                0.05
+                                                                                                                                                    0.6
+
+
+                        500   1000    1500        2000   2500                                                                                       0.4
+                                Wavelength (nm)
+                                                                                                                                                    0.2
+
+
+                                                                                                                                                    0.0
+                                                                                                                                                            500       750      1000        1250     1500      1750   2000   2250
+                                                                                                                                                                                            Wavelength (nm)
+
+
+
+
+Figure 2: Spectral importance pipeline, illustrated for chlorophyll (Cab ). A 1D spectrum is folded into
+a 2D Reshape image and fed to the EfficientNet-B0 model. Grad-CAM and Integrated Gradients then
+attribute the prediction on that image independently of each other, so neither method takes the other
+as input. Grad-CAM stays in two dimensions, because it operates on the 7 × 7 convolutional embedding
+and localizes regions rather than individual bands. The Integrated Gradients map is unfolded back to
+the 1721-band wavelength axis using the band-order-preserving property of the Reshape transform. In
+panel (d) the green shading marks the PROSAIL theoretical sensitivity and the grey bands mark the
+removed water-absorption ranges.
+
+
+
+
+                                                                                                                   11
+3. Results
+3.1. Reflectance Transformation Comparison
+    Table 1 summarizes the performance of all nine 1D-to-2D spectral transformations
+evaluated with EfficientNet-B0 on the labeled subset of GreenHyperSpectra dataset. Five
+of them significantly outperformed (α = 0.05) the supervised EfficientNet-1D baseline of
+Cherif et al. (2025) (R2 = 0.587, the same architecture using the 1D representation), each
+winning seven to eight of the eight traits: Reshape, Serpentine, and Hilbert, the multi-
+window spectrogram, and the continuous wavelet transform. The all-band normalized-
+difference matrix, Gramian Angular Fields, and two-dimensional correlation spectroscopy
+did not differ significantly from the baseline, and the Markov Transition Field was signifi-
+cantly worse (Figure S1 of the supplementary material). Among the significant methods,
+the direct Reshape ranked highest (R2 = 0.684 ± 0.001, +0.097 over the 1D baseline) and
+showed the lowest variance across random seeds. Serpentine (R2 = 0.675 ± 0.004) and
+Hilbert (R2 = 0.674 ± 0.005) trailed it by less than 0.01, so preserving band adjacency
+across row boundaries changed almost nothing. The continuous wavelet transform (CWT,
+R2 = 0.641±0.004) and multi-window spectrogram (R2 = 0.636±0.025) followed, and the
+all-band normalized-difference matrix reached a comparable R2 = 0.630 ± 0.029 despite
+encoding every band pair explicitly. Gramian Angular Fields (GAF, R2 = 0.609 ± 0.012)
+and two-dimensional correlation spectroscopy (2D-COS, R2 = 0.555 ± 0.077) formed the
+lowest tier above the Markov Transition Field, with 2D-COS the most variable across
+seeds of any transform. Finally, the five-channel composite stacking the best member of
+each family, namely Reshape, CWT, and NDI, yielded R2 = 0.666±0.017, below the plain
+Reshape (−0.018) but still significantly above the 1D baseline (+0.079, p = 0.008, win-
+ning all eight traits), so combining complementary encodings did not recover information
+beyond the single Reshape layout.
+
+Table 1: Comparison of 1D-to-2D spectral transformations for multi-trait retrieval using EfficientNet-B0
+on the GreenHyperSpectra dataset. Mean R2 and standard deviation are reported across three random
+seeds (155, 240, 318). All methods are compared against the supervised EfficientNet-1D baseline of
+Cherif et al. (2025) (R2 = 0.587). Bold and underlined fonts show the best- and second-best-fitted mod-
+els, respectively. CWT=Continuous Wavelet Transform, NDI=all-band Normalized-Difference matrix,
+GAF=Gramian Angular Fields, 2D-COS=Two-Dimensional Correlation Spectroscopy, MTF=Markov
+Transition Field. An asterisk (∗ ) marks a ∆ significantly different from the 1D baseline (Wilcoxon
+signed-rank test across the eight traits, p < 0.05).
+
+             Transform                       Channels      Mean R2 ± std        ∆ vs. 1D
+             Reshape                         1            0.684 ± 0.001         +0.097∗
+             Serpentine                      1             0.675 ± 0.004        +0.088∗
+             Hilbert                         1             0.674 ± 0.005        +0.087∗
+             CWT                             1             0.641 ± 0.004        +0.054∗
+             Spectrogram                     3             0.636 ± 0.025        +0.049∗
+             NDI                             3             0.630 ± 0.029        +0.043
+             GAF                             2             0.609 ± 0.012        +0.022
+             2D-COS                          2             0.555 ± 0.077        −0.032
+             MTF                             1             0.419 ± 0.022        −0.168∗
+             Reshape + CWT + NDI             5              0.666 ± 0.017       +0.079∗
+
+
+
+
+                                                  12
+3.2. Per-Trait Analysis
+    Table 2 and Figure 3 present the per-trait comparison between the best 2D method
+(Reshape) and the 1D baseline (Cherif et al., 2025). The 2D approach improved re-
+trieval accuracy for all eight traits, with per-trait gains ranging from +0.036 for protein
+content (Cp ) to +0.174 for anthocyanins (Canth ). The largest gains fell on traits whose
+retrieval depends on distributed or cross-band information: anthocyanins (R2 = 0.628,
+∆R2 = +0.174), carotenoids (R2 = 0.691, ∆R2 = +0.147), carbon-based constituents
+(R2 = 0.789, ∆R2 = +0.110), and leaf mass per area (R2 = 0.773, ∆R2 = +0.106).
+Anthocyanins and carotenoids carry weak, overlapping visible features and are retrieved
+largely through their covariance with chlorophyll and the red-edge, while carbon-based
+constituents and leaf mass absorb across several shortwave-infrared windows, so all four
+benefit from the 2D layout’s ability to combine distant bands. Chlorophyll (R2 = 0.597,
+∆R2 = +0.080), equivalent water thickness (R2 = 0.703, ∆R2 = +0.082), leaf area index
+(R2 = 0.604, ∆R2 = +0.043), and protein (R2 = 0.687, ∆R2 = +0.036) showed smaller
+but consistent gains, their signal being either a single localized absorption already cap-
+tured by 1D convolutions or a scattering-dominated canopy response. Chlorophyll content
+and LAI show greater scatter at higher observed values (Figure 3), reflecting saturation
+effects well documented in canopy-level reflectance retrievals (Cherif et al., 2025).
+
+Table 2: Per-trait R2 comparison between the best 2D method (Reshape + EfficientNet-B0) and the
+supervised 1D baseline (Cherif et al., 2025). The best value per trait is shown in bold. The asterisk
+(∗ ) on the mean marks a significant overall difference (Wilcoxon signed-rank test across the eight traits,
+p = 0.008). a Cherif et al. (2025)
+
+              Trait                       Multi-trait 1Da       Reshape 2D                ∆
+              Cab (Chlorophyll)                  0.517              0.597           +0.080
+              Car (Carotenoids)                  0.544              0.691           +0.147
+              Canth (Anthocyanins)               0.454              0.628           +0.174
+              Cw (EWT)                           0.621              0.703           +0.082
+              Cm (LMA)                           0.667              0.773           +0.106
+              LAI                                0.561              0.604           +0.043
+              Cp (Protein)                       0.651              0.687           +0.036
+              Cbc (CBC)                          0.679              0.789           +0.110
+              Mean                               0.587              0.684        +0.097∗
+
+
+3.3. Self-Supervised Pretraining
+    Table 3 compares the performance of supervised and self-supervised approaches across
+1D and 2D representations. The 2D supervised approach (Reshape + EfficientNet-B0,
+R2 = 0.684 ± 0.001) surpassed all 1D methods, including the best self-supervised MAE-
+1D FT, by a margin of +0.043. The MAE-2D with fine-tuning (R2 = 0.667 ± 0.006) also
+outperformed the 1D MAE-FT by +0.026, confirming that the 2D advantage extends to
+the self-supervised setting. This gain was significant (Wilcoxon p = 0.039, winning six
+of the eight traits). However, the MAE-2D did not surpass the supervised 2D baseline,
+suggesting that with the current labeled dataset size (n = 4,508), the pretrained repre-
+sentations do not provide sufficient additional information beyond what direct supervised
+learning captures.
+
+
+                                                    13
+                                                    Chlorophyll a+b                                                                                   Carotenoids                                                                             Anthocyanins                                               Equivalent water thickness
+                                                                                                                  20.0                                                                                                       3.0                                                                 0.06
+                                      80
+                                            R 2 = 0.597 ± 0.033                                                                              R 2 = 0.691 ± 0.028                                                                     R 2 = 0.628 ± 0.036                                                 R 2 = 0.703 ± 0.014
+                                            nRMSE = 15.8 ± 0.7%                                                   17.5                       nRMSE = 11.2 ± 0.5%                                                                     nRMSE = 13.6 ± 0.7%                                                 nRMSE = 11.6 ± 0.3%
+
+
+
+
+                                                                                                                                                                                                 Predicted Canth (μg cm−2)
+                                      70                                                                                                                                                                                                                                                         0.05
+            Predicted Cab (μg cm−2)
+
+
+
+
+                                                                                      Predicted Car (μg cm−2)
+                                                                                                                                                                                                                             2.5
+
+
+
+
+                                                                                                                                                                                                                                                                         Predicted Cw (g m−2)
+                                                                                                                  15.0
+                                      60
+                                                                                                                                                                                                                                                                                                 0.04
+                                      50                                                                          12.5
+                                                                                                                                                                                                                             2.0
+                                                                                                                  10.0                                                                                                                                                                           0.03
+                                      40
+
+                                                                                                                            7.5                                                                                              1.5
+                                      30                                                                                                                                                                                                                                                         0.02
+
+                                      20                                                                                    5.0
+                                                                                                                                                                                                                             1.0                                                                 0.01
+                                      10                                                                                    2.5
+                                                                                                                                                                                                                                                                                                 0.00
+
+                                                   20      40          60      80                                                                 5       10       15     20                                                            1.0      1.5   2.0   2.5   3.0                                  0.00      0.02         0.04      0.06
+                                                  Observed Cab (μg cm−2)                                                                         Observed Car (μg cm−2)                                                                 Observed Canth (μg cm−2)                                               Observed Cw (g m−2)
+
+                                                  Leaf mass per area                                                                               Leaf area index                                                                            Protein content                                            Carbon-based constituents
+                        0.05
+                                            R 2 = 0.773 ± 0.009                                                                          7   R 2 = 0.604 ± 0.021                                                                     R 2 = 0.687 ± 0.007                                                 R 2 = 0.789 ± 0.015
+                                            nRMSE = 8.8 ± 0.2%                                                                               nRMSE = 16.5 ± 0.4%                                         0.004                       nRMSE = 9.7 ± 0.1%                                          0.04    nRMSE = 8.7 ± 0.3%
+                                                                                                                Predicted LAI (m2 m−2)
+
+                        0.04
+
+
+
+
+                                                                                                                                                                                                                                                                         Predicted Cbc (g m−2)
+Predicted Cm (g m−2)
+
+
+
+
+                                                                                                                                         6
+
+
+
+
+                                                                                                                                                                               Predicted Cp (g m−2)
+                                                                                                                                         5                                                               0.003                                                                                   0.03
+                        0.03
+                                                                                                                                         4
+                                                                                                                                                                                                         0.002                                                                                   0.02
+                        0.02                                                                                                             3
+
+                                                                                                                                         2
+                        0.01                                                                                                                                                                             0.001                                                                                   0.01
+                                                                                                                                         1
+
+                        0.00                                                                                                             0                                                               0.000                                                                                   0.00
+
+                                           0.00   0.01   0.02   0.03    0.04   0.05                                                          0        2     4       6                                                              0.000 0.001 0.002 0.003 0.004                                        0.00   0.01   0.02     0.03   0.04
+                                                   Observed Cm (g m−2)                                                                           Observed LAI (m2 m−2)                                                                    Observed Cp (g m−2)                                                  Observed Cbc (g m−2)
+
+
+
+Figure 3: Observed versus predicted trait values for the supervised 2D model (Reshape + EfficientNet-
+B0) on the GreenHyperSpectra test set (n = 1,127). Each point is the prediction averaged over the
+three training seeds, and the grey whisker spans one standard deviation across those seeds. Points are
+colored by kernel density estimation. The dashed line represents the 1:1 relationship. R2 and nRMSE
+are given as the mean and standard deviation of the per-seed scores, with nRMSE normalized by the
+1st–99th percentile range of the observed values following Cherif et al. (2025). Not all test samples have
+measurements for every trait.
+
+
+    To assess the quality of the learned representations independently of end-to-end adap-
+tation, we evaluated linear probing: freezing the pretrained MAE-2D encoder and train-
+ing only a linear regression head (38.6K parameters) on the labeled data. Linear probing
+achieved R2 = 0.646 ± 0.020, capturing 97% of the fine-tuned performance (R2 = 0.667).
+This result exceeded all 1D baselines reported by Cherif et al. (2025), including the
+MAE-1D fine-tuning result (R2 = 0.641) and the MAE-1D linear probe (R2 = 0.466).
+The narrow gap between linear probing and fine-tuning (+0.021) indicates that the frozen
+MAE-2D encoder already encodes most trait-relevant spectral information in its repre-
+sentations, with fine-tuning providing only marginal refinement of the feature space.
+
+Table 3: Comparison of our 2D methods against the corresponding 1D method of Cherif et al. (2025) for
+each training regime. All 2D methods use the Reshape transformation. We report the mean R2 across
+three random seeds for the 2D methods. ∆ is the 2D minus 1D difference for the same regime. Linear
+probing trains only a regression head on the frozen encoder, while fine-tuning updates the whole encoder.
+An asterisk (∗ ) marks a ∆ significantly different from the 1D counterpart (Wilcoxon signed-rank test
+across the eight traits, p < 0.05). Bold font indicates the best method for each regime. a Cherif et al.
+(2025)
+
+                                                          Training regime                                                                                 Multi-trait 1Da                                                                        Ours 2D                                                         ∆
+                                                          Supervised                                                                                                0.587                                                               0.684 ± 0.001 +0.097∗
+                                                          MAE fine-tuning                                                                                           0.641                                                               0.667 ± 0.006 +0.026∗
+                                                          MAE linear probing                                                                                        0.466                                                               0.646 ± 0.020 +0.180∗
+
+
+
+
+                                                                                                                                                                           14
+3.4. Out-of-Distribution Generalization
+    Table 4 shows the cross-dataset evaluation, where every test spectrum comes from a
+field campaign held out from training. Every transformation lost a large part of its in-
+distribution accuracy, and the ordering changed. The five-channel composite of Reshape,
+CWT, and NDI ranked first (R2 = 0.333, +0.090 over the supervised 1D baseline),
+followed by the multi-window spectrogram (0.327) and Serpentine (0.326), while the
+plain Reshape that led in distribution fell to fourth (0.305). Hilbert dropped the most,
+from third in distribution to ninth and slightly below the 1D baseline (−0.010), while the
+Markov Transition Field stayed last and significantly below it (−0.124, p = 0.008). No
+transformation beat the 1D baseline significantly. In general, the per-trait analysis of the
+best four methods showed improvements on five to seven of the eight traits (Table S5),
+and the four agreed on six of them. The gains concentrated on the water and dry-matter
+constituents, equivalent water thickness (+0.189 to +0.257), carbon-based constituents
+(+0.153 to +0.180), leaf mass per area (+0.139 to +0.170), and protein (+0.097 to
++0.154), which all share a similar shortwave-infrared-driven importance (see section 3.5).
+Carotenoids transferred worse than the 1D baseline for all four (−0.097 to −0.129) and
+anthocyanins better (+0.043 to +0.122), while chlorophyll and leaf area index sat near
+zero and changed sign from one method to the next.
+    Fine-tuning the MAE-2D encoder under the same protocol reached an average R2 of
+0.153, well below both the supervised 2D model (0.305) and the self-supervised MAE-1D
+of Cherif et al. (2025) (0.311). The gap to MAE-1D was significant (−0.158, p = 0.039)
+and the 2D encoder won only two of the eight traits (Table S6). The collapse concentrated
+on the dry-matter constituents that the supervised model transferred best, leaf mass per
+area (−0.352) and carbon-based constituents (−0.352). Under strong domain shift, 1D
+self-supervision therefore transfers better than our 2D masked autoencoder, so the in-
+distribution gain of 2D pretraining does not carry to unseen campaigns.
+
+3.5. Spectral Importance
+    Figure 4a shows the unfolded Integrated Gradients profiles, the PROSAIL theoretical
+sensitivity, and the per-trait agreement between these two. The empirical importance
+correlated positively with the theoretical sensitivity for seven of the eight traits, but
+the agreement was modest overall (mean Pearson r = 0.16). Protein content showed
+the strongest agreement (r = 0.45), and its empirical peak at 2144 nm fell close to the
+theoretical protein N-H overtone at 2198 nm. Leaf water content followed (r = 0.33), with
+the empirical and theoretical peaks coinciding at the 1431 nm water edge. Anthocyanins
+(r = 0.17) and chlorophyll a+b (r = 0.16) showed weaker positive agreement, and their
+empirical peaks sat on the red-edge (703 to 784 nm) rather than at the visible absorption
+maxima that PROSPECT places at 544 and 624 nm. Leaf mass per area and carbon-based
+constituents (r = 0.14 and r = 0.12) concentrated importance in the shortwave-infrared
+cellulose and lignin region near 2144 nm, whereas the theoretical sensitivity peaks in the
+near-infrared plateau near 1073 nm. Carotenoids sat near zero (r = 0.06), consistent with
+the model predicting them through their covariance with chlorophyll. Leaf area index
+was the only trait with negative agreement (r = −0.11). Figure 4b links an example of
+the 2D Grad-CAM map and the 1D importance profile for chlorophyll a+b. The per-trait
+agreement, the Grad-CAM maps, and the linking for the remaining seven traits appear
+in the supplementary material (Figures S2 to S10).
+
+
+
+
+                                            15
+                                                                                      PROSAIL theoretical sensitivity               Removed water band
+
+                            Cab                                                                                               Car
+
+(a)
+  1.0
+                                                                                                        r=0.16
+                                                                                                                        1.0
+                                                                                                                                                                                                      r=0.06
+Norm. IG importance
+
+
+
+
+                      0.8                                                                                               0.8
+
+                      0.6                                                                                               0.6
+
+                      0.4                                                                                               0.4
+
+                      0.2                                                                                               0.2
+
+                      0.0                                                                                               0.0
+
+                            Anth                                                                                              Cw
+
+                                                                                                        r=0.17                 r=0.33
+                      1.0                                                                                               1.0
+Norm. IG importance
+
+
+
+
+                      0.8                                                                                               0.8
+
+                      0.6                                                                                               0.6
+
+                      0.4                                                                                               0.4
+
+                      0.2                                                                                               0.2
+
+                      0.0                                                                                               0.0
+
+                            Cm                                                                                                LAI
+
+                             r=0.14                                                                                                                                                                  r=-0.11
+                      1.0                                                                                               1.0
+Norm. IG importance
+
+
+
+
+                      0.8                                                                                               0.8
+
+                      0.6                                                                                               0.6
+
+                      0.4                                                                                               0.4
+
+                      0.2                                                                                               0.2
+
+                      0.0                                                                                               0.0
+
+                            Cp                                                                                                Cbc
+
+                             r=0.45                                                                                            r=0.12
+                      1.0                                                                                               1.0
+Norm. IG importance
+
+
+
+
+                      0.8                                                                                               0.8
+
+                      0.6                                                                                               0.6
+
+                      0.4                                                                                               0.4
+
+                      0.2                                                                                               0.2
+
+                      0.0                                                                                               0.0
+                             500      750   1000   1250     1500               1750        2000         2250                   500         750         1000      1250     1500      1750    2000      2250
+                                                    Wavelength (nm)                                                                                               Wavelength (nm)
+
+
+
+      (b)
+ Cab: Grad-CAM on 2D image (embedding)                                                                                  Cab: IG band importance (unfolded to spectrum)
+
+
+                                                                         1.0
+
+
+
+                                                                         0.8
+                                                            Norm. |IG|
+
+
+
+
+                                                                         0.6
+
+
+
+                                                                         0.4
+
+
+
+                                                                         0.2
+
+
+
+                                                                         0.0
+                                                                               500                750             1000                  1250             1500         1750           2000          2250
+                                                                                                                                               Wavelength (nm)
+
+
+
+
+Figure 4: Spectral importance of the supervised 2D model (Reshape + EfficientNet-B0). (a) Unfolded
+Integrated Gradients importance profiles for the eight traits, each normalized to its own peak. The blue
+line is the mean across the three training seeds and the light blue band spans one standard deviation
+across them. Overlaid are the PROSAIL theoretical spectral sensitivity (green gradient, darker where
+the constituent is more diagnostic and breaking at the removed water bands), the importance peak, and
+a per-trait agreement badge. Agreement is the Pearson correlation between the IG importance and the
+theoretical sensitivity across all 1721 bands. (b) Linking 2D and 1D attribution for chlorophyll (Cab ).
+Left, the Grad-CAM relevance over the Reshape image. Right, the Integrated Gradients profile unfolded
+to the 1721-band wavelength axis. The two panels are independent attributions of the same image, so
+the right one is not the unfolding of the left.
+
+                                                                                                               16
+Table 4: Out-of-distribution cross-dataset R2 of every 1D-to-2D transformation under the leave-datasets-
+out protocol of Cherif et al. (2025), averaged over the eight traits and ordered from best to worst. ∆
+is the difference from the supervised 1D baseline of Cherif et al. (2025) (R2 = 0.243), except in the
+self-supervised block, where it is the difference from their MAE-FR-FT 1D model (R2 = 0.311). Wins
+counts the traits on which the 2D model exceeds the corresponding 1D reference. Bold and underlined
+fonts show the best- and second-best-fitted models, respectively. An asterisk (∗ ) marks a ∆ significantly
+different from the 1D reference (Wilcoxon signed-rank test across the eight traits, p < 0.05). All values
+come from a single run. Per-trait nRMSE and R2 are given in Tables S4 to S6 of the supplementary
+material.
+
+            Transform                            Channels        R2      ∆ vs. 1D      Wins
+            Reshape + CWT + NDI 5                              0.333      +0.090        7/8
+            Spectrogram         3                              0.327       +0.085       5/8
+            Serpentine          1                              0.326       +0.084       7/8
+            Reshape             1                              0.305       +0.062       5/8
+            CWT                 1                              0.286       +0.043       4/8
+            2D-COS              2                              0.268       +0.025       5/8
+            NDI                 3                              0.261       +0.018       4/8
+            GAF                 2                              0.256       +0.013       5/8
+            Hilbert             1                              0.233       −0.010       5/8
+            MTF                 1                              0.119      −0.124∗       0/8
+           Self-supervised regime
+            MAE-2D fine-tuning                   1              0.153     −0.158∗       2/8
+
+
+4. Discussion
+4.1. Why reshaping spectra into images improves trait retrieval
+    Reshaping the 1D reflectance signal into a 2D image improves multi-trait retrieval
+by a clear margin in all eight traits, raising the mean R2 from 0.587 for the supervised
+1D-CNN to 0.684. Reshape also achieved the highest mean accuracy of the nine transfor-
+mations we compared, confirming earlier reports that direct reshaping matches or beats
+more elaborate encodings (Yuan et al., 2022; Deev et al., 2024; Sharma et al., 2019) and
+extending that result to multi-trait regression on heterogeneous field data.
+    The advantage follows from the multi-scale receptive field that the 2D layout creates.
+In the 42 × 42 image, a single 3 × 3 kernel spans about 84 nm of spectral range through its
+vertical stride of 42 nm, whereas an equivalent 1D kernel reaches only about 3 nm. After
+a few pooling stages in EfficientNet-B0, the effective receptive field grows to hundreds
+of nanometers, wide enough to read pigment absorption near 680 nm, the red-edge near
+750 nm, and shortwave-infrared structural features within one field. A 1D-CNN reaches
+the same span only with very deep networks or large kernels (k > 80), which raises
+the risk of overfitting on the 4,508 labeled samples (Cherif et al., 2023). The reshaped
+image also carries trait-specific spectral textures, the visually distinct spatial patterns
+that arise from different biochemical compositions (Figure 1), and 2D convolutions are
+built to detect exactly this kind of structure.
+    The per-trait pattern of improvement supports this cross-band mechanism. The
+largest gains fell on traits whose signal is distributed across the spectrum or carried indi-
+rectly by correlated bands. Anthocyanins gained most (∆R2 = +0.174) and carotenoids
+nearly as much (+0.147), because the model retrieves both pigments largely through
+their covariance with chlorophyll and the red-edge rather than through a single visible
+
+                                                     17
+absorption band (Homolova et al., 2013). Carbon-based constituents and leaf mass per
+area followed (+0.110 and +0.106), their dry-matter signal spanning several shortwave-
+infrared windows (Curran, 1989; Féret et al., 2021). All four depend on combining bands
+that lie far apart, exactly what the 2D layout makes available within one receptive field.
+Chlorophyll and leaf water gained moderately (+0.080 and +0.082), their features partly
+reachable by a 1D convolution, while the smallest gains fell on protein (+0.036), a sin-
+gle narrow overtone near 2100 nm, and leaf area index (+0.043), a scattering-dominated
+canopy signal with no sharp absorption. This ordering, from distributed and correlation-
+driven signals with the largest gains to localized or scattering-driven signals with the
+smallest, matches the view that the 2D advantage comes from multi-scale cross-band
+integration.
+    The ranking of the other transformations reinforces the same point. The continuous
+wavelet transform (CWT; R2 = 0.641) and the multi-window spectrogram (R2 = 0.636)
+formed a second tier that keeps some spectral locality through windowed decomposi-
+tion (Addison, 2017; Shuai et al., 2025), but placing wavelength on one axis and scale
+or frequency on the other breaks the wavelength-to-wavelength adjacency that Reshape
+preserves. These transforms work well for classification tasks that hinge on scale-specific
+features (Ong et al., 2025; Zhuang et al., 2023; Shuai et al., 2025; Zhang et al., 2025b),
+yet continuous regression benefits more from the direct wavelength topology. Gramian
+Angular Fields (GAF; R2 = 0.609) map reflectance into angular space and group bands
+by magnitude rather than by wavelength, which discards the physical ordering that ties
+absorption features to biochemistry (Wang and Oates, 2015; Ganesan et al., 2021), and
+both GAF and the Markov Transition Field (MTF) were designed for time-series classifi-
+cation where phase dynamics carry the signal. Two-dimensional correlation spectroscopy
+(R2 = 0.555, std = 0.077) showed the highest variability across seeds, because our single-
+sample adaptation through windowed segmentation (Noda, 2004) perturbs the spectrum
+in an ad-hoc way that can add noise rather than genuine correlation structure. The MTF
+(R2 = 0.419) was the only transform below the 1D baseline, since its quantile-based
+discretization removes the continuous spectral detail that regression depends on (Wang
+and Oates, 2015). The all-band normalized-difference matrix (NDI; R2 = 0.630) belongs
+to the same group of abstract encodings, because it replaces the ordered spectrum with
+an all-pairs index matrix and discards the absolute reflectance level, so even though it
+encodes every band interaction explicitly, it fell well below the direct layout. Across the
+whole comparison, the transforms that preserve the natural wavelength ordering and keep
+continuous values outperform those that remap the spectrum into abstract mathematical
+spaces (Inoue et al., 2008).
+    The direct Reshape approach obtained the best results even among layouts that keep
+the wavelength order intact. The Serpentine and Hilbert-curve variants were designed
+to remove the row-boundary seam of the raster, where two spectrally adjacent bands
+land far apart in the image. That seam is not a real bottleneck, because after a few
+pooling stages the EfficientNet receptive field already spans it, and what the two variants
+give up is more costly than what they fix. Direct Reshape gives every kernel a regular
+and globally consistent geometry, a horizontal step of one band and a vertical step of 42
+bands, so the same kernel reads the same spectral relationship anywhere in the image.
+The Serpentine layout reverses every other row, which flips the sign of that vertical step
+from row to row, while the Hilbert curve follows a fractal path along which no fixed pixel
+offset maps to a constant spectral distance. Both preserve local adjacency but sacrifice the
+repeatable stride that the translation-equivariant convolutions exploit, and the Hilbert
+
+
+                                            18
+layout further resamples the spectrum to 4,096 points, which smooths it and removes the
+exact band positions that the raster preserves. Adjacency preservation therefore buys
+no accuracy in distribution, while the plain Reshape keeps the lowest variance of any
+layout. Under the cross-dataset shift, however, that pattern changes. Serpentine held
+up better than Reshape on held-out campaigns, winning seven of the eight traits against
+the 1D baseline where Reshape won five, whereas Hilbert fell below that baseline. The
+alternating raster therefore costs nothing under a domain shift while the fractal path
+costs a great deal, which points at the resampling to 4,096 points rather than the loss
+of a repeatable stride as what hurts Hilbert. Together with the poor showing of the
+all-band normalized-difference matrix, these results show that hand-crafting either band
+adjacency or band interactions is unnecessary, since the 2D-CNN already recovers the
+useful inter-band structure from the simplest ordered layout.
+    These results extend a trend that now reaches across many fields. Researchers have
+applied it to vibration traces in bearing-fault diagnosis (Zhang and Ju, 2025), electromyo-
+graphy for limb-movement estimation (Xia et al., 2017), and electroencephalography for
+emotion recognition (Zhao et al., 2024). Spectroscopy has followed the same path. Early
+deep chemometrics adapted CNNs for vision back down to one dimension and ran them
+on raw spectra (Malek et al., 2017), and one-dimensional models still dominate quan-
+titative work today (Ta et al., 2023; Banerjee et al., 2024; Cherif et al., 2023). More
+recent studies lift the spectrum up into two dimensions instead, through spectrograms
+(Shuai et al., 2025), spider-plot renderings (Mokari et al., 2025), or Gramian angular
+fields (Zhang et al., 2025b), yet these encodings have served classification far more often
+than regression. Our study departs from this work on two points. We show that the move
+to two dimensions helps continuous multi-trait regression, the harder and less-explored
+task, and we find that the plainest image of all, a direct reshape, beats every engineered
+encoding we tried. That second result runs against the common intuition that a more
+elaborate transform captures richer structure, and it echoes reports of direct reshaping
+performing competitively in tabular and spectral deep learning (Yuan et al., 2022; Deev
+et al., 2024; Sharma et al., 2019).
+
+4.2. What the model learns from the 2D representation
+    Using Grad-CAM and Integrated Gradients, we found that the model’s relevance
+forms compact 2D clusters. Compactness alone is a generic property of convolutional
+networks, so on its own it says nothing about the receptive-field mechanism of Sec-
+tion 4.1. What matters is where those clusters fall. Once we unfold them to wavelength,
+the importance of seven of the eight traits agrees with the PROSAIL radiative-transfer
+sensitivity (Figure 4). The unfolded maps also show how the model reads the image.
+Horizontal neighbors are adjacent bands, while vertical neighbors lie 42 positions apart,
+so a single 2D kernel reads both at once and co-weights a visible feature together with its
+shortwave-infrared overtone about 42 bands away within one receptive field. A 1D kernel
+of the same size cannot reach that far. Integrated Gradients and Grad-CAM agree across
+scales, the first at the fine signed band level and the second at the coarse region level,
+which makes us more confident that the importance reflects learned spectral structure
+rather than an artifact of a single method.
+    The traits with a sharp, localized theoretical signature align best. Protein (r = 0.45)
+and leaf water (r = 0.33) place their importance almost exactly where radiative transfer
+predicts, on the shortwave-infrared protein overtone near 2144 nm and on the 1431 nm
+water edge. Leaf water aligns well even though preprocessing removed its strongest
+
+
+                                            19
+bands near 1450 and 1940 nm, because both the empirical importance and the theoret-
+ical sensitivity peak on the surviving 1431 nm edge, and the model recovers the water
+signal from that edge. Leaf mass per area, carbon-based constituents, chlorophyll, and
+anthocyanins also agree positively, with peaks on the red-edge (Cab at 703 nm) and on
+shortwave-infrared cellulose and lignin features near 2144 nm, matching constituent ab-
+sorption reported at the leaf level (Serbin and Townsend, 2020; Curran, 1989; Féret et al.,
+2021). Carotenoids (r = 0.06) and leaf area index (r = −0.11) show the weakest agree-
+ment, yet the model predicts both accurately, so the gap reflects where the model looks
+rather than how well it performs. The multi-trait model recovers carotenoids through
+their strong covariance with chlorophyll, leaning on the chlorophyll red-edge at 703 nm
+instead of the weak carotenoid feature at 440–520 nm, a shortcut that already emerged
+in the joint retrieval of Cherif et al. (2023). Leaf area index is a structural canopy prop-
+erty whose reflectance signal arises from scattering and the red-edge rather than from a
+single narrow absorption, so the model concentrates on the red-edge near 779 nm even
+where the theoretical sensitivity peaks elsewhere. Canopy structure and soil background
+further broaden and shift leaf-level absorption features, so the most predictive bands
+need not coincide with the leaf-level maxima (Homolova et al., 2013). For leaf mass per
+area and carbon-based constituents, the theoretical sensitivity peaks in the near-infrared
+plateau near 1073 nm, where canopy multiple scattering dominates, yet the model concen-
+trates on the shortwave-infrared cellulose and lignin absorption near 2144 nm, indicating
+that it relies on diagnostic constituent absorption rather than the higher-variance scat-
+tering response. Anthocyanins follow the same red-edge pattern as carotenoids. Both
+PROSPECT-PRO and leaf-level optics place the anthocyanin absorption near 550 nm
+(Féret et al., 2021; Gitelson et al., 2001), yet the model leans on the red-edge, which also
+carries a documented anthocyanin signal exploited by reflectance indices (Gitelson et al.,
+2009), rather than on the green absorption itself.
+    Our interpretation approach also connects the model to a growing use of explainable
+AI in remote sensing. Grad-CAM and related attribution methods now routinely open the
+black box of vision networks in fields as varied as wildfire-spread modeling (Zhou et al.,
+2025) and crop phenotyping (Danilevicz et al., 2025), although applying them to geospa-
+tial data raises its own difficulties around scale and reference choice (Xing and Sieber,
+2023). Most of this work explains classification maps in the spatial domain. We instead
+fold the attribution back onto the spectral axis, which turns a 2D relevance map into
+a 1D band-importance profile and lets us compare it directly against radiative-transfer
+theory. Other methods could read a spectral model in different ways. Model-agnostic
+attributions such as SHAP and occlusion work on any predictor, and spectral-specific
+schemes include variable importance in partial least squares, explainable-AI-guided band
+selection in hyperspectral imaging (Khatun et al., 2026), attention weights learned inside
+the network (Kong et al., 2025), and 2D correlation analysis of the learned features (Con-
+treras and Bocklitz, 2025). We chose Integrated Gradients and Grad-CAM because they
+need no change to the architecture, agree with each other across scales, and map cleanly
+back to wavelength.
+    The cross-dataset test sharpens this reading of what the model uses. The 2D reshape
+transferred best on the water and dry-matter traits, exactly the constituents whose im-
+portance sat on diagnostic shortwave-infrared absorption. The best four models trans-
+ferred worst on carotenoids and leaf area index, whose importance leaned on the red-edge
+shoulder and on broad scattering rather than on a constituent absorption band. A red-
+edge shortcut is efficient within one dataset but tied to the local mix of species, canopy
+
+
+                                            20
+structure, and background, so it generalizes less well to unseen sensors and ecosystems,
+whereas the shortwave-infrared absorption of cellulose, lignin, and water reflects con-
+stituent chemistry that stays stable across campaigns. Anthocyanins are the exception,
+gaining despite the same indirect retrieval, although that trait carries the widest spread
+across subsamples of any trait, so we do not read much into its margin. The traits the
+model reads through genuine absorption are therefore also the traits whose accuracy sur-
+vives the domain shift, which ties the interpretation analysis directly to the generalization
+result.
+
+4.3. Self-supervised pretraining in the 2D framework
+    Self-supervised pretraining helped less than the change in representation. Moving
+from the 1D to the 2D image raised the supervised R2 by 0.097, whereas pretraining a
+1D masked autoencoder on 139,000 unlabeled spectra raised the 1D model by only 0.054
+(Cherif et al., 2025). The gain therefore came from the representation, not the learning
+strategy.
+    The 2D representation also outperformed its 1D counterpart under self-supervised
+pretraining. MAE-2D fine-tuning (R2 = 0.667 ± 0.006) beat MAE-1D fine-tuning by
+0.026, so the 2D advantage held in the pretrained setting as well. It did not, however,
+beat the supervised 2D model (−0.017), unlike natural-image domains where masked-
+autoencoder pretraining usually helps (He et al., 2022). Under the cross-dataset shift,
+MAE-2D fine-tuning dropped to 0.153, below both our supervised 2D model and the
+1D masked autoencoder (0.311, p = 0.039). Masked reconstruction on 139K spectra
+therefore builds features that suit the pretraining distribution and transfer worse than 1D
+self-supervision once the campaign changes. The frozen encoder was nonetheless strong.
+Linear probing, which trains only a 38.6K-parameter head, reached R2 = 0.646 ± 0.020
+and beat every 1D baseline including MAE-1D fine-tuning. It recovered 97% of the
+fine-tuned performance, which shows that the frozen encoder already holds most of the
+trait-relevant spectral information.
+    This pattern matches a broader trend in self-supervised learning. Masked-autoencoder
+and contrastive pretraining deliver their largest gains when labeled data are scarce, a
+result reported across plant phenotyping (Nagasubramanian et al., 2022), medical imaging
+(Jiang et al., 2024), and image classification with small training sets (Wittscher et al.,
+2022). Our moderate labeled set of 4,508 samples, together with a 2D representation that
+already separates the traits well, leaves little room for pretraining to add information,
+which is why MAE-2D did not beat the supervised 2D model.
+    A structural asymmetry explains why pretraining pays off so differently across the
+two representations. Supervision on the 2D image already exposes long-range band pairs,
+because a single kernel spans a vertical step of 42 bands (Section 4.1). The masked
+autoencoder reaches those pairs only partly: at 16 × 16 pixels, one patch covers about
+three bands on each of three rows, so it does mix runs separated by 42 bands, but it
+learns that mixing for reconstruction rather than for trait prediction. A 1D masked
+autoencoder has no such access at all, since its patches are contiguous runs of the raw
+spectrum. That is why 1D pretraining still adds a genuine 0.054, while 2D pretraining
+adds nothing (−0.017).
+    Three further factors likely account for the supervised 2D model staying ahead of
+MAE-2D fine-tuning. First, EfficientNet-B0 brings spatial inductive biases such as lo-
+cal connectivity and translation equivariance that outperform the learned attention of
+a vision transformer when only 4,508 labeled samples are available (Dosovitskiy et al.,
+
+
+                                             21
+2021). Second, reshaped spectral images are smooth and continuous rather than com-
+plex like natural photographs, so the reconstruction task converges within about ten
+epochs (val_loss near 0.0001) and gives the encoder little pressure to learn deep trait-
+discriminative features. Third, the 4,508 samples span diverse ecosystems and may al-
+ready cover most of the learnable spectral-to-trait relationships. In practice a reshape
+combined with a standard CNN reaches state-of-the-art accuracy without the cost of
+pretraining on a large unlabeled corpus.
+
+4.4. Implications for trait-based ecology and remote sensing
+    The gains translate into concrete benefits for trait-based ecology. Carbon-based con-
+stituents and leaf mass per area, which govern a plant’s dry-matter investment, both
+improved substantially (∆R2 = +0.110 and +0.106), which matters directly for carbon
+stocks, litter decomposition, and nutrient cycling (Kattge et al., 2020). Better retrieval
+of these traits strengthens non-destructive estimation of the dry-matter economics that
+anchor the leaf economics spectrum (Wright et al., 2004), and supports more reliable map-
+ping of ecosystem carbon pools and decomposition dynamics for Earth system models
+(Homolova et al., 2013).
+    Predicting all traits with one model preserves the covariance structure among them,
+which functional diversity metrics such as FDis, FRic, FEve, and Rao’s Q depend on
+(Villéger et al., 2008; Laliberté and Legendre, 2010). Fitting a separate model per trait
+can distort those correlations and bias the resulting diversity estimates. Because the
+2D approach improves all eight traits at once, the functional trait spaces built from its
+predictions are both more accurate and more internally consistent than those from 1D
+baselines, which benefits biodiversity monitoring programs that rely on spectral trait
+mapping (Schweiger et al., 2018; Binh and Hauser, 2025; Weiss et al., 2020).
+    The method is also easy to deploy. Reshape needs no domain-specific tuning, so there
+are no wavelet scales, spectrogram windows, quantile bins, or perturbation parameters
+to set, and it takes roughly six lines of code. Its stability across the three random
+seeds (std = 0.001) gives reproducible results without hyperparameter sensitivity. This
+contrasts with the run-to-run instability that pretraining-based methods still report on
+the same data (Cherif et al., 2025), and it lowers the barrier for ecologists and remote
+sensing practitioners who need strong predictions without signal-processing expertise.
+This simplicity suits the data streams from recent and upcoming hyperspectral missions
+such as EnMAP (Guanter et al., 2015), PRISMA (Cogliati et al., 2021), and SBG and
+EMIT (Cawse-Nicholson et al., 2021; Green and Thompson, 2020), which are producing
+continental to global archives of contiguous spectra across 400 to 2500 nm. A method
+that stays simple and stable across data from 50 heterogeneous sources is well placed
+for operational use on these archives. Beyond raw sensor archives, this simplicity fits
+the operational pipelines that now underpin biodiversity policy. The IPBES framework
+calls for monitoring functional-trait diversity across scales (Díaz et al., 2015), and plant
+traits sit directly within the species-traits class of the Essential Biodiversity Variables
+coordinated by GEO BON (Pereira et al., 2013; Jetz et al., 2016). Platforms such as
+BON-in-a-Box now assemble these variables into policy indicators through open and
+reproducible pipelines (Griffith et al., 2026), which reward methods that run without
+per-dataset tuning and return stable predictions. A reshape paired with a standard CNN
+meets that need, so it can slot into an EBV pipeline as a trait-retrieval step with little
+adaptation.
+
+
+
+                                            22
+    The self-supervised results open a further path for undersampled biomes. The MAE-
+2D linear probe reaches R2 = 0.646 with only 38.6K trainable parameters, which suits
+trait prediction in data-scarce systems such as tropical forests, tundra, and peatlands
+that remain underrepresented in trait databases (Kattge et al., 2020; Zhang et al., 2025a),
+where self-supervised pretraining delivers its largest gains (Cherif et al., 2025). A frozen
+pretrained encoder paired with a lightweight linear head could map traits with very little
+local calibration data, in line with the broader move toward foundation models for remote
+sensing (Bin Faruk et al., 2025).
+
+4.5. Limitations and future directions
+    Several limitations frame these results. We compared all transformations on a single
+backbone, EfficientNet-B0, so the rankings could shift with other architectures, although
+Cherif et al. (2023) found this network well matched to the present data scale. We
+also fixed the image size at 224 × 224, and since the reshape topology depends on res-
+olution, other sizes may favor different transforms, which warrants a systematic study.
+Our single-sample version of two-dimensional correlation spectroscopy approximates the
+multi-sample formulation of Noda (2004) through windowed segmentation, and its weak
+performance may partly reflect that approximation. On domain shift with a cross-dataset
+evaluation, every model lost a large fraction of its accuracy on held-out campaigns, which
+leaves substantial room for methods that close the domain gap. That evaluation also rests
+on a single training run per representation, and it is sensitive to choices outside the pro-
+tocol. Replacing the spectral augmentation of Cherif et al. (2025) with the image-space
+augmentation we use elsewhere moved the supervised average by 0.032 and the pretrained
+average by 0.120, both comparable to the 1D-to-2D effect itself, so the out-of-distribution
+margins should be read as indicative rather than as a stable ranking. We also evaluated
+only full-range spectra, whereas many satellite and drone sensors record the visible and
+near-infrared alone. The reshape geometry ties directly to the band count, so a half-range
+input of about 500 bands folds into a smaller and differently connected image and loses
+the visible-to-shortwave-infrared co-weighting the model relies on, which leaves half-range
+performance (Cherif et al., 2025) an open question. Finally, each image encodes one re-
+arranged spectrum with no spatial neighbors, so the point-level design carries none of
+the spatial autocorrelation that can weaken image-based spectral datasets (Cherif et al.,
+2025), though it also gives the model no spatial context, whereas airborne and satellite
+imagery add mixed pixels and atmospheric effects that we did not address here. Reshape
+was also chosen as the representative 2D method on the same fixed test set used to re-
+port its accuracy, so its headline R2 may be marginally optimistic, although the small
+and consistent margin over the next layouts makes a large selection effect unlikely.
+    The reshape geometry is arbitrary, which limits how finely we can read the importance
+maps. The model zero-pads the spectrum and resizes it bilinearly from 42×42 to 224×224,
+which smears each band across about five pixels. The vertical 42-band adjacency comes
+from the side-42 fold rather than from physics, so part of the cross-row structure reflects
+the layout, and the row-wrap boundaries place spectrally adjacent bands far apart in
+the image. The unfolded importance therefore has limited spectral resolution, and the
+apparent peaks can shift by a few bands, so we read the importance maps as approximate.
+    The layout also leaves a periodic imprint on the unfolded profiles, a ripple whose
+period matches the 42-band fold and which carries between 19 and 41 percent of the
+profile variance depending on the trait. The ripple arises because the last band of every
+row falls on the right edge of the 224 × 224 image, where we measured the input gradient
+
+
+                                            23
+dropping to 6 percent of its interior value. Two effects combine there. The convolutions
+pad the image border, so the receptive field of the outermost pixels is half empty, and
+the network additionally learns to ignore that corner because the 43 zero-padding cells
+of the reshape sit in it and never carry information. The model therefore underweights
+roughly one band in every 42, together with its immediate neighbors, which is a genuine
+property of the representation rather than an artifact of the attribution. It does not affect
+the results we report, because the importance peak of all eight traits falls in an interior
+column of the grid, between columns 1 and 28 of 42, well away from the attenuated edge.
+This also explains why the Serpentine and Hilbert layouts did not improve accuracy
+despite preserving band adjacency, since both still place bands on the image border.
+Padding the reshape by reflection instead of with zeros, or replicating the border during
+convolution, would remove the dead corner and is worth testing.
+    These limitations point to clear next steps. The effect of image size and reshape topol-
+ogy deserves direct study, since different row widths create different cross-band neighbor-
+hoods that may favor different traits. Harder self-supervised objectives are also worth
+exploring, including higher mask ratios, masking of whole spectral regions, and richer in-
+puts such as wavelet scalograms in place of the reshape. Pretraining larger 2D encoders
+on massive spectral archives could yield general-purpose feature extractors in the spirit of
+foundation models. Combining reshaped spectral images with spatial context from imag-
+ing spectrometers or with canopy structure from LiDAR offers a route to multi-modal
+fusion.
+
+5. Conclusion
+    We showed that turning one-dimensional hyperspectral reflectance into a two-dimensional
+image improves multi-trait retrieval with convolutional neural networks. A direct reshape
+of the spectrum, the simplest of the nine transformations we tested, gave the best accuracy
+(R2 = 0.684) and improved all eight traits over the one-dimensional baseline (+0.097)
+and over every more elaborate encoding. The advantage came from the representation
+itself rather than from architectural complexity or pretrained ImageNet weights, because
+the two-dimensional layout lets a single kernel integrate spectrally distant bands within
+one receptive field. Hand-crafting either band adjacency or band interactions did not
+help, since the network already recovers the useful inter-band structure from the plain
+ordered layout. Attribution with Integrated Gradients and Grad-CAM showed that for
+traits with sharp absorption features, such as protein and leaf water, the model reads
+genuine constituent absorption in line with radiative-transfer sensitivity, while for broad
+or structural traits it leans on correlated red-edge and near-infrared features.
+    Under self-supervised pretraining, the two-dimensional representation again outper-
+formed its one-dimensional counterpart, and a frozen encoder with a lightweight linear
+head already beat every one-dimensional baseline, which points to its value where labeled
+data are scarce. Because a reshape paired with a standard network is simple, stable, and
+reproducible, it suits the operational pipelines that now can convert spectra into trait
+distributions for global monitoring. Testing the framework across sensor ranges and out-
+of-distribution domains, and scaling two-dimensional encoders toward foundation models,
+are the natural next steps.
+
+
+
+
+                                             24
+CRediT authorship contribution statement
+    Javier Lopatin: Conceptualization, Methodology, Software, Formal analysis, In-
+vestigation, Data curation, Visualization, Writing – original draft, Writing – review &
+editing. Teja Kattenborn, Eya Cherif and Sebastián Moreno: Writing – review
+& editing.
+
+Declaration of competing interest
+    The authors declare that they have no known competing financial interests or personal
+relationships that could have appeared to influence the work reported in this paper.
+
+Data availability
+   The GreenHyperSpectra dataset used in this study is publicly available at https:
+//huggingface.co/datasets/Avatarr05/GreenHyperSpectra (Cherif et al., 2025). All
+code to reproduce the transformations, models, and analyses is available at https://
+github.com/JavierLopatin/Trait_2DCNN.
+
+Funding
+    This work was supported by the Agencia Nacional de Investigación y Desarrollo
+(ANID), Chile [grant number 11241088]. The funder had no role in the study design,
+in the collection, analysis and interpretation of data, in the writing of the report, or in
+the decision to submit the article for publication.
+
+Declaration of generative AI and AI-assisted technologies in the manuscript
+preparation process
+    During the preparation of this work the authors used Claude (Anthropic) to support
+the development of the analysis code. After using this tool, the authors reviewed and
+edited the content as needed and take full responsibility for the content of the published
+article.
+
+References
+Addison, P.S., 2017. The Illustrated Wavelet Transform Handbook: Introductory Theory
+  and Applications in Science, Engineering, Medicine and Finance. 2 ed., CRC Press.
+  doi:10.1201/9781315372556.
+
+Banerjee, S., Mandal, S., Jesubalan, N.G., Jain, R., Rathore, A.S., 2024. NIR
+  spectroscopy–CNN-enabled chemometrics for multianalyte monitoring in microbial fer-
+  mentation. Biotechnology and Bioengineering 121, 1803–1819. doi:10.1002/bit.
+  28681.
+
+Bin Faruk, T., Matin, A., Pallickara, S., Pallickara, S.L., 2025. Terramae: Learning
+  spatial-spectral representations from hyperspectral earth observation data via adap-
+  tive masked autoencoders, in: 33rd ACM SIGSPATIAL International Conference on
+  Advances in Geographic Information Systems, pp. 565–568. doi:10.1145/3748636.
+  3762770.
+
+                                            25
+Binh, N.A., Hauser, L.T., 2025. Mapping mangrove multi-trait functional diversity from
+  satellite observations across dense and fragmented stands using spectral-biophysical
+  derivatives. Scientific Reports 15, 22116. doi:10.1038/s41598-025-05397-z.
+Blackburn, G.A., 2007. Wavelet decomposition of hyperspectral data: a novel approach to
+  quantifying pigment concentrations in vegetation. Int. J. Remote Sens. 28, 2831–2855.
+  doi:10.1080/01431160600928625.
+Cawse-Nicholson, K., Townsend, P.A., Schimel, D., et al., 2021. NASA’s surface biol-
+  ogy and geology designated observable: A perspective on surface imaging algorithms.
+  Remote Sensing of Environment 257, 112349. doi:10.1016/j.rse.2021.112349.
+Cherif, E., Feilhauer, H., Berger, K., Dao, P.D., Ewald, M., Hank, T.B., He, Y., Kovach,
+  K.R., Lu, B., Townsend, P.A., et al., 2023. From spectra to plant functional traits:
+  Transferable multi-trait models from heterogeneous and sparse data. Remote Sensing
+  of Environment 292, 113580. doi:10.1016/j.rse.2023.113580.
+Cherif, E., Ouaknine, A., Brown, L.A., Dao, P.D., Kovach, K.R., Lu, B., Mederer, D.,
+  Feilhauer, H., Kattenborn, T., Rolnick, D., 2025. Greenhyperspectra: A multi-source
+  hyperspectral dataset for global vegetation trait prediction, in: Advances in Neural
+  Information Processing Systems (NeurIPS). doi:10.48550/arXiv.2507.06806.
+Cogliati, S., Sarti, F., Chiarantini, L., et al., 2021. The PRISMA imaging spectroscopy
+  mission: overview and first performance analysis. Remote Sensing of Environment 262,
+  112499. doi:10.1016/j.rse.2021.112499.
+Contreras, J., Bocklitz, T., 2025. XAI-2DCOS: Enhancing interpretability in spectral
+  deep learning models through 2D correlation spectroscopy. Journal of Chemometrics
+  39. doi:10.1002/cem.70045.
+Curran, P.J., 1989. Imaging spectrometry. Progress in Physical Geography 13, 519–543.
+  doi:10.1177/030913338901300403.
+Danilevicz, M.F., Upadhyaya, S.R., Batley, J., Bennamoun, M., Bayer, P.E., Edwards,
+ D., 2025. Understanding plant phenotypes in crop breeding through explainable AI.
+ Plant Biotechnology Journal 23, 4200–4213. doi:10.1111/pbi.70208.
+Deev, V., Panchuk, V., Boichenko, E., Kirsanov, D., 2024. Spectrum is a picture: Fea-
+  sibility study of two-dimensional convolutional neural networks in spectral processing.
+  Microchemical Journal 205, 111329. doi:10.1016/j.microc.2024.111329.
+Díaz, S., Demissew, S., Carabias, J., et al., 2015. The IPBES conceptual framework:
+  connecting nature and people. Current Opinion in Environmental Sustainability 14,
+  1–16. doi:10.1016/j.cosust.2014.11.002.
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T.,
+ Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N., 2021.
+ An image is worth 16x16 words: Transformers for image recognition at scale, in: In-
+ ternational Conference on Learning Representations (ICLR).
+Féret, J.B., Berger, K., de Boissieu, F., Malenovsky, Z., 2021. Prospect-pro for estimat-
+  ing content of nitrogen-containing leaf proteins and other carbon-based constituents.
+  Remote Sensing of Environment 252, 112173. doi:10.1016/j.rse.2020.112173.
+
+                                           26
+Ferreira, V.B., Féret, J.B., Atzberger, C., Guillemot, J., Campose, O., le Maire, G., 2025.
+  Enhancing prosail inversion: Key considerations and practical insights. IEEE Journal
+  of Selected Topics in Applied Earth Observations and Remote Sensing doi:10.1109/
+  JSTARS.2025.3635001.
+
+Fu, P., Meacham-Hensold, K., Guan, K., Wu, J., Bernacchi, C., 2020. Estimating pho-
+  tosynthetic traits from reflectance spectra: A synthesis of spectral indices, numerical
+  inversion, and partial least square regression. Plant, Cell and Environment 43, 1241–
+  1258. doi:10.1111/pce.13718.
+
+Furbank, R.T., Silva-Perez, V., Evans, J.R., Condon, A.G., Estavillo, G.M., He, W.,
+  Newman, S.J., Poirier-Pocovi, M., Robinson, S.A., 2021. Wheat physiology predictor:
+  predicting physiological traits in wheat from hyperspectral reflectance measurements
+  using deep learning. Plant Methods 17, 108. doi:10.1186/s13007-021-00806-6.
+
+Ganesan, A., et al., 2021. A deep learning approach to fault detection in a satellite power
+ system using gramian angular field. International Journal of Engineering Systems
+ Modelling and Simulation 12, 195–201. doi:10.1504/ijesms.2021.115538.
+
+Garcia, G., et al., 2022. Temporal signals to images: Monitoring the condition of in-
+ dustrial assets with deep learning image processing algorithms. Proceedings of the
+ Institution of Mechanical Engineers, Part O: Journal of Risk and Reliability 236, 617–
+ 627. doi:10.1177/1748006X21994446.
+
+Gitelson, A.A., Chivkunova, O.B., Merzlyak, M.N., 2009. Nondestructive estimation of
+  anthocyanins and chlorophylls in anthocyanic leaves. American Journal of Botany 96,
+  1861–1868. doi:10.3732/ajb.0800395.
+
+Gitelson, A.A., Merzlyak, M.N., Chivkunova, O.B., 2001. Optical properties and non-
+  destructive estimation of anthocyanin content in plant leaves. Photochemistry and
+  Photobiology 74, 38–45. doi:10.1562/0031-8655(2001)074<0038:OPANEO>2.0.CO;2.
+
+Green, R.O., Thompson, D.R., 2020. An earth science imaging spectroscopy mission:
+  The Earth Surface Mineral Dust Source Investigation (EMIT), in: IGARSS 2020 –
+  2020 IEEE International Geoscience and Remote Sensing Symposium, pp. 6262–6265.
+  doi:10.1109/IGARSS39084.2020.9323741.
+
+Griffith, J., Lord, J.M., Catchen, M.D., Arce-Plata, M.I., Blanchet, F.G., et al., 2026.
+  BON in a Box: An open and collaborative platform for biodiversity monitoring, indica-
+  tor calculation, and reporting. BioScience 76, 345–358. doi:10.1093/biosci/biaf189.
+
+Guanter, L., Kaufmann, H., Segl, K., Foerster, S., et al., 2015. The EnMAP spaceborne
+ imaging spectroscopy mission for earth observation. Remote Sensing 7, 8830–8857.
+ doi:10.3390/rs70708830.
+
+He, K., Chen, X., Xie, S., Li, Y., Dollár, P., Girshick, R., 2022. Masked autoencoders are
+  scalable vision learners, in: IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition (CVPR), pp. 16000–16009. doi:10.1109/CVPR52688.2022.01553.
+
+Homolova, L., Malenovský, Z., Clevers, J.G.P.W., García-Santos, G., Schaepman, M.E.,
+  2013. Review of optical-based remote sensing for plant trait mapping. Ecological
+  Complexity 15, 1–16. doi:10.1016/j.ecocom.2013.06.003.
+
+                                            27
+Inoue, Y., Peñuelas, J., Miyata, A., Mano, M., 2008. Normalized difference spectral
+  indices for estimating photosynthetic efficiency and capacity at a canopy scale derived
+  from hyperspectral and CO2 flux measurements in rice. Remote Sensing of Environment
+  112, 156–172. doi:10.1016/j.rse.2007.04.011.
+
+Jetz, W., Cavender-Bares, J., Pavlick, R., et al., 2016. Monitoring plant functional
+  diversity from space. Nature Plants 2, 16024. doi:10.1038/nplants.2016.24.
+
+Ji, F., Li, F., Hao, D., Shiklomanov, A.N., Yang, X., Townsend, P.A., Dashti, H., Nakaji,
+   T., Kovach, K.R., Liu, H., Luo, M., Chen, M., 2024. Unveiling the transferability of
+   plsr models for leaf trait estimation: lessons from a comprehensive analysis with a novel
+   global dataset. New Phytologist 243, 111–131. doi:10.1111/nph.19807.
+
+Jiang, J., Rangnekar, A., Veeraraghavan, H., 2024. Self-supervised learning improves
+  robustness of deep learning lung tumor segmentation models to image acquisition vari-
+  ations. Medical Physics 52, 1573–1588. doi:10.1002/mp.17541.
+
+Kamata, S., Kawaguchi, E., Niimi, M., 1995. An interactive analysis method for multidi-
+ mensional images using a Hilbert curve. Systems and Computers in Japan 26, 83–92.
+ doi:10.1002/scj.4690260308.
+
+Kattge, J., Bönisch, G., Díaz, S., et al., 2020. Try plant trait database – enhanced coverage
+ and open access. Global Change Biology 26, 119–188. doi:10.1111/gcb.14904.
+
+Khatun, M.M., Islam, M.Z., Imtiaz, M.N., Ahmed, M.W., Ahmed, M.T., 2026. Explain-
+ able AI-guided hyperspectral feature selection in fruit quality assessment and spatial
+ visualization. Journal of Food Science 91. doi:10.1111/1750-3841.70976.
+
+Kong, H., Tian, L., Yi, S., Jia, Y., Guo, W., Xu, H., Liu, Y., 2025. Estimating maize
+  canopy nitrogen and chlorophyll content using CNN-GRU-CBAM and hyperspectral
+  imagery. Journal of Chemometrics 39. doi:10.1002/cem.70093.
+
+Laliberté, E., Legendre, P., 2010. A distance-based framework for measuring functional
+  diversity from multiple traits. Ecology 91, 299–305. doi:10.1890/08-2244.1.
+
+Lee, G.R., Gommers, R., Wasilewski, F., Wohlfahrt, K., O’Leary, A., 2019. Pywavelets
+  – wavelet transforms in python. doi:10.5281/zenodo.1407171.
+
+Lopatin, J., 2023. Estimation of foliar carotenoid content using spectroscopy wavelet-
+  based vegetation indices. IEEE Geoscience and Remote Sensing Letters 20, 1–5. doi:10.
+  1109/LGRS.2023.3237010.
+
+Loshchilov, I., Hutter, F., 2019. Decoupled weight decay regularization, in: International
+  Conference on Learning Representations (ICLR).
+
+Malek, S., Melgani, F., Bazi, Y., 2017. One-dimensional convolutional neural networks for
+ spectroscopic signal regression. Journal of Chemometrics 32. doi:10.1002/cem.2977.
+
+Mokari, A., Ryabchykov, O., Bocklitz, T., 2025. Adapting image-based models for 1d
+ data via spider plot transformation and transfer learning. Advanced Intelligent Systems
+ doi:10.1002/aisy.202500069.
+
+
+
+                                             28
+Nagasubramanian, K., Singh, A., Singh, A., Sarkar, S., Ganapathysubramanian, B., 2022.
+  Plant phenotyping with limited annotation: Doing more with less. The Plant Phenome
+  Journal 5. doi:10.1002/ppj2.20051.
+
+Noda, I., 2004. Advances in two-dimensional correlation spectroscopy. Vibrational Spec-
+ troscopy 36, 143–165. doi:10.1016/j.vibspec.2003.12.016.
+
+Ong, P., et al., 2025. Sugarcane disease recognition through visible and near-infrared
+ spectroscopy using deep learning assisted continuous wavelet transform. Spectrochimica
+ Acta Part A: Molecular and Biomolecular Spectroscopy 324, 125001. doi:10.1016/j.
+ saa.2024.125001.
+
+Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin,
+  Z., Gimelshein, N., Antiga, L., et al., 2019. Pytorch: An imperative style, high-
+  performance deep learning library, in: Advances in Neural Information Processing Sys-
+  tems (NeurIPS), pp. 8026–8037.
+
+Pereira, H.M., Ferrier, S., Walters, M., Geller, G.N., et al., 2013. Essential biodiversity
+  variables. Science 339, 277–278. doi:10.1126/science.1229931.
+
+Schweiger, A.K., Cavender-Bares, J., Townsend, P.A., Hobbie, S.E., et al., 2018. Plant
+  spectral diversity integrates functional and phylogenetic components of biodiversity
+  and predicts ecosystem function. Nature Ecology & Evolution 2, 976–982. doi:10.
+  1038/s41559-018-0551-1.
+
+Selvaraju, R.R., Cogswell, M., Das, A., Vedantam, R., Parikh, D., Batra, D., 2017.
+  Grad-CAM: Visual explanations from deep networks via gradient-based localization,
+  in: IEEE International Conference on Computer Vision (ICCV), pp. 618–626. doi:10.
+  1109/ICCV.2017.74.
+
+Serbin, S.P., Townsend, P.A., 2020. Scaling functional traits from leaves to canopies,
+  in: Cavender-Bares, J., Gamon, J.A., Townsend, P.A. (Eds.), Remote Sensing of
+  Plant Biodiversity. Springer International Publishing, Cham, pp. 43–82. doi:10.1007/
+  978-3-030-33157-3_3.
+
+Sharma, A., Vans, E., Shigemizu, D., Boroevich, K.A., Tsunoda, T., 2019. Deepinsight:
+  A methodology to transform a non-image data to an image for convolution neural
+  network architecture. Scientific Reports 9, 11399. doi:10.1038/s41598-019-47765-6.
+
+Shuai, Q., Chen, Z., Liu, S., Wang, Q., 2025. Application of an ecam-convnext model
+  with multichannel spectrogram based on vis–nir for soil property prediction. Journal
+  of Chemometrics 39. doi:10.1002/cem.70092.
+
+Sundararajan, M., Taly, A., Yan, Q., 2017. Axiomatic attribution for deep networks, in:
+  Precup, D., Teh, Y.W. (Eds.), International Conference on Machine Learning (ICML),
+  PMLR. pp. 3319–3328.
+
+Ta, S., Alizadeh, S., Samavedham, L., Ray, A.K., 2023. Deep chemometrics using one-
+  dimensional convolutional neural networks for predicting crude oil properties from
+  FTIR spectral data. The Canadian Journal of Chemical Engineering 101, 6688–6700.
+  doi:10.1002/cjce.25076.
+
+
+                                            29
+Tan, M., Le, Q.V., 2019. Efficientnet: Rethinking model scaling for convolutional neural
+  networks, in: International Conference on Machine Learning (ICML), PMLR. pp. 6105–
+  6114.
+
+Tan, M.I.S.M.H., Wong, L.K., Loh, Y.P., Pee, C.Y., 2026. Unlocking the potential
+  of 1D to 2D transformation in visible and near-infrared (VIS/NIR) spectroscopy for
+  improved plant disease and stress detection: A review. Microchem. J. 223, 116932.
+  doi:10.1016/j.microc.2026.116932.
+
+Verhoef, W., Jia, L., Xiao, Q., Su, Z., 2007. Unified optical-thermal four-stream radiative
+  transfer theory for homogeneous vegetation canopies. IEEE Transactions on Geoscience
+  and Remote Sensing 45, 1808–1822. doi:10.1109/TGRS.2007.895844.
+
+Villéger, S., Mason, N.W.H., Mouillot, D., 2008. New multidimensional functional diver-
+  sity indices for a multifaceted framework in functional ecology. Ecology 89, 2290–2301.
+  doi:10.1890/07-1206.1.
+
+Wang, Z., Oates, T., 2015. Imaging time-series to improve classification and imputation,
+ in: International Joint Conference on Artificial Intelligence (IJCAI), pp. 3939–3945.
+
+Weiss, M., Jacob, F., Duveiller, G., 2020. Remote sensing for agricultural applications: A
+ meta-review. Remote Sensing of Environment 236, 111402. doi:10.1016/j.rse.2019.
+ 111402.
+
+Wightman, R., 2019. Pytorch image models, in: GitHub repository. doi:10.5281/
+ zenodo.4414861.
+
+Wittscher, L., Diers, J., Pigorsch, C., 2022. Improving image classification robustness
+ using self-supervision. Stat 11. doi:10.1002/sta4.455.
+
+Wright, I.J., Reich, P.B., Westoby, M., Ackerly, D.D., et al., 2004. The worldwide leaf
+ economics spectrum. Nature 428, 821–827. doi:10.1038/nature02403.
+
+Xia, P., Hu, J., Peng, Y., 2017. EMG-based estimation of limb movement using deep
+  learning with recurrent convolutional neural networks. Artificial Organs 42, E67–E77.
+  doi:10.1111/aor.13004.
+
+Xing, J., Sieber, R., 2023. The challenges of integrating explainable artificial intelligence
+  into GeoAI. Transactions in GIS 27, 626–645. doi:10.1111/tgis.13045.
+
+Yeo, I.K., Johnson, R.A., 2000. A new family of power transformations to improve
+  normality or symmetry. Biometrika 87, 954–959. doi:10.1093/biomet/87.4.954.
+
+Yuan, S., Song, G., Huang, G., Wang, Q., 2022. Reshaping hyperspectral data into a two-
+  dimensional image for a cnn model to classify plant species from reflectance. Remote
+  Sensing 14, 3972. doi:10.3390/rs14163972.
+
+Zhang, H., Su, H., Shen, T., Sun, G., Wang, Q., 2025a. Integrating prospect-d physics and
+  adversarial domain adaptation resnet for robust cross-ecosystem plant traits estimation.
+  Frontiers in Plant Science 16. doi:10.3389/fpls.2025.1615839.
+
+Zhang, Q., Ju, Z., 2025. Rolling bearing fault diagnosis based on 2D CNN and hybrid ker-
+  nel fuzzy SVM. Advanced Theory and Simulations 8. doi:10.1002/adts.202400793.
+
+                                             30
+Zhang, Y., et al., 2025b. Near-infrared spectroscopy coupled with gramian angular field
+  two-dimensional convolutional neural network for white tea adulteration detection.
+  Journal of the Science of Food and Agriculture 105, 6269–6279. doi:10.1002/jsfa.
+  14353.
+
+Zhao, Q., Zhao, D., Yin, W., 2024. EEG emotion recognition based on GADF and
+  AMB-CNN model. International Journal of Numerical Modelling: Electronic Networks,
+  Devices and Fields 37. doi:10.1002/jnm.70000.
+
+Zhou, Y., Kong, R., Xu, Z., Xu, L., Cheng, S., 2025. Comparative and interpretative
+  analysis of CNN and transformer models in predicting wildfire spread using remote
+  sensing data. Journal of Geophysical Research: Machine Learning and Computation
+  2. doi:10.1029/2024JH000409.
+
+Zhuang, S., et al., 2023. Coupling continuous wavelet transform with machine learning to
+  improve water status prediction in winter wheat. Precision Agriculture 24, 2171–2199.
+  doi:10.1007/s11119-023-10036-6.
+
+
+
+
+                                          31
+Supplementary Data
+
+Table S1: Mean nRMSE (%) by 1D-to-2D transformation on the in-distribution GreenHyperSpectra
+test set (mean ± standard deviation over three seeds), complementing the R2 ranking of the main-text
+transform comparison. nRMSE is normalized by the 1st–99th percentile range of the observed values,
+following Cherif et al. (2025), so that lower is better. ∆ is the difference from their supervised 1D
+baseline (nRMSE 13.70), where a negative value means a lower error than the 1D baseline. The best
+value is in bold and the composite is listed below the rule.
+
+                  Transform                       Mean nRMSE (%)           ∆ vs. 1D
+                  Reshape                            12.00 ± 0.02              −1.70
+                  Serpentine                          12.15 ± 0.09             −1.55
+                  Hilbert                             12.16 ± 0.09             −1.54
+                  CWT                                 12.76 ± 0.06             −0.94
+                  Spectrogram                         12.82 ± 0.43             −0.88
+                  NDI                                 12.96 ± 0.50             −0.74
+                  GAF                                 13.30 ± 0.14             −0.40
+                  2D-COS                              14.12 ± 0.97             +0.42
+                  MTF                                 16.18 ± 0.25             +2.48
+                  Reshape + CWT + NDI                   12.34 ± 0.30           −1.36
+                  Cherif 1D (baseline)                      13.70                  –
+
+
+Table S2: Per-trait in-distribution nRMSE (%) of the best model (Reshape plus EfficientNet-B0, mean
+over three seeds) against the supervised 1D baseline of Cherif et al. (2025), complementing the per-trait
+R2 comparison of the main text. Lower is better and the lower value per trait is in bold. ∆ is the 2D
+minus 1D difference.
+
+                   Trait                       Cherif 1D     Reshape 2D            ∆
+                   Cab (Chlorophyll)             17.34           15.83        −1.51
+                   Car (Carotenoids)             13.65           11.23        −2.42
+                   Canth (Anthocyanins)          16.46           13.58        −2.89
+                   Cw (EWT)                      13.10           11.59        −1.52
+                   Cm (LMA)                      10.67            8.83        −1.84
+                   LAI                           17.49           16.50        −0.98
+                   Cp (Protein)                  10.23            9.74        −0.48
+                   Cbc (CBC)                     10.63            8.66        −1.98
+                   Mean                          13.70           12.00        −1.70
+
+    Figures S4 to S10 link the 2D Grad-CAM map and the unfolded 1D importance profile
+for the remaining seven traits.
+
+
+
+
+                                                   32
+Table S3: In-distribution nRMSE (%) by training regime, complementing the R2 comparison of the main-
+text pretraining table. All 2D methods use the Reshape transformation (mean ± standard deviation over
+three seeds). The 1D values are the corresponding nRMSE of Cherif et al. (2025) for the same regime.
+Lower is better and the lower value per regime is in bold. ∆ is the 2D minus 1D difference.
+
+                  Training regime            Cherif 1D         Ours 2D              ∆
+                  Supervised                    13.70      12.00 ± 0.02 −1.70
+                  MAE fine-tuning               12.78      12.30 ± 0.13 −0.48
+                  MAE linear probing            15.50      12.62 ± 0.27 −2.87
+
+
+
+
+Table S4: Out-of-distribution cross-dataset nRMSE (%) under the leave-datasets-out protocol (Cherif
+et al., 2025), split by training regime, complementing the R2 values reported for the same experiment
+in the main text. The 1D values are as reported by Cherif et al. (2025); the 2D values use the Reshape
+transformation from a single run. ∆ is the 2D minus 1D difference, and the lower (better) value per trait
+is shown in bold.
+
+                   Trait                       Cherif 1D     Reshape 2D            ∆
+                 Supervised
+                  Cab (Chlorophyll)              19.17           20.87        +1.70
+                  Car (Carotenoids)              19.18           20.56        +1.38
+                  Canth (Anthocyanins)           23.16           22.02        −1.14
+                  Cw (EWT)                       25.22           17.76        −7.46
+                  Cm (LMA)                       14.24           12.95        −1.29
+                  LAI                            22.98           23.71        +0.73
+                  Cp (Protein)                   17.07           17.44        +0.37
+                  Cbc (CBC)                      14.82           13.08        −1.74
+                   Mean                          19.48           18.55        −0.93
+                 MAE fine-tuning
+                  Cab (Chlorophyll)              20.50           20.84        +0.34
+                  Car (Carotenoids)              19.37           20.83        +1.46
+                  Canth (Anthocyanins)           22.42           21.68        −0.74
+                  Cw (EWT)                       24.02           17.93        −6.08
+                  Cm (LMA)                       12.47           13.40        +0.94
+                  LAI                            20.84           22.05        +1.21
+                  Cp (Protein)                   16.07           17.97        +1.91
+                  Cbc (CBC)                      12.91           13.70        +0.79
+                   Mean                          18.57           18.55        −0.02
+
+
+
+
+                                                   33
+Table S5: Out-of-distribution cross-dataset R2 per trait for the four best-performing 1D-to-2D trans-
+formations under the leave-datasets-out protocol (Cherif et al., 2025), complementing the trait-averaged
+values reported in the main text. The 1D column holds the supervised EfficientNet-1D values reported
+by Cherif et al. (2025); the 2D values come from a single run each. The highest (better) value per trait
+is shown in bold. Wins counts the traits on which each 2D model exceeds the 1D baseline.
+
+ Trait                       Cherif 1D     Reshape+CWT+NDI              Spectrogram      Serpentine        Reshape
+ Cab (Chlorophyll)             0.362                0.379                   0.336           0.378          0.340
+ Car (Carotenoids)             0.181                0.065                   0.070           0.084           0.052
+ Canth (Anthocyanins)          0.055                0.098                   0.161           0.143          0.177
+ Cw (EWT)                      0.193                0.413                   0.450           0.420           0.382
+ Cm (LMA)                      0.446                0.610                   0.616           0.607           0.585
+ LAI                           0.074                0.134                   0.073           0.076          −0.005
+ Cp (Protein)                  0.183                0.337                   0.290           0.280          0.307
+ Cbc (CBC)                     0.449                0.629                   0.625           0.623          0.602
+ Mean                          0.243                0.333                   0.327           0.326           0.305
+ Wins vs. 1D                     –                   7/8                     5/8             7/8             5/8
+
+
+
+
+Table S6: Out-of-distribution cross-dataset R2 per trait under self-supervised pretraining, comparing
+the MAE-FR fine-tuned 1D model of Cherif et al. (2025) with our MAE-2D encoder fine-tuned on the
+Reshape representation. Values come from a single run. ∆ is the 2D minus 1D difference, and the higher
+(better) value per trait is shown in bold.
+
+                Trait                       Cherif MAE-1D        MAE-2D              ∆
+                Cab (Chlorophyll)                 0.271            0.284       +0.013
+                Car (Carotenoids)                 0.165            0.214       +0.049
+                Canth (Anthocyanins)              0.112            −0.031      −0.143
+                Cw (EWT)                          0.280            0.192       −0.088
+                Cm (LMA)                          0.575             0.223      −0.352
+                LAI                               0.229            0.046       −0.183
+                Cp (Protein)                      0.275            0.068       −0.207
+                Cbc (CBC)                         0.582             0.230      −0.352
+                Mean                              0.311             0.153      −0.158
+
+
+
+
+                                                  34
+Table S7: Effect of the min-max scaling scope on in-distribution accuracy. Per-image scaling normalizes
+each image by its own minimum and maximum, while global scaling applies a single minimum and
+maximum fitted on the training set. Values are the mean R2 and the standard deviation across three
+random seeds on the GreenHyperSpectra test set, using the Reshape transform with EfficientNet-B0. ∆
+is global minus per-image, and the higher (better) value per trait is shown in bold.
+
+              Trait                              Per-image              Global             ∆
+              Cab (Chlorophyll)             0.597 ± 0.033         0.566 ± 0.032        −0.031
+              Car (Carotenoids)             0.691 ± 0.028         0.619 ± 0.041        −0.072
+              Canth (Anthocyanins)          0.628 ± 0.036         0.585 ± 0.084        −0.044
+              Cw (EWT)                      0.703 ± 0.014         0.660 ± 0.037        −0.043
+              Cm (LMA)                      0.773 ± 0.009         0.742 ± 0.028        −0.031
+              LAI                           0.604 ± 0.021         0.565 ± 0.042        −0.039
+              Cp (Protein)                  0.687 ± 0.007         0.664 ± 0.031        −0.023
+              Cbc (CBC)                     0.789 ± 0.015         0.763 ± 0.020        −0.026
+              Mean                                 0.684                0.646          −0.039
+
+
+                                  Pairwise ΔR 2 between transforms
+                      (* = significant after Bonferroni correction, α = 0.003)
+
+                                   +0.043      +0.048    +0.075   +0.128      +0.265
+           Reshape          —         *           *         *        *           *
+
+
+                                                                                            0.2
+                         -0.043                                   +0.085      +0.221
+                CWT         *
+                                       —       +0.005    +0.031
+                                                                     *           *
+
+
+
+
+                                                                                                   ΔR 2 (row − column)
+                                                                                            0.1
+                         -0.048                                               +0.217
+      Spectrogram           *
+                                   -0.005          —     +0.027   +0.081
+                                                                                 *
+
+                                                                                            0.0
+                         -0.075                                               +0.190
+                GAF         *
+                                   -0.031      -0.027        —       -0.054
+                                                                                 *
+                                                                                            −0.1
+                         -0.128    -0.085                                     +0.136
+            2D-COS          *         *
+                                               -0.081    +0.054       —          *
+                                                                                            −0.2
+
+                         -0.265    -0.221      -0.217    -0.190   -0.136
+                MTF         *         *           *         *        *
+                                                                                  —
+                                   T
+
+
+
+
+                                                         AF
+
+
+
+                                                                  S
+
+
+                                                                              TF
+                                               m
+                        pe
+
+
+                                  CW
+
+
+
+
+                                                                  O
+                                            ra
+
+
+
+
+                                                                              M
+                        a
+
+
+
+
+                                                        G
+
+
+                                                                -C
+                     sh
+
+
+
+
+                                          og
+
+
+
+
+                                                              2D
+                  Re
+
+
+
+
+                                        tr
+                                       ec
+                                   Sp
+
+
+
+
+Figure S1: Pairwise differences in mean R2 between the ten 1D-to-2D encodings (the nine transforms
+and the composite) on the GreenHyperSpectra test set, ordered from best to worst. Each cell gives ∆R2
+= row − column, the difference in mean R2 across the eight traits and three seeds. Blue indicates the row
+encoding outperforms the column and red the opposite. An asterisk (∗ ) marks a pair whose difference is
+significant (Wilcoxon signed-rank test across the eight traits, p < 0.05).
+
+
+
+                                                        35
+                Empirical band importance vs PROSAIL theoretical sensitivity                                           7/8 traits positively aligned
+                                                             no agreement
+
+          Cp                                                                                                 r = 0.45 (ρ 0.44)
+
+
+
+          Cw                                                                                       r = 0.33 (ρ 0.31)
+
+
+
+        Anth                                                                    r = 0.17 (ρ 0.15)
+
+
+
+         Cab                                                                   r = 0.16 (ρ 0.09)
+
+
+
+         Cm                                                                   r = 0.14 (ρ -0.05)
+
+
+
+         Cbc                                                               r = 0.12 (ρ -0.07)
+
+
+
+         Car                                                         r = 0.06 (ρ 0.02)
+
+
+
+          LAI                                                   r = -0.11 (ρ -0.07)
+
+
+                       −0.4           −0.2                0.0                  0.2                   0.4                 0.6                 0.8
+                              Agreement = Pearson r between IG band importance and PROSAIL theoretical sensitivity
+
+
+
+Figure S2: Per-trait agreement between the Integrated Gradients importance and the PROSAIL theo-
+retical spectral sensitivity, given as the Pearson correlation r and the Spearman correlation ρ across all
+1721 bands. Positive values indicate that the model concentrates importance where radiative transfer
+predicts the constituent acts. Seven of the eight traits are positively aligned.
+
+
+
+
+                                      Grad-CAM over final conv embedding (overlaid on mean Reshape image)
+           Cab                                 Car                                          Anth                                            Cw
+
+
+
+
+            Cm                                  LAI                                          Cp                                             Cbc
+
+
+
+
+Figure S3: Grad-CAM relevance maps on the Reshape image for the eight traits. Warmer colors indicate
+higher relevance for the predicted trait.
+
+
+
+
+                                                                      36
+Car: Grad-CAM on 2D image (embedding)                                           Car: IG band importance (unfolded to spectrum)
+
+
+                                                         1.0
+
+
+
+                                                         0.8
+
+
+
+
+                                         Norm. |IG|
+                                                         0.6
+
+
+
+                                                         0.4
+
+
+
+                                                         0.2
+
+
+
+                                                         0.0
+                                                               500   750    1000           1250             1500       1750       2000   2250
+                                                                                                  Wavelength (nm)
+
+
+
+
+                            Figure S4: Linking 2D and 1D attribution for carotenoids (Car ).
+
+
+Anth: Grad-CAM on 2D image (embedding)                                          Anth: IG band importance (unfolded to spectrum)
+
+
+                                                         1.0
+
+
+
+                                                         0.8
+                                            Norm. |IG|
+
+
+
+
+                                                         0.6
+
+
+
+                                                         0.4
+
+
+
+                                                         0.2
+
+
+
+                                                         0.0
+                                                               500   750    1000           1250             1500       1750       2000   2250
+                                                                                                  Wavelength (nm)
+
+
+
+
+                         Figure S5: Linking 2D and 1D attribution for anthocyanins (Canth ).
+
+
+Cw: Grad-CAM on 2D image (embedding)                                            Cw: IG band importance (unfolded to spectrum)
+
+
+                                                         1.0
+
+
+
+                                                         0.8
+                                         Norm. |IG|
+
+
+
+
+                                                         0.6
+
+
+
+                                                         0.4
+
+
+
+                                                         0.2
+
+
+
+                                                         0.0
+                                                               500   750   1000            1250             1500       1750       2000   2250
+                                                                                                  Wavelength (nm)
+
+
+
+
+                 Figure S6: Linking 2D and 1D attribution for equivalent water thickness (Cw ).
+
+
+Cm: Grad-CAM on 2D image (embedding)                                            Cm: IG band importance (unfolded to spectrum)
+
+
+                                                         1.0
+
+
+
+                                                         0.8
+                                         Norm. |IG|
+
+
+
+
+                                                         0.6
+
+
+
+                                                         0.4
+
+
+
+                                                         0.2
+
+
+
+                                                         0.0
+                                                               500   750    1000           1250             1500       1750       2000   2250
+                                                                                                  Wavelength (nm)
+
+
+
+
+                       Figure S7: Linking 2D and 1D attribution for leaf mass per area (Cm ).
+
+
+
+                                                                           37
+LAI: Grad-CAM on 2D image (embedding)                                         LAI: IG band importance (unfolded to spectrum)
+
+
+                                                       1.0
+
+
+
+                                                       0.8
+
+
+
+
+                                        Norm. |IG|
+                                                       0.6
+
+
+
+                                                       0.4
+
+
+
+                                                       0.2
+
+
+
+                                                       0.0
+                                                             500   750    1000           1250             1500       1750      2000   2250
+                                                                                                Wavelength (nm)
+
+
+
+
+                         Figure S8: Linking 2D and 1D attribution for leaf area index (LAI).
+
+
+
+
+Cp: Grad-CAM on 2D image (embedding)                                          Cp: IG band importance (unfolded to spectrum)
+
+
+                                                       1.0
+
+
+
+                                                       0.8
+                                        Norm. |IG|
+
+
+
+
+                                                       0.6
+
+
+
+                                                       0.4
+
+
+
+                                                       0.2
+
+
+
+                                                       0.0
+                                                             500   750   1000            1250             1500      1750       2000   2250
+                                                                                                Wavelength (nm)
+
+
+
+
+                         Figure S9: Linking 2D and 1D attribution for protein content (Cp ).
+
+
+
+
+Cbc: Grad-CAM on 2D image (embedding)                                         Cbc: IG band importance (unfolded to spectrum)
+
+
+                                                       1.0
+
+
+
+                                                       0.8
+                                          Norm. |IG|
+
+
+
+
+                                                       0.6
+
+
+
+                                                       0.4
+
+
+
+                                                       0.2
+
+
+
+                                                       0.0
+                                                             500   750    1000           1250             1500       1750      2000   2250
+                                                                                                Wavelength (nm)
+
+
+
+
+                Figure S10: Linking 2D and 1D attribution for carbon-based constituents (Cbc ).
+
+
+
+
+                                                                         38
+

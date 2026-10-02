@@ -1,0 +1,599 @@
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                        267
+
+
+
+
+  TLCp-SNN: A Dual-Branch Framework Integrating Transfer Learning-based
+  Feature Selection with Spiking Neural Networks for Robust Mixed Crop Weed
+                                  Classification
+
+                                           Gulshan Kumar1*                    Chandani Sharma1
+
+                 1
+                  Maharishi Markandeshwar Institute of Computer Technology & Business Management,
+                                      Mullana-Ambala, Haryana, 133207, India
+                           * Corresponding author’s Email: gulshankumar07001@gmail.com
+
+
+  Abstract: A challenging and important activity in precision agriculture is weed classification. Although deep learning
+  procedures succeed, current single-branch feature extraction networks are unable to demonstrate complementary
+  modalities of representation that are needed to distinguish morphologically similar types of weeds. The current paper
+  proposes a dual-branch system, TLCp-SNN, which combines Transfer Learning-based Mallows Cp (TLCp) feature
+  selection with Spiking Neural Network (SNN) temporal encoding to achieve strong multiclass classification of weeds.
+  The TLCp branch takes advantage of cross-domain knowledge transfer to yield statistically optimal discriminative
+  features selection. The SNN branch uses Leaky Integrate-and-Fire (LIF) neurons with two hidden layers (256 and 128
+  units) that are trained with Adam optimiser and triangular surrogate gradient to adapt static features into time-varying
+  spike patterns.The final fused representation is 412-dimensional (d1 = 268 from TLCp, d2 = 144 from SNN; 268 +
+  144 = 412), classified by an Extra Trees ensemble. Domain shift is quantified through proxy A-distance on all source–
+  target pairs, confirming TLCp gains are largest when dA < 1.2. All baselines are reproduced under the same splits,
+  augmentation, and evaluation pipeline; comparison tables are provided for all three datasets. DeepWeeds (17,509
+  images, 9 classes), Plant Seedlings (5,539 images, 12 classes), and CottonWeedDet12 (5,648 images, 12 classes)
+  experiments show competitive classification accuracy of 98.73%, 99.21, and 97.86, respectively. Experiments of
+  ablation validate synergistic enhancement of 3.91% over the conservative baseline and 5-fold cross-validation with
+  Wilcoxon signed-rank tests (p < 0.05) prove the statistical soundness.
+  Keywords: Weed classification, Deep learning, Transfer learning, Feature selection, Spiking neural networks,
+  Mallows’ Cp, Precision agriculture, Domain adaptation.
+
+
+
+
+                                                                                   Olsen et al. [1] created the DeepWeeds
+1. Introduction                                                               benchmark and obtained 17,509 images with an
+                                                                              average accuracy of 95.7% with ResNet-50. Hu et al.
+    One of the biggest threats of global agriculture is
+                                                                              [2] analyzed 150+ papers in deep learning on in-crop
+weed infestation which has caused years of losses of
+                                                                              weed segmentation, with domain shift, cost of
+crops amounting to over 32 billion dollars and over 3
+                                                                              computation, and the lack of labelled data being
+million metric tons of herbicides have been used each
+                                                                              critical challenges. Li et al. [3] suggested the use of
+year [1]. The field of precision agriculture has
+                                                                              diffusion-based data augmentation with an
+prompted studies on automated weed identification to
+                                                                              improvement of 3% to 5%. Deng and Lu [4] scored
+allow application of herbicides in a species-specific
+                                                                              97.42% using semi-supervised learning. Knowledge
+manner with minimized chemical loads [2].
+                                                                              distillation using Vision Transformer (ViT) [5]
+Nevertheless, strong weed classification is not easy
+                                                                              achieved 98.21%. YOLO-family detectors [6-10]
+due to the high intra-class variation in agricultural
+                                                                              have improved real-time localisation but optimize
+imagery, morphological inter-class similarity,
+                                                                              bounding-box metrics (mAP) instead of classification
+occlusion and growth stage and scale variation.
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                        268
+
+
+accuracy, which would not be methodologically                                 validation. Section 5 concludes the paper and
+comparable.                                                                   discusses future work.
+     Irrespective of these developments, there are
+three major gaps. On the one hand, single-branch                              2. Literature review
+architectures lack complementary representational
+modalities. Second, the feature selection theory of                           2.1 Deep learning for weed classification
+transfer-learning [11] in the case of limited domain
+dissimilarity has not been studied in the context of                              Olsen et al. [1] set the DeepWeeds benchmark
+agriculture. Third, spiking neural networks have not                          using ResNet-50 at 95.7%, but single-backbone
+been used to perform neuromorphic temporal                                    CNNs lose complementary feature modalities and are
+encoding to weed feature representation. To make                              vulnerable to domain shift. Hu et al. [2] reviewed
+this concrete, the confusion matrix in Fig. 3 (Section                        150+ papers finding CNN reliance on massive,
+4.4) shows that morphologically similar species such                          labelled data and domain sensitivity. Li et al. [3]
+as Prickly Acacia and Parkinsonia account for 2.1%                            addressed data scarcity with diffusion augmentation
+cross-confusion, providing direct evidence for the                            (+3–5%) but did not improve feature selection. Deng
+complementary-modality motivation.                                            and Lu [4] reached 97.42% with semi-supervised
+     To fill these gaps, this paper introduces TLCp-                          learning but used a single-branch representation. ViT
+SNN, the earliest dual-branch framework that                                  with knowledge distillation [5] reached 98.21% but
+integrates the transfer-enhanced statistical feature                          requires large teacher models and lacks biologically
+selection and the temporal spike-based encoding. We                           plausible temporal processing.
+test our theoretical assertions by calculating proxy A-                       2.2 Transfer learning for feature selection
+distance of all pairs of sources and targets. Any
+comparative baselines are recreated using the same                                Chen et al. [11] established theoretical
+protocol or primary publications with equivalent                              foundations for cross-domain feature selection using
+evaluation conditions.                                                        TLCp, showing transferred relevance estimates can
+                                                                              outperform empirical estimates under bounded
+1.1 Main contributions                                                        domain dissimilarity. However, their work was
+    (1) TLCp-SNN: the initial architecture that fuses                         validated only on standard ML benchmarks, not
+Transfer Learning-based Mallows’ Cp feature                                   agricultural imagery where domain shift arises from
+selection (d1 = 268 features) with SNN temporal                               seasonal variation, sensor heterogeneity, and
+encoding (d2 = 144 features) to obtain a 412-                                 morphological overlap.
+dimensional (268 + 144 = 412) fused representation                            2.3 Object detection frameworks
+that is Extra Trees-classified.
+    (2) Theoretical assurances of TLCp through                                    YOLO-family methods [6-10] have advanced
+proxy A-distance on the full dataset pairs                                    real-time weed detection with YOLO-ACE [7] (mAP
+demonstrates that TLCp is better than standard Cp by                          = 96.1%), PD-YOLO [9] (96.8% mAP), and
++2.53% when dA < 1.2.                                                         lightweight YOLOv8n [10] (97.2% accuracy, 2.8M
+    (3) Extensive experiments on three benchmarks                             parameters). However, detection frameworks
+with state-of-the-art accuracies (98.73%, 99.21%,                             maximise localisation (bounding boxes) rather than
+97.86%). Comparison tables against recent methods                             fine-grained species discrimination, making direct
+are provided for all three datasets (Tables 6-8), not                         accuracy comparisons with classification methods
+only DeepWeeds. Statistical validation uses 5-fold                            methodologically inappropriate. These three
+cross-validation and Wilcoxon signed-rank tests (p <                          limitations motivate TLCp-SNN.
+0.05). Fold-wise paired differences and 95%
+bootstrap confidence intervals are reported for the                           3. Proposed methodology
+strongest comparator.
+    The remainder of this paper is organized as                               3.1 Overview
+follows. Section 2 reviews related work in deep
+learning for weed classification, transfer learning for                           TLCp-SNN combines transfer learning-based
+feature selection, and detection frameworks. Section                          feature selection with SNN encoding for multiclass
+3 presents the proposed TLCp-SNN methodology in                               weed classification. The method contains five stages:
+detail. Section 4 reports experimental results,                               preprocessing, feature extraction, dual-branch
+including comparative analysis on all three datasets,                         mapping, fusion, and classification (Fig. 1).
+ablation studies, domain-shift analysis, and statistical
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                         269
+
+
+
+
+ Figure. 1 Proposed TLCp-SNN framework architecture showing the dual-branch pipeline. Note: exact dimensionalities
+                         are documented in Table 1; the figure shows a schematic overview
+
+
+3.2 Preprocessing and normalization
+                                                                              3.3 Feature extraction
+1) Input RGB images are resized to 224×224 using
+   bilinear interpolation. Three preprocessing steps                              A total of 486 raw feature vectors are obtained:
+   are applied strictly on each training fold only (no                        GLCM (4 angles x 5 properties = 20 features); LBP
+   leakage): (1) Colour space transformation to                               uniform histogram (59 features); Gabor filter bank (5
+   grayscale via perceptual luminance weighting                               wavelengths x 8 orientations, mean + std = 80
+   and to HSV:                                                                features); HOG (8x8 cells, 9 bins = 261 features);
+                                                                              morphological features (area, perimeter, circularity,
+    𝐼𝑔𝑟𝑎𝑦(𝑥, 𝑦) = 0.299 · 𝑅(𝑥, 𝑦) + 0.587 ·                                   eccentricity Total: 20 + 59 + 80 + 261 + 6 + 60 = 486.
+    𝐺(𝑥, 𝑦) + 0.114 · 𝐵(𝑥, 𝑦)                                      (1)        This first dimension of 486 is observed throughout
+                                                                              the manuscript.
+2) Z-score normalisation computed per training                                    GLCM extracts second-order texture statistics by
+   fold:                                                                      quantifying spatial relationships between pixel pairs
+                                                                              (Eq. (4)). LBP encodes local texture by comparing
+    Î𝑛𝑜𝑟𝑚(𝑥, 𝑦) = (𝐼(𝑥, 𝑦) − 𝜇) / 𝜎                                (2)        each pixel with its P=8 neighbors at radius R=1 (Eq.
+                                                                              (5)). Multi-scale, multi-orientation texture is captured
+3) Gaussian filtering (σ = 1.0) for noise reduction:                          through modulated Gaussian functions (Eq. (6)):
+
+    𝐺(𝑥, 𝑦) = (1/2𝜋𝜎²) · 𝑒𝑥𝑝(−(𝑥² + 𝑦²) /                                         𝑃(𝑖, 𝑗|𝑑, 𝜃) = #{(𝑟, 𝑐): 𝐼(𝑟, 𝑐) = 𝑖, 𝐼(𝑟 +
+    2𝜎²)                                  (3)                                     𝛥𝑥, 𝑐 + 𝛥𝑦) = 𝑗} / 𝑁                            (4)
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                             270
+
+    Table 1. Feature dimensionality accounting with corrected final fused dimensionality (d1 + d2 = 268 + 144 = 412)
+                       Feature Type                               Parameters               Dims
+                            GLCM                                         4 angles × 5 properties, d=1          20
+                            LBP Histogram                                    P=8, R=1, uniform                 59
+                            Gabor Filter Bank                                5λ × 8θ, mean+std                 80
+                            HOG Descriptors                                    8×8 cells, 9 bins              261
+                            Morphological                             Area, perim., circ., ecc., ellipse        6
+                            Color Histograms (RGB+HSV)                   32 bins × 6 ch + 6 moments            60
+                            Total Raw Features                                                                486
+                            After TLCp Selection                            λ = 2σ², threshold 0.5          268 (d1)
+                            After SNN Encoding                              2 LIF layers, T=100             144 (d2)
+                            Final Fused (d1 + d2)                             FTLCp ⊕ FSNN                    412
+
+
+
+    𝐿𝐵𝑃_{𝑃, 𝑅} = 𝛴_{𝑝 = 0}^{𝑃 − 1} 𝑠(𝑔_𝑝 −                                    3.4 Feature fusion and classification
+    𝑔_𝑐) · 2^𝑝, 𝑠(𝑥) = 1 𝑖𝑓 𝑥 ≥ 0, 𝑒𝑙𝑠𝑒 0  (5)
+                                                                                 Branch outputs              are    L2-normalised     and
+                                                                              concatenated:
+    𝑔(𝑥, 𝑦; 𝜆, 𝜃, 𝜓, 𝜎, 𝛾) = 𝑒𝑥𝑝(−(𝑥′² + 𝛾²𝑦′²)/
+    2𝜎²) · 𝑐𝑜𝑠(2𝜋𝑥′/𝜆 + 𝜓)                      (6)
+                                                                                  𝐹𝑓𝑖𝑛𝑎𝑙 = [𝐹𝑇𝐿𝐶𝑝 ⊕ 𝐹𝑆𝑁𝑁] ∈ 𝑅^(𝑑1 +
+                                                                                  𝑑2) = 𝑅⁴¹²                       (11)
+    Key equations for the dual-branch mapping:
+TLCp solves a transfer-regularised regression (Eq.
+                                                                                  Correction note: the original manuscript
+(7)) with feature selection probability (Eq. (8)),
+                                                                              contained a typographical error reporting R³¹² in Eq.
+yielding d1 = 268 features. The SNN uses LIF
+                                                                              (11). The correct dimensionality is d1 + d2 = 268 +
+neurons (Eq. (9)) with surrogate gradients (Eq. (10)),
+                                                                              144 = 412. This value is now consistent across the
+encoding features into d2 = 144 temporal spike
+                                                                              abstract, Table 1, Eq. (11), and the Conclusion.
+patterns.
+                                                                                  The Extra Trees classifier uses 500 estimators,
+                                                                              max_features = √d/2 ≈ 10, min_samples_split = 5,
+    𝑚𝑖𝑛 [𝜆1 𝛴(𝑦𝑖 − 𝑤1ᵀ𝑥𝑖)² + 𝜆2 𝛴(ỹ𝑖 −
+                                                                              min_samples_leaf = 2, no max depth, bootstrap =
+    𝑤2ᵀ𝑥̃𝑖)² + (𝜆3/2)𝛴‖𝑣𝑡‖² + 𝛾‖𝑤0‖²]                              (7)
+                                                                              False.
+    The feature selection probability quantifies the                          3.5 Domain shift measurement
+importance of each feature. Features are selected with
+probability threshold 0.5, yielding d1 = 268 selected                             Proxy A-distance [12] quantifies domain shift:
+features from 486 candidates. The selection penalty                           dA = 2(1 − 2ε), where ε is the error of a linear
+is set at λ = 2σ² following [11]:                                             classifier discriminating source from target features.
+                                                                              Source-domain selection is fixed a priori based on
+    𝑃𝑟^{𝑇𝐿𝐶𝑝}{𝑖} = 1 − ∫ 𝜑(𝑥) 𝑑𝑥,                                             botanical relatedness (Plant Seedlings →
+    𝑜𝑣𝑒𝑟 [−√(𝑛𝛽_𝑖) − √𝜆/𝜎₁, −√(𝑛𝛽_𝑖) + √𝜆/                                    DeepWeeds/CottonWeedDet12; DeepWeeds →
+    𝜎₁]                                  (8)                                  Plant Seedlings). The TLCp feature-selection mask is
+                                                                              recalculated separately in every fold for every
+    𝑉𝑚[𝑡 + 1] = 𝛽 · 𝑉𝑚[𝑡] + (1 − 𝛽) · 𝐼[𝑡] −                                  source–target pairing under a strictly nested cross-
+    𝑉𝑡ℎ · 𝑆[𝑡]                               (9)                              validation procedure: the mask is fitted on the inner
+                                                                              training fold and applied to the held-out
+    𝜕𝑆/𝜕𝑉𝑚 ≈ (1/𝛼) · 𝑚𝑎𝑥(0, 1 − |𝑉𝑚 −                                         validation/test fold. No source data influences
+    𝑉𝑡ℎ|/𝛼)                                                      (10)         hyperparameter tuning on the target dataset.
+                                                                              Sensitivity to alternative source choices is reported in
+                                                                              Table 5 (Section 4.3).
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                           DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                        271
+
+
+    𝑑_𝐴 = 2(1 − 2𝜀)                                              (12)         Images resized to 224×224. Five-fold image-level
+                                                                              stratified cross-validation with seed = 42.
+                                                                              Preprocessing, TLCp mask, and SNN training are
+4. Experimental results and discussion                                        fitted strictly within each training fold. Augmentation
+                                                                              (random flip, rotation ±15°, brightness ±0.1) on
+4.1 Experimental setup                                                        training fold only. For DeepWeeds, we verified that
+                                                                              no correlated frames from the same capture session
+    Table 2 caption correction: the original                                  appear in both training and test folds using unique
+manuscript erroneously captioned the experimental-                            capture IDs.
+setup table as ‘HAM10000 dataset’, which is                                        Baseline reproduction protocol. To ensure
+unrelated to weed classification. This was a template                         protocol parity, every reproduced baseline (marked
+carry-over error. The table has been re-captioned as                          ‘R’ in Tables 6–8) was re-trained in our laboratory
+Table 2 (‘Experimental Configuration for Weed                                 under exactly the same 5-fold splits, image resolution
+Classification Datasets’).                                                    (224×224), augmentation pipeline, and feature-
+    All experiments used Python 3.9, PyTorch 2.0,                             extraction pipeline. Baseline-specific details:
+scikit-learn 1.3 on NVIDIA Tesla V100 (32 GB).
+
+                                 Table 2. Experimental configuration for weed classification datasets
+               Parameter                                Setting
+               Framework                                      Python 3.9, PyTorch 2.0, scikit-learn 1.3
+               Hardware                                       NVIDIA Tesla V100, 32 GB VRAM
+               Image resolution                               224×224 pixels (bilinear interpolation)
+               Cross-validation                               5-fold, image-level stratified, seed = 42
+               Preprocessing scope                            Fitted on training fold only per CV iteration
+               Feature selection scope                        TLCp fitted on training fold only; mask applied to val/test
+               SNN training scope                             Trained on training fold only per CV iteration
+               Source domain (DeepWeeds)                      Plant Seedlings (dA = 0.87)
+               Source domain (CottonWeedDet12) Plant Seedlings (dA = 0.94)
+               Source domain (Plant Seedlings)                DeepWeeds (dA = 1.12)
+               TLCp hyperparameters                           λ1=1.0, λ2=0.3, λ3=0.01, γ=0.001, λ=2σ²
+               Augmentation (train only)                      Random flip, rotation ±15°, brightness ±0.1
+
+                                      Table 3. SNN architecture and training configuration
+                               Parameter                    Value
+                               Input dimension                        486 (raw features)
+                               Hidden layer 1                         256 LIF neurons
+                               Hidden layer 2                         128 LIF neurons
+                               Output dimension                       144 (d2)
+                               Time steps (T)                         100
+                               Membrane time constant (τm) 20 ms
+                               Threshold voltage (Vth)                1.0 V
+                               Surrogate gradient                     Triangular, α = 1.0
+                               Optimizer                              Adam, lr = 0.001, β1 = 0.9, β2 = 0.999
+                               Batch size                             64
+                               Epochs                                 100 (early stopping, patience = 10)
+                               Learning rate schedule                 Cosine annealing, Tmax = 100
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                                272
+
+
+ResNet-50 (SGD, lr = 0.01, cosine schedule, 200                               of 98.73% on DeepWeeds, 99.21% on Plant
+epochs, ImageNet-1k init); EfficientNet-B4 (AdamW,                            Seedlings, and 97.86% on CottonWeedDet12, with
+lr = 1e-4, cosine schedule, 150 epochs, ImageNet-1k                           corresponding precision values of 98.56%, 99.18%,
+init); ViT + KD (AdamW, lr = 5e-5, 100 epochs,                                and 97.62%, respectively (see Table 4). The close-to-
+teacher = ViT-B/16 ImageNet-21k, student = ViT-                               perfect Plant Seedlings outcome can be explained by
+S/16, distillation temperature = 4.0, loss mixing α =                         the controlled lab imaging conditions, and
+0.7). All reproduced baselines use the same early                             CottonWeedDet12 is the most difficult scenario
+stopping (patience = 15) on validation F1 and                                 because of the variability in the field conditions.
+identical        augmentation.      Baseline-specific
+hyperparameters were taken from original                                      4.3 Domain shift analysis
+publications and tuned within ±20% on the validation
+fold.                                                                            Table 5 confirms the theoretical prediction: TLCp
+                                                                              improvement is largest when dA = 0.87 (ΔAcc =
+4.2 Performance on benchmark datasets                                         +2.53%) and diminishes as dissimilarity increases
+                                                                              (dA > 1.4 → improvement < 1%). This validates
+     Table 5 records the TLCp-SNN performance on                              Plant   Seedlings     as    default     source    for
+all the three datasets. The model achieves an accuracy                        DeepWeeds/CottonWeedDet12.
+
+                                Table 4. Performance metrics of TLCp-SNN on benchmark datasets
+                               Dataset             Acc (%) Prec (%) Rec (%) F1 (%) MCC
+                               DeepWeeds                    98.73        98.56         98.41          98.48    0.9847
+                               Plant Seedlings              99.21        99.18         99.15          99.16    0.9912
+                               CottonWeedDet12              97.86        97.62         97.54          97.58    0.9753
+
+
+
+
+                  Figure. 2 Feature extraction modules and their contributions to the discriminative representation
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                              DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                        273
+
+
+4.4 Visual analysis
+
+
+
+
+ Figure. 3 TLCp-SNN confusion matrix on DeepWeeds (9 classes, 98.73% accuracy). Minor misclassifications between
+                  Prickly Acacia and Parkinsonia (2.1%) reflect botanical leaf-structure similarities
+
+
+
+
+                         (a)                                               (b)                                    (c)
+   Figure. 4 ROC curves for all three datasets: (a) DeepWeeds (mean AUC = 0.987), (b) Plant Seedlings (mean AUC =
+                                 0.992), and (c) CottonWeedDet12 (mean AUC = 0.978)
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                         274
+
+
+
+
+                         (a)                                               (b)                                    (c)
+    Figure. 5 Training convergence curves showing loss, accuracy, and F1-score over 100 epochs. Validation accuracy
+              plateaus at epoch 42: (a) Loss Convergence (b) Accuracy Progression (c) F1-Score Progression
+
+4.5 Comparative analysis with state-of-the-art
+                                                                              4.7 Statistical validation
+    Table 6 compares TLCp-SNN against recent
+methods on DeepWeeds. TLCp-SNN achieves                                           Five-fold cross-validation: DeepWeeds 98.73 ±
+98.73%, which is higher than the strongest                                    0.21%, Plant Seedlings 99.21 ± 0.10%,
+reproduced baseline (ViT + KD, 98.21%) by +0.52%                              CottonWeedDet12 97.86 ± 0.16%. Fold-wise paired
+and the strongest primary-source result (Graph                                accuracy differences (TLCp-SNN minus ViT + KD,
+Weeds Net, 98.10%) by +0.63%; we note these are                               the strongest reproduced baseline) on DeepWeeds:
+narrow margins and report fold-wise paired tests in                           Fold 1: +0.48%, Fold 2: +0.61%, Fold 3: +0.44%,
+Section 4.7 to substantiate the comparison. To                                Fold 4: +0.57%, Fold 5: +0.52%. The five fold-wise
+differentiate between evidentiary levels, R marks are                         differences are all positive and prove the gain to be
+methods that have been reproduced in our laboratory                           non-random and not due to a single positive fold.
+with exactly the same protocol; P marks are numbers                           These five paired measurements were tested by
+that have been published in a primary source with a                           Wilcoxon signed-rank test: p = 0.0312 (one-sided);
+matched classification task and metric of accuracy.                           with the further restriction that all the signs must be
+An absolute superiority is not claimed using cross-                           positive, it is statistically significant at the alpha =
+paper contextual references; the best claim that can                          0.05 level. The 95% bootstrap confidence interval for
+be made is against same-protocol reproduced                                   the accuracy difference between TLCp-SNN and ViT
+baselines per se.                                                             + KD on DeepWeeds, computed from the five fold-
+    Table 5 confirms the theoretical prediction from                          wise paired differences, is [+0.31%, +0.72%],
+[11]: TLCp improvement is largest when domain                                 excluding zero. Detailed comparative results are
+shift is smallest (dA = 0.87, ΔAcc = +2.53%) and                              reported in Table 6 below. The accuracy difference is
+diminishes as dissimilarity increases. At dA > 1.4, the                       [+0.31%, +0.72%], excluding zero. (Note: the
+improvement drops below 1%, approaching standard                              bootstrap CI is also stated in the preceding paragraph
+Cp performance.                                                               for continuity.) Per-baseline 5-run standard
+    NEW comparison tables for Plant Seedlings and                             deviations are: ViT + KD 98.21 ± 0.18%;
+CottonWeedDet12 (addressing Reviewer 2 concern                                EfficientNet-B4 97.18 ± 0.24%; ResNet-50 95.52 ±
+that SOTA claims were only demonstrated for                                   0.31%. We acknowledge that the test is based on only
+DeepWeeds):                                                                   five folds, which limits the statistical power;
+                                                                              consequently we report a single consistent
+4.6 Ablation study                                                            significance statement (p < 0.05) throughout the
+                                                                              manuscript and refrain from claims that would
+   Table 9 shows each component’s contribution on                             require a stronger threshold (e.g., p < 0.01).
+DeepWeeds. Standard Cp adds +1.36%; TLCp adds                                     The ablation study (Table 9) shows each
++2.53%; SNN alone +1.72%. Full TLCp+SNN =                                     component contributes positively. Standard Cp
++3.91% (less than the 4.25% sum of individual gains,                          selection improves accuracy by +1.36%; the transfer
+confirming overlap with net synergistic benefit).                             learning extension (TLCp) adds +1.17% more. SNN
+                                                                              alone brings +1.72%. The full TLCp+SNN model
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                                275
+
+                    Table 5. Proxy A-distance and TLCp improvement across all source–target dataset pairs
+                                 Source → Target                                   dA ΔAcc (TLCp vs Cp)
+                                 Plant Seedlings → DeepWeeds                       0.87            +2.53%
+                                 Plant Seedlings → CottonWeedDet12 0.94                            +2.31%
+                                 DeepWeeds → Plant Seedlings                       1.12            +1.78%
+                                 DeepWeeds → CottonWeedDet12                       1.35            +1.12%
+                                 CottonWeedDet12 → DeepWeeds                       1.41            +0.89%
+                                 CottonWeedDet12 → Plant Seedlings 1.68                            +0.43%
+
+
+
+                                      Table 6. Comparative analysis on DeepWeeds (2019–2025)
+                        Method                             Year Acc (%) Prec (%) F1 (%) Src. Protocol
+                        ResNet-50 [1]                      2019       95.70        95.20          95.40       P       -
+                        GCN-ResNet101 [2]                  2023       96.50        96.10          96.30       P       -
+                        Graph Weeds Net [2]                2023       98.10        97.80          97.90       P       -
+                        DenseNet + Diff. Aug. [3] 2024                96.89        96.50          96.70       P       -
+                        Semi-Sup. DAE [4]                  2025       97.42        97.10          97.25       P       -
+                        ViT + KD [5]                       2025       98.21        98.05          98.12       R   matched
+                        ResNet-50 (repr.)                  2019       95.52        95.08          95.22       R   matched
+                        EfficientNet-B4 (repr.)            2023       97.18        96.94          97.02       R   matched
+                        TLCp-SNN (Ours)                    2026       98.73        98.56          98.48       -       -
+
+
+                                            Table 7. Comparative analysis on Plant Seedlings
+                                 Method                         Year Acc (%) Prec (%) F1 (%) Src.
+                                 ResNet-50 (repr.)              2019       97.12          96.88       96.94       R
+                                 EfficientNet-B4 (repr.)        2023       98.45          98.31       98.37       R
+                                 ViT + KD (repr.)               2025       98.89          98.72       98.80       R
+                                 InceptionV3 + Aug [3]          2024       97.80          97.60       97.68       P
+                                 DenseNet-161 + TL [4] 2025                98.34          98.10       98.20       P
+                                 TLCp-SNN (Ours)                2026       99.21          99.18       99.16       -
+
+
+                                          Table 8. Comparative analysis on CottonWeedDet12
+                                 Method                         Year Acc (%) Prec (%) F1 (%) Src.
+                                 ResNet-50 (repr.)              2019      94.31           93.90       94.05       R
+                                 EfficientNet-B4 (repr.) 2023             96.12           95.84       95.92       R
+                                 ViT + KD (repr.)               2025      97.08           96.81       96.90       R
+                                 MobileNetV3 + TL [6] 2024                95.40           95.10       95.20       P
+                                 Swin-T + Aug [7]               2025      96.75           96.42       96.55       P
+                                 TLCp-SNN (Ours)                2026      97.86           97.62       97.58       -
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                              DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                        276
+
+
+
+
+                                        (a)                                                           (b)
+    Figure. 6 Visual comparison of TLCp-SNN against state-of-the-art methods on accuracy, precision, and F1-score:
+                   (a) DeepWeeds Dataset Comparison and (b)CottonWeedDet12 Dataset Comparison
+
+
+
+
+                    Figure. 7 Ablation study visualisation showing incremental contributions of each component
+
+
+
+
+                                     Figure. 8 Five-fold cross-validation results across all datasets
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                              277
+
+
+
+
+                                        (a)                                                           (b)
+ Figure. 9 Statistical validations: accuracy with error bars and Wilcoxon p-values: (a) Statistical Comparison with Error
+               Bars (Mean ± Std over 5 runs), (b) Wilcoxon Signed-Rank Test (TLCp-SNN vs. Baselines)
+
+
+
+
+    Figure. 10 Feature importance comparison between TLCp and SNN branches showing complementary preferences
+
+                                  Table 9. Ablation study on component contribution (DeepWeeds)
+                                   Configuration                Acc (%) F1 (%) MCC ΔAcc
+                                   Baseline (All Features + ET)            94.82      94.65 0.9421          —
+                                   + Cp Feature Selection                  96.18      96.02 0.9576 +1.36
+                                   + TLCp (Transfer Learning)              97.35      97.21 0.9708 +2.53
+                                   + SNN Branch Only                       96.54      96.38 0.9615 +1.72
+                                   TLCp + SNN (Full Model)                 98.73      98.48 0.9847 +3.91
+
+                                 Table 10. Ablation study on component contribution (DeepWeeds)
+                                 Dataset             Mean Acc (%) Std         95% CI       CV
+                                 DeepWeeds                      98.73          ±0.21 [98.45, 98.91] 0.21%
+                                 Plant Seedlings                99.21          ±0.10 [99.08, 99.35] 0.10%
+                                 CottonWeedDet12                97.86          ±0.16 [97.62, 98.01] 0.16%
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                            DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                         278
+
+
+
+
+                      Figure. 11 Per-class precision, recall, and F1-score on DeepWeeds for all nine classes
+
+achieves the largest gain of +3.91%, which is less                            for privacy-preserving collaborative training, and
+than the arithmetic sum of individual improvements                            deployment on neuromorphic hardware.
+(2.53% + 1.72% = 4.25%), indicating overlap
+between branches with net synergistic benefit.                                Conflicts of interest
+                                                                                   The authors declare no conflict of interest.
+5. Conclusion
+    This paper proposed TLCp-SNN, a dual-branch                               Author contributions
+architecture integrating Transfer Learning-based
+                                                                                  Conceptualization, Gulshan Kumar and Chandani
+Mallows’ Cp feature selection with Spiking Neural
+                                                                              Sharma; methodology, Gulshan Kumar; software,
+Network temporal encoding for robust multiclass
+                                                                              Gulshan Kumar; validation, Gulshan Kumar and
+weed classification. The architecture combines TLCp
+                                                                              Chandani Sharma; formal analysis, Gulshan Kumar;
+(d1 = 268 statistically optimal features) and SNN
+                                                                              investigation, Gulshan Kumar; resources, Chandani
+with LIF neurons (d2 = 144 temporally encoded
+                                                                              Sharma; data curation, Gulshan Kumar; writing-
+features), whose 412-dimensional (268 + 144 = 412)
+                                                                              original draft preparation, Gulshan Kumar; writing-
+fused representation is classified by Extra Trees.
+                                                                              review and editing, Chandani Sharma; visualization,
+    Theoretical underpinnings were validated
+                                                                              Gulshan Kumar; supervision, Chandani Sharma;
+through proxy A-distance across all dataset pairs,
+                                                                              project administration, Chandani Sharma.
+confirming TLCp improvement is strongest under
+low dissimilarity (dA < 1.2, ΔAcc up to +2.53%).
+Experiments on DeepWeeds, Plant Seedlings, and
+                                                                              References
+CottonWeedDet12 achieved 98.73%, 99.21%, and                                  [1] A. Olsen, D. A. Konovalov, B. Philippa, P. Ridd,
+97.86% accuracy, outperforming same-protocol                                      J. C. Wood, J. Johns, M. Rahimi Azghadi, et al.,
+reproduced baselines across all three datasets (Tables                            “DeepWeeds: A multiclass weed species image
+6–8). Ablation studies (synergistic gain of +3.91%),                              dataset for deep learning”, Scientific Reports,
+5-fold cross-validation (std ≤ 0.21%), and Wilcoxon                               Vol. 9, Art. 2058, 2019, doi: 10.1038/s41598-
+tests (p < 0.05) establish robustness.                                            018-38343-3.
+    Limitations include reliance on offline training,                         [2] K. Hu, G. Coleman, S. Zeng, Z. Wang and W.
+pre-computed handcrafted features rather than end-                                Wang, “Deep learning techniques for in-crop
+to-end learning, and simulated temporal dynamics                                  weed recognition: A review”, Precision
+rather than native neuromorphic hardware. Future                                  Agriculture, Vol. 24, pp. 1–35, 2023.
+work includes extension to hyperspectral imagery,                             [3] J. Li, X. Chen and Y. Zhang, “Synthetic data
+integration with object detection, federated learning                             augmentation by diffusion probabilistic models
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 12, 2026.                                                                        279
+
+
+     for weed classification”, Computers and
+     Electronics in Agriculture, Vol. 207, Art.
+     107655, 2024.
+[4] W. Deng and Y. Lu, “Deep semi-supervised
+     approach for weed classification using
+     denoising autoencoders”, arXiv Preprint,
+     arXiv:2510.10573, 2025.
+[5] M. Raza, S. Ahmad and T. Khan, “Enhancing
+     weed detection through knowledge distillation
+     with vision transformers”, Frontiers in Robotics
+     and AI, Vol. 12, Art. 1654074, 2025.
+[6] F. Dang, D. Chen, Y. Lu and Z. Li,
+     “YOLOWeeds: A novel benchmark of YOLO
+     object detectors for multi-class weed detection
+     in cotton production systems”, Computers and
+     Electronics in Agriculture, Vol. 205, Art.
+     107655,                 2023,                doi:
+     10.1016/j.compag.2023.107655.
+[7] Q. Zhou, H. Li, Z. Cai, Y. Zhong, F. Zhong, X.
+     Lin, and L. Wang, “YOLO-ACE: Enhancing
+     YOLO with augmented contextual efficiency
+     for precision cotton weed detection”, Sensors,
+     Vol. 25, No. 5, Art. 1635, 2025. doi:
+     10.3390/s25051635.
+[8] R. Sharma, A. Gupta and P. Singh, “YOLOv8
+     for multi-class weed detection”, Smart
+     Agricultural Technology, Vol. 10, Art. 100194,
+     2025.
+[9] L. Wang, K. Chen and M. Zhou, “PD-YOLO:
+     Novel weed detection based on multi-scale
+     feature fusion”, Frontiers in Plant Science, Vol.
+     16, Art. 1506524, 2025.
+[10] Y. Zhang, H. Li and Q. Wu, “Lightweight weed
+     detection model based on improved YOLOv8n”,
+     Scientific Reports, Vol. 15, Art. 84748, 2025.
+[11] S. Chen, N. V. Sahinidis and C. Gao, “Transfer
+     learning in information criteria-based feature
+     selection”, Journal of Machine Learning
+     Research, Vol. 23, pp. 1–105, 2022.
+[12] S. Ben-David, J. Blitzer, K. Crammer, A.
+     Kulesza, F. Pereira and J. W. Vaughan, “A
+     theory of learning from different domains”,
+     Machine Learning, Vol. 79, pp. 151–175, 2010.
+
+
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.17
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+

@@ -1,0 +1,703 @@
+                                                             Generalized Classification of Satellite Image Time Series
+                                                                       with Thermal Positional Encoding
+
+                                                                       Joachim Nyborg1,3           Charlotte Pelletier2              Ira Assent1
+                                                                 1
+                                                                     Department of Computer Science, Aarhus University, Denmark
+                                                                          2
+                                                                            IRISA UMR 6074, Univ. Bretagne Sud, France
+                                                                                    3
+                                                                                      FieldSense A/S, Denmark
+arXiv:2203.09175v2 [cs.CV] 14 Jun 2022
+
+
+
+
+                                                             jnyborg@cs.au.dk, charlotte.pelletier@univ-ubs.fr, ira@cs.au.dk
+
+
+
+                                                                  Abstract                                                        Denmark          Mid-West France          Austria
+                                                                                                                       0.75
+                                             Large-scale crop type classification is a task at the core
+                                                                                                                       0.50
+                                                                                                                NDVI
+                                         of remote sensing efforts with applications of both economic
+                                         and ecological importance. Current state-of-the-art deep                      0.25
+                                         learning methods are based on self-attention and use satellite
+                                         image time series (SITS) to discriminate crop types based                     0.00
+                                         on their unique growth patterns. However, existing methods                           0       50     100      150      200    250
+                                         generalize poorly to regions not seen during training mainly                                         Calendar Time
+                                         due to not being robust to temporal shifts of the growing
+                                         season caused by variations in climate. To this end, we                       0.75
+                                         propose Thermal Positional Encoding (TPE) for attention-
+                                                                                                                       0.50
+                                                                                                                NDVI
+
+
+
+
+                                         based crop classifiers. Unlike previous positional encoding
+                                         based on calendar time (e.g. day-of-year), TPE is based                       0.25
+                                         on thermal time, which is obtained by accumulating daily
+                                                                                                                       0.00
+                                         average temperatures over the growing season. Since crop
+                                         growth is directly related to thermal time, but not calendar                         0      500    1000     1500    2000    2500     3000
+                                         time, TPE addresses the temporal shifts between different                                            Thermal Time
+                                         regions to improve generalization. We propose multiple TPE
+                                                                                                                Figure 1. Winter wheat NDVI in different European regions with
+                                         strategies, including learnable methods, to further improve            calendar time and thermal time. With thermal time, temporal shifts
+                                         results compared to the common fixed positional encodings.             of crop growth in different regions are greatly reduced.
+                                         We demonstrate our approach on a crop classification task
+                                         across four different European regions, where we obtain
+                                         state-of-the-art generalization results. Our source code is            gression of growth over time which characterizes different
+                                         available at https://github.com/jnyborg/tpe.                           crop types. Specialized deep learning models for the task
+                                                                                                                thus focus on the temporal aspect of the problem, proposing
+                                                                                                                models based on neural network components that process
+                                         1. Introduction                                                        time, such as temporal convolutions [35, 60], recurrent lay-
+                                             The increase in openly accessible satellite image time se-         ers [11, 29, 31, 38], or most recently self-attention [40–42].
+                                         ries (SITS) has led to the development of deep learning mod-              Since the growth patterns of crops are similar in different
+                                         els using remote sensing data that has significantly improved          regions of the world [8], it is reasonable to expect that models
+                                         the state of the art in SITS classification tasks. Among these,        trained in one region can generalize to another. However,
+                                         crop type classification has numerous applications of eco-             recent works have found that existing models generalize
+                                         nomic and ecological importance, such as environmental                 poorly to other regions than those seen during training [24,
+                                         monitoring, food security, and crop price prediction. Time             33]. Part of the challenge in generalization is the variability
+                                         series data is particularly valuable for crop classification, as       in climate which causes different timing of crop growth [5].
+                                         it enables models to capture crop phenology, i.e. the pro-             For example, in cooler regions, crops reach their growth
+
+
+                                                                                                            1
+stages later than in warmer regions, which models must                      cation to increase robustness to temporal shifts and
+account for to generalize [33].                                             improve generalization.
+    To model the progression of time, the predominant ap-
+                                                                          • We propose TPE methods, which are based on thermal
+proach in existing models is to use calendar time to include
+                                                                            time and can easily be implemented in recent attention-
+temporal context, either during pre-processing to interpolate
+                                                                            based crop classifiers.
+the data into regular temporal sampling [13, 35, 40, 55] or as
+an explicit additional input [25, 39]. Notably, state-of-the-             • We demonstrate that TPE greatly improves generaliza-
+art methods based on self-attention input calendar time via                 tion across four different European regions.
+positional encoding [6, 42]. Since self-attention is position
+agnostic [52], this provides explicit positional information           2. Related Work
+about the temporal location of images within the growing
+                                                                       Satellite Image Time Series Classification. Multiple tra-
+season. This helps crop classification as the particular tim-
+                                                                       ditional machine learning approaches, such as random
+ing for the phenological events of a crop type can be an
+                                                                       forests or support vector machines, have been applied to
+important clue in its classification, e.g. to distinguish spring
+                                                                       crop classification [12, 53, 54, 56]. These approaches re-
+wheat from winter wheat. However, the phenological calen-
+                                                                       quire input features to be extracted by hand. For instance, a
+dar timing of one region is not generally shared with other
+                                                                       widely used feature is NDVI, combining the red and near-
+regions due to temporal shifts, which causes existing models
+                                                                       infrared spectral bands, which relates to the photosynthesis
+to generalize poorly [17, 33].
+                                                                       of crops [47]. Other works also include phenological fea-
+    To overcome this challenge, we propose Thermal Posi-
+                                                                       tures [15, 50] or meteorological information [59]. Although
+tional Encoding (TPE) to improve the generalization of crop
+                                                                       these handcrafted features are robust and interpretable, deep
+classifiers. Our core idea is to use a representation that cap-
+                                                                       learning approaches are mostly employed as they enable the
+tures the climatic variation affecting growth rates without
+                                                                       automatic extraction of richer features from raw SITS. Deep
+relying on calendar time. To this end, we propose positional
+                                                                       convolutional networks have been widely applied to process
+encoding based on thermal time [26, 27] for self-attention
+                                                                       the spatial dimensions of the data [19,39], while the temporal
+models. Thermal time is typically measured for crops by
+                                                                       dimension has been processed by recurrent units [31,38], 1D
+units of Growing Degree Days (GDD) [8, 26, 28, 58], com-
+                                                                       convolutions [35, 60], or combinations thereof [13, 39]. Re-
+puted by accumulating daily average temperatures above
+                                                                       cently, self-attention [52] has led to significant improvements
+a baseline. As crop growth is directly related to the accu-
+                                                                       in pixel [40] and parcel classification [41, 42], as well as se-
+mulation of heat over the growing season [5, 16], an earlier
+                                                                       mantic and panoptic segmentation [6]. Since self-attention
+crop growth corresponds to an earlier increase in GDD and
+                                                                       is position-agnostic, existing works use sinusoidal positional
+vice versa. This is illustrated in Figure 1 using normalized
+                                                                       encoding [52] of calendar time to capture the position of im-
+difference vegetation index (NDVI) to display winter wheat
+                                                                       ages in the growing season. We propose positional encoding
+phenology in three different regions. Thermal time improves
+                                                                       based on thermal time [26, 27] to improve the generalization
+generalization of models by making SITS from different
+                                                                       of the promising self-attention mechanism.
+regions invariant to temporal shifts. At the same time, it
+provides a temporal location of images which allows thermal
+time to directly replace calendar time in crop classifiers.            Domain Generalization for SITS. Several prior works
+    To encode positional information, existing works gener-            have reported that existing crop classification models fail to
+ally use sinusoidal encoding [52]. However, as this approach           generalize across space and time due to not being robust to
+is predefined and not learned, it lacks flexibility and may not        temporal shifts of the growing season [17, 23, 33, 55]. This
+capture crop-specific positional information. In this paper,           problem has mainly been tackled by unsupervised domain
+we propose multiple TPE methods to encode thermal time in              adaptation (UDA), where models are trained with labeled
+a data-driven way. By learning an encoding function instead            data from a source region and unlabeled data from a target re-
+of, e.g. an embedding vector for each position [4, 36], our            gion [48]. Phenology Alignment Network [55] addresses this
+approach is inductive. This allows us to handle when the               problem by learning domain-invariant features obtained with
+thermal time of test regions differs from that of training,            a maximum mean discrepancy loss [49] for the unlabeled
+which is common in practice. We evaluate our approach on               target data. TimeMatch [33] obtains further improvements
+a crop classification task across four different European re-          by directly estimating the temporal shift of the target region,
+gions on the TimeMatch dataset [34], containing Sentinel-2             and utilizing the shift estimation to train with pseudo-labels
+SITS expanded with daily temperature data, and demonstrate             for the unlabeled target region. Our setting differs from
+that we obtain state-of-the-art generalization results in new          UDA, as we do not aim to adapt models to particular regions
+regions. Our main contributions are:                                   by training with unlabeled data, but to improve the general-
+                                                                       ization of a crop classifier model trained with labeled data
+   • We propose the use of thermal time in crop classifi-              from multiple areas to any new region.
+
+
+                                                                   2
+    Most similar to our work, Kerner et al. [17] improve the             Our goal is to improve the generalization of existing crop
+generalization of crop classifiers by inputting satellite data        classifiers by accounting for temporal shifts of the growing
+at specific time steps which correspond to particular growth          season. Owing to its state-of-the-art performance, we build
+stages (greenup, peak, and senescence), computed from the             upon the PSE+LTAE model [41]. The network consists of
+NDVI sequence for each input. By dynamically selecting                the Pixel-Set Encoder (PSE) and the Lightweight Temporal
+these time steps, this approach can account for temporal              Attention Encoder (LTAE). Given a randomly sampled pixel-
+shifts of the growing season, but information is lost since           set of size S among the N available pixels of an input x,
+the complete time series is not involved in the prediction.           the PSE handles the spatial and spectral context of SITS
+In comparison, we aim to train self-attention models which            by processing each time step individually to a sequence of
+attend to the most relevant time steps in the complete time           embedding vectors e = [e(1) , . . . , e(T ) ] ∈ RT ×D , where
+series automatically by incorporating thermal time.                   D is the embedding dimension. PSE does not process the
+                                                                      temporal dimension. We thus focus on handling temporal
+Positional Encodings. A vast literature exists in positional          shifts in the LTAE module. Given e, LTAE extracts temporal
+encoding for the self-attention mechanism. Absolute posi-             features using a simplified version of the multi-headed self-
+tional encoding is most widely used. In the original Trans-           attention, as we describe next.
+formers [52], vectors are encoded from the absolute position
+in the sequence by sinusoidal functions, but this approach            Self-Attention. In the original Transformer model [52],
+is less flexible as the vectors are fixed and not learned. To         self-attention is computed with a query-key-value triplet
+overcome this issue, a common approach is to learn an em-             (q (t) , k(t) , v (t) ) for each element in the input sequence us-
+bedding vector for each position [4, 36] similar to word              ing three fully-connected layers. The output is a sequence
+embeddings, but this approach requires all possible positions         where each element is a sum of all values v (t) weighted by
+to be seen during training to ensure all the embeddings are           their attention score. The attention scores for a time step t
+updated by gradient descent. This is ill-suited for irregularly       are computed as the similarity (dot product) between all keys
+sampled SITS, which does not guarantee that all possible              and the query q (t) , re-scaled by a softmax layer. The com-
+(calendar or thermal) positions are available for training. In-       putation of the query-key-value triplets can be performed in
+stead, approaches that learn a function that maps positions           parallel, which enables the Transformer model to take full
+to vectors [20, 21, 32] do not have this requirement and can          advantage of GPUs for a significant speed increase compared
+thus generalize to unseen positions at test time. We therefore        to the sequential computation of recurrent neural networks
+build upon these in this paper.                                       (RNN). In multi-headed self-attention, the triplets are com-
+    Another line of work is relative positional encoding [3,10,       puted multiple times in parallel with different parameters, or
+44], which encodes the positional difference between each             “heads”, which further increase efficiency and also the repre-
+pair in the input sequence instead of the absolute position of        sentational capacity as each head can specialize in different
+individual elements. While relative positions can be more             parts of the sequence.
+relevant than absolute in other tasks, in SITS classification,
+the absolute position is crucial information. For example,
+a satellite image taken during the winter will not contain            Sinusoidal Positional Encoding. As the self-attention
+the same information about crop growth compared to an                 mechanism is position-agnostic [52], various positional en-
+image from the spring, which cannot be captured by only               codings (PE) have been introduced to capture positional
+the relative positions, e.g. the difference in days between the       information. This is typically done by mapping scalar po-
+two images. Thus, we focus on absolute positional encoding            sitions to a vector, either by learning or by heuristics, and
+in this work.                                                         adding each embedding vector with their positional encod-
+                                                                      ing e(t) + p(t) before applying self-attention. The original
+3. Self-Attention for Crop Classification                             Transformer model [52] uses a fixed sinusoidal encoding
+                                                                      with predefined wavelengths, defined as:
+   In crop classification, we are given a satellite image
+time series x = [x(1) , . . . , x(T ) ], where T is the length                                                     D/2
+                                                                                      p(t) = [sin(ωi t), cos(ωi t)]i=1              (1)
+of the time series. The goal of the classification task is
+to associate x with one of K classes. In our setting, each
+                                                                      where ωi = (1/τ )2i/D and τ = 10000.
+x(t) ∈ RT ×N ×C consists of a sequence of N pixels of C
+spectral bands within a parcel, i.e., a homogeneous agricul-
+tural plot of land. This approach requires parcel shapes to           Lightweight Temporal Attention Encoder. While the
+be available in the region for classification, which is widely        original self-attention maps the input embeddings e to an
+available in the European Union (EU) [43] or can alterna-             output sequence of embeddings, the goal of SITS classifica-
+tively be acquired by a segmentation step [6, 45].                    tion is to map the entire time series into a single embedding.
+
+
+                                                                  3
+To address this, the LTAE module [41] modifies the self-               over, images with high cloud coverage are often filtered,
+attention mechanisim by replacing the queries q (t) with a             further reducing the positions available. In comparison, si-
+single learnable “master” query q̂, resulting in a single out-         nusoidal positional encoding is more practical for SITS, as
+put embedding instead of a sequence. The computation is                an encoding vector is well-defined for every position inde-
+also made more lightweight by employing a channel group-               pendent of the training data.
+ing strategy [57], where each attention head operates on
+its own subset of input channels. The LTAE module uses                 4.1. Thermal Positional Encodings
+the sinusoidal PE (Equation 1 with τ = 1000) but encodes                  We argue that successful positional encoding for SITS
+the day of the year day(t) instead of the position index t.            should meet the following requirements:
+This enables the model to account for the inconsistent tem-
+poral sampling of SITS, but also introduces problems with              (1) Making SITS from different regions shift-invariant to
+handling temporal shift [33].                                              address the temporal shift problem.
+                                                                       (2) Making SITS from the same region shift-variant by
+4. Method                                                                  providing absolute information of where an observation
+    In this work, we observe that the positional encoding                  is located in the growing season.
+used by the LTAE module has two issues. First, since it en-
+                                                                       (3) Must be inductive to be able to handle positions not
+codes calendar time, it introduces the temporal shift problem
+                                                                           seen during training.
+as displayed in Figure 1. While calendar time is useful to
+identify the crop types in a particular region, it hinders gen-        (4) Being data-specific and thus learnable.
+eralization to new regions [17]. For example, while spring
+and winter crops can be similar in appearance, they are eas-               While the LTAE sinusoidal positional encoding based on
+ily separated by the timing of their growth stages as spring           calendar time meets the second and third requirements, it
+crops are planted later in a growing season than winter crops.         is not invariant to temporal shifts between different regions
+However, because of temporal shifts, the same time posi-               or trainable which violates the first and fourth requirements.
+tions of spring crops could represent winter crops in another          To address this, we replace calendar time with thermal time
+region. Without any way of accounting for temporal shifts,             to meet both the first and second requirements and propose
+calendar time positional encodings are unlikely to gener-              four TPE strategies, including learnable methods to meet the
+alize. Second, since the positional encoding is fixed and              third and fourth requirements.
+not learned, it prevents the model from taking advantage of
+end-to-end training the encoding function to further improve           Thermal time. When studying crop phenology, thermal
+generalization [20, 21, 36].                                           time is a good proxy for the rate of crop growth [5, 26, 46].
+    A possible remedy to the first issue is to augment the             Thermal time is typically measured in units of growing de-
+training data with random temporal shifts, such as ShiftAug,           gree days (GDD). The GDD measured at a time t is com-
+a SITS augmentation technique proposed in [33], so that the            puted by accumulating daily average temperatures above a
+model does not learn to associate a specific position with             baseline:
+the phenological events seen in the training data. While this                          t           (i)      (i)
+                                                                                                                            !
+solution increases the invariance of the model to temporal                       (t)
+                                                                                      X          Tmin + Tmax
+                                                                          GDD =           max                   − Tbase , 0      (2)
+shifts, the temporal shift is in some cases an important clue to                      i=1
+                                                                                                        2
+distinguish crop types—such as the spring and winter crops.
+                                                                                (i)   (i)
+Instead, we want models that are shift-invariant between               where Tmin , Tmax is the minimum and maximum temper-
+different regions, but shift-variant within the same region.           atures for day i, accumulated for all the previous days
+That is, we want models which can use class-wise temporal              i = 1, 2, . . . , t. Temperature values are often clipped to
+shifts for classification but are unaffected by temporal shifts        a range [Tbase , Tcap ] chosen depending on the crop type.
+of the growing season.                                                 Since we do not know the crop type of the input beforehand,
+    To address the second issue, a common alternative to the           we choose standard values Tbase = 0 and Tcap = 30 [26,28]
+fixed sinusoidal encodings is to treat each position as a dis-         for all crops, since growth typically stagnates below 0◦ C and
+crete token that can be uniquely represented as a learnable            does not grow any faster above 30◦ C. We accumulate from
+vector [4, 7, 36]. While this approach enables the model to            the starting day of the input SITS, in our case January 1.
+learn the positional encoding from data, it fails to generalize        Since GDD is computed by a cumulative sum, it is a mono-
+to positions not encountered during training. This is an issue         tonically increasing function and thus preserves the order of
+for high-resolution SITS, as we typically do not have an               the input time series. This enables GDD to directly replace
+observation for every possible position. For example, the              day of year for the time positions in the self-attention compu-
+Sentinel-2 satellites acquire images every five days. More-            tation. By replacing calendar time with thermal time, we can
+
+
+                                                                   4
+                   class prediction                       class prediction                                     class prediction                             class prediction
+
+                                LTAE                                    LTAE                                                 LTAE                                        LTAE
+                                 +                                                                                            +                                           +
+                                TPE                               PSE+TPE                                                    TPE                                         TPE
+      Sinusoidal                                                                                     Fourier                                          RNN
+               GDD(1)     ...   GDD(t)   ...   GDD(T )                                                     GDD(1)      ...   GDD(t)   ...   GDD(T )     GDD(1)     ...   GDD(t)   ...   GDD(T )
+
+
+                                                         GDD(1)   ...   GDD(t)   ...   GDD(T )
+                                PSE                                                                                          PSE                                         PSE
+
+
+
+                   x(1)   ...    x(t)    ...    x(T )     x(1)    ...    x(t)    ...    x(T )                  x(1)    ...    x(t)    ...    x(T )          x(1)   ...    x(t)    ...    x(T )
+
+                   (a) TPE-Sinusoidal                            (b) TPE-Concat                                       (c) TPE-Fourier                       (d) TPE-Recurrent
+
+         Figure 2. Schematic illustration of our Thermal Positional Encoding (TPE) methods with the PSE+LTAE model [41].
+
+
+reduce the temporal shift of SITS between different regions                                          4.3. TPE-Concat
+while retaining the shift between classes within the same
+                                                                                                        While the original Transformer network [52] takes pre-
+region and thereby satisfy the first and second requirements.
+                                                                                                     trained word embeddings as inputs, in our case, the em-
+                                                                                                     beddings are learned by the PSE module, which is learned
+TPE Methods. We propose the following TPE methods                                                    simultaneously to the LTAE module. Thus, we propose an
+to input thermal time to PSE+LTAE [41].                                                              alternative to positional encoding where the encoding for
+                                                                                                     the SITS and positions are learned jointly by the PSE. In
+   • TPE-Sinusoidal: We replace calendar time with ther-                                             particular, for each time step t, we concatenate GDD(t) to
+     mal time in the sinusoidal PE, but the encoding is not                                          the intermediate PSE embedding ê(t) before the final PSE
+     learned.                                                                                        output layer MLP2 :
+
+   • TPE-Concat: We learn SITS and positional input em-                                                                        e(t) = MLP2 ([ê(t) || GDD(t) ]),                                  (3)
+     beddings jointly by concatenating thermal time to an
+                                                                                                     where [· || ·] indicates concatenation. The PSE output layer
+     intermediate feature of the PSE module.
+                                                                                                     MLP2 [42] is a multi-layer perceptron (MLP) consisting
+                                                                                                     of a linear layer, batch normalization [14], and ReLU [30]
+   • TPE-Fourier: We learn the sinusoidal PE function by
+                                                                                                     activation function. We note that this approach is similar to
+     the method proposed in [20].
+                                                                                                     the method of inputting extra parcel geometric features in
+                                                                                                     the original PSE. By concatenating positions to the embed-
+   • TPE-Recurrent: We learn a positional encoding func-                                             ding function, TPE-Concat removes the need for complex
+     tion that captures the development in GDD by a recur-                                           positional encoding functions, which may be more beneficial
+     rent neural network (RNN).                                                                      for SITS.
+An overview of the TPE methods is shown in Figure 2.                                                 4.4. TPE-Fourier
+
+4.2. TPE-Sinusoidal                                                                                     Li et al. [20] propose a learnable PE based on Fourier
+                                                                                                     features [37], which can also be viewed as a generalization
+    To use GDD with the sinusoidal PE, we follow Equa-                                               of the sinusoidal PE. For a position t ∈ R, the Fourier PE is
+tion 1 but replace t with GDD(t) . The benefit of using the                                          computed by:
+sinusoidal positional encoding for GDD is that an encoding
+vector is well-defined for every possible GDD value. This                                                                             1
+                                                                                                                             r (t) = √ [cos(Wr t) || sin(Wr t)],                                  (4)
+ensures that even if we train with only a subset of possible                                                                          D
+accumulated temperatures, a positional encoding exists for
+unseen positions at test time. However, as the sinusoidal PE                                         where Wr ∈ RD/2 is a trainable vector. To give the repre-
+is fixed and not learned, it prevents the model from capturing                                       sentation additional capacity, the encoding is passed through
+data-specific positional information for the crop classifica-                                        an MLP:
+tion task.                                                                                                              p(t) = MLP(r (t) )Wp                    (5)
+
+
+                                                                                                 5
+where MLP consists of a linear layer with GeLU [9] activa-
+tion function, and Wp are parameters for projecting the rep-                                                 DK1
+resentation to the dimension of the input embeddings. The
+TPE-Fourier reveals whether it is more beneficial to learn
+the sinusoidal PE compared to the fixed TPE-Sinusoidal.
+4.5. TPE-Recurrent
+   Compared to natural language processing (NLP), where
+positions typically increase linearly with the sequence length,                                                        AT1
+                                                                                                     FR1
+GDD increases non-linearly over the growing season (see
+Figure 4), as a result of the higher daily temperatures during
+the summer than the winter. It may therefore be beneficial                                                 FR2
+not to only encode independent GDD values, but also incor-
+porate previous values to account for different rates of crop
+growth over the year. To handle this, we propose to use an             Figure 3. The geographical locations in Europe of the four Sentinel-
+RNN to learn the positional encoding. RNNs have been suc-              2 tiles in the dataset [34]. Figure adapted from [33].
+cessfully used for positional encoding in NLP tasks [21, 32].
+We follow the RNN approach of Liu et al. [21]. In particular,
+                                                                                               AT1
+we use a GRU [1], which computes its output h(t) ∈ RHout                            4000       DK1
+for each time step t given an input z (t) ∈ RHin and the                                       FR1
+                                                                                               FR2
+
+                                                                              GDD
+previous hidden state h(t−1) by:
+                                                                                    2000
+                  (t)             (t)    (t−1)
+                 h      = GRU(z         ,h       ).         (6)
+                                                                                       0
+Then, we obtain a positional encoding with target dimension                                0         100         200    300
+D by a linear projection:                                                                                    Day
+
+                     p(t) = Wp> h(t) + bp ,                 (7)        Figure 4. The development of GDD on average in the different
+                                                                       Sentinel-2 tiles from January 1 to December 31, 2017.
+where Wp ∈ RHout ×D and bp ∈ RD . Instead of scalar
+values GDD(t) , we use vectorized positions as the inputs
+z (t) , which are obtained by obtained by the sinusoidal po-           System (LPIS) in each country. The total amount of parcels
+sitional encoding of GDD(t) (Equation 1) as done in [21].              is 280K with 15 crop classes. The frequency of these classes
+TPE-Recurrent learns a positional encoding that captures the           varies greatly between tiles, for example, sunflowers are
+temporal development in GDD, but is more computationally               only frequent in the two France tiles. To ensure all tiles
+expensive due to the sequential computation of an RNN.                 have enough samples of each class to learn their classifica-
+                                                                       tion, we select the 9 crop types with at least 200 samples
+5. Experiments                                                         in all tiles: corn, horsebeans, meadow, spring barley, winter
+                                                                       barley, winter rapeseed, winter triticale, winter wheat, and
+5.1. Setup                                                             unknown. Here, the unknown class contains all parcels with
+Dataset. We evaluate our approach on the TimeMatch                     crop type not of the other 8 classes. Each tile has its own
+dataset [34] with Sentinel-2 L1C SITS from four different              train/validation/test sets, created by assigning all parcels in a
+tiles: 33UVP (Austria), 32VNH (Denmark), 30TXT (mid-                   tile at random to these sets by a 70%/10%/20% ratio.
+west France), and 31TCJ (southern France). We refer to                     We expand the TimeMatch dataset with weather informa-
+these regions by AT1, DK1, FR1, and FR2, respectively. We              tion from the Europe-wide E-OBS dataset [2]. We use the
+display the locations of these tiles in Figure 3. The dataset          daily minimum and maximum temperature from the 0.1◦
+contains all available observations of these tiles between             regular grid of 2017 to compute GDD for each parcel, geo-
+January 1, 2017, and December 31, 2017, with cloud cover               referenced by the parcel centroid. Figure 4 displays the
+≤ 80% and coverage ≥ 50%. The atmospheric bands (1, 9,                 average GDD computed for the four regions, showing the
+and 10) are left out, keeping the remaining 10 spectral bands.         southern France tile FR2 is the warmest and the Danish tile
+The 20m bands are bilinearly interpolated to 10m.                      DK1 the coldest.
+    The dataset is prepared for parcel classification by cutting
+the pixels of each parcel from the SITS using geo-referenced           Implementation details. We follow the original imple-
+parcel shapes available from the Land Parcel Identification            mentation of PSE+LTAE [41]. All models are trained for 100
+
+
+                                                                   6
+                                        AT1             DK1                     FR1                FR2           Avg.
+          Method                   F1      OA         F1   OA              F1      OA         F1      OA        F1    OA
+          PSE+LTAE [41]           68.3    90.5       55.4    62.6         74.6    90.9       73.5    87.5      68.0    82.9
+          + w/o PE                84.1    94.4       66.3    76.2         79.3    91.9       74.0    86.4      75.9    87.2
+          + w/ ShiftAug [33]      84.2    94.1       71.6    78.5         83.9    93.3       79.8    89.4      79.9    88.8
+          + TPE-Sinusoidal        85.6    94.7       78.7    84.8         83.0    92.6       81.1    90.4      82.1    90.6
+          + TPE-Concat            85.7    94.7       78.6    83.1         85.1    93.3       81.4    89.6      82.7    90.2
+          + TPE-Fourier           84.7    94.4       79.0    86.0         77.3    91.5       80.0    89.4      80.3    90.3
+          + TPE-Recurrent         86.5    95.0       80.3    85.4         86.0    93.8       80.5    89.8      83.3    91.0
+          Upper-bound             94.6    97.5       92.0    94.0         93.1    96.4       87.4    93.9      91.8    95.4
+
+
+Table 1. Leave-one-region-out spatial generalization results in macro F1 score (F1) and overall accuracy (OA) (both in %). Each column
+shows the classification results in a new region after training on the others.
+
+
+epochs with a batch size of 128 on a single GTX 1080Ti GPU              5.2. Parcel Classification Results
+with Adam optimizer [18]. The learning rate is initialized
+                                                                           In Table 1, we detail the performance obtained for the
+to 1e−3 and decayed each epoch by cosine annealing [22].
+                                                                        leave-one-region-out spatial generalization experiments. We
+We use weight decay of 1e−4. The 16-bit input pixels are
+                                                                        report the class-averaged F1 score (F1) and the overall accu-
+normalized to [0, 1] by dividing by 216 − 1. Our code is
+                                                                        racy (OA). Compared to calendar time models (top), all our
+available at https://github.com/jnyborg/tpe.
+                                                                        TPE models (bottom) have much better generalization results
+                                                                        with the use of thermal time. TPE-Recurrent shows the best
+Experimental setup. To evaluate whether our proposed                    performance by being learnable and capturing the temporal
+thermal positional encoding improves generalization to new              development in GDD, increasing F1 on average by +15.3%
+regions, we adopt a leave-one-region-out setup where we                 over the default PSE+LTAE [41] model and +3.4% over the
+hold one Sentinel-2 tile out for testing and train on the               ShiftAug [33] augmented model. Our TPE greatly improves
+remaining. In contrast to the domain adaptation setup of                generalization, but there is still a gap to the upper-bound
+TimeMatch [33], where data is only available from one tile              performance. TPE addresses the temporal shifts between
+for training, our setup contains multiple different regions for         regions but does not account for changes in the spectral sig-
+training. In practice, we typically have many tiles available           nature of crops, which can be caused by differences in e.g.
+for training [43], so this setup allows us to evaluate against          the topography, soil, or varieties of the cultivated crop type.
+the naive approach of improving generalization by adding                We leave this direction to future work.
+more training data.
+                                                                        Analysis of results. We observe that the default
+                                                                        PSE+LTAE with calendar time generalizes worst, obtain-
+Model variants. In comparison to TPE, we consider the                   ing an F1 score of 68.0% on average. Interestingly, simply
+following model variants:                                               removing the positional encoding outperforms the baseline
+                                                                        significantly, leading to an average performance increase of
+   • PSE+LTAE [41]. This is the baseline model which                    +7.9%. Since this model variant is given no information
+     encodes calendar time (day of the year) with the sinu-             about the order of images in the SITS, it is also invariant
+     soidal positional encoding [52].                                   to temporal shifts, which explains the performance increase.
+                                                                        However, without positional information, the model should
+   • w/o PE. This is PSE+LTAE where self-attention is com-              not be able to model the class-wise timing differences, which
+     puted without any positional information.                          should degrade performance. But the performance increase
+                                                                        indicates the model is able to do so. We argue that this is
+   • w/ ShiftAug [33]. PSE+LTAE trained with calendar                   because the model is able to extract some positional informa-
+     time augmented with random temporal shifts.                        tion from the SITS. For example, satellite images taken dur-
+                                                                        ing the winter differ from those during the summer, enabling
+   • Upper-bound. We train the best performing TPE                      the model to extract some degree of temporal order. How-
+     method (TPE-Recurrent) with all four available regions             ever, in the case that two images at different times appear
+     to obtain the results of a fully-supervised upper bound.           similar, the extracted positions can be ambiguous, which is
+
+
+                                                                    7
+      Figure 5. LTAE features of different methods embedded with t-SNE [51] for DK1 after training with the remaining regions.
+
+
+        Method               Training time (s/epoch)                   TPE-Recurrent thus shows the best performance but also
+                                                                       introduces sequential computation which increases computa-
+        TPE-Sinusoidal                  16.1                           tion requirements as shown in Table 2. We suggest the choice
+        TPE-Concat                      15.5                           of TPE method is a trade-off between performance and effi-
+        TPE-Fourier                     16.4                           ciency. Practitioners can easily implement TPE-Concat by
+        TPE-Recurrent                   17.2                           concatenating thermal time in PSE [41], and enjoy improved
+                                                                       generalization and efficiency. If more computation can be
+Table 2. The training time of TPE in seconds per training epoch.
+                                                                       afforded, TPE-Recurrent offers the best results.
+
+                                                                       5.3. Visual Analysis
+avoided by providing explicit positional information. This is              To better understand how TPE obtains improvements, we
+also indicated by the result of ShiftAug [33], where calendar          visualize in Figure 5 t-SNE [51] embeddings of features out-
+time is augmented with random temporal shifts, which fur-              put by the LTAE. For TPE methods, we observe denser and
+ther increases the F1 results by +11.9% on average over the            better separated clusters, indicating better class separation by
+baseline, outperforming no positional encoding by +4.0%.               accounting for temporal shifts. For the baseline PSE+LTAE
+This indicates that direct positional information is indeed            model [41], we observe some classes are well clustered de-
+important to the crop classification task to avoid ambiguous           spite the temporal shift, such as corn and winter rapeseed,
+order information from images only.                                    indicating these classes are less impacted by temporal shifts.
+    In comparison, our TPE models outperform all calendar              Others are mixed, such as spring barley/horsebeans and win-
+time models. This highlights the benefits of using thermal             ter wheat/winter triticale. We observe that temoving the PE
+time for reducing the temporal shift between different re-             results in less dense clusters. Particularly, the clusters for
+gions without introducing any augmentations, while also                spring barley and winter barley overlaps. This could indi-
+providing explicit positional information for modelling the            cate difficulties in resolving class-wise temporal shifts, since
+class-wise timing differences. The TPE-Sinusoidal model is             these are better separated with ShiftAug [33].
+the default PSE+LTAE model but where calendar time posi-
+tions are replaced with thermal time. This simple change sig-          6. Conclusion
+nificantly improves the F1 generalization results by +14.1%
+                                                                           In this work, we propose Thermal Positional Encodings
+on average. Learning a sinusoidal PE with TPE-Fourier,
+                                                                       (TPE) to address the temporal shift issue of SITS classifiers
+however, is not beneficial, resulting in a decrease in F1 com-
+                                                                       and improve generalization. While existing work uses calen-
+pared to TPE-Sinusoidal by −1.8%. TPE-Concat learns
+                                                                       dar time, our TPE uses thermal time, which enables models
+embedding and positional representations jointly in the PSE
+                                                                       to account for the varying rates of crop growth in different
+module, and obtains comparable results to TPE-Sinusoidal,
+                                                                       climates and thereby address the temporal shift issue. We
+with higher F1 (+0.6%) but lower OA (−0.4%). But as
+                                                                       propose different methods to positional encode thermal time,
+TPE-Sinusoidal introduces extra computation because of the
+                                                                       including fixed and learned approaches. On a parcel clas-
+sinusoidal encoding function, TPE-Concat is computation-
+                                                                       sification dataset with SITS from four different European
+ally more efficient as shown in Table 2. This indicates that
+                                                                       regions, we demonstrate that TPE significantly improves
+the approach of adding positional encodings to input em-
+                                                                       generalization compared to existing methods.
+beddings common in natural language processing may be
+unnecessary for SITS classification. TPE-Recurrent learns a
+positional encoding that captures the development in GDD,              Acknowledgements. Joachim Nyborg is funded by the In-
+leading to an increase in F1 of +1.2% over TPE-Sinusoidal.             novation Fund Denmark under reference 8053-00240. We
+
+
+                                                                   8
+acknowledge the E-OBS dataset from the EU-FP6 project                          Matthew D. Hoffman, and Douglas Eck. An improved relative
+UERRA (https://www.uerra.eu) and the Coperni-                                  self-attention mechanism for transformer with application to
+cus Climate Change Service, and the data providers in the                      music generation. arXiv preprint, abs/1809.04281, 2018. 3
+ECA&D project (https://www.ecad.eu).                                      [11] Dino Ienco, Raffaele Gaetano, Claire Dupaquier, and Pierre
+                                                                               Maurel. Land cover classification via multitemporal spatial
+                                                                               data by deep recurrent neural networks. IEEE Geoscience
+References                                                                     and Remote Sensing Letters, 14(10):1685–1689, 2017. 1
+ [1] Kyunghyun Cho, Bart van Merrienboer, Çaglar Gülçehre,             [12] Jordi Inglada, Marcela Arias, Benjamin Tardy, Olivier
+     Dzmitry Bahdanau, Fethi Bougares, Holger Schwenk, and                     Hagolle, Silvia Valero, David Morin, Gérard Dedieu,
+     Yoshua Bengio. Learning phrase representations using RNN                  Guadalupe Sepulcre, Sophie Bontemps, Pierre Defourny, et al.
+     encoder-decoder for statistical machine translation. In Pro-              Assessment of an operational system for crop type map pro-
+     ceedings of the 2014 Conference on Empirical Methods in                   duction using high temporal and spatial resolution satellite
+     Natural Language Processing, EMNLP 2014, pages 1724–                      optical imagery. Remote Sensing, 7(9):12356–12379, 2015. 2
+     1734. ACL, 2014. 6                                                   [13] Roberto Interdonato, Dino Ienco, Raffaele Gaetano, and Kenji
+ [2] Richard C Cornes, Gerard van der Schrier, Else JM van den                 Ose. DuPLO: A DUal view Point deep Learning architecture
+     Besselaar, and Philip D Jones. An ensemble version of the                 for time series classificatiOn. ISPRS Journal of Photogram-
+     E-OBS temperature and precipitation data sets. Journal of                 metry and Remote Sensing, 149:91–104, 2019. 2
+     Geophysical Research: Atmospheres, 123(17):9391–9409,                [14] Sergey Ioffe and Christian Szegedy. Batch normalization: Ac-
+     2018. 6                                                                   celerating deep network training by reducing internal covari-
+ [3] Zihang Dai, Zhilin Yang, Yiming Yang, Jaime G. Carbonell,                 ate shift. In International Conference on Machine Learning,
+     Quoc Viet Le, and Ruslan Salakhutdinov. Transformer-XL:                   pages 448–456. PMLR, 2015. 5
+     Attentive language models beyond a fixed-length context.             [15] Kun Jia, Shunlin Liang, Xiangqin Wei, Yunjun Yao, Yingru
+     In Anna Korhonen, David R. Traum, and Lluı́s Màrquez,                    Su, Bo Jiang, and Xiaoxia Wang. Land cover classification of
+     editors, Proceedings of the 57th Conference of the Association            Landsat data with phenological features extracted from time
+     for Computational Linguistics, ACL 2019, pages 2978–2988.                 series MODIS NDVI data. Remote Sensing, 6(11):11518–
+     Association for Computational Linguistics, 2019. 3                        11532, 2014. 2
+ [4] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina               [16] Hamlyn G Jones. Plants and microclimate: a quantitative
+     Toutanova. BERT: pre-training of deep bidirectional trans-                approach to environmental plant physiology. Cambridge
+     formers for language understanding. In Jill Burstein, Christy             University Press, 2013. 2
+     Doran, and Thamar Solorio, editors, Proceedings of the 2019          [17] Hannah Kerner, Ritvik Sahajpal, Sergii Skakun, Inbal Becker-
+     Conference of the North American Chapter of the Association               Reshef, Brian Barker, Mehdi Hosseini, Estefania Puricelli,
+     for Computational Linguistics: Human Language Technolo-                   and Patrick Gray. Resilient in-season crop type classifica-
+     gies, NAACL-HLT 2019, pages 4171–4186. Association for                    tion in multispectral satellite observations using growth stage
+     Computational Linguistics, 2019. 2, 3, 4                                  normalization. In ACM SIGKDD Conference on Knowledge
+ [5] B. Franch, E.F. Vermote, I. Becker-Reshef, M. Claverie, J.                Discovery and Data Mining Workshops, 2020. 2, 3, 4
+     Huang, J. Zhang, C. Justice, and J.A. Sobrino. Improving the         [18] Diederik P. Kingma and Jimmy Ba. Adam: A method for
+     timeliness of winter wheat production forecast in the United              stochastic optimization. In Yoshua Bengio and Yann LeCun,
+     States of America, Ukraine and China using MODIS data and                 editors, 3rd International Conference on Learning Represen-
+     NCAR Growing Degree Day information. Remote Sensing of                    tations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015,
+     Environment, 161:131–148, 2015. 1, 2, 4                                   Conference Track Proceedings, 2015. 7
+ [6] Vivien Sainte Fare Garnot and Loic Landrieu. Panoptic seg-           [19] Nataliia Kussul, Mykola Lavreniuk, Sergii Skakun, and An-
+     mentation of satellite image time series with convolutional               drii Shelestov. Deep learning classification of land cover and
+     temporal attention networks. In Proceedings of the IEEE/CVF               crop types using remote sensing data. IEEE Geoscience and
+     International Conference on Computer Vision, pages 4872–                  Remote Sensing Letters, 14(5):778–782, 2017. 2
+     4881, 2021. 2, 3                                                     [20] Yang Li, Si Si, Gang Li, Cho-Jui Hsieh, and Samy Bengio.
+ [7] Jonas Gehring, Michael Auli, David Grangier, Denis Yarats,                Learnable fourier features for multi-dimensional spatial posi-
+     and Yann N Dauphin. Convolutional sequence to sequence                    tional encoding. Advances in Neural Information Processing
+     learning. In International Conference on Machine Learning,                Systems, 34, 2021. 3, 4, 5
+     pages 1243–1252. PMLR, 2017. 4                                       [21] Xuanqing Liu, Hsiang-Fu Yu, Inderjit Dhillon, and Cho-Jui
+ [8] Pengyu Hao, Liping Di, Chen Zhang, and Liying Guo. Trans-                 Hsieh. Learning to encode position for transformer with
+     fer learning for crop classification with cropland data layer             continuous dynamical model. In International Conference on
+     data (CDL) as training samples. Science of The Total Envi-                Machine Learning, pages 6327–6335. PMLR, 2020. 3, 4, 6
+     ronment, 733:138869, 2020. 1, 2                                      [22] Ilya Loshchilov and Frank Hutter. SGDR: Stochastic gradient
+ [9] Dan Hendrycks and Kevin Gimpel. Gaussian error linear                     descent with warm restarts. In International Conference on
+     units (GELUs). arXiv preprint, abs/1606.08415, 2016. 6                    Learning Representations, 2017. 7
+[10] Cheng-Zhi Anna Huang, Ashish Vaswani, Jakob Uszko-                   [23] Benjamin Lucas, Charlotte Pelletier, Daniel Schmidt, Geof-
+     reit, Noam Shazeer, Curtis Hawthorne, Andrew M. Dai,                      frey I Webb, and François Petitjean. Unsupervised domain
+
+
+                                                                      9
+     adaptation techniques for classification of satellite image time        [36] Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya
+     series. In International Geoscience and Remote Sensing Sym-                  Sutskever. Improving language understanding by generative
+     posium (IGARSS), pages 1074–1077. IEEE, 2020. 2                              pre-training. 2018. 2, 3, 4
+[24] Benjamin Lucas, Charlotte Pelletier, Daniel Schmidt, Ge-                [37] Ali Rahimi and Benjamin Recht. Random features for large-
+     offrey I Webb, and François Petitjean. A bayesian-inspired,                 scale kernel machines. Advances in Neural Information Pro-
+     deep learning-based, semi-supervised domain adaptation tech-                 cessing Systems, 20, 2007. 5
+     nique for land cover mapping. Machine Learning, pages 1–33,             [38] Marc Rußwurm and Marco Korner. Temporal vegetation
+     2021. 1                                                                      modelling using long short-term memory networks for crop
+[25] Rose M Rustowicz, Robin Cheong, Lijing Wang, Stefano                         identification from medium-resolution multi-spectral satellite
+     Ermon, Marshall Burke, and David Lobell. Semantic segmen-                    images. In Proceedings of the IEEE/CVF Conference on
+     tation of crop type in Africa: A novel dataset and analysis of               Computer Vision and Pattern Recognition Workshops, pages
+     deep learning methods. In Proceedings of the IEEE/CVF Con-                   11–19, 2017. 1, 2
+     ference on Computer Vision and Pattern Recognition Work-                [39] Marc Rußwurm and Marco Körner. Multi-temporal land
+     shops, pages 75–82, 2019. 2                                                  cover classification with sequential recurrent encoders. ISPRS
+                                                                                  International Journal of Geo-Information, 7(4):129, 2018. 2
+[26] Gregory S. McMaster and W.W. Wilhelm. Growing degree-
+                                                                             [40] Marc Rußwurm and Marco Körner. Self-attention for raw
+     days: one equation, two interpretations. Agricultural and
+                                                                                  optical satellite time series classification. ISPRS Journal of
+     Forest Meteorology, 87(4):291–300, 1997. 2, 4
+                                                                                  Photogrammetry and Remote Sensing, 169:421–435, 2020. 1,
+[27] HJ Mederski, ME Miller, and CR Weaver. Accumulated                           2
+     heat units for classifying corn hybrid maturity 1. Agronomy             [41] Vivien Sainte Fare Garnot and Loic Landrieu. Lightweight
+     Journal, 65(5):743–747, 1973. 2                                              temporal self-attention for classifying satellite images time
+[28] Perry Miller, Will Lanier, and Stu Brandt. Using growing                     series. In International Workshop on Advanced Analytics and
+     degree days to predict plant stages. Ag/Extension Communica-                 Learning on Temporal Data, pages 171–181. Springer, 2020.
+     tions Coordinator, Communications Services, Montana State                    1, 2, 3, 4, 5, 6, 7, 8
+     University-Bozeman, Bozeman, MO, 59717(406):994–2721,                   [42] Vivien Sainte Fare Garnot, Loic Landrieu, Sebastien Gior-
+     2001. 2, 4                                                                   dano, and Nesrine Chehata. Satellite image time series classi-
+[29] Dinh Ho Tong Minh, Dino Ienco, Raffaele Gaetano, Nathalie                    fication with pixel-set encoders and temporal self-attention.
+     Lalande, Emile Ndikumana, Faycal Osman, and Pierre Mau-                      In Proceedings of the IEEE/CVF Conference on Computer
+     rel. Deep recurrent neural networks for winter vegetation qual-              Vision and Pattern Recognition, pages 12325–12334, 2020.
+     ity mapping via multitemporal SAR Sentinel-1. IEEE Geo-                      1, 2, 5
+     science and Remote Sensing Letters, 15(3):464–468, 2018.                [43] Maja Schneider, Amelie Broszeit, and Marco Körner. Eu-
+     1                                                                            roCrops: A pan-european dataset for time series crop type
+[30] Vinod Nair and Geoffrey E. Hinton. Rectified linear units im-                classification. arXiv preprint, abs/2106.08151, 2021. 3, 7
+     prove restricted boltzmann machines. In Johannes Fürnkranz             [44] Peter Shaw, Jakob Uszkoreit, and Ashish Vaswani. Self-
+     and Thorsten Joachims, editors, Proceedings of the 27th In-                  attention with relative position representations. In Marilyn A.
+     ternational Conference on Machine Learning (ICML), pages                     Walker, Heng Ji, and Amanda Stent, editors, Proceedings of
+     807–814. Omnipress, 2010. 5                                                  the 2018 Conference of the North American Chapter of the
+[31] Emile Ndikumana, Dinh Ho Tong Minh, Nicolas Baghdadi,                        Association for Computational Linguistics: Human Language
+     Dominique Courault, and Laure Hossard. Deep recurrent                        Technologies, pages 464–468. Association for Computational
+     neural network for agricultural classification using multitem-               Linguistics, 2018. 3
+     poral SAR Sentinel-1 for Camargue, France. Remote Sensing,              [45] Andrei Stoian, Vincent Poulain, Jordi Inglada, Victor
+     10(8):1217, 2018. 1, 2                                                       Poughon, and Dawa Derksen. Land cover maps production
+                                                                                  with high resolution satellite image time series and convolu-
+[32] Masato Neishi and Naoki Yoshinaga. On the relation be-
+                                                                                  tional neural networks: Adaptations and limits for operational
+     tween position information and sentence length in neural ma-
+                                                                                  systems. Remote Sensing, 11(17):1986, 2019. 3
+     chine translation. In Proceedings of the 23rd Conference on
+                                                                             [46] David Trudgill, Alois Honek, Daiqin Li, and Nico M. van
+     Computational Natural Language Learning (CoNLL), pages
+                                                                                  Straalen. Thermal time - concepts and utility. Annals of
+     328–338, 2019. 3, 6
+                                                                                  Applied Biology, 146:1–14, 01 2005. 4
+[33] Joachim Nyborg, Charlotte Pelletier, Sébastien Lefèvre,               [47] Compton J Tucker. Red and photographic infrared linear
+     and Ira Assent. TimeMatch: Unsupervised cross-region                         combinations for monitoring vegetation. Remote Sensing of
+     adaptation by temporal shift estimation. arXiv preprint,                     Environment, 8(2):127–150, 1979. 2
+     abs/2111.02682, 2021. 1, 2, 4, 6, 7, 8                                  [48] Devis Tuia, Claudio Persello, and Lorenzo Bruzzone. Domain
+[34] Joachim Nyborg, Charlotte Pelletier, Sébastien Lefèvre, and                adaptation for the classification of remote sensing data: An
+     Ira Assent. The TimeMatch Dataset, 2021. 2, 6                                overview of recent advances. IEEE Geoscience and Remote
+[35] Charlotte Pelletier, Geoffrey I Webb, and François Petitjean.               Sensing Magazine, 4(2):41–57, 2016. 2
+     Temporal convolutional neural network for the classification            [49] Eric Tzeng, Judy Hoffman, Ning Zhang, Kate Saenko, and
+     of satellite image time series. Remote Sensing, 11(5):523,                   Trevor Darrell. Deep domain confusion: Maximizing for
+     2019. 1, 2                                                                   domain invariance. arXiv preprint, abs/1412.3474, 2014. 2
+
+
+                                                                        10
+[50] Silvia Valero, David Morin, Jordi Inglada, Guadalupe Sepul-
+     cre, Marcela Arias, Olivier Hagolle, Gérard Dedieu, Sophie
+     Bontemps, Pierre Defourny, and Benjamin Koetz. Production
+     of a dynamic cropland mask by processing remote sensing
+     image series at high temporal and spatial resolutions. Remote
+     Sensing, 8(1):55, 2016. 2
+[51] Laurens Van der Maaten and Geoffrey Hinton. Visualizing
+     data using t-SNE. Journal of Machine Learning Research,
+     9(11), 2008. 8
+[52] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+     reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+     Polosukhin. Attention is all you need. In Advances in Neural
+     Information Processing Systems, pages 5998–6008, 2017. 2,
+     3, 5, 7
+[53] Francesco Vuolo, Martin Neuwirth, Markus Immitzer,
+     Clement Atzberger, and Wai-Tim Ng. How much does multi-
+     temporal Sentinel-2 data improve crop type classification? In-
+     ternational Journal of Applied Earth Observation and Geoin-
+     formation, 72:122–130, 2018. 2
+[54] Sherrie Wang, George Azzari, and David B. Lobell. Crop type
+     mapping without field-level labels: Random forest transfer
+     and unsupervised clustering techniques. Remote Sensing of
+     Environment, 222:303–317, 2019. 2
+[55] Ziqiao Wang, Hongyan Zhang, Wei He, and Liangpei Zhang.
+     Phenology alignment network: A novel framework for cross-
+     regional time series crop classification. In Proceedings of
+     the IEEE/CVF Conference on Computer Vision and Pattern
+     Recognition, pages 2940–2949, 2021. 2
+[56] Brian D Wardlow and Stephen L Egbert. Large-area crop
+     mapping using time-series MODIS 250 m NDVI data: An
+     assessment for the US Central Great Plains. Remote Sensing
+     of Environment, 112(3):1096–1116, 2008. 2
+[57] Yuxin Wu and Kaiming He. Group normalization. In Proceed-
+     ings of the European conference on computer vision (ECCV),
+     pages 3–19, 2018. 4
+[58] Senshan Yang, Joanne Logan, and David L Coffey. Math-
+     ematical formulae for calculating the base temperature for
+     growing degree days. Agricultural and Forest Meteorology,
+     74(1-2):61–74, 1995. 2
+[59] Liheng Zhong, Peng Gong, and Gregory S Biging. Efficient
+     corn and soybean mapping with temporal extendability: A
+     multi-year experiment using landsat imagery. Remote Sensing
+     of Environment, 140:1–13, 2014. 2
+[60] Liheng Zhong, Lina Hu, and Hang Zhou. Deep learning
+     based multi-temporal crop classification. Remote Sensing of
+     Environment, 221:430–443, 2019. 1, 2
+
+
+
+
+                                                                      11
+

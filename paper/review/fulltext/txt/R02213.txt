@@ -1,0 +1,871 @@
+                                               A Multi-Dataset Benchmark of YOLO-Based
+                                                 Weed Detection in Precision Agriculture
+
+                                                   Hristina Zdraveska1 , Vlatko Spasev1[0009−0008−2650−916X] , Ivica
+                                             Dimitrovski1[0000−0002−2877−3430] , Ivan Kitanovski1[0000−0002−0014−4229] , and
+                                                                 Petre Lameski1[0000−0002−5336−1796]
+
+                                          Faculty of Computer Science and Engineering, University Ss Cyril and Methodius,
+arXiv:2609.33991v1 [cs.CV] 27 Sep 2026
+
+
+
+
+                                                   Rudzer Boshkovikj 16, P.O. 393, Skopje, 1000, North Macedonia
+
+
+
+                                                  Abstract. Weed detection is an important component of precision agri-
+                                                  culture, enabling site-specific weed management and reducing unneces-
+                                                  sary herbicide use. Although deep learning methods have achieved strong
+                                                  results for crop and weed detection, many studies rely on single-dataset
+                                                  evaluation, making it difficult to assess robustness across different agri-
+                                                  cultural domains. This paper presents a multi-dataset benchmark of
+                                                  deep object detectors for weed detection in precision agriculture, with
+                                                  a focused evaluation of YOLO26 models. We evaluate nano, small, and
+                                                  medium variants on seven public weed-detection datasets covering dif-
+                                                  ferent crops, weed species, field conditions, acquisition setups, and an-
+                                                  notation protocols. The models are compared in terms of detection ac-
+                                                  curacy, model complexity, inference latency, FPS, and model size. In
+                                                  addition to in-dataset evaluation, we investigate cross-domain general-
+                                                  ization using a unified one-class weed setup and evaluate multi-source
+                                                  training using the combined training subsets from all datasets. The re-
+                                                  sults show that YOLO26 achieves strong in-dataset performance, with
+                                                  YOLO26m obtaining the highest average accuracy and YOLO26s pro-
+                                                  viding the best practical accuracy–efficiency trade-off. However, cross-
+                                                  domain performance decreases substantially, with YOLO26s dropping
+                                                  from an average in-domain mAP50:95 of 0.603 to 0.148 in the off-domain
+                                                  setting. Multi-source training improves performance on several datasets,
+                                                  but does not fully eliminate domain shift. Overall, the benchmark high-
+                                                  lights the importance of dataset diversity, domain similarity, and target-
+                                                  domain adaptation for robust weed detection in real-world precision agri-
+                                                  culture applications.
+
+
+                                         1      Introduction
+                                         Weeds are among the major biological constraints in agricultural production be-
+                                         cause they compete with crops for nutrients, water, sunlight, and space [17], [9].
+                                         Conventional weed control is commonly based on uniform herbicide applica-
+                                         tion, which can increase production costs and lead to unnecessary chemical
+                                         use [15], [10]. Precision agriculture aims to reduce this limitation by enabling
+                                         site-specific treatment, where herbicides or mechanical interventions are applied
+                                         only where needed. Reliable weed detection is therefore an essential component
+2         H. Zdraveska et al.
+
+of site-specific weed management, autonomous weeding, and precision spraying
+systems. Computer vision has become a central technology for weed detection
+in field environments [25]. Earlier approaches relied on color, vegetation indices,
+texture, and shape descriptors, while recent methods increasingly use deep learn-
+ing because it can learn discriminative visual features directly from annotated
+field imagery. Deep learning has been applied to weed classification, object detec-
+tion, semantic segmentation, and robotic crop-weed discrimination [7]. However,
+robust weed detection remains challenging because field images vary substan-
+tially in illumination, soil background, plant growth stage, occlusion, viewpoint,
+crop type, weed species, and annotation protocol.
+     Several weed-recognition studies formulate the task as image or patch clas-
+sification, where the goal is to assign a crop, weed, or weed-species label to an
+image or cropped plant region [7]. However, site-specific weed management re-
+quires spatial localization, since robotic weeding and precision spraying systems
+must identify where weeds are located in the field. For this reason, this work
+focuses on object detection, which predicts both plant categories and bounding-
+box locations.
+     Among modern object detectors, YOLO-based models are widely used be-
+cause they balance detection accuracy and inference speed [6]. This is important
+for agricultural applications such as robotic weeding and real-time spraying.
+However, many weed-detection studies are still evaluated on single datasets or
+under non-unified settings, making it difficult to assess generalization across
+agricultural domains. Recent public weed-detection datasets provide an oppor-
+tunity to evaluate object detectors under diverse field conditions, crop types,
+weed species, growth stages, acquisition setups, and annotation formats [7]. In
+this work, we use seven public datasets that represent different agricultural sce-
+narios, including maize fields, cotton production systems, Palmer amaranth de-
+tection, mixed crop and weed imagery, and real field environments with varying
+plant species and backgrounds. This diversity enables evaluation not only under
+standard in-dataset conditions, but also in cross-domain settings where models
+trained on one dataset are tested on another.
+     The main aim of this paper is to provide a multi-dataset benchmark of deep
+object detectors for weed detection in precision agriculture. We focus on the
+YOLO26 detector family and evaluate nano, small, and medium variants under
+a unified experimental protocol. The benchmark includes in-dataset evaluation
+using the original dataset-specific label spaces, computational efficiency analysis,
+cross-domain generalization using a unified one-class weed setup, and multi-
+source training using the combined training subsets from all datasets. This design
+allows us to analyze not only detection performance under standard in-domain
+conditions, but also the robustness of weed detectors when applied to unseen
+agricultural domains.
+     The main contributions of this work are as follows:
+
+    – We present a multi-dataset benchmark for weed detection in precision agri-
+      culture using seven public datasets with different crops, weed species, field
+      conditions, image-acquisition setups, and annotation protocols.
+                                  YOLO-Based Weed Detection Benchmark             3
+
+ – We evaluate YOLO26 object detectors in nano, small, and medium variants,
+   comparing their detection accuracy, model size, computational complexity,
+   inference latency, and frames per second (FPS).
+ – We analyze in-dataset detection performance using the original label space of
+   each dataset, providing dataset-specific baselines for different weed-detection
+   scenarios.
+ – We investigate cross-domain generalization using a unified one-class weed
+   label space, enabling direct source-target evaluation across datasets with
+   incompatible original taxonomies.
+ – We evaluate multi-source training by combining the training subsets from
+   all datasets and testing the resulting model on each dataset-specific test set.
+ – We provide practical insights into the accuracy-efficiency trade-offs of YOLO26
+   variants and the effect of domain shift on real-world weed-detection perfor-
+   mance.
+
+    The remainder of the paper is organized as follows. Section 2 reviews re-
+lated work and provides background on weed detection and YOLO-based object
+detectors. Section 3 describes the datasets included in the benchmark and the
+evaluated YOLO26 models. Section 4 presents the annotation conversion, train-
+ing protocol, and evaluation metrics. Section 5 reports and discusses the exper-
+imental results, including the in-dataset benchmark, computational efficiency
+analysis, cross-domain evaluation, and multi-source training. Finally, Section 6
+concludes the paper and outlines directions for future work.
+
+
+2   Related Work and Background
+
+Weed detection has been widely studied as part of precision agriculture and
+site-specific weed management. Traditional approaches commonly relied on veg-
+etation indices, color thresholding, texture descriptors, and handcrafted shape
+features to separate crops, weeds, and soil background [25]. While these methods
+can be effective under controlled conditions, their performance often decreases in
+real field environments due to changing illumination, shadows, occlusion, plant
+overlap, soil variability, and visual similarity between crops and weeds.
+    Deep learning has become the dominant approach for visual weed detection
+because it can learn task-specific features directly from annotated data. Con-
+volutional neural networks have been applied to weed classification, crop–weed
+discrimination, weed-species recognition, plant localization, semantic segmenta-
+tion, and precision-spraying applications [7,5,1]. However, reported results are
+often difficult to compare directly because existing studies use different datasets,
+model architectures, annotation formats, training protocols, and evaluation met-
+rics.
+    Weed recognition can be formulated in different ways depending on the tar-
+get application. Image classification assigns a single label to an entire image,
+while patch- or plant-level classification assigns a label to a cropped region or
+4       H. Zdraveska et al.
+
+an already isolated plant [16]. These formulations are useful for evaluating vi-
+sual separability between crop and weed classes, but they do not directly pro-
+vide the spatial localization required for site-specific treatment. Semantic and
+instance segmentation provide more detailed pixel-level or instance-level plant
+delineation, but require more expensive annotations and may be computation-
+ally demanding [14], [11]. Object detection represents a practical intermediate
+formulation because it predicts both class labels and bounding boxes for indi-
+vidual plant instances. This makes it suitable for robotic weeding and precision
+spraying, where the system must determine not only whether weeds are present,
+but also where they are located.
+     In the broader object-detection literature, Faster R-CNN represents an in-
+fluential two-stage detector, while Single-Shot Detector (SSD) is an important
+single-stage detector [19,13]. YOLO-based detectors are widely used for real-time
+object detection because of their single-stage design and favorable accuracy–
+efficiency trade-off [18,2]. Earlier YOLO models demonstrated the feasibility of
+real-time detection, while more recent versions have introduced improvements
+in backbone design, feature aggregation, training strategies, and deployment-
+oriented optimization. These properties make YOLO-based detectors particu-
+larly relevant for agricultural applications [3], where models may need to op-
+erate on embedded devices, agricultural robots, or real-time precision-spraying
+platforms.
+    Recent studies have increasingly evaluated YOLO-based detectors for agricul-
+tural weed detection. For example, YOLO-based models have been benchmarked
+for multi-class weed detection in cotton fields [5], common weed detection in corn
+and soybean production systems [1], and real-time weed detection using YOLO-
+and transformer-based detectors [2]. Other studies have compared several YOLO
+generations and Faster R-CNN for detecting multiple weed species [22]. These
+works demonstrate the practical relevance of modern object detectors for weed
+localization, but most evaluations remain dataset-specific or focus on a limited
+set of acquisition conditions. As a result, less attention has been given to how de-
+tectors behave when transferred across datasets with different crop types, weed
+species, viewpoints, annotation protocols, and field backgrounds. This gap mo-
+tivates the multi-dataset and cross-domain evaluation adopted in this work.
+    Public weed-detection datasets vary significantly in crop type, weed species,
+acquisition conditions, annotation format, and task definition. Some datasets
+focus on binary crop and weed detection, while others provide multi-class weed-
+species annotations or instance-level plant annotations. This diversity is useful
+for evaluating model robustness, but it also makes direct cross-dataset compar-
+ison difficult because the original label spaces and annotation protocols are not
+always compatible [26].
+    These differences are particularly important when evaluating models intended
+for deployment in unseen field conditions. A detector trained on one dataset may
+learn visual patterns that are strongly associated with a specific crop type, soil
+background, camera viewpoint, growth stage, or annotation style. Therefore,
+                                    YOLO-Based Weed Detection Benchmark                              5
+
+multi-dataset evaluation is necessary to understand not only in-dataset accu-
+racy, but also the robustness of weed detectors under domain shift.
+
+3     Materials and Methods
+3.1    Data Description
+This study uses seven public weed-detection datasets selected to cover different
+crop types, weed species, image-acquisition conditions, and annotation protocols.
+Table 1 summarizes the main properties of the datasets. Representative examples
+for each dataset are shown in Figure 1.
+
+
+
+    Table 1: Properties of the weed-detection datasets used in the benchmark.
+
+
+
+
+                                                                              Annotations
+                                     #Instances
+
+
+
+
+                                                                Image Size
+                         #Images
+
+
+
+
+                                                  #Labels
+
+
+
+
+                                                                                            Splits
+    Name
+
+
+
+                                                              640 × 480
+    CornWeed            3574       281,725         2                         COCO           No
+                                                             1280 × 720
+    CottonWeedDet12     5648       9388           12          640 × 640      XML            Yes
+    PalmerAmaranth       995       1405           1         3000 × 2250      COCO           No
+    FoodCropsWeeds      1176        7853           2           Variable      XML            No
+    ACRE                1000       56530           2        2046 × 1080      XML            No
+    MultiWeedSpecies    905         1394           5        4000 × 3000      COCO           No
+    Weeds               4203       11385           1         416 × 416       COCO           Yes
+
+
+
+    CornWeed is an object-detection dataset collected in real maize fields for
+detecting maize plants and weeds [8]. It contains 3574 outdoor RGB images an-
+notated with bounding boxes for two classes: maize and weed. The images were
+acquired from agricultural platforms equipped with an Intel RealSense D435i
+camera during early maize growth stages. The dataset contains images captured
+under daylight conditions, including both cloudy and sunny scenes. CottonWeed-
+Det12 is an object-detection dataset collected in cotton fields for detecting mul-
+tiple weed species in cotton production systems [5]. It contains 5648 RGB images
+with bounding-box annotations distributed across 12 weed classes, including wa-
+terhemp, morningglory, purslane, spotted spurge, carpetweed, ragweed, eclipta,
+prickly sida, Palmer amaranth, sicklepod, goosegrass, and cutleaf groundcherry.
+The images were acquired using handheld smartphones and digital cameras un-
+der natural field conditions, covering different weed growth stages, field sites,
+and lighting conditions.
+    The Palmer Amaranth dataset is available through the Weed-AI platform and
+focuses on a single weed species, Palmer amaranth [21]. The dataset contains field
+6      H. Zdraveska et al.
+
+images annotated with bounding boxes and includes Palmer amaranth plants
+appearing in different agricultural contexts, including fallow fields, corn, and
+soybean production systems. This dataset is useful for evaluating single-species
+weed localization and for studying the effect of crop background variation on
+detection performance. The Dataset of Annotated Food Crops and Weed Images,
+denoted as FoodCropsWeeds in this paper, was developed for robotic computer
+vision control in precision agriculture [24]. It contains 1176 RGB images with
+manually annotated bounding-box objects. Although the dataset includes 8 weed
+species and 6 food crop species, the object-detection annotations are organized
+into two primary classes: weed and crop. The images were collected in controlled
+greenhouse conditions and open-field environments, making the dataset relevant
+for crop–weed discrimination at early plant growth stages.
+
+
+
+
+       CornWeed          CottonWeedDet12         PalmerAmaranth               Weeds
+
+
+
+
+                  ACRE              MultiWeedSpecies              FoodCropsWeeds
+
+
+Fig. 1: Example images from the seven weed-detection datasets included in the
+benchmark. The datasets are shown from left to right and top to bottom: Corn-
+Weed, CottonWeedDet12, PalmerAmaranth, Weeds, ACRE, MultiWeedSpecies,
+and FoodCropsWeeds.
+
+
+
+    The ACRE Crop-Weed dataset was developed for benchmarking weed-detection
+models in maize and bean fields [4]. The dataset includes two crop types, maize
+and bean, and four seeded weed species: ryegrass, mustard, matricaria, and
+lamb’s quarter. The images were acquired using a four-wheel skid-steering robot
+equipped with a downward-facing Basler RGB camera. The original annota-
+tions are instance-level plant annotations stored in XML format; for the object-
+detection experiments, bounding boxes were generated from the instance anno-
+tations. The Multiple Weed Species Detection dataset, denoted as MultiWeed-
+Species in this paper, is a public Weed-AI dataset containing field imagery an-
+notated for object detection. The dataset contains 905 images and bounding-
+                                 YOLO-Based Weed Detection Benchmark           7
+
+box annotations for five weed categories: Chenopodium album, Amaranthus
+palmer, Xanthium strumarium, Taraxacum officinale, and Amaranthus tuber-
+culatus. The images were collected in fallow conditions using a GoPro Hero 8
+camera and are provided through Weed-AI in WeedCOCO format [22]. Weeds is
+an object-detection dataset focused on garden weed detection in visually com-
+plex backgrounds [23]. It contains 4,203 images annotated for a single class,
+weeds. The dataset is designed for object detection scenarios in which weeds can
+be difficult to distinguish from the surrounding background because of visual
+similarity with soil, vegetation, and other natural scene elements.
+
+3.2   YOLO26 Object Detectors
+YOLO is a family of single-stage object detectors designed for real-time object
+detection. Unlike two-stage detectors, which first generate region proposals and
+then classify them, YOLO models perform object localization and classification
+in a single forward pass. This makes them particularly suitable for applications
+that require fast inference, such as robotic weeding, precision spraying, and em-
+bedded agricultural vision systems.
+    Over time, YOLO architectures have evolved through improvements in back-
+bone design, feature aggregation, training strategies, and deployment efficiency.
+In this work, we focus on YOLO26, a recent YOLO-based detector designed for
+real-time and deployment-oriented vision tasks. YOLO26 introduces an end-to-
+end detection pipeline with native NMS-free inference, reducing the need for
+a separate non-maximum suppression post-processing step. This is relevant for
+real-time precision-agriculture applications, where both detection accuracy and
+inference efficiency are important.
+    The benchmark evaluates three YOLO26 variants: YOLO26n, YOLO26s, and
+YOLO26m [20]. These variants represent different accuracy–efficiency trade-offs.
+YOLO26n is the lightweight nano model intended for high-speed inference and
+resource-constrained deployment. YOLO26s provides a compact configuration
+with a practical balance between detection accuracy and computational cost.
+YOLO26m increases model capacity and is included to evaluate whether a larger
+model improves weed-detection performance. This selection allows the bench-
+mark to analyze how model scale affects detection accuracy, inference speed,
+model size, and cross-domain generalization.
+
+
+4     Experimental Design
+4.1   Annotation Conversion and Dataset Preparation
+All datasets were converted to the YOLO object-detection format to ensure con-
+sistent training and evaluation. Annotations originally provided in XML, COCO,
+or WeedCOCO formats were converted to YOLO annotation files. For datasets
+with segmentation or instance-level annotations, bounding boxes were generated
+as the minimum enclosing rectangles around annotated plant instances. Invalid,
+duplicate, or empty annotations were removed during preprocessing.
+8      H. Zdraveska et al.
+
+    Two evaluation settings were used. For the in-dataset benchmark, each dataset
+was evaluated using its original label space, preserving the original task defi-
+nition, such as crop and weed detection, multi-class weed-species detection, or
+single-species weed localization. For cross-domain evaluation, all weed categories
+were mapped to a unified one-class weed label space. Crop annotations were re-
+moved from the positive label set, but crop plants remained visible in the images;
+therefore, detections on crop regions were counted as false positives. This setup
+enables direct source–target evaluation across datasets with different label tax-
+onomies, crop types, weed species, field conditions, and acquisition protocols.
+
+
+4.2   Training Protocol
+
+All YOLO26 models were initialized with pretrained weights and fine-tuned us-
+ing a fixed input size of 640 × 640 pixels. The same training, validation, and
+test splits were used for all models within each dataset. Official splits were used
+when available; otherwise, fixed random splits were created. For datasets with-
+out predefined splits, images were partitioned using a 70%–15%–15% training,
+validation, and test ratio. For CottonWeedDet12 and Weeds, the original splits
+were used.
+    Each model was trained for a maximum of 100 epochs with early stopping
+patience set to 20 epochs. The best checkpoint was selected based on valida-
+tion performance and evaluated on the corresponding test set. All training and
+inference experiments were conducted on the same workstation equipped with
+an NVIDIA GeForce GTX 1080 Ti GPU with 11 GB of memory and CUDA
+12.2, ensuring consistent latency and FPS comparisons. The evaluated models
+include three YOLO26 variants: YOLO26n, YOLO26s, and YOLO26m, repre-
+senting different model scales within the YOLO26 family.
+
+
+4.3   Evaluation Metrics
+
+Detection performance was evaluated using precision, recall, F1-score, mAP50 ,
+and mAP50:95 . Precision measures the proportion of predicted detections that
+are correct, while recall measures the proportion of ground-truth objects that
+are successfully detected. The F1-score provides a balanced measure of precision
+and recall. The mAP50 metric evaluates detection accuracy at an IoU threshold
+of 0.50, while mAP50:95 follows the COCO-style evaluation protocol and averages
+mean average precision over IoU thresholds from 0.50 to 0.95 [12].
+    In addition to detection accuracy, computational efficiency was evaluated us-
+ing the number of parameters, floating-point operations (FLOPs), model size,
+inference latency, and frames per second (FPS). These metrics are important
+for precision-agriculture applications because weed-detection models may need
+to operate in real time on embedded devices, robotic platforms, or precision-
+spraying systems. Latency and FPS were measured under the same evaluation
+setup for all YOLO26 variants to provide a consistent comparison of their prac-
+tical deployment potential.
+                                 YOLO-Based Weed Detection Benchmark           9
+
+5     Results and Discussion
+
+5.1    In-Dataset Benchmark
+
+The first experiment evaluates the YOLO26 models under in-dataset conditions,
+where each model is trained and tested on the same dataset using the original
+dataset-specific label space. This experiment provides the baseline performance
+for each dataset before evaluating cross-domain generalization and multi-source
+training. Table 2 reports the detection performance of YOLO26n, YOLO26s,
+and YOLO26m in terms of precision, recall, F1-score, mAP50 , and mAP50:95 .
+
+
+
+ Table 2: In-dataset detection performance of the evaluated YOLO26 models.
+      Dataset         Model      Precision Recall    F1   mAP50 mAP50:95
+                      YOLO26n      0.8662   0.8281 0.8468 0.8878   0.5660
+      CornWeed        YOLO26s      0.8703   0.8487 0.8594 0.9027   0.5945
+                      YOLO26m      0.8791   0.8569 0.8678 0.9063   0.6051
+                     YOLO26n       0.6485   0.7573 0.6987 0.7290   0.4831
+      FoodCropsWeeds YOLO26s       0.7443   0.7717 0.7578 0.7816   0.5433
+                     YOLO26m       0.7304   0.8055 0.7661 0.7888   0.5426
+                      YOLO26n      0.9157   0.8443 0.8785 0.9046   0.8440
+      CottonWeedDet12 YOLO26s      0.9365   0.8429 0.8873 0.9116   0.8544
+                      YOLO26m      0.9289   0.8702 0.8986 0.9254   0.8658
+                     YOLO26n       0.8929   0.8685 0.8806 0.9315   0.7332
+      PalmerAmaranth YOLO26s       0.9164   0.8826 0.8992 0.9342   0.7227
+                     YOLO26m       0.9160   0.8709 0.8929 0.9267   0.7311
+                      YOLO26n      0.7466   0.6862 0.7151 0.7298   0.4510
+      ACRE            YOLO26s      0.7509   0.7263 0.7384 0.7637   0.4872
+                      YOLO26m      0.7565   0.7366 0.7464 0.7689   0.4930
+                       YOLO26n     0.9349   0.8271 0.8777 0.9128   0.6000
+      MultiWeedSpecies YOLO26s     0.8988   0.8717 0.8850 0.9109   0.5781
+                       YOLO26m     0.9146   0.8429 0.8773 0.9092   0.5878
+                      YOLO26n      0.9677   0.9328 0.9499 0.9840   0.8090
+      Weeds           YOLO26s      0.9471   0.9664 0.9566 0.9817   0.8154
+                      YOLO26m      0.9564   0.9561 0.9563 0.9840   0.8175
+
+
+
+    The results show that YOLO26 achieves strong in-dataset performance across
+most datasets, although the absolute performance varies considerably depend-
+ing on the dataset. The highest mAP50:95 values are obtained on CottonWeed-
+Det12 and Weeds, where all three model variants achieve strong detection results.
+This indicates that the models can learn effective weed representations when the
+training and test data come from the same visual domain. Strong results are
+10     H. Zdraveska et al.
+
+also obtained on PalmerAmaranth, especially considering that it represents a
+single-species detection task under different crop backgrounds.
+    The most challenging datasets are ACRE and FoodCropsWeeds. On ACRE,
+the best mAP50:95 is 0.4930, achieved by YOLO26m. This lower performance
+may be related to the specific acquisition setup, the maize and bean crop con-
+text, complex field conditions, and the conversion of instance-level annotations
+into bounding boxes. FoodCropsWeeds also produces lower scores than Cotton-
+WeedDet12, PalmerAmaranth, and Weeds, which may be explained by greater
+variability in crop and weed appearance, controlled and open-field acquisition
+conditions, and differences in annotation characteristics.
+     Increasing model size generally improves in-dataset performance, but the
+improvement is not uniform across all datasets. YOLO26m achieves the best
+mAP50:95 on CornWeed, CottonWeedDet12, ACRE, and Weeds. However, YOLO26n
+obtains the best result on PalmerAmaranth and MultiWeedSpecies, while YOLO26s
+performs best on FoodCropsWeeds. Averaged across the seven datasets, YOLO26n,
+YOLO26s, and YOLO26m achieve mAP50:95 values of approximately 0.6409,
+0.6565, and 0.6633, respectively. Thus, YOLO26m provides the highest average
+accuracy, but the gain over YOLO26s is relatively small. The computational-
+efficiency results are summarized in Table 3.
+
+
+
+
+Table 3: Computational efficiency comparison of the evaluated YOLO26 models.
+Model size and latency are averaged across the in-dataset test sets.
+     Model   Params (M) FLOPs (B) Size (MB) Latency (ms) FPS
+     YOLO26n      2.4       5.4       5.13      3.21    311.85
+     YOLO26s      9.5      20.7      19.37       5.79    172.68
+     YOLO26m     20.4      68.2      41.99      12.16    82.24
+
+
+
+
+    As expected, YOLO26n is the most efficient model, with the lowest number
+of parameters, smallest model size, lowest latency, and highest FPS. YOLO26m
+achieves the highest average detection accuracy, but it requires substantially
+more computation: compared with YOLO26s, it has more than twice the number
+of parameters and model size, more than three times the FLOPs, and approxi-
+mately twice the inference latency. YOLO26s therefore provides a strong com-
+promise between accuracy and efficiency, achieving accuracy close to YOLO26m
+while remaining considerably faster and more compact. Based on this trade-
+off, YOLO26s is used in the subsequent cross-domain and multi-source training
+experiments. This choice reduces the computational cost of the extended eval-
+uation while preserving competitive detection performance. It also reflects a
+practical deployment scenario, where the selected model should balance accu-
+racy, inference speed, and model complexity for real-time precision-agriculture
+applications.
+                                                                            YOLO-Based Weed Detection Benchmark                                     11
+
+
+
+                                    ACRE      0.334        0.152          0.015          0.191            0.029            0.018      0.000
+                                                                                                                                              0.8
+
+
+                               CornWeed       0.181        0.436          0.034          0.132            0.034            0.056      0.038   0.7
+
+
+                                                                                                                                              0.6
+                         CottonWeedDet12      0.081        0.090          0.892          0.059            0.370            0.551      0.133
+Source dataset (train)
+
+
+
+
+                                                                                                                                              0.5
+
+
+
+
+                                                                                                                                                mAP50 : 95
+                          FoodCropsWeeds      0.097        0.106          0.001          0.474            0.000            0.000      0.010
+                                                                                                                                              0.4
+
+                         MultiWeedSpecies     0.117        0.046          0.392          0.029            0.550            0.562      0.253
+                                                                                                                                              0.3
+
+
+                          PalmerAmaranth      0.125        0.118          0.336          0.032            0.456            0.723      0.248   0.2
+
+
+                                                                                                                                              0.1
+                                   Weeds      0.080        0.044          0.440          0.110            0.179            0.250      0.815
+
+                                                                                                                                              0.0
+                                                                                        ds
+                                                                       2
+
+
+
+
+                                                                                                          s
+
+
+
+                                                                                                                        th
+
+
+
+                                                                                                                                     ds
+                                                           d
+                                              E
+
+
+
+
+                                                                                                      cie
+                                               R
+
+
+
+                                                         ee
+
+
+
+                                                                     et1
+
+
+
+
+                                                                                                                      ran
+                                                                                     ee
+
+
+
+
+                                                                                                                                      e
+                                            AC
+
+
+
+
+                                                                                                                                   We
+                                                      rnW
+
+
+
+
+                                                                                                   pe
+                                                                     dD
+
+
+
+                                                                                   sW
+
+
+
+
+                                                                                                                      ma
+                                                                                                  dS
+                                                                  ee
+                                                      Co
+
+
+
+
+                                                                                  rop
+
+
+
+
+                                                                                                                  erA
+                                                                                                 ee
+                                                                nW
+
+
+
+                                                                              dC
+
+
+
+                                                                                             ltiW
+
+
+
+                                                                                                                 lm
+                                                               tto
+
+
+
+                                                                               o
+
+
+
+
+                                                                                                              Pa
+                                                                            Fo
+
+
+
+                                                                                           Mu
+                                                              Co
+
+
+
+
+                                                                                  Target dataset (test)
+
+
+Fig. 2: Cross-domain weed-detection performance using the unified one-class
+weed setup for YOLO26s. Rows indicate the source dataset used for train-
+ing, while columns indicate the target dataset used for testing. Values report
+mAP50:95 .
+
+
+5.2                            Cross-Domain Weed Detection
+
+Using the harmonized one-class weed setup described in Section 4, the cross-
+domain experiment evaluates whether a model trained on one dataset can gen-
+eralize to another dataset without fine-tuning. Figure 2 shows the cross-domain
+results for YOLO26s. Rows indicate the source dataset used for training, and
+columns indicate the target dataset used for testing. The diagonal cells repre-
+sent in-domain evaluation, while the off-diagonal cells represent cross-domain
+transfer. The results show a clear dominance of the diagonal values, confirming
+that weed-detection performance is strongly affected by dataset-specific domain
+characteristics.
+    The strongest in-domain results are obtained on CottonWeedDet12 and Weeds,
+with mAP50:95 values of 0.892 and 0.815, respectively, while ACRE and Food-
+CropsWeeds show lower in-domain performance. Cross-domain transfer is sub-
+stantially weaker. The best transfer is observed from MultiWeedSpecies to PalmerA-
+maranth, with an mAP50:95 of 0.562, followed by CottonWeedDet12 to PalmerA-
+maranth with 0.551. Strong transfer is also observed from PalmerAmaranth to
+12     H. Zdraveska et al.
+
+MultiWeedSpecies and from Weeds to CottonWeedDet12, suggesting that trans-
+fer improves when source and target datasets share similar weed appearance,
+plant morphology, or acquisition conditions.
+    Overall, the mean in-domain mAP50:95 is approximately 0.603, while the
+mean off-domain mAP50:95 is only 0.148, corresponding to a relative reduction
+of about 75.6%. This demonstrates that strong in-dataset performance does not
+necessarily imply robustness on unseen agricultural domains. MultiWeedSpecies,
+PalmerAmaranth, CottonWeedDet12, and Weeds provide the strongest average
+off-domain transfer, whereas ACRE and FoodCropsWeeds generalize less effec-
+tively. The transfer patterns are also asymmetric, indicating that dataset diver-
+sity, weed-species coverage, annotation style, background complexity, and visual
+similarity all influence cross-domain performance.
+
+
+5.3   Multi-Source Training
+
+The multi-source experiment evaluates whether heterogeneous training data im-
+proves robustness across target datasets. A single YOLO26s model was trained
+on the combined training subsets from all seven datasets and evaluated sepa-
+rately on each dataset-specific test set. This setup complements the cross-domain
+experiment by testing whether broader source-domain diversity improves gener-
+alization. The results are reported in Table 4. Overall, the multi-source model
+achieves strong performance on several datasets, with the highest mAP50:95 ob-
+tained on CottonWeedDet12, followed by Weeds and PalmerAmaranth. The
+model also achieves competitive results on MultiWeedSpecies and FoodCrop-
+sWeeds, indicating that training on a broader set of weed appearances, crop
+backgrounds, and acquisition conditions can improve performance on several
+target domains.
+    However, the results also show that multi-source training does not uniformly
+improve performance across all datasets. In particular, the performance on ACRE
+remains relatively low, with an mAP50:95 of 0.3241. This suggests that ACRE
+represents a more challenging target domain, likely due to its specific robot-
+mounted acquisition setup, maize and bean crop context, lighting variability,
+and the conversion of instance-level annotations into bounding boxes. Similarly,
+the result on CottonWeedDet12 is very high but does not substantially exceed
+the dataset-specific in-domain model, indicating that the additional datasets do
+not necessarily provide useful information for an already well-represented target
+domain.
+    These findings suggest that multi-source training can improve overall ro-
+bustness, but it does not fully remove the effect of domain shift. The benefit of
+adding more datasets depends on the similarity and complementarity between
+the source and target domains. In some cases, additional data improves general-
+ization by increasing visual diversity; in others, it may introduce domain dilution
+or mild negative transfer. Therefore, multi-source training is useful for building
+more general weed detectors, but target-domain relevance remains important for
+achieving optimal performance.
+                                 YOLO-Based Weed Detection Benchmark           13
+
+
+Table 4: Performance of the YOLO26s model trained on the combined training
+sets and evaluated on individual test sets.
+          Test dataset       Precision Recall   F1   mAP50 mAP50:95
+          Weeds               0.9579   0.9481 0.9530 0.9863    0.8282
+          ACRE                0.6652   0.6322 0.6483 0.6513    0.3241
+          CornWeed            0.8149   0.7805 0.7973 0.8436    0.4399
+          CottonWeedDet12     0.9442   0.8783 0.9100 0.9487    0.8896
+          FoodCropsWeeds      0.6976   0.8292 0.7577 0.7804    0.5231
+          MultiWeedSpecies    0.9056   0.8451 0.8743 0.9069    0.5906
+          PalmerAmaranth      0.9463   0.8685 0.9058 0.9403    0.7648
+
+
+
+6   Conclusion
+This paper presented a multi-dataset benchmark of deep object detectors for
+weed detection in precision agriculture, with a focused experimental evaluation
+of YOLO26 nano, small, and medium variants. The benchmark considered in-
+dataset detection performance, computational efficiency, cross-domain general-
+ization, and multi-source training across diverse weed-detection datasets with
+different crop types, weed species, acquisition conditions, and annotation pro-
+tocols. The in-dataset experiments showed that YOLO26 models achieve strong
+detection performance when training and testing data originate from the same
+dataset. YOLO26m achieved the highest average in-dataset accuracy, with an
+average mAP50:95 of 0.6633 across the evaluated datasets. However, the improve-
+ment over YOLO26s was relatively small, while YOLO26m required substan-
+tially higher computational cost. YOLO26s therefore provided the most practi-
+cal accuracy–efficiency trade-off, combining competitive detection accuracy with
+lower latency, smaller model size, and reduced computational complexity. This
+makes YOLO26s a suitable candidate for extended generalization experiments
+and for practical precision-agriculture scenarios where inference speed and re-
+source efficiency are important. The cross-domain evaluation demonstrated that
+strong in-dataset performance does not necessarily translate to robust perfor-
+mance on unseen agricultural domains. When YOLO26s was trained on one
+dataset and evaluated on another using a unified one-class weed label space,
+the mean mAP50:95 decreased from approximately 0.603 in-domain to 0.148 off-
+domain, corresponding to a relative reduction of about 75.6%. This confirms
+that weed detectors learn dataset-dependent representations and are strongly
+affected by domain shift. The transfer patterns were also asymmetric, indicating
+that the generalization ability depends not only on the amount of training data,
+but also on the diversity, relevance, annotation style, weed-species coverage, and
+visual similarity between source and target domains.
+    The multi-source training experiment showed that combining heterogeneous
+datasets can improve robustness on several target datasets, particularly by ex-
+posing the model to a broader range of weed appearances, crop backgrounds, and
+acquisition conditions. However, the improvements were not uniform across all
+14      H. Zdraveska et al.
+
+datasets. ACRE remained challenging, and the multi-source model did not sub-
+stantially improve over the dataset-specific result on CottonWeedDet12. These
+findings suggest that multi-source training is useful for improving generality,
+but it does not fully eliminate domain shift. The relevance and compatibility
+of the source data remain important for target-domain performance. Overall,
+the results show that YOLO26 detectors are effective for in-domain weed de-
+tection, but robust deployment in unseen field conditions remains challenging.
+Model scaling alone is not sufficient to overcome domain shift; instead, reliable
+real-world deployment requires diverse and representative training data, care-
+ful dataset selection, target-domain adaptation, and possibly semi-supervised or
+domain-generalization strategies. Future work will extend the benchmark toward
+embedded deployment, model compression, domain adaptation, active learning,
+and the use of unlabelled field imagery to improve generalization across crops,
+weed species, growth stages, and field conditions.
+
+
+References
+ 1. Ahmad, A., Saraswat, D., Aggarwal, V., Etienne, A., Hancock, B.: Performance of
+    deep learning models for classifying and detecting common weeds in corn and soy-
+    bean production systems. Computers and Electronics in Agriculture 184, 106081
+    (2021)
+ 2. Allmendinger, A., Saltık, A.O., Peteinatos, G.G., Stein, A., Gerhards, R.: Assessing
+    the capability of yolo-and transformer-based object detectors for real-time weed
+    detection. Precision Agriculture 26(3), 52 (2025)
+ 3. Badgujar, C.M., Poulose, A., Gan, H.: Agricultural object detection with you only
+    look once (yolo) algorithm: A bibliometric and systematic literature review. Com-
+    puters and Electronics in Agriculture 223, 109090 (2024)
+ 4. Bertoglio, R., Spizzichino, E., Kalouguine, A., Vitali, G., Matteucci, M.: The acre
+    crop-weed dataset for benchmarking weed detection models on maize and beans
+    fields. In: Machine Learning and Principles and Practice of Knowledge Discovery in
+    Databases: International Workshops of ECML PKDD 2023, Turin, Italy, Septem-
+    ber 18–22, 2023, Revised Selected Papers, Part III. Communications in Computer
+    and Information Science, vol. 2135, pp. 312–323. Springer, Cham (2025)
+ 5. Dang, F., Chen, D., Lu, Y., Li, Z.: Yoloweeds: A novel benchmark of yolo object
+    detectors for multi-class weed detection in cotton production systems. Computers
+    and Electronics in Agriculture 205, 107655 (2023)
+ 6. Diwan, T., Anirudh, G., Tembhurne, J.V.: Object detection using yolo: challenges,
+    architectural successors, datasets and applications. Multimedia Tools and Appli-
+    cations 82(6), 9243–9275 (2023)
+ 7. Hasan, A.S.M.M., Sohel, F., Diepeveen, D., Laga, H., Jones, M.G.K.: A survey
+    of deep learning techniques for weed detection from images. Computers and Elec-
+    tronics in Agriculture 184, 106067 (2021)
+ 8. Iqbal, N., Manss, C., Scholz, C., König, D., Igelbrink, M., Ruckelshausen, A.: Ai-
+    based maize and weeds detection on the edge with cornweed dataset. In: 2023 18th
+    Conference on Computer Science and Intelligence Systems (FedCSIS). pp. 577–584
+    (2023)
+ 9. Kamilaris, A., Prenafeta-Boldú, F.X.: Deep learning in agriculture: A survey. Com-
+    puters and electronics in agriculture 147, 70–90 (2018)
+                                    YOLO-Based Weed Detection Benchmark               15
+
+10. Lameski, P., Zdravevski, E., Kulakov, A.: Review of automated weed control ap-
+    proaches: An environmental impact perspective. In: International Conference on
+    Telecommunications. pp. 132–147. Springer (2018)
+11. Lameski, P., Zdravevski, E., Trajkovik, V., Kulakov, A.: Weed detection dataset
+    with rgb images taken under variable light conditions. In: International conference
+    on ICT innovations. pp. 112–119. Springer (2017)
+12. Lin, T.Y., Maire, M., Belongie, S., Bourdev, L., Girshick, R., Hays, J., Perona, P.,
+    Ramanan, D., Zitnick, C.L., Dollár, P.: Microsoft coco: Common objects in context.
+    In: European Conference on Computer Vision. pp. 740–755. Springer (2014)
+13. Liu, W., Anguelov, D., Erhan, D., Szegedy, C., Reed, S., Fu, C.Y., Berg, A.C.: Ssd:
+    Single shot multibox detector. In: European Conference on Computer Vision. pp.
+    21–37. Springer (2016)
+14. Lottes, P., Behley, J., Milioto, A., Stachniss, C.: Fully convolutional networks with
+    sequential information for robust crop and weed detection in precision farming.
+    IEEE Robotics and Automation Letters 3(4), 2870–2877 (2018)
+15. Milioto, A., Lottes, P., Stachniss, C.: Real-time semantic segmentation of crop and
+    weed for precision agriculture robots leveraging background knowledge in cnns.
+    In: 2018 IEEE international conference on robotics and automation (ICRA). pp.
+    2229–2235. IEEE (2018)
+16. Olsen, A., Konovalov, D.A., Philippa, B., Ridd, P., Wood, J.C., Johns, J., Banks,
+    W., Girgenti, B., Kenny, O., Whinney, J., Calvert, B., Rahimi Azghadi, M., White,
+    R.D.: Deepweeds: A multiclass weed species image dataset for deep learning. Sci-
+    entific Reports 9(1), 2058 (2019)
+17. Pai, D.G., Kamath, R., Balachandra, M.: Deep learning techniques for weed de-
+    tection in agricultural environments: A comprehensive review. IEEE Access 12,
+    113193–113214 (2024)
+18. Redmon, J., Divvala, S., Girshick, R., Farhadi, A.: You only look once: Unified,
+    real-time object detection. In: Proceedings of the IEEE conference on computer
+    vision and pattern recognition. pp. 779–788 (2016)
+19. Ren, S., He, K., Girshick, R., Sun, J.: Faster r-cnn: Towards real-time object detec-
+    tion with region proposal networks. IEEE Transactions on Pattern Analysis and
+    Machine Intelligence 39(6), 1137–1149 (2017)
+20. Sapkota, R., Cheppally, R.H., Sharda, A., Karkee, M.: YOLO26: Key architectural
+    enhancements and performance benchmarking for real-time object detection. arXiv
+    preprint arXiv:2509.25164 (2025)
+21. Sharma, A.: Palmer amaranth - cornell. https://weed-ai.sydney.edu.au/
+    datasets/0935d5a0-1270-4e6b-9618-2224240b5a03 (2024), weed-AI dataset en-
+    try. Accessed: 2026-06-05
+22. Sharma, A., Kumar, V., Longchamps, L.: Comparative performance of yolov8,
+    yolov9, yolov10, yolov11 and faster r-cnn models for detection of multiple weed
+    species. Smart Agricultural Technology 9, 100648 (2024)
+23. Startups, A.: Weeds dataset (nov 2021), https://universe.roboflow.com/
+    augmented-startups/weeds-nxe1w, visited on 2026-06-23
+24. Sudars, K., Jasko, J., Namatevs, I., Ozola, L., Badaukis, N.: Dataset of annotated
+    food crops and weed images for robotic computer vision control. Data in Brief 31,
+    105833 (2020)
+25. Wu, Z., Chen, Y., Zhao, B., Kang, X., Ding, Y.: Review of weed detection methods
+    based on computer vision. Sensors 21(11), 3647 (2021)
+26. Zhou, K., Liu, Z., Qiao, Y., Xiang, T., Loy, C.C.: Domain generalization: A survey.
+    IEEE transactions on pattern analysis and machine intelligence 45(4), 4396–4415
+    (2022)
+

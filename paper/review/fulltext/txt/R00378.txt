@@ -1,0 +1,726 @@
+                                          S EMI -S ELF -S UPERVISED D OMAIN A DAPTATION : D EVELOPING
+                                           D EEP L EARNING M ODELS WITH L IMITED A NNOTATED DATA
+                                                          FOR W HEAT H EAD S EGMENTATION
+
+                                                                                              A P REPRINT
+arXiv:2405.07157v1 [cs.CV] 12 May 2024
+
+
+
+
+                                                                 Alireza Ghanbari                                    Gholamhassan Shirdel
+                                                          Department of Mathematics                              Department of Mathematics
+                                                     Faculty of Sciences, University of Qom                 Faculty of Sciences, University of Qom
+                                                                    Qom, Iran                                              Qom, Iran
+
+
+                                                                                          Farhad Maleki
+                                                                                  Department of Computer Science
+                                                                                       University of Calgary
+                                                                                     Calgary, Alberta, Canada
+                                                                                  farhad.maleki1@ucalgary.ca
+
+
+                                                                                            May 14, 2024
+
+                                                                                            A BSTRACT
+                                                 Precision agriculture involves the application of advanced technologies to improve agricultural
+                                                 productivity, efficiency, and profitability while minimizing waste and environmental impact. Deep
+                                                 learning approaches enable automated decision-making for many visual tasks. However, in the
+                                                 agricultural domain, variability in growth stages and environmental conditions, such as weather and
+                                                 lighting, presents significant challenges to developing deep learning-based techniques that generalize
+                                                 across different conditions. The resource-intensive nature of creating extensive annotated datasets
+                                                 that capture these variabilities further hinders the widespread adoption of these approaches. To
+                                                 tackle these issues, we introduce a semi-self-supervised domain adaptation technique based on deep
+                                                 convolutional neural networks with a probabilistic diffusion process, requiring minimal manual data
+                                                 annotation. Using only three manually annotated images and a selection of video clips from wheat
+                                                 fields, we generated a large-scale computationally annotated dataset of image-mask pairs and a large
+                                                 dataset of unannotated images extracted from video frames. We developed a two-branch convolutional
+                                                 encoder-decoder model architecture that uses both synthesized image-mask pairs and unannotated
+                                                 images, enabling effective adaptation to real images. The proposed model achieved a Dice score of
+                                                 80.7% on an internal test dataset and a Dice score of 64.8% on an external test set, composed of
+                                                 images from five countries and spanning 18 domains, indicating its potential to develop generalizable
+                                                 solutions that could encourage the wider adoption of advanced technologies in agriculture.
+
+                                         Keywords Self-Supervised Learning · Semi-Supervised Learning · Domain Adaptation · Deep Learning · Precision
+                                         Agriculture
+
+
+                                         1   Introduction
+
+                                         Precision agriculture refers to the use of advanced technologies, including GPS guidance, control systems, sensors,
+                                         robotics, drones, autonomous vehicles, and variable rate technology, to optimize farm management. It aims to reduce
+                                         costs and increase yield in farming while ensuring sustainability and environmental protection [1]. Deep learning
+                                         (DL) methodologies can offer efficient, automated, and data-driven decision-making in agricultural practices. DL has
+                                        Semi-Self-Supervised Domain Adaptation                                    A P REPRINT
+
+
+
+demonstrated significant advancements in visual data analysis across various tasks, including image classification [2, 3],
+object detection [4, 5], semantic segmentation [6, 7, 8, 9], and instance segmentation [10, 11, 12]. Automated visual
+monitoring of agricultural fields can aid in the early identification of issues such as pest infestations, diseases, and
+nutrient deficiencies while optimizing resource utilization. Consequently, this approach facilitates timely interventions,
+which can lead to enhanced crop yields, improved quality of harvests, and increased overall operational efficiency,
+thereby ensuring sustainability.
+However, the wide adoption of DL approaches for crop monitoring faces significant challenges. Agricultural fields are
+constantly changing environments. For example, a crop field in the early growth stages is substantially different from
+the same field in the later stages of growth. Additionally, these systems must operate accurately under various weather
+and lighting conditions. These challenges the generalizability of DL models because models trained on data from a
+specific growth stage of a field might not generalize well to the same crop at different growth stages. In the DL context,
+this phenomenon is known as a distribution shift [13, 14]. One could develop a large-scale dataset encompassing various
+crop growth stages and environmental conditions to alleviate this issue. However, this approach presents challenges
+in data collection and annotation. Collecting data from various growth stages of crop fields under various weather
+and lighting conditions is time-consuming. Further, annotating agricultural images is particularly challenging, often
+requiring pixel-level annotation. These images frequently contain numerous objects of interest—e.g., wheat spikes in a
+wheat field—making the data annotation process laborious.
+Domain adaptation techniques refer to the methodologies used to alleviate distribution shift and can be divided into
+supervised, semi-supervised, self-supervised, and unsupervised approaches depending on whether or not annotated data
+is used for domain adaptation [15, 16]. Supervised domain adaptation relies on labeled data from both source and target
+domains. Semi-supervised domain adaptation combines labeled data from the source domain with both labeled and
+unlabeled data from the target domain. Finally, unsupervised domain adaptation operates solely with unlabeled data in
+the target domain, focusing on learning features applicable across domains.
+In this paper, we develop a semi-self-supervised domain adaptation approach based on a probabilistic diffusion model
+that operates without the need for manual annotation of data from the target domain. This alleviates the need for further
+manual data annotation, accelerating the model development process. Self-supervised learning refers to methodologies
+where supervisory signals are generated computationally from the input data, enabling learning data representation and
+extracting informative features without the need for manual annotation [17]. This approach allows for utilizing large-
+scale but unannotated datasets and has recently shown substantial progress in various image-processing tasks [17, 18].
+Deep diffusion probabilistic models, as self-supervised techniques, have shown remarkable results in image-processing
+tasks, especially in Generative AI [19, 20, 21]. In the following, we provide a mathematical description of these models.
+
+1.1   Background
+
+A Markov chain is a sequence of random variables X1 , X2 , X3 , . . . that satisfies the Markov property, which states that
+the probability of the system transitioning to the next state depends solely on the current state of the system and not the
+preceding events/states. Markov property can be mathematically expressed as follows:
+              P (Xn+1 = x | X0 = x0 , X1 = x1 , X2 = x2 , . . . , Xn = xn ) = P (Xn+1 = x | Xn = xn )                       (1)
+In this equation, P denotes a probability distribution for the state of the system. Xi is a vector-valued variable
+representing the state at the ith step, and x, x0 , x1 , x2 , . . . , xn are specific state vector values of the system.
+Given a data point x0 from the actual data distribution, we can define a Markov chain—referred to as a forward diffusion
+process—by iteratively adding multivariate Gaussian noise vector to x0 . More specifically, at state Xt−1 , where the
+system has a specific state of xt−1 , we add a Gaussian noise—characterized by a mean vector of µt and a covariance
+matrix of Σ2t —to xt−1 to transition to a state Xt with a specific value of√xt . The probability distribution for this
+transition can be described as q(Xt = xt | Xt−1 = xt−1 ) = N (xt ; µt = 1 − βt xt−1 , Σ2t = βt I), where βt is an
+scalar; I is the m × m identity matrix; and m is the cardinality of xi (0 ≤ i ≤ T ). Considering the Markov chain
+property, we have
+                                                             T
+                                                             Y
+                                             q(x1:T |x0 ) =     q(xt | xt−1 )
+                                                              t=1
+
+where q(x1:T |x0 ) is a short notation for q(x1 , x2 , . . . , xT |x0 ). A state xt can be achieved by iteratively applying the
+Gaussian noise to x0 , t times. Instead of an iterative process, this could also be achieved in a single step, utilizing a
+reparametrization trick, in which xt is rewritten as
+                                                      p                     p
+                                              xt = 1 − βt xt−1 + βt ϵ                                                        (2)
+
+
+                                                               2
+                                        Semi-Self-Supervised Domain Adaptation                                    A P REPRINT
+
+
+
+Where ϵ is an n-dimensional vector with standard normal distribution
+                                                           √         N (0, I). It can be inferred that this reparametriza-
+tion preserves the distribution of xt , i.e., xt ∼ N (µt = 1 − βt xt−1 , Σ2t = βt I). By changing the notation as
+αt = 1 − βt , Equation 2 can be written as:
+                                                   √           √
+                                               xt = αt xt−1 + 1 − αt ϵ                                                 (3)
+As Equation 3 is a recursive equation, we can further expand the equation.
+                                    √            √
+                                xt = αt xt−1 + 1 − αt ϵ
+                                    √ √                 p              √
+                                   = αt αt−1 xt−2 + 1 − αt−1 ϵ + 1 − αt ϵ
+                                    √                 p                    √
+                                   = αt αt−1 xt−2 + αt (1 − αt−1 ) ϵ + 1 − αt ϵ                              (4)
+                                                                p
+Since ϵ has standard normal distribution
+                               √           N (µ = 0, Σ2 = I), αt (1 − αt−1 ) ϵ has a normal distribution N (µ =
+    2
+0, Σ = αt (1 −pαt−1 )) and 1 − αt ϵ has a normal distribution N (µ = 0, Σ2 = 1 − αt ). Consequently, their
+                                     √
+summation, i.e. αt (1 − αt−1 )ϵ + 1 − αt ϵ, has a normal distribution N (µ = 0, Σ2 = 1 − αt αt−1 ). Therefore,
+Equation 4 can be written as:
+                                             √                p
+                                        xt = αt αt−1 xt−2 + 1 − αt αt−1 ϵ                                    (5)
+By expanding Equation 5 further, we obtain the following Equation:
+                                     √                     p
+                                 xt = αt αt−1 . . . α1 x0 + 1 − αt αt−1 . . . α1 ϵ                                         (6)
+Defining αt = αt αt−1 . . . α1 , Equation 6 can be written concisely as follow:
+                                                    √          √
+                                                xt = α t x0 + 1 − α t ϵ                                                    (7)
+Given x0 , Equation 7 allows generating xt in a computationally efficient manner in just one step, rather √    than iteratively
+adding noise in t steps. This is achieved by sampling from the Gaussian distribution N (xt ; µt = αt x0 , Σ2t =
+(1 − αt )I). αt is defined using α1 , . . . αt , where αi = 1 − βi (1 ≤ i ≤ t). βi values are often defined using a linear [22]
+or cosine scheduler [22, 23], with the cosine schedule leading to superior results as it smoothly transitions the noise
+added to the data across the diffusion steps, which is essential for controlling the quality and characteristics of the
+generated data in diffusion models. A Cosine scheduler can be defined as follows:
+                                                                                     
+                                                       1                           t
+                                      βt = βmax − (βmax − βmin ) 1 + cos             π
+                                                       2                           T
+Where βt represents the noise level at step t (higher βt values correspond to higher noise levels); t = 1 and t = T result
+in the minimum and maximum noise levels, respectively; T is the total number of steps in the diffusion process; and t is
+the current time step. All experiments in this study were conducted using βmin = 0.0001 and βmax = 0.02..
+As T approaches infinity, xT converges to isotropic Gaussian distribution, meaning that all components of xt are
+normally distributed and decorrelated. Therefore, by having a procedure for learning the reverse distribution q(xt−1 |
+xt ), we can start with sampling xT from a normal distribution and follow the reverse distribution to arrive at x0 . It
+should be noted that in the forward diffusion process, noise is added at each step; that is, xt is derived from adding noise
+to xt−1 according to a distribution of q(xt |xt−1 ). In the backward diffusion process, however, the aim is to reverse the
+forward process by removing the noise added to xt to recover xt−1 . This is achieved by a reverse transition using a
+distribution denoted as q(xt−1 |xt ).
+In practical terms, the true reverse distribution q(xt−1 |xt ) is unknown and intractable to compute directly, as accurately
+estimating it would require complex calculations involving the entire data distribution. Instead, we approximate
+q(xt−1 |xt ) using a parameterized model, a deep neural network, denoted as pθ (xt−1 |xt ). Given that q(xt−1 |xt ) is
+also Gaussian for small enough values of βt in the forward diffusion process, we can choose pθ (xt−1 |xt ) to be a
+Gaussian distribution. In this case, the neural network is trained to parameterize the mean and variance of this Gaussian
+distribution.
+
+2    Data and Methodology
+This section provides an in-depth explanation of the data used in this research, along with detailed descriptions of the
+preprocessing methods, the model architecture, and the processes for model training and evaluation.
+
+
+                                                              3
+                                       Semi-Self-Supervised Domain Adaptation                                  A P REPRINT
+
+
+
+
+Figure 1: Three manually annotated image-mask pairs were utilized for data synthesis. We developed two training sets
+by synthesizing computationally annotated images using manually annotated images from the left (Iη ) and the middle
+(Iζ ), producing 8, 000 images based on Iη and 8, 000 images based on Iζ . Hereafter, we refer to the 8, 000 images
+developed based on (Iη ) as dataset Dη . We refer to the set comprising the whole 16, 000 images as Dη+ζ . Additionally,
+we created a validation set by synthesizing 4, 000 images, with 2, 000 from the image on the right (Iτ ) and 2, 000
+images based on Iζ . Hereafter, we refer to this set of 4, 000 images as Dζ+τ . Dataset Dζ+τ was made to allow for a
+balanced representation of wheat field images from the early and late growth stages. All computationally annotated
+samples were synthesized following the methodology described by Najafian et al. [8].
+
+
+
+2.1   Data
+
+Figure 1 illustrates the three manually annotated images (Iη , Iζ , and Iτ ) used for synthesizing computationally annotated
+datasets. Utilizing the methodology presented in our previous work [8], we computationally synthesize three datasets:
+Dη a set of 8, 000 images drived from Iη , Dη+ζ a set of 16, 000 images derived from Iη and Iζ , and Dζ+τ a set of
+4, 000 images derived from Iζ and Iτ . Figure 2 illustrates examples of synthesized images and their corresponding
+segmentation masks. In addition to these manually and computationally annotated images, for the training process, we
+utilize 10, 592 unannotated image frames extracted from two video clips of wheat fields, with 5, 296 frames from each.
+Hereafter, we refer to these datasets as Dρ1 and Dρ2 . We refer to the dataset resulting from combining Dρ1 and Dρ2 as
+Dρ .
+
+
+
+
+      Figure 2: Examples of computationally synthesized images and their corresponding segmentation masks.
+
+
+We also use two sets of Ψ and Γ as the internal and external test sets, as introduced by Najafian et al. [8]. The set Ψ
+comprises 100 image frames, which are randomly selected from a video clip of a wheat field and have been manually
+annotated to serve as an internal test set. The set Γ represents a subset of 365 manually annotated images from the
+GWHD dataset [24], which includes images from five countries and spans 18 domains, covering various growth stages
+of wheat.
+
+
+                                                             4
+                                      Semi-Self-Supervised Domain Adaptation                                            A P REPRINT
+
+
+
+
+                                                          Skip Connections
+
+
+
+
+                                                                                                  Segmentation Loss
+                                                                       Mask
+                                                Encoder
+Labeled Synthetic Data                                                Decoder
+
+
+
+
+                                                 Shared
+                                                                                                                        Totall Loss
+
+
+
+
+                                                                                                  Reconstruction Loss
+                                                                       Image
+                                                Encoder
+  Unlabeled Real Data                                                 Decoder
+
+
+
+                         Add Noise                        Skip Connections
+
+
+
+
+Figure 3: Schematic Representation of the Model Architecture. The encoder focuses on developing a joint image
+representation for both synthesized and real images, while the mask decoder aims at generating segmentation masks,
+and the image decoder aims at reconstructing the real images, forcing the encoder to adapt to the real images.
+
+
+
+2.2   Model Architecture
+
+Figure 3 illustrates the convolutional neural network (CNN)-based model architecture employed in this research. This
+architecture is designed to facilitate representation learning through a diffusion process, in addition to performing the
+primary task of segmentation. The segmentation task is executed using computationally synthesized images along with
+their corresponding masks. Meanwhile, the representation learning aspect enables adaptation to real images using solely
+unannotated data, thereby reducing the reliance on manual annotation.
+We use an encoder to develop a joint representation of both synthesized and real images. Additionally, the model
+architecture comprises an image decoder and a mask decoder. The former is designed to reconstruct the image from the
+output of the encoder, thereby enforcing learning features from real images. On the other hand, the mask decoder is
+tasked with developing a segmentation mask given the output of the encoder.
+In implementing the encoder and decoders, we leveraged the Residual building blocks [25], each comprising two pairs
+of convolution and GroupNorm layers, supported by the Swish activation function [26] and integrated skip connections.
+Figure 4 shows a residual building block.
+Figure 5 illustrates the encoder, consisting of one convolutional layer followed by 12 ResNet building blocks organized
+in six levels. Additionally, two skip-connection-free ResNet blocks serve as the network bottleneck. Moreover,
+down-sampling operations are performed after each pair of ResNet blocks using a convolution layer with a kernel size
+of three and a stride of two. The Swish activation function [26] is also consistently applied as the non-linearity across
+the encoder layers.
+Synthetic images undergo a series of image augmentations [27]; then they are fed into the encoder. The outputs of the
+encoder are subsequently passed to a mask decoder to generate accurate masks corresponding to the input images. To
+
+
+                                                                 5
+                                                                                           Semi-Self-Supervised Domain Adaptation                                                                                                  A P REPRINT
+
+
+
+
+                                                                  Group Norm
+
+
+
+
+                                                                                                                                                                Group Norm
+                                                                                                                         3x3 Conv
+
+
+
+
+                                                                                                                                                                                                      3x3 Conv
+                                                                                                  Swish
+
+
+
+
+                                                                                                                                                                                            Swish
+                                                                                                                                                                                                                    +
+
+
+
+
+Figure 4: A ResNet block comprises three groups of operations, including convolution, GroupNorm layers, and the
+Swish activation function for nonlinearity. It also incorporates skip connections to enhance feature propagation.
+                     ResNet Block
+
+                                    ResNet Block
+          3x3 Conv
+
+
+
+
+                                                                                                                                                                             Skip
+                                                                                                                                                                                                                                   Group Norm
+                                                   ResNet Block
+
+                                                                         ResNet Block
+
+
+
+
+                                                                                                                                                                                                                                     Swish
+
+                                                                                                                                                                             Skip
+                                                                                                                                                                                                                                    3x3 Conv
+                                                                                                                                                                                                    Image Decoder
+
+
+
+                                                                                                                                                                                                                    Mask Decoder
+                                                                                        ResNet Block
+
+                                                                                                          ResNet Block
+
+
+
+
+                                                                                                                                                                             Skip
+
+
+
+                                                                                                                                                                                                                                   Group Norm
+                                                                                                                                                                             Skip
+
+                                                                                                                                                                                                                                     Swish
+                                                                                                                              ResNet Block
+
+                                                                                                                                             ResNet Block
+
+
+
+
+                                                                                                                                                                             Skip                                                   3x3 Conv
+                                                                                                                                                            ResNet Block
+
+                                                                                                                                                                             ResNet Block
+
+
+
+
+Figure 5: Encoder model architecture is designed by combining convolutional layers, ResNet blocks, and GroupNorm
+layers. Also, in each of the two decoding streams, we utilize concatenation instead of addition.
+
+
+
+
+                                                                                                                                                            6
+                                        Semi-Self-Supervised Domain Adaptation                                   A P REPRINT
+
+
+
+calculate segmentation error, we use a linear combination of Binary Cross Entropy (BCE) loss [28] and Dice loss [28]
+(see Equation 8).
+
+
+                                                  B X N
+                                            1    X
+                             LBCE = −                    (yi log(ŷi ) + (1 − yi ) log(1 − ŷi ))
+                                          B × N j=1 i=1
+                                                          B
+                                                                               !
+                                                       2 X |Mjs ∩ M̂js |
+                                          LDice = 1 −
+                                                      B j=1 |Mjs | + |M̂js |
+                                        LSeg = λBCE × LBCE + λDice × LDice                                                 (8)
+where yi is the true label of the pixel i, with a value of 1 if the pixel belongs to a wheat head and 0 otherwise. ŷi
+represents the model prediction for the pixel i being from a wheat head. N is the number of pixels per image, and B is
+the batch size. Mjs is the ground truth mask for the synthetic image Ijs , and M̂js is the model prediction for Ijs .
+We also generate noise-augmented images by applying Gaussian noise to the real image Ij over t (1 ≤ t ≤ T )
+timesteps, as detailed in Equation 7. These noise-augmented images are subsequently routed through the encoder,
+followed by the image decoder, aiming to reconstruct the original images. The error for this branch is calculated
+by comparing the original image with the reconstructed image using a linear combination of MSE [29], SSIM [30],
+and a perceptual loss function [31]. The perceptual loss function calculates the mean absolute error between the
+pretrained ResNet18 output feature maps for the original image Ij , and the reconstructed image Iˆj . We used the
+ResN et18_W eights.IM AGEN ET 1K_V 1 weights from the Torchvision Python package [32]. We used the feature
+maps generated by the convolutional layer before the final average pooling layer of the ResNet18 model.
+
+
+                                                            B X N
+                                                       1   X
+                                           LMSE =                  (xji − x̂ji )2
+                                                     B × N j=1 i=1
+                                                             (2µIj µIˆj + c1 )(2σIj Iˆj + c2 )
+                                 LSSIM (Ij , Iˆj ) = 1 −
+                                                           (µIj + µ2Iˆ + c1 )(σI2j + σI2ˆ + c2 )
+                                                             2
+                                                                      j                  j
+
+                                                                B                  2
+                                                            1 X
+                                           LPerceptual =          θ(Ij ) − θ(Iˆj )
+                                                            B j=1                  2
+
+                      LRec = λM SE × LM SE + λSSIM × LSSIM + λP erceptual × LP erceptual                                   (9)
+where B is batch size; N is the number of pixels in an image Ij ; xji is the actual value of the i-th pixel of Ij ; x̂ji is the
+predicted value for the i-th pixel of Ij ; µIj and µIˆj are the mean intensity values of the images Ij and Iˆj , respectively;
+σ 2 and σ 2 are the variances of the images Ij and Iˆj , respectively; σ ˆ is the covariance between images Ij and Iˆj ; c1
+ Ij       Iˆj                                                              Ij Ij
+and c2 are constants introduced to stabilize the division. θ(Ij ) and θ(Iˆj ) are ResNet18 features extracted from images
+Ij and Iˆj , respectively.
+These losses focus on variations between the reconstructed image and the original noise-free image from different
+perspectives: MSE loss focuses on pixel-level variations, SSIM loss focuses on local variations, and Perceptual
+loss focuses on high-level global variations. The reconstruction loss is calculated as a linear combination of these
+loss functions, as described in Equation 9, where λM SE , λSSIM , and λP erceptual are constant values and model
+hyperparameters.
+
+2.3   Model training and evaluation
+
+Considering the size of the datasets, we train our models over a total of 50 training epochs. For each epoch, we iterate
+over all the data in the datasets. At each iteration, we select a batch of 32 synthesized image-mask pairs and a separate
+batch of 32 real images from our datasets. The image-mask pairs are fed into the segmentation branch of our model,
+which consists of an encoder and a mask decoder. The segmentation loss is then calculated according to Equation 8.
+Similarly, the real images are fed into the reconstruction branch of our model, comprising the encoder (shared with the
+segmentation branch) and an image decoder, where the reconstruction loss is calculated as per Equation 9. The total
+loss is computed by summing the segmentation loss and the reconstruction loss. Figure 3 illustrates this process.
+
+
+                                                                 7
+                                      Semi-Self-Supervised Domain Adaptation                                A P REPRINT
+
+
+
+This dual-stream approach ensures that the encoder effectively attends to both types of data, with each decoder
+specializing in a task corresponding to its branch—namely, segmentation or reconstruction. Model updates are
+orchestrated using the AdamW optimizer [33], with a learning rate set at 0.0001. For all experiments, the coefficients
+λM SE , λSSIM , λP erceptual , λBCE , and λDice are set to 1. After training for 50 epochs, we selected the model with
+the highest Dice score as the best model. During the evaluation process, we assessed the model performance using the
+Dice score and IoU. As a baseline for comparison, we used a model developed by [8].
+
+
+3   Results
+
+Table 1 presents a quantitative evaluation of the performance of our developed models, namely, model Fη+ρ1 , trained
+on Dη and Dρ1 , and model Fη+ζ+ρ trained on Dη+ζ and Dρ . These models were trained using both synthesized
+image-mask pairs and unannotated real images extracted from video clips of wheat fields. The performance of the
+baseline model S from Najafian et al. [8] is also reported in Table 1. The results demonstrate that the developed models,
+Fη+ρ1 and Fη+ζ+ρ , consistently outperformed the baseline model S. These models rely on computationally annotated
+synthetic images and real unannotated images extracted from the video frames of wheat fields.
+
+Table 1: The performance of the trained models was evaluated on our internal and external test sets using the IoU and
+Dice scores. Model Fη+ρ1 was trained on Dη and Dρ1 and model Fη+ζ+ρ is the result of fine-tuning model Fη+ρ1 on
+datasets Dη+ζ and Dρ . We also compared the performance of these two models with the model developed in [8]. All of
+these models rely exclusively on synthesized image-mask pairs and/or unannotated images.
+
+                                   Model      Evaluation Method       Dice      IoU
+                                    S [8]      Internal test set Ψ    0.709    0.565
+                                   Fη+ρ1       Internal test set Ψ    0.773    0.638
+                                   Fη+ζ+ρ      Internal test set Ψ    0.807    0.686
+                                    S [8]      External test set Γ    0.367    0.274
+                                   Fη+ρ1       External test set Γ    0.551    0.427
+                                   Fη+ζ+ρ      External test set Γ    0.648    0.526
+
+Figure 6 presents a qualitative evaluation of the performance of models Fη+ζ+ρ , identified as the best-performing
+model, and model S on several different domains. In general, model Fη+ζ+ρ demonstrates superior performance
+compared to model S. We also reported a case, as shown in the middle column, where model S performs better.
+
+
+
+
+Figure 6: Showcasing the prediction performance of model Fη+ζ+ρ (highlighted in a red box in the upper row) in
+comparison with the results obtained by model S [8] (highlighted in a blue box in the lower row) on samples from the
+Global Wheat Head Detection dataset [24].
+
+
+                                                           8
+                                      Semi-Self-Supervised Domain Adaptation                                 A P REPRINT
+
+
+
+Table 2 presents the performance of the proposed models across various domains of the GWHD dataset. The results
+indicate that the proposed models generally outperform model S in most domains, exhibiting lower variance and greater
+stability.
+
+Table 2: The performance of the models on each of the 18 domains of the GWHD dataset. Model S, which was trained
+using the synthesized dataset, was reported from [8]. Model Fη+ρ1 was developed using dataset Dη —consisting of
+8,000 computationally annotated synthesized images—and dataset Dρ1 , which includes 5,296 unannotated real images.
+Model Fη+ζ+ρ was developed using dataset Dη+ζ —consisting of 16,000 computationally annotated synthesized
+images—and dataset Dρ , which includes 10,592 unannotated real images. We trained model Fη+ρ1 from scratch,
+while model Fη+ζ+ρ was resulted from fine-tuning of model Fη+ρ1 using dataset Dη+ζ and dataset Dρ .
+
+                Domain      Model    Dice Score                            Domain       Model   Dice Score
+
+                              S        0.731                                             S        0.711
+                           Fη+ρ1       0.660                                           Fη+ρ1      0.644
+                           Fη+ζ+ρ      0.692                                          Fη+ζ+ρ      0.759
+                              S        0.848                                             S        0.290
+                           Fη+ρ1       0.815                                           Fη+ρ1      0.193
+                           Fη+ζ+ρ      0.857                                          Fη+ζ+ρ      0.271
+                              S        0.309                                             S        0.601
+                           Fη+ρ1       0.764                                           Fη+ρ1      0.599
+                           Fη+ζ+ρ      0.812                                          Fη+ζ+ρ      0.769
+                              S        0.240                                             S        0.583
+                           Fη+ρ1       0.503                                           Fη+ρ1      0.795
+                           Fη+ζ+ρ      0.431                                          Fη+ζ+ρ      0.748
+                              S        0.794                                             S        0.156
+                           Fη+ρ1       0.715                                           Fη+ρ1      0.286
+                           Fη+ζ+ρ      0.698                                          Fη+ζ+ρ      0.356
+                              S        0.389                                             S        0.582
+                           Fη+ρ1       0.479                                           Fη+ρ1      0.492
+                           Fη+ζ+ρ      0.605                                          Fη+ζ+ρ      0.667
+
+                              S        0.509                                             S        0.884
+                           Fη+ρ1       0.655                                           Fη+ρ1      0.648
+                           Fη+ζ+ρ      0.625                                          Fη+ζ+ρ      0.805
+
+                              S        0.859                                             S        0.501
+                           Fη+ρ1       0.674                                           Fη+ρ1      0.488
+                           Fη+ζ+ρ      0.671                                          Fη+ζ+ρ      0.686
+
+                              S        0.539                                             S        0.629
+                           Fη+ρ1       0.586                                           Fη+ρ1      0.496
+                           Fη+ζ+ρ      0.579                                          Fη+ζ+ρ      0.520
+
+
+
+
+4   Discussion
+
+Precision agriculture aims to integrate advanced technologies to address various challenges in the agricultural sector,
+enhancing productivity, efficiency, and profitability while minimizing waste and environmental impact. Deep learning
+approaches play a crucial role in enabling automated decision-making capabilities. By automating the processing of
+visual data from agricultural fields, these decision-making processes can be significantly improved and scaled up.
+However, the development of DL-based techniques encounters challenges stemming from the dynamic nature of
+agricultural fields, characterized by diverse growth stages, inconsistent weather conditions, and variable lighting. As
+such, models developed based on one snapshot of these fields often are not generalizable across different growth
+stages or environmental conditions. Furthermore, developing large-scale annotated datasets across various growth
+
+
+                                                          9
+                                      Semi-Self-Supervised Domain Adaptation                               A P REPRINT
+
+
+
+stages and environmental conditions is time-consuming and expensive. These challenges hinder the development of
+generalizable DL-based solutions for various agricultural tasks. Consequently, developing methodologies that allow
+DL-based solutions to generalize across different conditions (domains) could facilitate the widespread adoption of these
+technologies in the agricultural sector.
+In response to these challenges, we developed a semi-self-supervised domain adaptation technique that employs deep
+convolutional neural networks and a probabilistic diffusion process. This approach was developed with minimal data
+annotation, requiring only three manually annotated images. We classify this method as semi-supervised because
+it leverages a small amount of annotated data (three images) alongside a significant volume of unannotated data.
+Additionally, this method can be considered self-supervised as it utilizes computationally annotated data for model
+development.
+The proposed model demonstrated substantial improvements in performance compared to the baseline model from
+recent work by Najafian et al. [8], while also showing lower variance in model performance across 18 different domains
+from the GWHD dataset. These 18 domains represent various growth stages of wheat fields and different environmental
+conditions.
+In this study, we devised a two-phase model training process. Initially, model Fη+ρ1 was developed by synthesizing a
+large number of computationally annotated samples resulted from a single sample for image synthesis and validation,
+showcasing nearly a 20% improvement over a recent work by Najafian et al. [8] on the target domain. Subsequently,
+in the second phase, model Fη+ζ+ρ leveraged additional computationally generated data, further enhancing the
+performance difference to 28%.
+As presented in Table 1, our final model, Fη+ζ+ρ , shows 28.1% improvement in Dice score and 25.2% improvement in
+IoU when compared to model S from Najafian et al. The increased performance showcases the utility of the proposed
+semi-self-supervised domain adaptation technique.
+In this research, we adopted an extreme strategy by utilizing only two annotated images for training and one for
+validation. However, we recommend incorporating more manually annotated samples from diverse domains to further
+enhance the robustness of the proposed approach. Additionally, in this research, we primarily relied on default
+hyperparameters. Tuning model hyperparameters could lead to further improvements in model performance.
+
+5   Conclusion
+This research introduces a semi-self-supervised domain adaptation methodology characterized by a dual-stream encoder-
+decoder model architecture, specifically designed for the downstream task of semantic segmentation of wheat heads.
+We synthesized a large-scale, computationally annotated dataset from three manually annotated images. We also
+used unannotated image frames extracted from wheat field videos captured at two different growth stages. The model
+architecture and training strategy, utilizing both image segmentation and reconstruction, were strategically designed to
+mitigate challenges associated with domain shift while minimizing the need for extensive data annotation. The external
+evaluation of our proposed approach on a subset of the GWHD dataset demonstrated a substantial improvement in
+model performance over a recent work. This underscores the utility of our proposed approach in alleviating domain
+shift, allowing for the development of generalizable models with minimal manual data annotation, which, in turn, could
+enable the widespread adoption of DL-based approaches in the agricultural sector.
+
+Author Contributions
+The methodology of this study was designed and implemented by AG, who also authored the initial draft of the
+manuscript. Both FM and GHS edited and refined subsequent versions of the paper. FM contributed to the ideation of
+the research. FM and GHS provided supervision throughout the study.
+
+Funding
+This research received no external funding.
+
+Acknowledgments
+We acknowledge Keyhan Najafian for providing access to the dataset used in this study and for granting access to the
+baseline model employed for model evaluation.
+
+
+                                                          10
+                                      Semi-Self-Supervised Domain Adaptation                               A P REPRINT
+
+
+
+References
+ [1] Margaret A Oliver, Thomas FA Bishop, Ben P Marchant, et al. Precision Agriculture for Sustainability and
+     Environmental Protection. Routledge Abingdon, 2013.
+ [2] Mingxing Tan and Quoc Le. EfficientNet: Rethinking model scaling for convolutional neural networks. In
+     International conference on Machine Learning, pages 6105–6114. PMLR, 2019.
+ [3] Keyhan Najafian, Lingling Jin, H Randy Kutcher, Mackenzie Hladun, Samuel Horovatin, Maria Alejandra Oviedo-
+     Ludena, Sheila Maria Pereira De Andrade, Lipu Wang, and Ian Stavness. Detection of fusarium damaged kernels
+     in wheat using deep semi-supervised learning on a novel wheatseedbelt dataset. In Proceedings of the IEEE/CVF
+     International Conference on Computer Vision, pages 660–669, 2023.
+ [4] Chien-Yao Wang, Alexey Bochkovskiy, and Hong-Yuan Mark Liao. Yolov7: Trainable bag-of-freebies sets new
+     state-of-the-art for real-time object detectors. In Proceedings of the IEEE/CVF Conference on Computer Vision
+     and Pattern Recognition, pages 7464–7475, 2023.
+ [5] Keyhan Najafian, Alireza Ghanbari, Ian Stavness, Lingling Jin, Gholam Hassan Shirdel, and Farhad Maleki. A
+     semi-self-supervised learning approach for wheat head detection using extremely small number of labeled samples.
+     In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages 1342–1351, 2021.
+ [6] Mohammad Hossein Nazeri and Mahdi Bohlouli. Exploring reflective limitation of behavior cloning in autonomous
+     vehicles. In 2021 IEEE International Conference on Data Mining (ICDM), pages 1252–1257. IEEE, 2021.
+ [7] Yujian Mo, Yan Wu, Xinneng Yang, Feilin Liu, and Yujun Liao. Review the state-of-the-art technologies of
+     semantic segmentation based on deep learning. Neurocomputing, 493:626–646, 2022.
+ [8] Keyhan Najafian, Alireza Ghanbari, Mahdi Sabet Kish, Mark Eramian, Gholam Hassan Shirdel, Ian Stavness,
+     Lingling Jin, and Farhad Maleki. Semi-self-supervised learning for semantic segmentation in images with dense
+     patterns. Plant Phenomics, 5:0025, 2023.
+ [9] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer
+     Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Segment anything. arXiv preprint arXiv:2304.02643, 2023.
+[10] Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Girshick. Mask r-cnn. In 2017 IEEE International
+     Conference on Computer Vision (ICCV), pages 2980–2988, 2017.
+[11] Abdul Mueed Hafiz and Ghulam Mohiuddin Bhat. A survey on instance segmentation: state of the art. International
+     Journal of Multimedia Information Retrieval, 9(3):171–189, 2020.
+[12] Julien Champ, Adan Mora-Fallas, Hervé Goëau, Erick Mata-Montero, Pierre Bonnet, and Alexis Joly. Instance
+     segmentation for the fine detection of crop and weed plants by precision agricultural robots. Applications in Plant
+     Sciences, 8(7):e11373, 2020.
+[13] Samarth Sinha, Peter Gehler, Francesco Locatello, and Bernt Schiele. Test: Test-time self-training under
+     distribution shift. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+     (WACV), pages 2759–2769, January 2023.
+[14] Qiang Hu, Yuejun Guo, Xiaofei Xie, Maxime Cordy, Mike Papadakis, Lei Ma, and Yves Le Traon. Codes:
+     towards code model generalization under distribution shift. In International Conference on Software Engineering
+     (ICSE): New Ideas and Emerging Results (NIER), 2023.
+[15] Dongseong Hwang, Ananya Misra, Zhouyuan Huo, Nikhil Siddhartha, Shefali Garg, David Qiu, Khe Chai
+     Sim, Trevor Strohman, Françoise Beaufays, and Yanzhang He. Large-scale asr domain adaptation using self-
+     and semi-supervised learning. In ICASSP 2022-2022 IEEE International Conference on Acoustics, Speech and
+     Signal Processing (ICASSP), pages 6627–6631. IEEE, 2022.
+[16] Fei Pan, Inkyu Shin, Francois Rameau, Seokju Lee, and In So Kweon. Unsupervised intra-domain adaptation
+     for semantic segmentation through self-supervision. In Proceedings of the IEEE/CVF Conference on Computer
+     Vision and Pattern Recognition, pages 3764–3773, 2020.
+[17] Veenu Rani, Syed Tufael Nabi, Munish Kumar, Ajay Mittal, and Krishan Kumar. Self-supervised learning: A
+     succinct review. Archives of Computational Methods in Engineering, 30(4):2761–2775, 2023.
+[18] Jure Zbontar, Li Jing, Ishan Misra, Yann LeCun, and Stephane Deny. Barlow twins: Self-supervised learning via
+     redundancy reduction. In Marina Meila and Tong Zhang, editors, Proceedings of the 38th International Conference
+     on Machine Learning, volume 139 of Proceedings of Machine Learning Research, pages 12310–12320. PMLR,
+     18–24 Jul 2021.
+[19] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical text-conditional image
+     generation with clip latents. arXiv preprint arXiv:2204.06125, 1(2):3, 2022.
+
+
+                                                          11
+                                      Semi-Self-Supervised Domain Adaptation                                 A P REPRINT
+
+
+
+[20] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image
+     synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and
+     Pattern Recognition, pages 10684–10695, 2022.
+[21] Florinel-Alin Croitoru, Vlad Hondru, Radu Tudor Ionescu, and Mubarak Shah. Diffusion models in vision: A
+     survey. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2023.
+[22] Ting Chen. On the importance of noise scheduling for diffusion models. arXiv preprint arXiv:2301.10972, 2023.
+[23] Alexander Quinn Nichol and Prafulla Dhariwal. Improved denoising diffusion probabilistic models. In
+     International Conference on Machine Learning, pages 8162–8171. PMLR, 2021.
+[24] Etienne David, Mario Serouart, Daniel Smith, Simon Madec, Kaaviya Velumani, Shouyang Liu, Xu Wang,
+     Francisco Pinto, Shahameh Shafiee, Izzat SA Tahir, et al. Global wheat head detection 2021: An improved dataset
+     for benchmarking wheat head detection methods. Plant Phenomics, 2021.
+[25] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In
+     Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 770–778, 2016.
+[26] Prajit Ramachandran, Barret Zoph, and Quoc V Le. Searching for activation functions. arXiv preprint
+     arXiv:1710.05941, 2017.
+[27] Alexander Buslaev, Vladimir I Iglovikov, Eugene Khvedchenya, Alex Parinov, Mikhail Druzhinin, and Alexandr A
+     Kalinin. Albumentations: fast and flexible image augmentations. Information, 11(2):125, 2020.
+[28] Saad Wazir and Muhammad Moazam Fraz. Histoseg: Quick attention with multi-loss function for multi-structure
+     segmentation in digital histology images. In 2022 12th International Conference on Pattern Recognition Systems
+     (ICPRS), pages 1–7. IEEE, 2022.
+[29] Soosan Beheshti, Masoud Hashemi, Ervin Sejdic, and Tom Chau. Mean square error estimation in thresholding.
+     IEEE Signal Processing Letters, 18(2):103–106, 2010.
+[30] Alain Hore and Djemel Ziou. Image quality metrics: Psnr vs. ssim. In 2010 20th International Conference on
+     Pattern Recognition, pages 2366–2369. IEEE, 2010.
+[31] Justin Johnson, Alexandre Alahi, and Li Fei-Fei. Perceptual losses for real-time style transfer and super-resolution.
+     In Computer Vision–ECCV 2016: 14th European Conference, Amsterdam, The Netherlands, October 11-14,
+     2016, Proceedings, Part II 14, pages 694–711. Springer, 2016.
+[32] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen,
+     Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas Kopf, Edward Yang, Zachary DeVito,
+     Martin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala.
+     Pytorch: An imperative style, high-performance deep learning library. In Advances in Neural Information
+     Processing Systems 32, pages 8024–8035. Curran Associates, Inc., 2019.
+[33] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101,
+     2017.
+
+
+
+
+                                                           12
+

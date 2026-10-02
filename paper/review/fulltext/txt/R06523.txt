@@ -1,0 +1,1928 @@
+                                        Highlights
+                                        ST-LoRA: Single-Trajectory LoRA Ensemble for Uncertainty-Aware Agricultural Segmentation
+                                        Mohamed Farag, Genc Hoxha, Yahya Maleki, Chris McCool, Ribana Roscher
+
+
+                                           • ST-LoRA builds diverse ensembles using less model parameters
+                                           • Feed-forward layers, not attention, are the most important LoRA target for dense prediction
+
+                                           • ST-LoRA matches full-rank ensemble quality at significantly smaller checkpoint size
+                                           • ST-LoRA achieves competitive performance for calibration robustness under distribution shift
+arXiv:2608.01530v1 [cs.CV] 2 Aug 2026
+ST-LoRA: Single-Trajectory LoRA Ensemble for Uncertainty-Aware
+Agricultural Segmentation
+Mohamed Faraga,∗ , Genc Hoxhaa , Yahya Malekia , Chris McCoolc and Ribana Roschera,b,∗∗
+a Machine Learning in Agriculture Lab, Institute of Geodesy and Geoinformation, University of Bonn, Bonn, Germany
+b Lamarr Institute for Machine Learning and Artificial Intelligence, University of Bonn, Bonn, Germany
+c Commonwealth Scientific and Industrial Research Organisation (CSIRO), Australia
+
+
+
+ARTICLE INFO                                         ABSTRACT
+Keywords:                                            Reliable decision-support in digital agriculture requires not only accurate predictions but also well-
+Digital Agriculture                                  calibrated uncertainty estimates, particularly for dense prediction tasks such as semantic segmentation.
+Crop Monitoring                                      While ensemble methods provide strong uncertainty quantification, their computational and mem-
+Deep Learning                                        ory demands limit practical applicability, whereas single-model approximations often compromise
+Fine Tuning                                          uncertainty quality for efficiency. We propose ST-LoRA, a parameter-efficient ensemble framework
+Uncertainty Quantification                           that constructs diverse ensemble members from a single training trajectory by combining Low-
+Low Rank Adaptation                                  Rank Adaptation (LoRA) with snapshot ensembling. Each member shares a frozen pretrained
+Efficient Ensembles                                  backbone and differs only in its lightweight low-rank adapters, reducing trainable parameters to
+                                                     less than 10% of the full model while preserving ensemble diversity. We conduct a comprehensive
+                                                     evaluation across two agricultural datasets - GrowliFlower-L (cauliflower, close-range/open field) and
+                                                     BUP20 (sweet pepper, close-range/glasshouse) - using SegFormer and Mask2Former architectures.
+                                                     Our evaluation covers in-distribution performance, calibration under distribution shift, and out-of-
+                                                     distribution detection. Extensive ablation reveals that feed-forward layers are the critical LoRA target
+                                                     for dense prediction - contrary to the attention-only convention established in language models.
+                                                     ST-LoRA matches or exceeds full-rank ensembles in segmentation accuracy and calibration across
+                                                     both datasets and architectures, while significantly reducing training time, inference latency, memory
+                                                     footprint, and storage requirements. Compared to efficient baselines including Snapshot Ensemble,
+                                                     MC Dropout, and Deep Deterministic Uncertainty, ST-LoRA consistently matches or outperforms
+                                                     them in image/pixel level out-of-distribution detection, calibration stability under distribution shift,
+                                                     and cross-seed variance, while requiring significantly fewer parameters and lower computational
+                                                     overhead. These results indicate that LoRA efficient ensemble adaptation is not merely a coarse
+                                                     approximation to full-rank ensembling, but rather a highly effective approach that offers a compelling
+                                                     efficiency-performance trade-off, making it a strong and practical competitor for uncertainty-aware
+                                                     agricultural vision systems.
+
+
+
+1. Introduction                                                                becomes essential. Uncertainty quantification (UQ) plays a
+                                                                               key role by indicating when predictions are trustworthy and
+    Digital agriculture powered by sensor data and Ma-                         when human oversight is needed. Unlike point estimates, UQ
+chine Learning (ML) offers promising tools to optimize                         enables probabilistic predictions that help diagnose issues
+current practices and explore innovative solutions for fu-                     arising from the data, the model, or both. In supervised
+ture food production. Deep Neural Networks (DNN), in                           learning, models generalize from labelled data to unseen
+particular, excels at processing large sensor-based datasets
+                                                                               examples, an inductive process that introduces epistemic un-
+to uncover meaningful patterns Attri, Awasthi, Sharma and
+                                                                               certainty (i.e., model uncertainty) due to limited knowledge
+Rathee (2023). This capability has enabled a range of im-                      about the underlying data-generating process. In contrast,
+pactful applications, including crop classification Teixeira,                  aleatoric uncertainty (i.e., data uncertainty) stems from in-
+Morais, Sousa and Cunha (2023), plant growth modeling and                      herent noise and variability in the data. Unlike epistemic
+forecasting Drees, Weber, Rußwurm and Roscher (2022);                          uncertainty which can in principle be reduced with more data
+Drees, Demie, Paul, Leonhardt, Seidel, Döring and Roscher
+                                                                               or improved models, aleatoric uncertainty is irreducible, re-
+(2024); Quan, Feng, Lv, Wang, Zhang, Liu and Yuan (2019),
+                                                                               gardless of model capacity or training set size. Gawlikowski,
+disease detection Mob (2025), yield estimation Menon, Ar-                      Tassi, Ali, Lee, Humt, Feng, Kruspe, Triebel, Jung, Roscher,
+avinth, Sankaran and Kiran (2025), and building foundation                     Shahzad, Yang, Bamler and Zhu (2023); Hüllermeier and
+models for enhancing the performance on various down-                          Waegeman (2019).
+stream tasks by using multi-modalal sensory inputs Att
+                                                                                   Among existing UQ methods, Deep Ensembles Laksh-
+(2025) .
+                                                                               minarayanan, Pritzel and Blundell (2017) are widely re-
+    As ML models become more integrated into agricul-                          garded as the most commonly used method due to their
+tural workflows, evaluating the quality of their predictions                   strong calibration, predictive performance, and ability to
+    ∗ Corresponding author                                                     decompose total uncertainty into its epistemic and aleatoric
+   ∗∗ Principal corresponding author
+                                                                               components. However, they are computationally expensive,
+        mibrahi2@uni-bonn.de (M. Farag)                                        multiplying both training time and memory footprint by the
+     ORCID (s): 0000-0001-7511-2910 (M. Farag)
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                Page 1 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Figure 1: ST-LoRA for Efficient Uncertainty Quantification. The upper part illustrates the fine-tuning process of the semantic
+segmentation model, where both the input image and ground truth (for simplicity we overlay the ground truth mask over the input
+image) are provided. Only ST-LoRA modules are fine-tuned, while the rest of the model remains frozen. During inference, an
+ensemble of ST-LoRA-adapters is applied to the input used to estimate both aleatoric and epistemic uncertainty. The summation
+denotes the total predictive uncertainty, and yellow/purple represent high/low pixel-wise uncertainty.
+
+
+
+ensemble size, an increasingly critical limitation as mod-       Recent work has begun to explore this direction for uncer-
+ern architectures scale to billions of parameters and Vi-        tainty quantification Halbheer, Mühlematter and Schindler
+sion Transformers Vaswani, Shazeer, Parmar, Uszkoreit,           (2024); Balabanov and Linander (2024), freezing the shared
+Jones, Gomez, Kaiser and Polosukhin (2017) become the            backbone and constructing diverse members through differ-
+dominant backbone for dense prediction tasks. Snapshot           ent low-rank initializations. However, existing efforts have
+ensembling Huang, Li, Pleiss, Liu, Hopcroft and Weinberger       been limited classification tasks at image level, with narrow
+(2017) addresses the training cost by collecting 𝑀 check-        ablation studies that leave the effect of key hyperparameters
+points from a single cosine-annealing trajectory, reducing       largely unexplored. Dense prediction tasks such as semantic
+training time by a factor of 1∕𝑀 . However, at deployment        segmentation, which impose stricter demands on spatial
+time, the snapshot ensembling is affected by large inference     representations and pixel-level calibration, remain entirely
+latency and memory footprint due to the need of maintaining      unaddressed.
+𝑀 full model replicas.                                               To fill this gap, we introduce and explore Single Trajec-
+    The same scaling pressure that makes deep ensembles          tory LoRA (ST-LoRA), a lightweight ensemble-based exten-
+prohibitive also affects standard fine-tuning. As pretrained     sion of LoRA ensemble method for pixel-wise uncertainty
+vision and language models grow larger, adapting them            quantification that constructs the members from a shared
+to downstream tasks becomes increasingly costly in both          pretrained vision backbone. Illustrated in Figure 1., our
+compute and storage. Parameter-efficient fine-tuning offers a    method not only outperforms the Full Rank Ensemble (FRE)
+principled solution to this bottleneck. Low-Rank Adaptation      1 on calibration and segmentation quality but also with
+
+(LoRA) Hu, Wallis, Allen-Zhu, Li, Wang, Wang, Chen et al.,       significantly lower computational overhead.
+originally developed for large language models, injects train-       Our main contributions are:
+able low-rank matrices into the frozen layers of a pretrained         1 We use this terminology to refer to the snapshot ensemble but by using
+backbone, dramatically reducing the number of trainable          the full rank instead of lower rank weight matrices.
+parameters and training time.
+    This naturally has raised the question of whether LoRA
+adapters can serve as ensemble members in their own right.
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                  Page 2 of 28
+                               One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+        Contributions                                                          2. Related Work
+         • We introduce ST-LoRA, which combines                                    In this section, We begin with a general overview of
+           LoRA adapters with snapshot ensembling to                           uncertainty in machine learning, then follow the uncertainty
+           reduce training time, parameters, and inference                     pipeline through its two building blocks — representation,
+           latency while matching or outperforms full-                         and quantification — before reviewing the limitations of
+           rank ensemble’s calibration and segmentation                        existing approaches that motivate this work.
+           quality.                                                            Uncertainty in ML can be addressed from two main per-
+           • We verify the efficiency claims on a real edge                    spectives. One common approach assumes that predictive
+             hardware, which supports our findings and                         uncertainty can be decomposed into epistemic (model) and
+             claims.                                                           aleatoric (data) components, each estimated independently
+                                                                               Shaker and Hüllermeier (2021). An alternative perspective
+           • We show through extensive ablation that feed-                     challenges the validity of this decomposition Hüllermeier
+             forward layers are important LoRA target in                       (2022), focusing instead on estimating total predictive un-
+             vision transformers for dense prediction, con-                    certainty to ensure model reliability Angelopoulos and Bates
+             trary to LLM practice.                                            (2021). As noted by Gruber, Schenk, Schierholz, Kreuter
+                                                                               and Kauermann (2023), the origin and categorization of
+           • We provide a practitioner’s guide for config-                     uncertainty in ML remain ambiguous, with additional fac-
+             uring ST-LoRA across datasets and architec-                       tors such as missing data or deployment in dynamic envi-
+             tures, grounded in ablation findings on two                       ronments contributing to a more complex uncertainty land-
+             crop types and two backbones.                                     scape.
+           • ST-LoRA achieves strong competitive per-                          Uncertainty Evaluation. Evaluating UQ methods is non-
+             formance with the low cross-seed variance                         trivial, as no ground-truth uncertainty labels exist for model
+             across in-distribution evaluation, distribution                   predictions. Instead, evaluation relies on indirect schemes
+             shift, and near/far out-of-distribution detection                 that probe whether uncertainty estimates are meaningful
+             against Snapshot Ensemble, MC Dropout, and                        and actionable in practice. Following Hofman, Sale and
+             DDU baselines.                                                    Hüllermeier (2025a), four paradigms have been established:
+                                                                               calibration under distribution shift Moreno-Torres, Raeder,
+    The rest of this article is organized as follows. Section                  Alaiz-Rodríguez, Chawla and Herrera (2012) assesses whether
+2 reviews research gaps in uncertainty estimation for agri-                    confidence scores remain reliable when imaging conditions
+cultural machine learning. Section 3 introduces the math-                      change — critical in agricultural settings where lighting and
+ematical background and presents the proposed ST-LoRA                          weather vary; OoD detection Salehi, Mirzaei, Hendrycks,
+approach. Section 4 describes the experimental setup while                     Li, Rohban and Sabokrou (2021) identifies semantically
+Section 5 shows the experimental results, organized into                       novel inputs, flagging them for human review rather than
+four evaluation settings: 1) benchmarking ST-LoRA against                      producing overconfident predictions; selective prediction
+FRE in terms of segmentation quality, calibration, and com-                    Xin, Tang, Yu and Lin (2021) extends this by allowing ab-
+putational efficiency (Section 5.1); 2) an ablation study                      stention on any low-confidence sample, preferring a partial
+on the most influential hyperparameters (Section 5.2); 3)                      prediction over a confident wrong one; and active learning
+an assessment of calibration robustness under distribution                     Bachman, Sordoni and Trischler (2017) guides annotation
+shift (Section 5.3); and 4) a comparison with state-of-the                     by prioritizing uncertain samples, though this is orthogonal
+art methods covering in-distribution performance, covariate                    to our deployment-oriented focus. This work evaluates
+shift, and out-of-distribution (OoD) detection (Section 5.4).                  the first three schemes, as they directly assess prediction
+Section 6 presents the final remarks and Section 7 concludes                   reliability in real-world agricultural deployment.
+the paper. Additional analysis and implementation details                      Uncertainty Representation for UQ falls into two pri-
+are provided in the Appendix A.                                                mary categories: stochastic and deterministic. Stochastic
+    Through this extensive evaluation, we demonstrate that                     representation captures epistemic uncertainty by modeling a
+ST-LoRA 2 achieves competitive uncertainty quantification                      second-order distribution over model parameters or outputs
+and segmentation quality relative to both full-rank and effi-                  Hofman, Sale and Hüllermeier (2025b). In contrast, de-
+cient SOTA methods, while offering substantial advantages                      terministic represents uncertainty directly through distribu-
+in computational efficiency, storage footprint, and deploy-                    tions over latent representations Postels, Segù, Sun, Sieber,
+ment flexibility.                                                              Van Gool, Yu and Tombari (2022).3 .
+                                                                               Uncertainty Quantification Methods. Stochastic methods
+       2 Offical code is available at: https://github.com/MohamedFarag21/ST_
+                                                                               approximate Bayesian Neural Networks (BNNs), tackling
+LoRA
+                                                                                   3 This is not an exhaustive list. Other notable approaches include
+
+                                                                               generative models, credal sets, and Conformal Prediction (CP) Hüllermeier
+                                                                               and Waegeman (2019), as well as Laplace Approximation (LA) Laplace
+                                                                               (1774) and Evidential Deep Learning (EDL) Sensoy, Kaplan and Kandemir
+                                                                               (2018), which are increasingly explored in recent literature.
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                            Page 3 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+the intractability of posterior inference through techniques     adapters can serve as lightweight ensemble members over a
+like Monte Carlo Dropout (MC-Dropout) Gal and Ghahra-            shared frozen backbone, preserving ensemble diversity.
+mani (2015), Ensemble Learning Lakshminarayanan et al.               Closely related to our work, Paul, Quercia, Fortuin, Nöh
+(2017), and Flipout Wen, Vicol, Ba, Tran and Grosse (2018).      and Scharr (2024) explored adapter-based techniques com-
+Deterministic methods - sampling free approaches, esti-          bined with Bayesian inference for uncertainty estimation in
+mate uncertainty in a single forward pass by treating model      monocular depth estimation, while Onal, Flöge, Caldwell,
+weights as fixed. Recent advances in Deterministic Un-           Sheverdin and Fortuin applied a Bayesian framework with
+certainty Modeling (DUMs) Mukhoti, Kirsch, van Amers-            LoRA to quantify uncertainty in large language models.
+foort, Torr and Gal (2023); van Amersfoort, Smith, Teh           Recent efforts to investigate the suitability of LoRA en-
+and Gal (2020); Liu, Lin, Padhy, Tran, Bedrax-Weiss and          sembles for uncertainty estimation have been presented in
+Lakshminarayanan (2020); Benkert, Prabhushankar and Al-          Halbheer et al. (2024) and Balabanov and Linander (2024).
+Regib (2024) achieve reliable estimates by regularizing la-      However, these studies share several limitations that moti-
+tent representations for smoothness and bi-Lipschitz conti-      vate our work. First, they are restricted to image classifica-
+nuity, while avoiding feature collapse. These approaches of-     tion and Natural Language Processing (NLP) benchmarks,
+fer lower computational overhead however, DUMs can suffer        leaving open whether LoRA ensemble uncertainty estima-
+under distribution shifts and may negatively impact predic-      tion transfers to dense prediction tasks where uncertainty
+tive accuracy due to the smoothness constraints imposed on       is a spatial field of pixel-wise distributions requiring class-
+the learned representations Postels, Segu, Sun, Gool, Yu and     aware calibration metrics, region-level OoD detection —
+Tombari (2021). Hence more efforts focused on enhancing          none of which have been evaluated. Second, while Halb-
+and exploring more efficient ensemble strategies.                heer et al. (2024) showed that LoRA Ensemble performs
+     Efficient Ensembles. Post-hoc ensemble methods like         well against other uncertainty the investigation of LoRA
+Checkpoint Ensembles (CE) Chen, Lundberg and Lee (2017)          hyperparameters has been limited which heavily affects the
+and Snapshot Ensembles (Snap-E) Huang et al. (2017)              performance. Third, existing work retains M-fold training
+reduce training cost by saving intermediate model states         cost through independent member initialization, treating
+during a single run. In contrast, integrated ensemble meth-      snapshot ensembling as a weaker alternative rather than a
+ods, including Packed Ensembles (PE) Laurent, Lafage,            complementary mechanism. Finally, while prior layer place-
+Tartaglione, Daniel, Martinez, Bursuc and Franchi, Multi-        ment studies compare coarse blocks such as attention versus
+Input Multi-Output (MIMO) Havasi, Jenatton, Fort, Liu,           attention with MLP, fine-grained component-level ablation
+Snoek, Lakshminarayanan, Dai and Tran, and Batch Ensem-          remains absent, and the optimal configuration in classifica-
+bles (BE) Wen, Tran and Ba, embed ensembling into the            tion settings does not transfer to vision transformer encoders
+architecture itself. For instance, PE uses group convolutions    used for segmentation. Finally Farag, Emam, Leonhardt and
+for efficient computation, MIMO extracts sub-networks from       Roscher (2025) have shown that DEs and MC-Dropout are
+a shared backbone, and BE represents weights using a shared      the most commonly used methods for uncertainty estimation
+matrix modulated by rank-one factors. Finally, MC-Dropout        in agricultural segmentation. This reveals a significant gap
+provides a lightweight stochastic alternative by activating      in exploring alternative methods that offer a better trade-off
+dropout at inference time.                                       between computational efficiency and predictive reliability.
+     While these methods improve the efficiency of uncer-        In conclusion we observe the following gaps:
+tainty estimation, several challenges remain. Post-hoc en-
+sembles reduce training time but do not lower inference cost
+or memory usage, as each ensemble member must be eval-
+uated independently. Integrated ensemble approaches often
+require architectural modifications, which can be complex
+and potentially degrade the base model’s performance; for
+instance, the group convolutions used in Packed Ensembles
+(PE) are incompatible with Vision Transformer (ViT) archi-
+tectures Dosovitskiy, Beyer, Kolesnikov, Weissenborn, Zhai,
+Unterthiner, Dehghani, Minderer, Heigold, Gelly et al.. MC-
+Dropout tends to be miscalibrated on in-distribution data
+and overly confident on out-of-distribution inputs, limiting
+its applicability in safety-critical settings Lakshminarayanan
+et al. (2017).
+     In the text domain, LoRA Hu et al. has been particularly
+impactful, enabling fine-tuning on downstream tasks at a
+fraction of the computational cost of full fine-tuning. This
+efficiency has motivated its extension to ensemble construc-
+tion: rather than training 𝑀 independent full models, LoRA
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                      Page 4 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+     Research Gaps                                                  Table 1
+        • LoRA ensembles are untested in vision UQ.                 Key notation used in this work.
+          Existing work is confined to image classifi-               Symbol         Description
+          cation and NLP benchmarks, with no evalua-                 Data and Labels
+          tion on dense prediction tasks or agricultural             X            Input image
+          datasets.                                                  𝒚𝑙           Label for class 𝑙
+                                                                     D, 𝐿, 𝐻, 𝑊 Dataset, classes, height, width
+        • Critical deployment properties are ne-
+          glected. No prior LoRA-based UQ method                     Model and Parameters
+                                                                     𝜃0           Frozen pre-trained weights
+          evaluates calibration under distribution shift
+                                                                     Δ𝜃𝑚          Low-rank update for member 𝑚
+          for dense prediction tasks which is essential for          A𝑚 , B 𝑚     ST-LoRA decomposition matrices
+          safe real-world deployment.                                𝑟, 𝛼, 𝑀      Rank, scaling factor, ensemble size
+                                                                     F𝜃           Segmentation model
+        • Layer selection is an open question. All prior
+                                                                     𝕄𝑟           Low-rank subspace
+          work applies LoRA exclusively to attention
+          projections following LLM conventions, with-               Uncertainty
+          out investigating whether feed-forward layers              TU, EU, AU     Total, epistemic, aleatoric uncertainty
+          are more effective in vision transformers.                 P(Y ∣ X )      Predictive posterior
+                                                                     P(𝜃𝑚 ∣ D)      Posterior weight for member 𝑚
+        • Agricultural UQ lacks efficient alternatives.              𝜓(X )
+          Uncertainty estimation in agricultural seg-                DDU-specific
+          mentation relies solely on expensive meth-                 Z            Latent feature vector
+          ods Farag et al. (2025), with no calibration-              Q(Z ∣ 𝑙)     Class-conditional GMM density
+          aware, resource-efficient solution available.              𝝁𝑙 , 𝚺𝑙      GMM mean and covariance
+                                                                     Π(𝑙)         Class prior probability
+
+
+3. Methodology
+                                                                    caution or abstained from entirely. For clarity, we adopt the
+    In this section we begin by establishing notation, then         following notation throughout this work. Scalars are denoted
+briefly review the uncertainty representations used in our          by lowercase letters (e.g., 𝑟, 𝜏), vectors by bold lowercase
+evaluation, before introducing the ST-LoRA formulation              letters (e.g., y ), and matrices by bold uppercase letters (e.g.,
+and its integration into semantic segmentation architectures.       X ). Model parameters are denoted by 𝜃, with 𝜃0 indicat-
+                                                                    ing frozen pre-trained weights. Probability distribution is
+Problem Formulation: Pixel-Wise Classification                      represented by P(⋅) and Gaussian Mixture Model (GMM)
+    Let F𝜃 ∶ ℝ𝐻×𝑊 ×3 → ℝ𝐻×𝑊 ×𝐿 be a pre-trained                     Dempster, Laird and Rubin (1977a) is represented as Q(⋅),
+segmentation model mapping an input image X ∈ ℝ𝐻×𝑊 ×3               and functions or models by calligraphic letters (e.g., F, G,
+to pixel-wise logits over 𝐿 classes, where 𝐻 and 𝑊 denote           H). Sets and spaces are denoted by blackboard bold letters
+image height and width. For each pixel (𝑖, 𝑗), the predicted        (e.g., ℝ, 𝕄). A summary of the main symbols is provided in
+class probability vector is obtained by applying a softmax:         Table 1.
+                            (        )
+         ̂ )𝑖𝑗 = softmax F𝜃 (X )𝑖𝑗 ∈ Δ𝐿−1 ,
+       P(𝒚|X                                             (1)        3.1. Uncertainty Representation and
+                                                                         Quantification
+where Δ𝐿−1 is the (𝐿 − 1)-dimensional probability simplex.
+                                                                         In this work, we consider two uncertainty representation
+The predicted class label is then:
+                                                                    frameworks: 1) stochastic representation (e.g. second-Order
+      𝒚̂ 𝑖𝑗 = arg max P(𝒚|X
+                        ̂ )𝑖𝑗                                 (2)   Distributions) which explicitly model uncertainty over pre-
+             𝑙∈{1,…,𝐿}                                              dictions and 2) latent space distributions which represent
+                                                                    uncertainty directly through distributions over latent space
+The ground-truth segmentation mask Y ∈ {1, … , 𝐿}𝐻×𝑊                (i.e., feature space). We briefly describe their mathematical
+assigns a single class label to each pixel. The model is trained    formulation in the following subsections.
+by minimizing the cross-entropy loss over all pixels:
+                                                                    3.1.1. Second-Order Distributions
+                  1      ∑
+                         𝐻 ∑
+                           𝑊
+                                                                        Stochastic methods represent epistemic uncertainty by
+      L(𝜃) = −              log P(𝒚|X
+                                  ̂ )𝑖𝑗 𝒀 𝑖𝑗 .                (3)   modeling a distribution over model parameters. The total
+                 𝐻𝑊 𝑖=1 𝑗=1
+                                                                    predictive uncertainty (TU) is decomposed as TU ≈ AU +
+Under this formulation, uncertainty quantification amounts          EU, where AU and EU denote aleatoric and epistemic un-
+to estimating, for each pixel (𝑖, 𝑗), how reliable 𝒚̂ 𝑖𝑗 is —       certainty respectively. Using Shannon entropy Hofman et al.
+distinguishing pixels where the model is confidently correct
+from those where the prediction should be treated with
+
+Farag et al.: Preprint submitted to Elsevier                                                                           Page 5 of 28
+                               One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+(2025b):                                                                             retains sufficient task-relevant information for meaningful
+                                                                                     uncertainty estimation. An illustration is shown in Figure 2.
+                  ∑
+                  𝐿
+                                                                                         Deep Ensembles Lakshminarayanan et al. (2017); Loaiza-
+      TU ≈ −             P(𝒚 𝑙 ∣ X test ) log2 P(𝒚 𝑙 ∣ X test ),            (4)      Ganem, Villecroze and Wang (2025) approximate Bayesian
+                   𝑙=1
+                                                                                     inference by treating independently trained models as sam-
+where P(𝒚 𝑙 ∣ X test ) is the probability of class 𝑙 under the                       ples from the parameter posterior P(𝜃 ∣ D). The ensemble
+predictive posterior. The aleatoric component is the expected                        predictive posterior is:
+entropy across ensemble members:                                                                           ∑
+                                                                                                           𝑀
+                                                                                            P(Y ∣ X ) =          P(𝜃𝑚 ∣ D) P𝜃𝑚 (Y ∣ X ).                (9)
+           ∑
+           𝑀                  ∑
+                              𝐿                                                                            𝑚=1
+AU ≈ −           P(𝜃𝑚 ∣ D)           P𝜃𝑚 (𝒚 𝑙 ∣ X test ) log2 P𝜃𝑚 (𝒚 𝑙 ∣ X test ),
+                                                                                     While effective, this requires training and storing 𝑀 full
+           𝑚=1                 𝑙=1
+                                                                                     model replicas, making it prohibitive for large vision trans-
+                                                                            (5)
+                                                                                     formers.
+and epistemic uncertainty follows as EU ≈ TU − AU.                                        Hence, we use snapshot approach to construct an ensem-
+                                                                                     ble from a single training trajectory, reducing the effective
+3.1.2. Latent Space Distributions                                                    training cost by a factor of 1∕𝑀 compared to training 𝑀 inde-
+    Deterministic methods such as DDU Mukhoti et al.                                 pendent models. A cosine annealing learning rate scheduler
+(2023) estimate uncertainty from the density of the input’s                          introduces cyclic variation in the learning rate, allowing the
+latent representation, without requiring multiple forward                            model to converge to distinct local minima within a single
+passes. A GMM is fitted per class on penultimate-layer                               run. At the end of each cycle, the current model weights
+features Z = F𝜃 (X ):                                                                are saved as a snapshot, and the final ensemble averages
+                                                                                     predictions across all 𝑀 collected checkpoints Huang et al.
+                                                             𝑛                       (2017). Figure 4 illustrates the learning rate schedule and the
+      P(Z test ∣ 𝑙) = N(Z ; 𝝁𝑙 , 𝚺𝑙 ),               Π(𝑙) = ∑ 𝑙 .           (6)
+                                                             𝑙 ′ 𝑛𝑙 ′                corresponding snapshot collection points.
+                                                                                          Each ensemble member 𝑚 ∈ {1, … , 𝑀} in ST-LoRA
+Epistemic uncertainty is then the negative log-likelihood                            for Semantic Segmentation is defined by a distinct adapter
+under the class-marginalized mixture:                                                initialized from a different seed, yielding the uniform mix-
+                                                                                     ture:
+                                     ∑
+                                     𝐿
+      EU(X test ) ∶= − log                 Q(Z test ∣ 𝑙) Π(𝑙),              (7)                            1 ∑
+                                                                                                                 𝑀
+                                     𝑙=1                                                    P(Y ∣ X ) ≈         P        (Y ∣ X ),                    (10)
+                                                                                                           𝑀 𝑚=1 𝜃0 +Δ𝜃𝑚
+where a high value indicates the sample lies far from the
+                                                                                     from which TU, AU, and EU are computed pixel-wise using
+training manifold. Aleatoric uncertainty is estimated as the
+                                                                                     Equations (1)–(3).
+categorical entropy of the softmax output, consistent with
+Eq 1.
+                                                                                     4. Experimental Setup
+3.2. ST-LoRA: Efficient Ensemble Learning via                                        4.1. Datasets and Pre-Processing
+     Low-Rank Adaptation                                                                 BUP20 4 sweet pepper phenotyping dataset Smitt, Hal-
+    We start by injecting LoRA trainable low-rank matrices                           stead, Zaenker, Bennewitz and McCool (2021), which con-
+into frozen layers. This constrains members’ diversity to a                          tains high-resolution (1280 × 720) video frames captured
+learned task-relevant subspace, analogous to how Principal                           by a Unmanned Ground Vehicle (UGV) in a commercial
+Component Analysis (PCA) Shlens (2014) identifies low-                               greenhouse. A subset of 279 non-overlapping frames is man-
+dimensional structure — but unlike PCA, ST-LoRA learns                               ually annotated for both semantic and instance segmentation
+this weight subspace end-to-end via gradient descent, align-                         across six classes: background, red, yellow, green, mixed-
+ing it with downstream objectives. For a linear layer with                           red, and mixed-yellow peppers. The dataset poses real-
+weight 𝜃0 ∈ ℝ𝑑×𝑘 , the adapted output is:                                            world challenges, including occlusions, lighting variation,
+                                                                                     background clutter, and class overlap, making it a strong
+      H = 𝜃0 X + Δ𝜃X = 𝜃0 X + BAX ,                                         (8)
+                                                                                     benchmark for uncertainty-aware models in agriculture. All
+where A ∈ ℝ𝑟×𝑘 and B ∈ ℝ𝑑×𝑟 with 𝑟 ≪ min(𝑑, 𝑘),                                      images are normalized using the mean [0.485, 0.456, 0.406]
+reducing trainable parameters from 𝑑𝑘 to 𝑟(𝑑 + 𝑘).                                   and the standard deviation [0.229, 0.224, 0.225], consistent
+    This design is theoretically motivated by two obser-                             with the ADE20K dataset Zhou, Zhao, Puig, Xiao, Fidler,
+vations. First, Aghajanyan, Gupta and Zettlemoyer (2021)                             Barriuso and Torralba (2019).
+show that pre-trained models have a low intrinsic dimension,                             GrowliFlower 5 Kierdorf, Junker-Frohn, Delaney, Olave,
+suggesting low-rank reparameterizations can match full-                              Burkart, Jaenicke, Muller, Rascher and Roscher (2023) is an
+rank fine-tuning. Second, Hu et al. demonstrate that Δ𝜃 is                               4 https://agrobotics.uni-bonn.de/sweet_pepper_dataset/index.html
+                                                                                         5 https://phenoroam.phenorob.de/geonetwork/srv/eng/catalog.search#
+strongly correlated with 𝜃0 , implying the low-rank subspace
+                                                                                     /metadata/cb328232-31f5-4b84-a929-8e1ee551d66a
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                 Page 6 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Figure 2: LoRA Ensemble Visual Interpretation. A) a DL model once fully trained, the hypothesis space collapses (represented
+by the gray shade) ℍ to a single deterministic parameter 𝜃0 leaving no ability to explore the hypothesis space without retraining.
+B), the standard ensembling approach is shown, where multiple models are independently updated via full-rank weight shifts Δ𝜃
+based on the downstream task. C) by sampling or training ensemble members using additive low-rank perturbations, this defines
+a constrained subspace 𝕄 ⊂ ℍ within which ensemble members can be efficiently realized. As such, LoRA ensemble allows us
+to explore the local function space around 𝜃0 and quantify uncertainty without incurring the cost of full retraining or high-rank
+diversity. The rank of these perturbations controls the expressive power and the quality of the epistemic uncertainty representation.
+
+
+
+
+Figure 3: Dataset samples. Left: Sweet pepper (UGV) with semantic segmentation masks for different pepper classes. Right:
+Cauliflower (UAV) with instance masks; we convert these to binary semantic masks (plant vs. soil) for our experiments.
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                           Page 7 of 28
+                            One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Figure 4: Cosine annealing learning rate schedule used for snapshot ensemble construction. Each cycle drives the model toward
+a distinct local minimum, and a checkpoint is saved at the end of each cycle (marked by vertical dashed lines). The resulting 𝑀
+snapshots form the ensemble members without requiring 𝑀 independent training runs.
+
+
+
+open-source dataset acquired in 2020 and 2021 by flying                     a mask-classification problem, using a shared transformer-
+a UAV, It contains 14K samples of cauliflower plants with                   based7 encoder and two decoders: a convolutional decoder
+multiple modalities available, including RGB and multi-                     for pixel-wise upsampling and a transformer decoder for
+spectral images. The dataset also includes a comprehensive                  predicting mask embeddings. Lastly, SegFormer is a task-
+range of annotations, making it useful for computer vision                  specific (non-universal) segmentor tailored primarily for
+tasks such as classification and segmentation. All images                   semantic segmentation, whereas Mask2Former is a univer-
+are resized to 256 × 256 6 and normalized to be in range                    sal segmentor capable of handling semantic, instance, and
+[0, 1]. No augmentation has been used while it helps the                    panoptic segmentation within a unified framework.
+ensembles to get more diverse, however we isolate its effect                    To enable efficient and scalable uncertainty quantifi-
+and investigate more its effect at Section 5.3. Furthermore,                cation, we integrate LoRA into selected modules of both
+we filter out samples that include only soil at the early growth            architectures. We first choose the target components (e.g.,
+stages. Samples from both datasets are shown in Figure 3.                   MLP layers or Multi-Head Attention blocks) and specify
+                                                                            a low rank (e.g., r=8). The remaining model parameters
+4.2. LoRA Adaptation for Segmentation Models                                can either remain frozen or be partially fine-tuned alongside
+    In this work, we focus on Vision Transformer (ViT)–                     the LoRA adapters, depending on the configuration. During
+based segmentation models for two reasons. First, our aim                   inference, only the LoRA adapter and partly fine tuned
+is to study the effect of low-rank adaptation in a setting                  weights are loaded, enabling faster execution and reduced
+that reflects current practice, and recent advances in seman-               memory usage. This design supports the construction of
+tic segmentation have shifted heavily toward transformer-                   lightweight ensembles with significantly lower computa-
+based architectures, such as SegFormer, DPT, MaskFormer,                    tional cost, making the approach well suited for resource-
+Mask2Former, EoMT, and SAM Xie, Wang, Yu, Anand-                            constrained agricultural robotics.
+kumar, Alvarez and Luo (2021); Cheng, Misra, Schwing,
+Kirillov and Girdhar (2021a); Cheng, Schwing and Kir-                       4.3. Evaluation Schemes and Metrics
+illov (2021b); Ranftl, Bochkovskiy and Koltun (2021); Kir-                      We organize our evaluation metrics into three categories
+illov, Mintun, Ravi, Mao, Rolland, Gustafson, Xiao, White-                  aligned with the evaluation schemes described above: pre-
+head, Berg, Lo et al. (2023); Kerssies, Cavagnero, Hermans,                 dictive performance, computational efficiency, and uncer-
+Norouzi, Averta, Leibe, Dubbelman and de Geus (2025).                       tainty quantification.
+Evaluating LoRA in this context therefore aligns our analysis
+with the predominant direction of modern segmentation                       4.3.1. Predictive Performance and Computational
+research. Second, although LoRA can in principle be applied                        Efficiency
+to convolutional networks, its formulation and most em-                         We assess segmentation quality using mean Intersection
+pirical validations have been developed around transformer                  over Union (mIoU). The mIoU measures the average overlap
+blocks.                                                                     between predicted and ground-truth segments across all
+    We adopt SegFormer and Mask2Former as our two                           classes. We evaluate computational cost through multiple
+primary models due to their distinct design philosophies.                   dimensions: (1) number of trainable parameters, and (2)
+SegFormer follows a per-pixel classification paradigm, com-                 FLOPs (floating-point operations per forward pass). These
+bining a ViT-based encoder with a lightweight MLP de-                       metrics are essential for assessing deployment feasibility on
+coder. In contrast, Mask2Former frames segmentation as                      resource-constrained agricultural platforms.
+    6 For images/masks we use bi-linear/nearest interpolations during re-      7 A convolutional encoder can also be used.
+
+sizing.
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                 Page 8 of 28
+                           One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+4.3.2. Uncertainty Method Quality Assessment                            4.4. Design rationale
+     Robustness under Distribution Shift. Dataset shift oc-                  Our evaluation spans three dimensions - predictive per-
+curs when the joint distribution of training and test data dif-         formance, uncertainty quantification, and computational ef-
+fer, formally expressed as Ptrain (X , 𝒚) ≠ Ptest (X , 𝒚) Moreno-       ficiency - each assessed with appropriate metrics. The exper-
+Torres et al. (2012). Multiple shift types exist, including             imental stages are deliberately ordered so that each is moti-
+prior probability shift, concept shift, and covariate shift. This       vated by the findings of the previous one, building toward a
+work focuses on covariate shift, defined as:                            complete picture of ST-LoRA’s deployment readiness.
+                                                                             We begin with in-distribution performance (Section
+  Ptrain (𝒚|X ) = Ptest (𝒚|X )   but   Ptrain (X ) ≠ Ptest (X ), (11)   5.1), addressing the most fundamental question: can low-
+                                                                        rank adapters substitute full model replicas without mean-
+where the conditional relationship between inputs X and la-             ingful loss in accuracy or calibration? Establishing this is
+bels 𝒚 remains invariant, but the marginal input distribution           a prerequisite for everything that follows; if ST-LoRA fails
+shifts between training and test conditions. This scenario              here, its efficiency advantages are irrelevant.
+is particularly relevant for agricultural applications, where                Having confirmed in-distribution reliability, we turn to
+imaging conditions vary across seasons, weather, and light-             the ablation study (Section 5.2), which asks how ST-LoRA
+ing.                                                                    should be configured. Since prior work applies LoRA exclu-
+     To evaluate calibration robustness, we adopt the con-              sively to attention projections Hu et al.; Mühlematter, Halb-
+cept of breakdown point from robust statistics Loh (2025).              heer, Becker, Narnhofer, Aasen, Schindler and Turkoglu
+The breakdown point quantifies the maximum proportion                   (2024), we systematically investigate target components,
+of corrupted observations an estimator can tolerate before              rank, scaling factor, and dropout to explore the hyperparam-
+producing arbitrarily incorrect results. In our context, we as-         eter landscape for vision transformer segmentation. All sub-
+sess how calibration quality (measured by ECE) Guo, Pleiss,             sequent experiments use the configuration identified here.
+Sun and Weinberger (2017) computed with both 𝓁1 and                          With a validated and well-configured model, we assess
+𝓁∞ norms to capture average and worst-case miscalibration               its robustness under distribution shift (Section 5.3). Agricul-
+respectively and segmentation performance (measured by                  tural imaging conditions vary across seasons, weather, and
+mIoU) degrade as the severity of distribution shift increases.          lighting - a model that is well calibrated in-distribution but
+A robust UQ method should maintain relatively stable cali-              degrades rapidly under shift offers limited practical value.
+bration and performance across varying shift intensities.               This stage examines whether ST-LoRA’s calibration advan-
+     Out of Distribution (OoD) detection An essential                   tage is stable or fragile, and identifies which hyperparameter
+method for evaluating the quality of an uncertainty quan-               choices confer the greatest robustness.
+tification technique is to observe its response to these OoD                 Finally, comparison against efficient baselines (Section
+samples. This response reflects the model’s ignorance ex-               5.4) situates ST-LoRA within the broader landscape of un-
+pressed as high uncertainty about these points.                         certainty quantification methods, asking whether it matches
+     The problem of OoD detection can be formulated as                  or outperforms established alternatives - Snapshot Ensem-
+follows:                                                                ble, MC Dropout, and DDU 8 - across In distribution per-
+        {                                                               formance, robustness under distribution shift , and out-of-
+          ID,     if 𝜓(X 𝑛+1 ) ≥ 𝜏
+                                                          (12)          distribution detection. Together, these four stages demon-
+          OoD, if 𝜓(X 𝑛+1 ) < 𝜏                                         strate that ST-LoRA’s uncertainty estimates are not only ac-
+                                                                        curate in controlled conditions but practically reliable under
+    When X 𝑛+1 is declared , the OoD detector assigns a                 the challenging and variable conditions of real agricultural
+score to the sample by using the 𝜓 which is the scoring                 deployments.
+function, if it is greater than or equals 𝜏 it is considered
+ID, otherwise it is rejected and classified as OoD. For
+scoring we can use confidence, entropy, or any function                 5. Experiments and Results
+under the condition that it is able to differentiate between            5.1. In Distribution (ID) comparative analysis
+the classes or to rank them differently. Hence, OoD detection               We evaluate three model architectures (SegFormer-B2,
+can be treated as a binary classification problem, the only             SegFormer-B4, and Mask2Former Swin-Base 9 ) with three
+difference is that we lack the reference values for the OoD             uncertainty quantification approaches (Softmax baseline,
+samples. For out-of-distribution detection, we measure dis-             Full-Rank Ensemble, and ST-LoRA). Predictive perfor-
+crimination performance using the area under the receiver               mance is assessed via mIoU, calibration via ECE, and
+operating characteristic curve (AUCROC), which quantifies               computational efficiency via FLOPs and parameter count.
+the method’s ability to separate in-distribution from out-of-           Additionally, we quantify the deployment I/O overhead of
+distribution samples across all possible confidence thresh-             each ensemble strategy by measuring checkpoint loading
+olds.
+                                                                             8 To our knowledge this is the first time to introduce this method in
+
+                                                                        digital agriculture.
+                                                                             9 On BUP20, we target the query, value, key, and MLP for both models.
+
+                                                                        For GrowliFlower-L we target the query, value, and key only.
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                      Page 9 of 28
+                           One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 2
+Default training settings for Section 5.1. We use SegFormer B2/4 on GrowliFlower-L and Mask2Former (M2F)-Swin/B on
+BUP20.
+                                                     Pixel wise binary classification                Pixel wise multiclass classification
+ Category          Hyperparameter            Baseline                FRE / ST-LoRA                     Baseline / FRE, and ST-LoRA
+                   Name                                      GrowliFlower-L                                         BUP20
+                   Train                                         1381                                                124
+ Dataset           Validation                                     293                                                63
+                   Test                                           296                                                92
+                   Image size                                   256 × 256                                         1280 × 720
+ Pre-processing    Normalization                                  [0, 1]                        𝜇=[0.485, 0.456, 0.406], 𝜎=[0.229, 0.224, 0.225]
+                   Augmentation                                   None                                               None
+                   Architecture                           SegFormer (B2 / B4)                              Mask2Former (Swin-B)
+ Model             Pre-trained weights                         ImageNet                                          ADE20K
+                   LoRA rank                    —                         𝑟=8                                    — / 𝑟=8
+                   Epochs                      100                         100                                       100
+                   Optimizer                  Adam                        Adam                                      Adam
+                   Learning rate             1×10−4                 [2×10−4 , 2×10−2 ]                    2×10−4 / [2×10−5 , 2×10−3 ]
+                   LR schedule             Constant         Cosine annealing w/ warm restarts            Constant / Cosine annealing
+ Training
+                   Cycle length                —                        20 epochs                                 20 epochs
+                   Ensemble members            —                             5                                      —/5
+                   Batch size                  32                           32                                        4
+                   Early stopping        Patience = 100                     —                                         —
+                   Loss                                      Cross-entropy                                     Cross-entropy
+                   Weight decay                                   0.0                                                0.0
+                   Hardware                               NVIDIA A100 (80 GB)                              NVIDIA A100 (80 GB)
+
+
+
+
+Figure 5: GrowliFlower-L reliability diagram for ID calibration assessment. As shown in the figure, we compare four different
+settings for both model (e.g., FRE, ST-LoRA, single LoRA adapter, and Baseline model). The ensemble of ST-LoRA enhances
+calibration by uplifting the plot upwards which reduces the gap between confidence and empirical accuracy.
+
+
+
+latency on both GPU available by Google Colab and edge                          Table 3 reveals a consistent pattern across both datasets:
+hardware (Raspberry Pi 4B) 10 , comparing per-switch disk                   ensembling reduces mIoU on GrowliFlower-L but improves
+reads against in-memory adapter switching. Training set-                    it on BUP20 dataset while improving calibration on both
+tings can be shown in Table 2.                                              reflected by lower ECE compared to single-model coun-
+    10 NVIDIA T4 GPU has been used on the google colab, and Raspberry
+                                                                            terparts. This trade-off is expected, as ensemble averaging
+Pi 4B (Cortex-A72, 1.8 GHz, 8 GB RAM) as a representative of mid-range      smooths overconfident predictions.
+edge deployment hardware
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                     Page 10 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 3
+Segmentation accuracy and calibration across datasets, backbones, and ensemble methods. FRE refers to a snapshot ensemble
+built on top of a fully fine-tuned model, ↑: higher is better; ↓: lower is better, best result per metric is in bold. Δ is the relative
+change over the baseline; green: improvement, purple: degradation.
+                          Baseline                        FRE                                   ST-LoRA (ours)
+              Model
+                       mIoU(%) ↑ ECE ↓ mIoU(%) ↑ ΔmIoU(%) ECE ↓ ΔECE(%) mIoU(%) ↑ ΔmIoU(%) ECE ↓ ΔECE(%)
+              GrowliFlower-L (Cauliflower)
+              SgF-B4     88.6    0.0052        83.9   −5.3      0.0039      −25.0      84.5        −4.6    0.0027    −48.1
+              SgF-B2     87.8    0.0061        83.9   −4.4      0.0034      −44.3      84.7        −3.5    0.0052    −14.8
+              BUP20 (Sweet Pepper)
+              M2F        67.8    0.0112        67.1   −1.0      0.0030      −73.2      68.1        +0.4    0.0043    −61.6
+              SgF-B2     66.1    0.0028        70.0   +6.0      0.0048      +71.4      69.3         +5     0.0021     +25
+
+
+
+    Comparing ST-LoRA directly against FRE, ST-LoRA                      Table 4
+achieves competitive performance across both datasets and                Computational efficiency comparison. Latency and through-
+architectures. On BUP20, ST-LoRA achieves the best mIoU                  put are averages over three runs.
+among all methods with only a marginal ECE increase                        Approach            FLOPs (GMAC)          Train Params. (Million)
+relative to FRE. On GrowliFlower-L with SegFormer-B4,
+                                                                           Sgf-B4 (base)              12.54                    61.37
+ST-LoRA achieves the best ECE while also outperforming
+                                                                           FRE                        62.70                   306.84
+FRE in segmentation accuracy, demonstrating that low-rank                  ST-LoRA (ours)             64.78                   70.84
+adapters can effectively substitute full model replicas with-
+out meaningful performance loss.                                           Sgf-B2 (base)               5.34                   24.72
+    Furthermore, we use reliability diagrams Dimitriadis,                  FRE                        26.64                   123.61
+                                                                           ST-LoRA (ours)             27.64                   29.85
+Gneiting and Jordan (2021) to assess model calibration by
+plotting prediction confidence on the x-axis against empir-                M2F (base)                229.72                   108.77
+ical accuracy on the y-axis. A perfectly calibrated model                  FRE                        1148                     534
+follows the diagonal line 𝑦 = 𝑥, where accuracy equals                     ST-LoRA (ours)             1170                     116
+confidence at all prediction levels. Deviations below the
+diagonal indicate overconfidence (predictions are more con-
+fident than accurate), while deviations above indicate un-               cost shared by both methods due to the ensemble averaging
+derconfidence. Figure 5 reveals the substantial impact of                step11 .
+ensembling on calibration. Both the baseline and single ST-                  The latency reduction stems from the size asymmetry
+LoRA models exhibit severe overconfidence, with their reli-              between LoRA adapters and full model replicas: since each
+ability curves falling significantly below the diagonal across           adapter is significantly smaller than a full checkpoint, the
+most confidence bins. Ensembling significantly improves                  I/O overhead that typically bottlenecks sequential model
+calibration for both approaches: FRE and ST-LoRA curves                  loading becomes negligible. To verify this, we benchmark
+shift closer to the ideal diagonal, reducing the gap between             two loading strategies for Mask2Former checkpoints under
+predicted confidence and actual accuracy. FRE demonstrates               both FRE and ST-LoRA configurations, on Google colab
+marginally better calibration than ST-LoRA across most                   (network-mounted filesystem) and an edge device (Rasp-
+confidence bins, particularly in the 0.4–0.8 range. However,             berry Pi 4B, local ext4, 449 MB/s). The first strategy loads
+FRE exhibit underconfidence in the highest confidence bin                each checkpoint from disk before every forward pass, in-
+(0.8–1.0), where the curves rise above the diagonal. This                curring full I/O cost per ensemble member. The second
+suggests that when the ensembles are most correct, they are              strategy preloads all checkpoints into RAM once at startup,
+actually too conservative in their predictions. This under-              then switches between them in memory during inference,
+confidence at high confidence levels represents a different              eliminating repeated disk reads entirely.
+calibration failure mode that may require targeted post-                     Table 5 reports ensemble switching latency under se-
+processing techniques as mentioned in Wang, Gong and                     quential and preloaded strategies on server and edge hard-
+Wang (2023).                                                             ware. In the sequential setting, ST-LoRA reduces per-model
+    Beyond predictive quality, ST-LoRA is substantially                  loading time by 10× on the server and 127× on the edge
+more computationally efficient than FRE, as shown in Table               device, a direct consequence of its 78× smaller checkpoint
+4. It reduces trainable parameters, memory footprint and                 size. Under the preloaded strategy, ST-LoRA’s one-time
+inference latency, while maintaining comparable FLOPs a                  setup cost is 2.9× lower on the server and 163× lower on
+                                                                         the edge, reducing startup overhead from 4080 ms to just
+                                                                            11 LoRA adds more FLOPS as it introduces more mathematical opera-
+
+                                                                         tions.
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                 Page 11 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 5                                                            to similar solutions. We leave empirical validation of this
+Ensemble I/O latency (ms/model). Forward pass excluded.            hypothesis to future work.
+Best in bold.
+   Device     Strategy          FRE ST-LoRA (ours)
+                                                                         Less is More: ST-LoRA Match Full-Rank Quality
+              Sequential (ms) 1704.7          172.2                    ST-LoRA matches or exceeds FRE in segmentation
+    Colab            †
+               Setup (ms)      6402.0               2237.4             accuracy and calibration across both datasets and
+               Per switch (ms) 0.001                   8.0             architectures, while reducing trainable parameters,
+               Sequential (ms) 1017.0                  8.0             inference latency, and memory footprint confirming
+                                                                       that low-rank adapters are effective ensemble com-
+    Rasp. Pi Setup† (ms)     4080.0                    25.0
+                                                                       ponents for uncertainty-aware segmentation.
+             Per switch (ms) 0.001                    0.001
+   † One-time preloading cost
+                                                                       Having established that ST-LoRA is a viable and ef-
+   Sizes: FRE 4×431.8 MB,          ST-LoRA     4×5.5 MB    (78×
+   smaller).                                                       ficient alternative to full-rank ensembling, a natural ques-
+                                                                   tion follows: is the baseline configuration optimal, or can
+                                                                   targeted hyperparameter choices unlock further gains? We
+25 ms on the Raspberry Pi 4B. Once preloaded, per-switch           investigate this in the next subsection.
+latency is negligible on both methods and both devices with
+an advantage for ST-LoRA as the memory is much smaller.            5.2. Ablation Study of ST-LoRA’s
+These results demonstrate that ST-LoRA’s parameter effi-                Hyperparameters
+ciency translates directly into deployment efficiency, mak-            We conduct an extensive ablation study to identify the
+ing ensemble inference practical on resource-constrained           hyperparameters that most critically govern performance,
+hardware where full-rank ensemble loading would impose             stability, and parameter efficiency under ST-LoRA-based
+prohibitive I/O overhead.                                          ensemble fine-tuning. Given the architectural heterogeneity
+     While ensembling significantly enhances calibration, it       of our benchmark SgF-B2 on GrowliFlower-L versus M2F-
+comes at the cost of reduced segmentation accuracy. Both           Swin/B on BUP20, we treat each dataset/architecture pair
+effects stem from the same underlying mechanism, which             independently, as hyperparameter sensitivity may differ sub-
+is directly visible in the reliability diagrams of Figure 5. All   stantially across them. Our analysis focuses on three factors:
+single models exhibit overconfidence predicted probabilities       rank 𝑟, target components, and scaling factor 𝛼, which to-
+consistently exceed empirical accuracy because individual          gether govern the capacity, scope, and magnitude of the low-
+models tend to concentrate predictions in high-confidence          rank adaptation 12 . Each experiment varies a single factor
+bins regardless of whether those predictions are correct Guo       while holding all remaining settings fixed at the baseline
+et al. (2017). Ensemble averaging softens this behavior;           configuration as mentioned in Table 6, allowing the effect
+since the averaged probability across members is almost al-        of each choice to be isolated cleanly. The baseline is delib-
+ways lower than any individual member’s maximum, predic-           erately chosen as a reproducible standard reference rather
+tions are redistributed from overconfident high-probability        than a pre-optimized configuration, so that improvements
+bins into more moderate bins where confidence and accuracy         over it reflect genuine sensitivity rather than tuning artifacts.
+are better aligned. This redistribution moves the reliabil-        Interactions between hyperparameters are not explored, as
+ity curve upward toward the perfectly calibrated diagonal,         exhaustive combinatorial search falls outside the scope of
+reducing ECE. The same softening, however, occasionally            this study.
+overrides confident correct predictions, causing the marginal
+accuracy drop observed in mIoU.                                    5.2.1. LoRA Rank (r)
+     We attribute the limited magnitude of both effects to in-         Across both architectures, we observe a consistent trend:
+sufficient ensemble diversity as members share architecture,       increasing the LoRA rank improves performance in terms
+initialization, and augmentation strategy, with only learning      of both segmentation accuracy and calibration as shown in
+rate scheduling as a source of variation. This restricts inter-    Table 15 and Table 16. For SegFormer-B2, rank 𝑟 = 32
+member disagreement, limiting both the calibration gains           emerges as a sweet spot between parameter efficiency and ro-
+and the accuracy cost.                                             bust performance; higher ranks yield marginal further gains
+     This might be due to ST-LoRA’s rank constraint im-            at the cost of a proportionally larger number of trainable
+plicitly restricts optimization to a low-dimensional subspace      parameters. Mask2Former-Swin/B exhibits a qualitatively
+where good solutions are more densely concentrated, which          similar trend but with a notably different sensitivity profile
+is also supported by Halbheer et al. (2024). This subspace         even at rank 𝑟 = 2, the model achieves reasonable segmen-
+retains sufficient capacity. Within it, learning rate variation    tation performance with mIoU reaching 65.8%, suggesting
+may be enough to drive members toward solutions that are           that a low-dimensional subspace already captures much of
+both competitive and complementary. In contrast, full-rank         the task-relevant variation. We hypothesize that this differ-
+optimization spans a much larger space where the same              ence is not solely attributable to rank, but is also shaped
+perturbation may have proportionally less influence on the            12 For better readability we have decided to leave the results for the
+training trajectory, potentially causing members to converge       appendix.
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                               Page 12 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 6
+Baseline configurations for the ablation study. Each experiment varies a single hyperparameter while keeping all others fixed.
+Subscripts 𝑒 and 𝑑 denote encoder and decoder projections respectively. CLS: class predictor; MLP: dense layer.
+ Setting              SegFormer-B2                                         Mask2Former-Swin/B
+ Parameter Groups
+ ST-LoRA-adapted 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒 , MLP                                        𝑞𝑑 , 𝑘𝑑 , CLS, MLP
+ Fully fine-tuned Decoder + segmentation head                              —
+ Frozen           Remaining encoder                                        Remaining encoder parameters and pixel decoder
+ ST-LoRA Configuration
+ Rank 𝑟           32                                                       8
+ Scaling 𝛼        64                                                       8
+ 𝐴 init           Random                                                   Random
+ 𝐵 init           Zero                                                     Zero
+ Bias             No                                                       No
+ Training
+ Optimizer            Adam                                                 Adam
+ Learning rate        2 × 10−2 –2 × 10−4                                   2 × 10−3 –2 × 10−5
+ Batch size           32                                                   4
+ Epochs               100                                                  110
+ LR schedule          CosineAnnealingWarmRestarts (𝑇0 = 20, 𝑇mult = 1)
+ Ensemble size        5 checkpoints
+ Evaluation
+ Seeds                5
+ Reported stats       Mean ± std
+
+
+by the substantially different adaptation strategies employed         We then ask the complementary question: can the de-
+across the two models. SegFormer-B2 applies LoRA to both          coder be frozen entirely while adapting only the encoder?
+the self-attention projections and the position-wise feed-        For Mask2Former-Swin/B, we freeze the decoder com-
+forward layers of the encoder, while the decoder is fully fine-   pletely and evaluate all component configurations previously
+tuned. In contrast, Mask2Former-Swin/B forgoes full fine-         tested with decoder adaptation. The results reveal a con-
+tuning entirely: the encoder feed-forward layers are adapted      sistent asymmetry: while a subset of configurations yields
+via LoRA, and the decoder is handled through low-rank             marginal mIoU improvements, nearly all exhibit severe
+injection into the query and key projections along with the       calibration degradation across ECE, ACE, and MACE as
+class predictor. This contrasts full decoder fine-tuning versus   illustrated in Table 18. This is attributable to the frozen
+LoRA-only decoder adaptation introduces a confounding             decoder applying a fixed mapping optimized for the source
+factor beyond rank alone, and may explain why the two             domain, which is misaligned with the target domain’s feature
+models exhibit different calibration sensitivity profiles as      distribution regardless of how well the encoder is adapted.
+rank increases. We next investigate the effect of the targeted    The decoder therefore acts as a calibration bottleneck; accu-
+components directly.                                              rate enough to segment, but insufficiently adapted to produce
+                                                                  reliable confidence estimates. These findings motivate the
+5.2.2. LoRA Target Components                                     hybrid strategy adopted in our final configuration: LoRA-
+    We investigate whether adapting the decoder alone is          only adaptation of selected encoder components, with the
+sufficient for segmentation. Keeping the encoder completely       decoder adapted via LoRA rather than frozen or fully fine-
+frozen, we inject LoRA modules exclusively into the trans-        tuned.
+former decoder of Mask2Former-Swin/B and vary the rank.               We then follow the conventional LoRA adaptation strat-
+Across all rank values, no reasonable performance is ob-          egy of targeting only the self-attention projections Hu et al.,
+served and the overall results are substantially worse than       injecting low-rank modules into Q, K , and V . Contrary to
+those obtained when the encoder is also adapted as shown          the gains reported in LLM settings, this configuration yields
+in Table 17. This is expected: the encoder is responsible for     worse performance compared to the respective baselines for
+extracting task-relevant feature representations, and without     both architectures, as reflected by both mIoU and ECE. This
+adapting it to the target domain, the decoder operates on         suggests that attention-only adaptation, while effective for
+generic pre-trained embeddings that are ill-suited for fine-      generic image classification and language tasks Mühlematter
+grained plant segmentation. Under these conditions, the           et al. (2024); Balabanov and Linander (2024), is insufficient
+decoder merely attempts to upsample frozen representations        for dense prediction in agricultural imagery, where spatial
+into a segmentation mask, offering little capacity to recover     detail and pixel-level calibration impose stricter representa-
+the necessary discriminative structure.                           tional demands on the adapted layers.
+
+Farag et al.: Preprint submitted to Elsevier                                                                      Page 13 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+    We now turn to an intensive component ablation, ex-          neurons activating per input, suggesting that their represen-
+amining how each encoder component contributes to seg-           tational capacity is both rich and highly structured.
+mentation quality and uncertainty calibration. Our analysis          Taken together, this points to the same conclusion: MLP
+focuses on two families of components: the self-attention        layers are the dominant site of task-relevant computation and
+projections and the position-wise Multi-Layer Perception         adaptation in transformer architectures, in both text and vi-
+(MLP) layers, as these constitute the two primary sites of       sion settings. Our ablation results align with and extend this
+learnable computation within a transformer encoder block.        finding to the dense agricultural prediction regime, where
+    Adapting the query projection alone yields mixed re-         attention-only adaptation consistently underperforms MLP-
+sults: for Mask2Former-Swin/B, performance remains com-          inclusive configurations across both architectures studied.
+parable to the baseline despite the added parameters, whereas
+for SegFormer-B2 it surpasses both the baseline and the          5.2.3. LoRA Scaling Factor (𝛼)
+conventional (𝑞, 𝑘, 𝑣) configuration. Extending adaptation           Having established rank and target components as the
+to the key and value projections jointly improves over           two most influential hyperparameters, we turn to the scaling
+query-only across both architectures, again outperforming        factor 𝛼. Recalling the LoRA adaptation equation but with
+the baseline and the conventional attention-only setting.        the previously omitted 𝛿𝑟 = 𝛼∕𝑟 for simplicity,
+However, the most pronounced gains are observed when
+the MLP layers are included. Across both models and all                H = 𝜃0 X + Δ𝜃X = 𝜃0 X + 𝛿r BAX .                   (13)
+component combinations tested, incorporating MLP layers
+                                                                 The effective magnitude of the low-rank update is governed
+consistently yields the strongest improvements in both mIoU
+                                                                 by 𝛿𝑟 = 𝛼∕𝑟, the ratio of the scaling factor to the rank.
+and calibration metrics while having the smaller number of
+                                                                 Rather than treating 𝛼 in isolation, this formulation makes
+parameters, indicating that these layers carry the dominant
+                                                                 clear that it is 𝛿𝑟 that controls how strongly the adapter
+share of task-relevant adaptability in the context of agricul-
+                                                                 output is blended into the pre-trained representation. We
+tural semantic segmentation.
+                                                                 therefore ablate across 𝛼 values at fixed rank to characterize
+    This observation is further supported by a converging
+                                                                 the sensitivity of both segmentation accuracy and calibration
+body of evidence from both the text and vision literature.
+                                                                 to this ratio.
+In the text domain, Dong, Cordonnier and Loukas (2021)
+                                                                     For SegFormer-B2, we observe a clear degradation in
+showed that transformer networks without skip connections
+                                                                 performance as 𝛼 increases, manifesting in both mIoU and
+or MLP layers converge doubly exponentially to a rank-1 ma-
+                                                                 calibration metrics. Since the effective update magnitude is
+trix, rendering them unable to learn, establishing MLP layers
+                                                                 governed by 𝛿𝑟 = 𝛼∕𝑟, a large 𝛼 at fixed rank amplifies the
+as structurally necessary rather than merely beneficial. Geva,
+                                                                 low-rank update Δ𝜃 = 𝛿𝑟 BA to a degree that distorts the pre-
+Schuster, Berant and Levy (2021) further demonstrated that
+                                                                 trained feature representations, effectively overriding the
+MLP layers act as key-value memories that store and retrieve
+                                                                 visual prior encoded during pre-training rather than refining
+factual knowledge, with deeper layers encoding increasingly
+                                                                 it as shown in Table 15. Mask2Former-Swin/B exhibits
+rich semantic content. From an adaptation perspective, He,
+                                                                 the opposite trend: performance improves as 𝛼 increases,
+Zhou, Ma, Berg-Kirkpatrick and Neubig found that under a
+                                                                 suggesting that a stronger update signal is beneficial in this
+restricted parameter budget, MLP layers yield better adapta-
+                                                                 setting. Nevertheless, this gain saturates and reverses once
+tion than attention projections, and Zhang, Chen, Bukharin,
+                                                                 the ratio 𝛿𝑟 grows large enough that Δ𝜃 ≫ 𝜃0 , at which
+He, Cheng, Chen and Zhao confirmed through extensive
+                                                                 point the adapter update dominates the frozen weights and
+experimentation that MLP layers consistently outperform
+                                                                 degrades learning, consistent with the representation distor-
+attention at all ranks, matching full fine-tuning at higher
+                                                                 tion observed for SegFormer-B2. Notably, Mask2Former-
+ranks.
+                                                                 Swin/B appears considerably less sensitive to 𝛼 overall,
+    In the vision domain, the evidence is equally compelling.
+                                                                 implying that the scaling factor does not act in isolation but
+Melas-Kyriazi (2021) constructed a vision transformer using
+                                                                 interacts with rank and the choice of adapted components as
+only MLP layers and achieved performance comparable
+                                                                 shown in Table 16.
+to the full model, while the attention-only counterpart de-
+                                                                     The original LoRA formulation Hu et al. acknowl-
+graded severely. Zhang, Liu, Lin and He (2024b) showed that
+                                                                 edges this sensitivity and recommends treating 𝛼 as a
+attention is not needed at every layer, with selective removal
+                                                                 regularization-like hyperparameter, noting that setting 𝛼 = 𝑟
+reducing computational cost while improving performance.
+                                                                 provides a neutral starting point where the adapter con-
+Wang, Zhao, Tang, Luo and Zeng (2022b) replaced self-
+                                                                 tributes without overwhelming the frozen weights. For high
+attention entirely with a mean-shift operation and obtained
+                                                                 ranks 𝑟 >> 128 Biderman, Ortiz, Portes, Paul, Greengard,
+competitive results, and Venkataramanan, Ghodrati, Asano,
+                                                                 Jennings, King, Havens, Chiley, Frankle, Blakeney and
+Porikli and Habibian demonstrated that skipping attention
+                                                                 Cunningham (2024) suggest using 𝛼 = 2𝑟 but this is in text
+modules via skip connections incurs minimal performance
+                                                                 domain and needs more verification for dense prediction in
+loss. Complementing this, Zhang, Lin, Liu, Li, Sun and
+                                                                 vision, this reinforces the broader observation that LoRA
+Zhou (2022) revealed that MLP layers exhibit a Mixture-
+                                                                 hyperparameters should not be tuned independently, and that
+Of-Experts (MOE) behaviour, with only a sparse subset of
+                                                                 the relative magnitude of the adapter update with respect
+                                                                 to the pre-trained weights is a more principled diagnostic
+
+Farag et al.: Preprint submitted to Elsevier                                                                    Page 14 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+than any single hyperparameter alone Hu et al.; Büyükakyüz         5.3.1. Ensemble diversity under distribution shift.
+(2024).                                                                 We compare two ensemble construction strategies for
+    Finally, The relative insensitivity of Mask2Former-Swin/B      both FRE and ST-LoRA to assess the impact of member
+to 𝛼 likely reflects two compounding factors. First, unlike        diversity on calibration robustness. Homogeneous ensem-
+SegFormer-B2 where the fully fine-tuned decoder creates            bles rely solely on learning rate scheduling as a source of
+a rigid dependency on the quality of the adapted encoder           diversity, with no data augmentation applied during training;
+representations, Mask2Former-Swin/B distributes adapta-            members therefore differ only in their optimization trajec-
+tion entirely through LoRA modules across both encoder and         tories. Heterogeneous ensembles additionally introduce per-
+decoder. Second, the adapted components in Mask2Former-            member data augmentation policies, incorporating random
+Swin/B are predominantly MLP layers, which may be intrin-          rotation (uniformly sampled from {0◦ , 25◦ }) and horizon-
+sically less sensitive to scaling perturbations than the lower-    tal flipping (probability 0.5), applied consistently to both
+dimensional attention projections targeted in SegFormer-B2.        images and segmentation masks. This introduces diversity
+We note that this remains a hypothesis, as disentangling the       at both the optimization and data levels, which leads to
+individual contributions of architecture, component choice,        more robust ensemble predictions and better-calibrated un-
+and scaling interactions would require controlled experi-          certainty estimates under distribution shift.
+ments beyond the scope of this ablation. Our results confirm            Across all distribution shifts as shown in Figure 6, ST-
+this intuition in the vision segmentation regime and suggest       LoRA achieves performance competitive with FRE, while
+that conservative scaling is particularly important when           exhibiting greater robustness to increasing shift severity
+adapting pre-trained encoders to fine-grained, data-limited        maintaining lower ECE values with only a 3–5% reduction
+agricultural datasets. Hence we provide a practitioner’s           in mIoU. For FRE, homogeneous ensembles achieve higher
+guide for ST-LoRA as a starting point:                             mIoU but substantially worse calibration compared to their
+                                                                   heterogeneous counterparts. The heterogeneous strategy is
+     Configuring ST-LoRA                                           therefore critical for calibration quality in full-rank ensem-
+    Always adapt the encoder — freezing it entirely                bles. ST-LoRA, by contrast, benefits from heterogeneity
+    produces near-random performance regardless of                 in both metrics simultaneously: heterogeneous ST-LoRA
+    rank. Target feed-forward layers first: contrary               outperforms its homogeneous counterpart in mIoU and ECE
+    to standard LoRA practice, FF layers consistently              alike, achieving the best calibration across all shift condi-
+    outperform attention-only adaptation for dense pre-            tions while maintaining segmentation quality competitive
+    diction, with fewer parameters. Do not freeze the              with FRE variants.
+    decoder entirely, as it acts as a calibration bot-                  We attribute this asymmetry to the reduced parameter
+    tleneck regardless of encoder quality; adapt it via            space of LoRA adapters: the constrained adaptation sub-
+    LoRA instead. For rank 𝑟∈[8, 32] is recommended.               space acts as an implicit regularizer, allowing ST-LoRA
+    Finally, keep 𝛿𝑟 =𝛼∕𝑟 conservative: setting 𝛼=𝑟 is a           members to leverage augmentation-induced diversity more
+    safe default, and large 𝛿𝑟 degrades both accuracy and          efficiently than full-rank models operating under the same
+    calibration.                                                   limited training budget. Furthermore, we notice that SgF-B2
+                                                                   performance is deteriorating under brightness/contrast shift
+    However, a well-configured model is a necessary but            compared to other shifts. This is due to high shift severity
+not sufficient condition for reliable deployment as agricul-       which completely distorts the input image to the model, as
+tural imaging conditions vary substantially across seasons,        around shift level of 10, the model still achieves 64%, and
+lighting, and sensing conditions, making robustness under          this robustness is due to the design of SegFormer which has
+distribution shift equally critical. We therefore turn to two      been mentioned in Xie et al. (2021).
+complementary questions: does ensemble member diversity
+affect calibration stability when the input distribution shifts,   5.3.2. Component Sensitivity under Distribution Shift.
+and do the component choices identified above retain their             We evaluate how ST-LoRA hyperparameter choices -
+advantage beyond the training distribution?                        specifically rank, target components, scaling factor, and
+                                                                   dropout - affect calibration robustness when the input dis-
+5.3. Distribution Shift: Ensemble Diversity and                    tribution shifts. For each hyperparameter, we compare how
+     Architectural Sensitivity                                     varying a single setting relative to the baseline configura-
+    We evaluate robustness under covariate shift through two       tion affects robustness across the 19 corruption conditions
+complementary analyses. The first examines how ensemble            described in Table 7.
+member diversity affects robustness, using SegFormer-B2                Rank. Across all corruption types and severity lev-
+on GrowliFlower-L. The second investigates the sensitivity         els, a consistent pattern emerges: low-rank configurations
+of different LoRA component configurations to distribution         are brittle under distribution shift, exhibiting substantially
+shift, using Mask2Former-Swin/B on BUP20. In both cases,           worse calibration alongside degraded segmentation quality
+covariate shift is simulated by applying controlled corrup-        as shown in Figure 7. This instability is most pronounced
+tions to the test set, the full experimental setup for both        at 𝑟 = 2 as shown in Figure 8, where calibration metrics de-
+analyses is summarized in Table 7.                                 teriorate sharply even under mild photometric perturbations,
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                      Page 15 of 28
+                                      One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 7
+Experimental setup for robustness evaluation under distribution shift. Two complementary analyses are conducted: ensemble
+diversity (SegFormer-B2 on GrowliFlower-L) and component sensitivity (Mask2Former-Swin/B on BUP20). Photometric
+corruptions alter pixel statistics only; geometric corruptions are applied to both image and mask. For GrowliFlower-L, severity
+increases continuously across 20 levels; for BUP20, three discrete severity levels are used per corruption type.
+                                           Exp. 1: Ensemble Diversity                         Exp. 2: Component Sensitivity
+                                           SegFormer-B2 / GrowliFlower-L                      Mask2Former-Swin/B / BUP20
+                         Details           Homogeneous ensemble (LR schedule only)
+ Variants                                                                             ST-LoRA hyperparameters robustness study
+                                           Heterogeneous ensemble (LR + augmentation)
+ Geometric Photometric
+
+
+
+
+                         Brightness        Factor ∈ [1.0, 2.0], 20 levels (Δ = 0.05)          Factor ∈ {0.50, 0.65, 0.80}
+                         Contrast          Factor ∈ [1.0, 2.0], 20 levels (Δ = 0.05)          Factor ∈ {0.50, 0.65, 0.80}
+                         Gaussian noise    𝜎 ∈ [0, 0.285], 20 levels (Δ = 0.015)              𝜎 ∈ {0.05, 0.10, 0.20}
+                         Gaussian blur     —                                                  𝜎 ∈ {1, 2, 3} px
+                         Rotation          𝜃 ∈ [0◦ , 85.5◦ ], 20 levels (Δ = 4.5◦ )           —
+                         Zoom              Scale ∈ [1.0×, 1.475×], 20 levels (Δ = 0.025)      Scale ∈ {1.10×, 1.25×, 1.50×}
+                         Horizontal flip   —                                                  Binary (single level)
+                         Translation       —                                                  {5%, 10%, 15%} of image width
+ Total shift conditions                    4 × 20 = 80                                        7 × 3 − 2 = 19
+ Mask handling                             Geometric: nearest-neighbour interp. on mask       Geometric: nearest-neighbour interp. on mask
+ Metrics                                   mIoU, and ECE (mean ± std over 5 seeds)
+
+
+
+
+Figure 6: Ensemble robustness under covariate shift. Homogeneous vs. heterogeneous ensemble variants for ST-LoRA and FRE
+on GrowliFlower-L across 80 shift conditions.
+
+
+
+suggesting that a low-dimensional adaptation subspace lacks                        distribution shift does not benefit proportionally and can
+sufficient capacity to maintain well-calibrated predictions                        even degrade at higher ranks as shown in Figure 8 which has
+beyond the training distribution. Increasing the rank to 𝑟 =                       been also shown by Halbheer et al. (2024). The additional
+16 yields a notable improvement in both robustness and                             computational cost of high-rank adaptation therefore does
+calibration stability across shift types, establishing it as a                     not translate into a robustness advantage, reinforcing 𝑟 ∈
+practical lower bound for reliable deployment under covari-                        [8, 16] as the recommended operating range for ST-LoRA
+ate shift. However, continuing to increase the rank beyond                         on Mask2Former-Swin/B under distribution shift.
+this point introduces diminishing returns: while segmenta-
+tion accuracy may marginally improve, calibration under
+
+Farag et al.: Preprint submitted to Elsevier                                                                                    Page 16 of 28
+                             One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Figure 7: mIoU under distribution shift as a function of LoRA rank 𝑟, evaluated across seven corruption types at three severity
+levels. Each curve corresponds to a distinct shift type.
+
+
+
+
+Figure 8: ECE under distribution shift as a function of LoRA rank 𝑟, evaluated across seven corruption types at three severity
+levels. Each curve corresponds to a distinct shift type.
+
+
+
+    Target components. Ranking configurations by mIoU                           Scaling factor 𝛼. The effect of 𝛼 on robustness under
+and ECE robustness under distribution shift reveals a persis-               distribution shift exhibits a clear asymmetry between seg-
+tent tension between segmentation accuracy and calibration                  mentation accuracy and calibration. For mIoU, increasing
+as shown in Figure 12 and Figure 12: the configurations                     𝛼 initially improves robustness, suggesting that a stronger
+that best preserve accuracy under shift are not the same as                 adapter signal helps the model maintain discriminative rep-
+those that best preserve calibration. Specifically, base + 𝑘𝑒 13            resentations under input perturbations. However, this benefit
+ranks second on mIoU but drops to sixth on calibration,                     saturates and reverses beyond a certain threshold, where
+while base + 𝑞𝑒 ranks third on mIoU yet last on calibration.                the amplified low-rank update begins to distort the pre-
+The configuration achieving the strongest mIoU robustness                   trained prior rather than refine it as shown in Figure 11 and
+overall is base + 𝑘𝑒 + 𝑣𝑒 , whereas base + 𝑞𝑒 + 𝑘𝑒 leads on                 Figure 12, consistent with the in-distribution degradation
+calibration robustness. The baseline configuration (MLP, cls)               observed at high 𝛿𝑟 = 𝛼∕𝑟 values. For calibration under
+occupies a rank of approximately five on both objectives,                   distribution shift, the relationship is qualitatively different:
+placing it consistently in an intermediate position that avoids             increasing 𝛼 consistently yields better calibrated predictions,
+the extremes of either. This trade-off mirrors the accuracy/-               with ECE improving monotonically across shift types and
+calibration tension observed in the in-distribution ablation                severity levels. This suggests that a stronger adapter update
+and suggests that no single component configuration simul-                  enhance robustness when the input deviates from the training
+taneously dominates both objectives under covariate shift.                  distribution. The two objectives therefore pull in opposite
+    Furthermore, Cross-referencing with the in-distribution                 directions as 𝛼 increases, reinforcing the broader observation
+ablation results reveals that the baseline and the base +                   that accuracy robustness and calibration robustness are not
+𝑞𝑒 + 𝑘𝑒 configuration yield comparable performance across                   jointly optimisable through a single hyperparameter, and that
+both mIoU and ECE relative to the best-performing config-                   the choice of 𝛼 should be guided by the deployment priority -
+urations for both SegFormer-B2 and Mask2Former-Swin/B.                      higher 𝛼 for better-calibrated uncertainty, lower to moderate
+This consistency across architectures, datasets, and evalua-                𝛼 for stronger segmentation accuracy under shift.
+tion regimes - in-distribution and under shift - suggests that                  LoRA Dropout 𝑝. The effect of LoRA dropout on ro-
+adapting query and key projections alongside the encoder                    bustness under distribution shift follows a non-monotonic
+MLP layers provides a robust and transferable operating                     pattern for segmentation accuracy: both the lowest (𝑝 =
+point. baseline + 𝑞𝑒 + 𝑘𝑒 therefore represents the most                     0.1) and highest (𝑝 = 0.3) dropout values yield degraded
+principled choice, offering a stable balance between segmen-                mIoU under shift, while intermediate values 𝑝 ∈ [0.2, 0.25]
+tation quality and uncertainty reliability without requiring                achieve the strongest robustness as shown in Figure 11 and
+architecture-specific tuning.                                               Figure 12. Small dropout allows the adapter to overfit to in-
+   13 𝑞, 𝑘, and𝑣 refer to the Query, Key, and Value in Transformer model,
+                                                                            distribution features that do not generalize under shift, while
+and the subscript 𝑒 refers to the encoder.                                  too much dropout disrupts the adapter’s capacity to main-
+                                                                            tain discriminative representations altogether. A moderate
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                 Page 17 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+dropout rate therefore strikes the best operating point be-       5.4. ST-LoRA Against Efficient Uncertainty
+tween preventing overfitting and preserving representational           Methods
+capacity.                                                             We compare ST-LoRA against three efficient uncertainty
+    For calibration, the picture is more nuanced and shift-       estimation baselines whose configurations are detailed in
+type selective. Under photometric corruptions, 𝑝 = 0.3            Table 8. Integrated ensemble methods are excluded due
+yields the best calibration robustness, suggesting that ag-       to architectural and compatibility constraints discussed in
+gressive dropout encourages the model to be robust when           Section 2. To ensure a fair comparison, all methods share an
+pixel statistics deviate from the training distribution. Under    identical training setup: the same cosine annealing learning
+geometric corruptions, however, 𝑝 = 0.3 underperforms             rate schedule and the same heterogeneous augmentation
+relative to lower dropout values, which instead produce           pipeline, isolating the effect of the uncertainty estimation
+more stable calibration. This shift-type selectivity of dropout   strategy itself.
+echoes the broader finding that photometric and geometric             The augmentation pipeline consists of two families of
+corruptions engage different aspects of the model’s learned       transformations. Geometric augmentations, applied jointly
+representations, and reinforces the recommendation to treat       to image and mask, include random horizontal flipping
+calibration robustness under the two shift families as distinct   (𝑝=0.5) and lateral translation (up to 10% of image width,
+design objectives.                                                𝑝=0.5). Photometric augmentations, applied to the image
+    Finally, Guo et al. (2017) highlight an inherent tension      only, include colour jitter (brightness ±0.3, contrast ±0.3,
+between minimizing classification error and achieving well-       saturation ±0.1), Gaussian blur (𝜎∈[0.5, 1.5], 𝑝=0.3), Gaus-
+calibrated predictions. We observe a similar trade-off in         sian noise (𝜎=0.02, 𝑝=0.2), spatially non-uniform depth-
+ST-LoRA: accuracy and calibration emerge as competing             of-field blur (𝑝=0.3) simulating centre-sharp optics via a
+objectives, and we hypothesize that this competition has a        Gaussian spatial weight mask, and random erasing of up to
+low-rank geometric interpretation. Drawing on the notion of       three patches per image (𝑝=0.3, patch area ∈ [2%, 15%] of
+intrinsic dimensionality Aghajanyan et al. (2021), the low-       image) to simulate leaf occlusion and canopy overlap. Addi-
+rank subspace, sufficient for optimizing the segmentation         tionally, CutMix Yun, Han, Oh, Chun, Choe and Yoo (2019)
+objective, may not be expressive enough to simultaneously         (𝑝=0.5) is applied at the dataset level, randomly replacing a
+ensure reliable calibration; particularly under distribution      rectangular region of one image and its corresponding mask
+shift, where the adapter must generalize beyond the fine-         labels with those from another training sample, encouraging
+tuning data manifold. This suggests that accuracy and cal-        the model to learn from partially occluded scenes. 14 .
+ibration place structurally different demands on the adapta-          For ensemble methods, five snapshots are collected per
+tion subspace, and that jointly optimizing both may require       training trajectory for both FRE and ST-LoRA by saving the
+explicit calibration-aware training objective.                    model weights blindly at the end of each cosine annealing cy-
+                                                                  cle, without any validation-based selection. For MC Dropout
+      ST-LoRA Under Distribution Shift                            and DDU, a single checkpoint is saved at the end of training.
+    Start with 𝑟∈[8, 16]: low ranks (𝑟≤4) are brittle             This blind collection strategy is applied uniformly across all
+    under all shift types; higher ranks add cost with-            methods: tracking the best validation loss would introduce a
+    out calibration benefit. Prefer MLP+𝑞𝑒 +𝑘𝑒 for the            selection advantage that is incompatible with the snapshot
+    most consistent accuracy–calibration balance across           ensembling design, where checkpoints are taken at fixed
+    architectures and shift types. Tune 𝛿𝑟 : lower 𝛼 when         cycle endpoints regardless of their individual validation
+    calibration is the priority, raise it when accuracy           performance. Keeping this consistent ensures that observed
+    matters more; 𝛼=𝑟 is the safe default. For dropout,           differences in performance reflect the uncertainty estimation
+    𝑝∈[0.2, 0.25] maximizes accuracy robustness; 𝑝=0.3            strategy rather than checkpoint selection policy.
+    is better when photometric shift dominates. Accu-
+    racy and calibration under shift are competing objec-         5.4.1. In-Distribution Performance and Robustness
+    tives; no single configuration wins on both.                          Under Distribution Shift
+                                                                      We follow the same two-stage evaluation protocol as
+    Having established ST-LoRA’s advantages over full-            previous experiments: in-distribution performance followed
+rank ensemble and characterized its behaviour under dis-          by robustness under distribution shift.
+tribution shift, we turn to a broader question: how does              In-distribution performance. Table 9 shows that ST-
+ST-LoRA compare against established efficient uncertainty         LoRA achieves mIoU competitive with the best-performing
+quantification methods? We benchmark against three com-           method on this metric (FRE), while matching DDU on
+plementary approaches - Snapshot Ensemble, MC Dropout,            calibration and outperforming it on MACE with a margin
+and DDU - spanning deterministic, and stochastic uncer-           of nearly 4% mIoU. Notably, ST-LoRA exhibits the lowest
+tainty estimation paradigms.                                      standard deviation across all metrics among all methods,
+                                                                  indicating stable performance regardless of the random seed
+                                                                  a practically important property for reliable deployment.
+                                                                      14 Mask interpolation uses nearest-neighbour throughout to preserve
+
+                                                                  integer label integrity; image interpolation uses bilinear
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                            Page 18 of 28
+                           One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 8
+Configuration summary for all uncertainty quantification methods evaluated on Mask2Former-Swin/B (BUP20). SN: Spectral
+Normalization Miyato, Kataoka, Koyama and Yoshida (2018). GMM: Gaussian Mixture Model fitted via EM Dempster, Laird and
+Rubin (1977b). ST-LoRA target modules follow the notation of Table 6
+                                                             .
+  Method            Ensemble Inference                     Settings
+  FRE                 Yes            (𝑀 = 4) forward passes    Following the similar Full Rank Ensembles from previous experi-
+                                                               ments.
+  MC Dropout          No             𝑇 = 4 stochastic passes   We dropout layer before the class predictor using a dropout
+                                                               probability of 𝑝 = 0.5 following Gal and Ghahramani (2015);
+                                                               Srivastava et al. (2014).
+  DDU                 No             Single forward pass       SN has been applied to all linear and convolutional layers. A
+                                                               Gaussian Mixture Model (𝐾=2 components per class, 8 classes
+                                                               total) is fitted to these features using the EM algorithm for 1000
+                                                               iterations. Pixels are treated as spatially independent data points,
+                                                               yielding 1280 × 720 data points per image.
+  ST-LoRA (ours)      Yes            (𝑀 = 4) forward passes    LoRA adaptation with frozen decoder. Rank 𝑟=32, scaling 𝛼=32,
+                                                               dropout 𝑝=0.1. Target modules: decoder 𝑞𝑑 , 𝑘𝑑 , cls; encoder MLP,
+                                                               𝑘𝑒 , 𝑣𝑒 .
+
+
+Table 9
+In-distribution (ID) performance of ST-LoRA against efficient uncertainty quantification baselines on Mask2Former-Swin/B
+(BUP20, mean ± std over 5 seeds). FRE refers to a snapshot ensemble built on top of a fully fine-tuned model. MC Dropout
+uses 𝑝 = 0.5. DDU: Deep Deterministic Uncertainty Mukhoti et al. (2023). ↑: higher is better; ↓: lower is better,and best result
+per metric is in bold.
+  Method                    mIoU ↑                  ECE ↓              MECE ↓                 ACE ↓                MACE ↓
+  FRE                   0.6990 ± 0.0259        0.0068 ± 0.0068     0.1792 ± 0.1613       0.0047 ± 0.0037       0.0209 ± 0.0242
+  MC Dropout            0.6505 ± 0.0391        0.0049 ± 0.0049     0.0686 ± 0.0302       0.0062 ± 0.0090       0.0177 ± 0.0126
+  DDU                   0.6553 ± 0.0197        0.0019 ± 0.0010     0.1171 ± 0.1069       0.0016 ± 0.0008       0.0106 ± 0.0062
+  ST-LoRA (ours)        0.6920 ± 0.0147        0.0026 ± 0.0018     0.0901 ± 0.0311       0.0027 ± 0.0011       0.0077 ± 0.0059
+
+
+Table 10                                                            and increases the Lipschitz constant of the network. SN
+Computational efficiency comparison across approaches.              directly opposes this dynamic by constraining the Lipschitz
+ Approach             Flops (GMAC)       Train Params. (Million)    constant to a fixed upper bound, creating a counter force
+                                                                    between both. Consequently, how to enforce a meaningful
+ M2F (base)                 229,72                108.77            Lipschitz bound in transformers without sacrificing repre-
+ FRE                        1148                    534             sentational capacity remains an open question, with promis-
+ MC-Dropout                 1148                  108.77            ing directions explored in Newhouse, Hess, Cesista, Za-
+ DDU                        320                    108.8            horodnii, Bernstein and Isola (2025). Finally, MC Dropout,
+ ST-LoRA (ours)             1170                    116             performance sensitivity likely reflects the joint effect of the
+                                                                    targeted dropout layer and the number of stochastic forward
+                                                                    passes in addition to other hyperparameters as mentioned in
+Among all methods, DDU offers the lowest computational              Srivastava et al. (2014).
+cost (see Table 10), as uncertainty is estimated in a single            Robustness under distribution shift. We evaluate all
+forward pass without sampling, though this efficiency comes         methods on BUP20 under a systematic corruption grid of
+at the cost of segmentation accuracy. The mIoU drop for             seven corruption types at five severity levels each, yielding
+DDU is attributed to the widespread application of spec-            35 shift conditions. All severity levels are deliberately cho-
+tral normalization, which constrains the feature space and          sen to lie outside the training augmentation range, ensuring
+reduces discriminative capacity, consistent with the accu-          exposure to unseen conditions . Photometric corruptions,
+racy/robustness trade-off reported in Huang, Zhang, Shi,            applied to the image only, include Gaussian blur (𝜎 ∈
+Kolter and Anandkumar (2021); Gogianu, Berariu, Rosca,              {1.5, 3, 5, 7, 10} px, versus training 𝜎 ∈ [0.5, 1.5] px), ad-
+Clopath, Busoniu and Pascanu (2021).                                ditive Gaussian noise (𝜎 ∈ {0.04, 0.08, 0.12, 0.18, 0.25},
+    Furthermore, applying SN may inherently limit ViT per-          versus training 𝜎 = 0.02), brightness reduction (factor
+formance. As Dong et al. (2021) demonstrate, MLP layers             ∈ {0.60, 0.40, 0.25, 0.10, 0.05}, versus training [0.7, 1.3]),
+play a critical role in preserving representational capacity        contrast reduction (same factor range), and saturation reduc-
+by counteracting the rank collapse induced by self-attention        tion (factor ∈ {0.80, 0.60, 0.40, 0.15, 0.00}, versus training
+
+Farag et al.: Preprint submitted to Elsevier                                                                         Page 19 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Figure 9: Robustness under distribution shift comparison. ST-LoRA demonstrates the best performance against different kinds
+of shifts. ↑: higher is better; ↓: lower is better. Represented the mean of five different seeds.
+
+
+
+[0.9, 1.1]). Geometric corruptions include lateral transla-           Image-level OoD detection. We assess each method’s
+tion ({20, 30, 40, 50, 60}% of image width, versus training      ability to separate ID and OoD samples at the image level,
+±10%) and rotation (vertical flip, 90◦ , 180◦ , 270◦ , and       without exploiting local spatial structure. Uncertainty scores
+90◦ +vertical flip, versus training horizontal flip only).       are computed per pixel and aggregated by mean across each
+    As shown in Figure 9, across nearly all shift types and      image. For ensemble and MC Dropout methods, we use pre-
+severity levels, ST-LoRA achieves the strongest calibration      dictive entropy and mutual information Shaker and Hüller-
+and segmentation robustness among all methods. FRE fol-          meier (2021) as scoring functions; for DDU, we use the
+lows as the second most robust, ahead of MC Dropout,             GMM log-density and predictive entropy. Finally, we evalu-
+while DDU degrades most severely under distribution shift.       ate separability qualitatively via score histograms and quan-
+Although DDU is the most computationally efficient method        titatively via the Area Under the Receiver Operating Char-
+at inference time and carries the smallest memory foot-          acteristic curve (AUROC) Hendrycks and Gimpel (2016).
+print, its calibration collapses rapidly under shift which is         Pixel-level anomaly segmentation We are the first to
+a well-documented limitation of deterministic uncertainty        apply such evaluation scheme - following the protocol of
+methods, not exclusive to DDU Postels et al. (2022). The         Chan et al. (2021); Sodano, Magistri, Behley and Stach-
+poor robustness of MC-Dropout is consistent with our earlier     niss (2024) - to close-range glasshouse crop segmentation,
+hypothesis that both the choice of dropout layer and the         assessing the sensitivity of uncertainty estimation methods
+sampling rate critically affect performance under shift, and     to cross-crop OoD objects at the pixel level. Pixel-level
+needs further investigation to identify configurations that      anomaly segmentation using ranking metrics( Area Under
+generalize more reliably beyond the training distribution.       the Precision-Recall Curve (AUPR), False Positive Rate at
+                                                                 95% True Positive Rate (FPR95)), and localization metrics
+5.4.2. Out of Distribution (OoD) detection                       (segment-wise Intersection over Union (sIoU), Positive Pre-
+    We use BUP20/GrowliFlower-L as ID/far OoD datasets           dictive Value (PPV), and mean F1 score (MeanF1)) has not,
+respectively. Cauliflower plants in open fields differ from      to our knowledge, been evaluated in this setting.
+sweet peppers in glasshouses at every level; crop morphol-            Table 13 summarizes OoD detection performance across
+ogy, background, lighting, and sensing conditions. OoD           all methods. At the image level, ST-LoRA achieves the
+evaluation proceeds at two levels of granularity.                best entropy-based AUROC (0.998 ± 0.003) nearly perfect
+                                                                 separation between ID and OoD images; followed by FRE,
+
+Farag et al.: Preprint submitted to Elsevier                                                                    Page 20 of 28
+                             One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 11
+OoD detection results for image-level and pixel-level anomaly segmentation. ID: Sweet Pepper (BUP20); OoD: GrowliFlower-
+L. Image-level scores are aggregated per image via mean pooling. Pixel-level metrics follow the SegmentMeIfYouCan
+protocol Chan, Lis, Uhlemeyer, Blum, Honari, Siegwart, Fua, Salzmann and Rottmann (2021). Scorer: Ent. = predictive entropy;
+MI = mutual information; Den = Density. ↑: higher is better; ↓: lower is better. All results report mean ± std over 5 seeds. Best
+result per metric in bold.
+                               Image-level                                                    Pixel-level
+ Method            Scorer      AUROC ↑            AUROC ↑            AUPR ↑           FPR95 ↓            sIoU ↑                PPV ↑            MeanF1 ↑
+                   Ent.     0.9282 ± 0.0497    0.5828 ± 0.0896   0.9021 ± 0.0266   0.9185 ± 0.0436   0.4121 ± 0.0184       0.1986 ± 0.0848   0.2074 ± 0.0856
+ FRE
+                   MI       0.7886 ± 0.1241    0.5845 ± 0.0767   0.9016 ± 0.0242   0.9256 ± 0.0370   0.4133 ± 0.0225       0.1820 ± 0.0718   0.1927 ± 0.0734
+                   Ent.     0.5874 ± 0.1549    0.5901 ± 0.0606   0.9058 ± 0.0165   0.9094 ± 0.0451   0.4029 ± 0.0250       0.2364 ± 0.0894   0.2425 ± 0.0844
+ MC Dropout
+                   MI       0.6914 ± 0.0486    0.5274 ± 0.0238   0.8830 ± 0.0073   0.9436 ± 0.0189   0.4121 ± 0.0124       0.2322 ± 0.0462   0.2455 ± 0.0432
+                   Ent.     0.4691 ± 0.2589    0.5578 ± 0.0359   0.8982 ± 0.0102   0.9585 ± 0.0204   0.3832 ± 0.0074       0.0054 ± 0.0013   0.0100 ± 0.0021
+ DDU               Den.     0.3860 ± 0.3335    0.5475 ± 0.0458   0.8910 ± 0.0155   0.9426 ± 0.0190   0.3405 ± 0.0192       0.0036 ± 0.0001   0.0065 ± 0.0008
+                   Ent.     0.9981 ± 0.0025    0.4069 ± 0.1043   0.8309 ± 0.0357   0.9719 ± 0.0230   0.4022 ± 0.0338       0.3013 ± 0.0792   0.3088 ± 0.0765
+ ST-LoRA (ours)
+                   MI       0.5877 ± 0.2110    0.4044 ± 0.0862   0.8329 ± 0.0278   0.9794 ± 0.0127   0.3938 ± 0.0325       0.2746 ± 0.0727   0.2845 ± 0.0707
+
+
+Table 12
+Qualitative comparison of ST-LoRA-based uncertainty quantification methods. ✓ indicates the property is present, ✗ indicates
+it is absent.
+                                                     Uncertainty Evaluation Ablation Study Component     Domain
+                                                                 Dist.      Rank    Layer  Attn. FF
+           Method                                    OoD                                               Generic Agri.
+                                                                 Shift      Only Selection Only Layers
+           Halbheer et al. (2024)                     ✓              ✗               ✓          ✗           ✓          ✗           ✓         ✗
+           Balabanov and Linander (2024)              ✗              ✗               ✗          ✗           ✓          ✗           ✓         ✗
+           Paul et al. (2024)                         ✗              ✗               ✗          ✗           ✓          ✗           ✓         ✗
+           Onal et al.                                ✗              ✗               ✗          ✗           ✓          ✗           ✓         ✗
+           ST-LoRA (Ours)                             ✓              ✓               ✓          ✓           ✓          ✓           ✗         ✓
+
+
+MC Dropout, and DDU. Critically, ST-LoRA also exhibits                             Figure 10 shows that ST-LoRA achieves the clearest
+the lowest standard deviation across both scoring functions                    separation between ID and OoD distributions under en-
+among all methods, confirming that its OoD sensitivity is                      tropy scoring, exhibiting the largest gap between distribu-
+stable and seed-independent, a practically important prop-                     tion means. Across all methods, OoD samples consistently
+erty for deployment.                                                           produce higher entropy than ID samples; the expected and
+    Across all methods, mutual information consistently un-                    desirable behaviour, confirming that uncertainty estimates
+derperforms predictive entropy as an OoD scoring function.                     are well-aligned with the novelty of the input.
+This is not a failure of the ensemble approach: Hüllermeier                        Among the baselines, DDU achieves strong separation
+(2022) have shown that very low MI values reflect a fun-                       using GMM density scores but is highly unstable across
+damental limitation of the measure itself under far OoD                        seeds, making it unreliable in practice. MC Dropout col-
+condition. DDU shows the highest standard deviation across                     lapses a large fraction of OoD samples into the ID score
+both of its scoring functions, making it the least reliable                    range a known failure mode under far OoD conditions Lak-
+method for OoD detection on Mask2Former, consistent with                       shminarayanan et al. (2017), where the method produces
+the architectural incompatibility concerns discussed in the                    overconfident, low-variance predictions on inputs far from
+previous experiment 15 .                                                       the training distribution. FRE ranks second overall, offering
+    At the pixel level, ST-LoRA achieves the best PPV and                      reliable but less consistent separation than ST-LoRA while
+MeanF1 among all methods, indicating that its uncertainty                      performing better on mutual information.
+maps are the most precise at identifying anomalous plant                           Overall, ST-LoRA provides the most consistent and reli-
+pixels when a threshold is applied. On sIoU, ST-LoRA is                        able OoD detection profile: the best image-level separation,
+highly competitive with FRE, the best-performing method                        the best precision and F1 at the pixel level, and the lowest
+on this metric. The trade-off is on AUPR and pixel-level                       variance across seeds; making it the most dependable choice
+AUROC, where MC Dropout leads and achieves the best                            for uncertainty-aware deployment in agricultural environ-
+performance. DDU achieves near-zero PPV and MeanF1,                            ments where OoD inputs must be flagged reliably.
+confirming that its density-based scores do not translate into
+reliable pixel-level anomaly localization in this setting.
+   15 Robustness under covariate shift experiment.
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                 Page 21 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+                                                    (a) ST-LoRA (seed 42)
+
+
+
+
+                                                      (b) DDU (seed 123)
+
+
+
+
+                                                   (c) MC Dropout (seed 456)
+
+
+
+
+                                                      (d) FRE (seed 1337)
+Figure 10: Image-level OoD score distributions across methods. Each panel shows the density of predictive entropy (left) and
+mutual information/Density (right), dashed vertical lines indicate the mean of each distribution. We decide to present the best
+performance for each method according to only one seed.
+
+
+
+6. Final Remarks                                                     Table 14 situates our work within the existing LoRA en-
+                                                                 semble literature across four dimensions: uncertainty eval-
+6.1. Comparison with Related Work                                uation schemes, ablation scope, target components, and ap-
+     ST-LoRA establishes a strong, scalable ensembling frame-    plication domain. The closest related work is Halbheer et al.
+work that achieves a compelling balance between compu-           (2024)16 , which is the only prior study to evaluate both
+tational efficiency and uncertainty quantification quality,      distribution shift and OoD detection. However, their analysis
+reducing training time, inference latency, parameter count,      stops short of investigating how LoRA hyperparameters in-
+and memory footprint simultaneously while remaining com-         teract with covariate shift, a gap our work directly addresses.
+petitive with or outperforming established baselines across      They also do not report whether ensemble members were
+all evaluated tasks.
+                                                                    16 Concurrent with our submission.
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                     Page 22 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+trained with augmentation, nor examine its effect on robust-           could simultaneously reduce training complexity and
+ness, whereas we show that heterogeneous augmentation is               improve deployment-time calibration.
+critical for calibration stability under shift.                     3. Data, task, and model dependency. LoRA adapta-
+     On the ablation side, Halbheer et al. (2024) focus exclu-         tion remains sensitive to the specific model, dataset,
+sively on rank and target component selection, reporting that          and task, meaning conclusions from one setting can-
+FF layer adaptation improves accuracy but degrades calibra-            not be assumed to transfer directly to another; a known
+tion, a conclusion our results contradict, and which a grow-           challenge across the LoRA literature.
+ing body of evidence from both text and vision literature              Promising directions: Extending ablation studies to
+supports in our favour He et al.; Zhang et al.; Melas-Kyriazi          account for hyperparameter interactions across more
+(2021). Critically, they overlook the scaling factor 𝛿𝑟 = 𝛼∕𝑟          diverse tasks would yield more transferable guide-
+entirely, which we identify as a key driver of the accuracy–           lines. Additionally, theoretical analysis of LoRA in the
+calibration trade-off and a training-free deployment-time              vision domain Xu, Min, MacDonald, Luo, Tarmoun,
+calibration knob. Their focus on attention-only adaptation -           Mallada and Vidal (2025); Kim, Kim and Ryu (2025)
+using up to 16 ensemble members - also makes FF adapta-                remains significantly underdeveloped relative to the
+tion appear costly, whereas in our setting of 𝑀=4 members,             text domain and represents an important open research
+FF layers provide the strongest performance at the lowest              direction.
+parameter count.                                                    4. Deployment efficiency. Despite its parameter effi-
+     Beyond Halbheer et al. (2024), remaining related works            ciency, ST-LoRA introduces additional FLOPs per
+are either restricted to specific vision tasks such as depth           forward pass, and maintaining multiple adapter sets on
+estimation, or operate exclusively in the text domain, with no         memory-constrained edge devices remains a practical
+ablation studies and no evaluation under distribution shift.           bottleneck.
+None address dense prediction, which imposes substantially             Promising directions: Post-training pruning Cheng,
+different representational demands than image classification.          Zhang and Shi (2024) of LoRA modules Zhang, Chen,
+     ST-LoRA is therefore the first LoRA ensemble frame-               Shen, Yang, Ou, Yu and Zhuang (2024a) can re-
+work to jointly address parameter efficiency, calibration              duce adapter size further, while quantization Gholami,
+robustness under distribution shift, OoD detection, and                Kim, Dong, Yao, Mahoney and Keutzer (2022) - as
+dense agricultural prediction , providing both empirical               demonstrated by QLoRA Dettmers, Pagnoni, Holtz-
+evidence and principled guidance for practitioners deploying           man and Zettlemoyer (2023) - can substantially reduce
+uncertainty-aware models in resource- constrained real-                memory footprint for edge deployment.
+world environments.
+                                                                 6.3. Ethical Implications
+6.2. Limitations of ST-LoRA and Future Work                           The computational efficiency of ST-LoRA carries im-
+   While ST-LoRA has demonstrated strong performance,            plications that extend beyond benchmark performance. By
+several limitations and open directions remain.                  restricting fine-tuning to less than 10% of model parameters
+                                                                 and eliminating the need for 𝑀 independent training runs,
+   1. Hyperparameter sensitivity. ST-LoRA inherits the
+                                                                 ST-LoRA substantially reduces GPU hours required to train
+      large hyperparameter search space characteristic of
+                                                                 and deploy uncertainty-aware segmentation models. This
+      LoRA-based methods, making configuration time-
+                                                                 reduction in compute demand has a direct environmental
+      consuming; a limitation shared by most uncertainty
+                                                                 consequence: lower energy consumption and, by extension,
+      quantification approaches.
+                                                                 lower CO2 emissions and water usage during both train-
+      Promising directions: Broader studies across datasets,
+                                                                 ing and inference. As large-scale deep learning increas-
+      tasks, and architectures will help identify which hy-
+                                                                 ingly contributes to the carbon footprint of the technology
+      perparameters matter most and under what conditions.
+                                                                 sector Fernandez, Na, Tiwari, Bisk, Luccioni and Strubell
+      Neural Architecture Search (NAS) White, Safari,
+                                                                 (2025), parameter-efficient methods such as ST-LoRA rep-
+      Sukthanker, Ru, Elsken, Zela, Dey and Hutter (2023)
+                                                                 resent a step toward more environmentally responsible ma-
+      is a natural complement, enabling principled adapter
+                                                                 chine learning practice.
+      placement within the pre-trained encoder rather than
+                                                                      We believe that the research community has a responsi-
+      searching for architectures from scratch.
+                                                                 bility to account for these downstream consequences when
+   2. Miscalibration. Although ST-LoRA improves cal-
+                                                                 designing and reporting computational methods, and that
+      ibration over strong baselines, residual miscalibra-
+                                                                 efficiency is not only a technical virtue but an ethical one.
+      tion persists; a challenge shared across all uncertainty
+                                                                 In addition, these efficiency gains align with broader global
+      quantification methods evaluated.
+                                                                 sustainability objectives, particularly the United Nations
+      Promising directions: Post-hoc calibration meth-
+                                                                 Sustainable Development Goals (SDGs), including SDG
+      ods Wang, Gong and Wang (2022a) are a low-cost
+                                                                 2: Zero Hunger. Climate change remains a critical factor
+      remedy that leave the trained model intact. More
+                                                                 affecting agricultural productivity, land usability, and food
+      specifically, we propose training with 𝛼=𝑟 and sub-
+                                                                 security worldwide. By reducing energy consumption and
+      sequently fine-tuning 𝛼 as a post-hoc calibration knob
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                    Page 23 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+associated emissions, more efficient machine learning meth-      CRediT authorship contribution statement
+ods may contribute, in aggregate, to mitigating climate-
+related risks that threaten food systems. While the impact           Mohamed Farag: Conceptualization, Methodology, For-
+of any single methodological improvement is necessarily          mal analysis, Ablation-Study ,Software, Validation, Inves-
+limited, such efforts collectively support a transition to-      tigation, Writing - original draft, Writing - review & edit-
+ward more sustainable technological practices that are better    ing, Visualization. Genc Hoxha: Methodology, Investiga-
+aligned with long-term environmental stability and global        tion, Formal analysis, Visualization, Validation, Writing-
+food security.                                                   review & editing. Yahya Maleki: Ablation-study, Software,
+                                                                 Writing. Chris McCool: Methodology, Investigation, Writ-
+                                                                 ing - review & editing, Visualization. Ribana Roscher:
+7. Conclusion                                                    Methodology, Investigation, Writing - review & editing,
+    We introduced ST-LoRA, a parameter-efficient ensem-          Visualization, Supervision, Project administration, Funding
+ble framework for uncertainty-aware semantic segmenta-           acquisition.
+tion that combines Low-Rank Adaptation with snapshot
+ensembling. By sharing a frozen backbone across ensem-           References
+ble members and restricting each member to lightweight           , 2025. Deep learning in agriculture: Recent advances, challenges,
+low-rank adapters, ST-LoRA reduces training time by 1∕𝑀 ,           and future directions. Ecological Informatics , —URL: https://
+trainable parameters, and checkpoint size; while matching or        www.sciencedirect.com/science/article/pii/S1566253525011042, doi:10.
+exceeding full-rank ensembles in segmentation quality and           1016/j.ecoinf.2025.1011042.
+calibration.                                                     , 2025. Smart plant disease diagnosis using multiple deep learning and
+                                                                    mobilevitv2. Smart Agricultural Technology , 100319URL: https://
+    Two findings stand out from our ablation study with one         www.sciencedirect.com/science/article/pii/S2666154325003199, doi:10.
+that has been proved empirically with support from literature       1016/j.atech.2025.100319.
+while the second is left for a future work. We have shown        Aghajanyan, A., Gupta, S., Zettlemoyer, L., 2021. Intrinsic dimensionality
+that Feed-forward layers are the critical LoRA target for           explains the effectiveness of language model fine-tuning, in: Proceedings
+dense prediction, consistently outperforming attention-only         of the 59th Annual Meeting of the Association for Computational
+                                                                    Linguistics and the 11th International Joint Conference on Natural
+adaptation in both accuracy and calibration - contrary to the       Language Processing (Volume 1: Long Papers), pp. 7319–7328.
+convention inherited from language model fine-tuning.            van Amersfoort, J.R., Smith, L., Teh, Y.W., Gal, Y., 2020. Uncertainty
+    For future work, The scaling ratio 𝛿𝑟 = 𝛼∕𝑟 governs the         estimation using a single deep deterministic neural network, in: Interna-
+accuracy/calibration trade-off under distribution shift and         tional Conference on Machine Learning.
+could serve as a training-free deployment-time calibration       Angelopoulos, A.N., Bates, S., 2021. A gentle introduction to confor-
+                                                                    mal prediction and distribution-free uncertainty quantification. ArXiv
+knob, allowing practitioners to adjust the model’s uncer-           abs/2107.07511.
+tainty behaviour after fine-tuning without retraining. This      Attri, I., Awasthi, L.K., Sharma, T.P., Rathee, P., 2023. A review of deep
+property has no equivalent in full-rank fine-tuning.                learning techniques used in agriculture. Ecological Informatics 77,
+    Across two crops, two architectures, and three evaluation       102217. doi:10.1016/j.ecoinf.2023.102217.
+schemes, ST-LoRA consistently matched or outperformed            Bachman, P., Sordoni, A., Trischler, A., 2017. Learning algorithms for ac-
+                                                                    tive learning, in: international conference on machine learning, PMLR.
+Snapshot Ensemble, MC Dropout, and DDU in calibra-                  pp. 301–310.
+tion stability under distribution shift and achieved a perfect   Balabanov, O., Linander, H., 2024. Uncertainty quantification in fine-
+image-level AUROC of 0.99 for far out-of-distribution de-           tuned llms using lora ensembles. ArXiv abs/2402.12264. URL: https:
+tection. Its lowest cross-seed variance among all methods           //api.semanticscholar.org/CorpusID:267751361.
+confirms robust, seed-independent performance.                   Benkert, R., Prabhushankar, M., AlRegib, G., 2024. Transitional uncer-
+                                                                    tainty with layered intermediate predictions, in: Proceedings of the 41st
+    More broadly, the efficiency gains of ST-LoRA reduce            International Conference on Machine Learning, pp. 3484–3505.
+the computational and environmental cost of deploying            Biderman, D., Ortiz, J.J.G., Portes, J., Paul, M., Greengard, P., Jennings, C.,
+uncertainty-aware models in agriculture; a domain where             King, D., Havens, S., Chiley, V., Frankle, J., Blakeney, C., Cunningham,
+the sustainability of the technology should match the sus-          J.P., 2024. Lora learns less and forgets less. Trans. Mach. Learn. Res.
+tainability goals it serves.                                        2024. URL: https://api.semanticscholar.org/CorpusID:269791237.
+                                                                 Büyükakyüz, K., 2024. Olora: Orthonormal low-rank adaptation of large
+                                                                    language models. arXiv preprint arXiv:2406.01775 .
+                                                                 Chan, R., Lis, K., Uhlemeyer, S., Blum, H., Honari, S., Siegwart, R., Fua, P.,
+Acknowledgements                                                    Salzmann, M., Rottmann, M., 2021. Segmentmeifyoucan: A benchmark
+    This work has partially been funded by the Deutsche             for anomaly segmentation. arXiv preprint arXiv:2104.14812 .
+Forschungsgemeinschaft (DFG, German Research Founda-             Chen, H., Lundberg, S., Lee, S.I., 2017. Checkpoint ensembles: En-
+                                                                    semble methods from a single training process.             arXiv preprint
+tion) under Germany’s Excellence Strategy, EXC-2070 -
+                                                                    arXiv:1710.03282 .
+390732324 - PhenoRob. Further, it has been funded by the         Cheng, B., Misra, I., Schwing, A.G., Kirillov, A., Girdhar, R., 2021a.
+Deutsche Forschungsgemeinschaft (DFG, German Research               Masked-attention mask transformer for universal image segmentation.
+Foundation) - RO 4839/6-1 - 459376902 - AID4Crops. The              2022 IEEE/CVF Conference on Computer Vision and Pattern Recog-
+authors gratefully acknowledge the access to the Marvin             nition (CVPR) , 1280–1289URL: https://api.semanticscholar.org/
+                                                                    CorpusID:244799297.
+cluster of the University of Bonn.
+                                                                 Cheng, B., Schwing, A., Kirillov, A., 2021b. Per-pixel classification is not
+                                                                    all you need for semantic segmentation. Advances in neural information
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                  Page 24 of 28
+                               One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+   processing systems 34, 17864–17875.                                           Guo, C., Pleiss, G., Sun, Y., Weinberger, K.Q., 2017. On calibration
+Cheng, H., Zhang, M., Shi, J.Q., 2024. A survey on deep neural network              of modern neural networks, in: Proceedings of the 34th International
+   pruning: Taxonomy, comparison, analysis, and recommendations. IEEE               Conference on Machine Learning-Volume 70, JMLR. org. pp. 1321–
+   Transactions on Pattern Analysis and Machine Intelligence 46, 10558–             1330.
+   10578.                                                                        Halbheer, M., Mühlematter, D.J., Schindler, K., 2024. Lora-ensemble:
+Dempster, A.P., Laird, N.M., Rubin, D.B., 1977a. Maximum likelihood                 Efficient uncertainty modelling for self-attention networks .
+   from incomplete data via the em algorithm. Journal of the Royal               Havasi, M., Jenatton, R., Fort, S., Liu, J.Z., Snoek, J., Lakshminarayanan,
+   Statistical Society. Series B (Methodological) 39, 1–38. URL: http:              B., Dai, A.M., Tran, D., . Training independent subnetworks for robust
+   //www.jstor.org/stable/2984875.                                                  prediction, in: International Conference on Learning Representations.
+Dempster, A.P., Laird, N.M., Rubin, D.B., 1977b. Maximum likelihood              He, J., Zhou, C., Ma, X., Berg-Kirkpatrick, T., Neubig, G., . Towards a
+   from incomplete data via the em algorithm. Journal of the Royal                  unified view of parameter-efficient transfer learning, in: International
+   Statistical Society: Series B (Methodological) 39, 1–22. URL: https://           Conference on Learning Representations.
+   doi.org/10.1111/j.2517-6161.1977.tb01600.x, doi:10.1111/j.2517-6161.          Hendrycks, D., Gimpel, K., 2016. A baseline for detecting misclassified
+   1977.tb01600.x.                                                                  and out-of-distribution examples in neural networks. arXiv preprint
+Dettmers, T., Pagnoni, A., Holtzman, A., Zettlemoyer, L., 2023. Qlora:              arXiv:1610.02136 .
+   Efficient finetuning of quantized llms. Advances in neural information        Hofman, P., Sale, Y., Hüllermeier, E., 2025a. Uncertainty quantifi-
+   processing systems 36, 10088–10115.                                              cation with proper scoring rules: Adjusting measures to prediction
+Dimitriadis, T., Gneiting, T., Jordan, A.I., 2021. Stable reliability diagrams      tasks. ArXiv abs/2505.22538. URL: https://api.semanticscholar.org/
+   for probabilistic classifiers. Proceedings of the National Academy of            CorpusID:278959324.
+   Sciences 118, e2016191118. doi:10.1073/pnas.2016191118.                       Hofman, P., Sale, Y., Hüllermeier, E., 2025b. Uncertainty quantification
+Dong, Y., Cordonnier, J.B., Loukas, A., 2021. Attention is not all you              with proper scoring rules: Adjusting measures to prediction tasks. arXiv
+   need: Pure attention loses rank doubly exponentially with depth, in:             preprint arXiv:2505.22538 .
+   International conference on machine learning, PMLR. pp. 2793–2803.            Hu, E.J., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen,
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Un-          W., et al., . Lora: Low-rank adaptation of large language models, in:
+   terthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., et al.,       International Conference on Learning Representations.
+   . An image is worth 16x16 words: Transformers for image recognition           Huang, G., Li, Y., Pleiss, G., Liu, Z., Hopcroft, J.E., Weinberger, K.Q.,
+   at scale, in: International Conference on Learning Representations.              2017. Snapshot ensembles: Train 1, get m for free, in: International
+Drees, L., Demie, D.T., Paul, M.R., Leonhardt, J., Seidel, S.J., Döring,            Conference on Learning Representations.
+   T.F., Roscher, R., 2024. Data-driven crop growth simulation on time-          Huang, Y., Zhang, H., Shi, Y., Kolter, J.Z., Anandkumar, A., 2021. Training
+   varying generated images using multi-conditional generative adversarial          certifiably robust neural networks with efficient local lipschitz bounds.
+   networks. Plant Methods 20. doi:10.1186/s13007-024-01205-3.                      Advances in Neural Information Processing Systems 34, 22745–22757.
+Drees, L., Weber, I., Rußwurm, M., Roscher, R., 2022. Time depen-                Hüllermeier, E., 2022. Quantifying aleatoric and epistemic uncertainty
+   dent image generation of plants from incomplete sequences with cnn-              in machine learning: Are conditional entropy and mutual information
+   transformer, in: DAGM German Conference on Pattern Recognition,                  appropriate measures?, in: Conference on Uncertainty in Artificial In-
+   Springer. pp. 495–510.                                                           telligence.
+Farag, M., Emam, A., Leonhardt, J., Roscher, R., 2025. Enhancing decision        Hüllermeier, E., Waegeman, W., 2019. Aleatoric and epistemic uncertainty
+   support in crop production: Analyzing conformal prediction for uncer-            in machine learning: an introduction to concepts and methods. Machine
+   tainty quantification. Computers and Electronics in Agriculture 237,             Learning 110, 457 – 506.
+   110559. URL: https://www.sciencedirect.com/science/article/pii/               Kerssies, T., Cavagnero, N., Hermans, A., Norouzi, N., Averta, G., Leibe,
+   S0168169925006659, doi:https://doi.org/10.1016/j.compag.2025.110559.             B., Dubbelman, G., de Geus, D., 2025. Your vit is secretly an image
+Fernandez, J., Na, C., Tiwari, V., Bisk, Y., Luccioni, S., Strubell, E.,            segmentation model, in: Proceedings of the Computer Vision and Pattern
+   2025. Energy considerations of large language model inference and                Recognition Conference, pp. 25303–25313.
+   efficiency optimizations, in: Proceedings of the 63rd Annual Meeting of       Kierdorf, J., Junker-Frohn, L.V., Delaney, M., Olave, M.D., Burkart, A.,
+   the Association for Computational Linguistics (Volume 1: Long Papers),           Jaenicke, H., Muller, O., Rascher, U., Roscher, R., 2023. Growliflower:
+   pp. 32556–32569.                                                                 An image time-series dataset for growth analysis of cauliflower. Journal
+Gal, Y., Ghahramani, Z., 2015. Dropout as a bayesian approximation:                 of Field Robotics 40, 173–192. doi:https://doi.org/10.1002/rob.22122.
+   Representing model uncertainty in deep learning, in: International Con-       Kim, J., Kim, J., Ryu, E.K., 2025. Lora training provably converges to a
+   ference on Machine Learning.                                                     low-rank global minimum or it fails loudly (but it probably won’t fail),
+Gawlikowski, J., Tassi, C.R.N., Ali, M., Lee, J., Humt, M., Feng, J., Kruspe,       in: International Conference on Machine Learning.
+   A., Triebel, R., Jung, P., Roscher, R., Shahzad, M., Yang, W., Bamler,        Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao,
+   R., Zhu, X.X., 2023. A survey of uncertainty in deep neural networks.            T., Whitehead, S., Berg, A.C., Lo, W.Y., et al., 2023. Segment anything,
+   Artif. Intell. Rev. 56, 1513–1589. doi:10.1007/s10462-023-10562-9.               in: Proceedings of the IEEE/CVF international conference on computer
+Geva, M., Schuster, R., Berant, J., Levy, O., 2021. Transformer feed-               vision, pp. 4015–4026.
+   forward layers are key-value memories, in: Proceedings of the 2021            Lakshminarayanan, B., Pritzel, A., Blundell, C., 2017. Simple and scalable
+   Conference on Empirical Methods in Natural Language Processing, pp.              predictive uncertainty estimation using deep ensembles, in: Proceedings
+   5484–5495.                                                                       of the 31st International Conference on Neural Information Processing
+Gholami, A., Kim, S., Dong, Z., Yao, Z., Mahoney, M.W., Keutzer, K.,                Systems, Curran Associates Inc., Red Hook, NY, USA. p. 6405–6416.
+   2022. A survey of quantization methods for efficient neural network           Laplace, P.S., 1774. Mémoire sur la probabilité des causes par les
+   inference, in: Low-power computer vision. Chapman and Hall/CRC, pp.              événements. Mémoires de Mathématique et de Physique, présentés à
+   291–326.                                                                         l’Académie Royale des Sciences par divers savants, Tome sixième , 621–
+Gogianu, F., Berariu, T., Rosca, M.C., Clopath, C., Busoniu, L., Pascanu,           656Also available in Oeuvres complètes de Laplace, vol. 8, pp. 27–65.
+   R., 2021. Spectral normalisation for deep reinforcement learning:             Laurent, O., Lafage, A., Tartaglione, E., Daniel, G., Martinez, J.m., Bursuc,
+   an optimisation perspective, in: International Conference on Machine             A., Franchi, G., . Packed ensembles for efficient uncertainty estimation,
+   Learning, PMLR. pp. 3734–3744.                                                   in: The Eleventh International Conference on Learning Representations.
+Gruber, C., Schenk, P.O., Schierholz, M., Kreuter, F., Kauermann, G., 2023.      Liu, J.Z., Lin, Z., Padhy, S., Tran, D., Bedrax-Weiss, T., Lakshminarayanan,
+   Sources of uncertainty in machine learning - a statisticians’ view. ArXiv        B., 2020. Simple and principled uncertainty estimation with determin-
+   abs/2305.16703.                                                                  istic deep learning via distance awareness, in: Advances in Neural Infor-
+                                                                                    mation Processing Systems 33 (NeurIPS 2020), Vancouver, Canada.
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                 Page 25 of 28
+                               One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Loaiza-Ganem, G., Villecroze, V., Wang, Y., 2025. Deep ensembles secretly        Shaker, M.H., Hüllermeier, E., 2021. Ensemble-based uncertainty quan-
+   perform empirical bayes. arXiv preprint arXiv:2501.17917 .                       tification: Bayesian versus credal inference, in: PROCEEDINS 31.
+Loh, P.L., 2025.       A theoretical review of modern robust statistics.            WORKSHOP COMPUTATIONAL INTELLIGENCE. doi:10.48550/
+   Annual Review of Statistics and Its Application 12, 477–496.                     ARXIV.2107.10384.
+   URL:          https://www.annualreviews.org/content/journals/10.1146/         Shlens, J., 2014. A tutorial on principal component analysis. ArXiv
+   annurev-statistics-112723-034446,           doi:https://doi.org/10.1146/         abs/1404.1100.         URL: https://api.semanticscholar.org/CorpusID:
+   annurev-statistics-112723-034446.                                                2051212.
+Melas-Kyriazi, L., 2021. Do you even need attention? a stack of feed-            Smitt, C., Halstead, M., Zaenker, T., Bennewitz, M., McCool, C., 2021.
+   forward layers does surprisingly well on imagenet. arXiv preprint                Pathobot: A robot for glasshouse crop phenotyping and intervention,
+   arXiv:2105.02723 .                                                               in: 2021 IEEE International Conference on Robotics and Automation
+Meng, F., Wang, Z., Zhang, M., 2024. Pissa: Principal singular values               (ICRA), IEEE. pp. 2324–2330.
+   and singular vectors adaptation of large language models. Advances            Sodano, M., Magistri, F., Behley, J., Stachniss, C., 2024. Open-World
+   in Neural Information Processing Systems 37, 121038–121072.                      Panoptic Segmentation arXiv:2412.12740. URL: http://arxiv.org/pdf/
+Menon, A.S., Aravinth, J., Sankaran, R., Kiran, P., 2025. Deep learning             2412.12740.
+   based farm-level crop yield prediction using multi-temporal satellite data    Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I., Salakhutdinov,
+   for complex engineering application. Smart Agricultural Technology               R., 2014. Dropout: A simple way to prevent neural networks from
+   12, 101562. URL: https://www.sciencedirect.com/science/article/                  overfitting. Journal of Machine Learning Research 15, 1929–1958.
+   pii/S2772375525007932, doi:10.1016/j.atech.2025.101562.                          URL: http://jmlr.org/papers/v15/srivastava14a.html.
+Miyato, T., Kataoka, T., Koyama, M., Yoshida, Y., 2018. Spectral normal-         Teixeira, I., Morais, R., Sousa, J.J., Cunha, A., 2023. Deep learning models
+   ization for generative adversarial networks, in: International Conference        for the classification of crops in aerial imagery: A review. Agriculture
+   on Learning Representations.                                                     13. doi:10.3390/agriculture13050965.
+Moreno-Torres, J.G., Raeder, T., Alaiz-Rodríguez, R., Chawla, N.V., Her-         Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N.,
+   rera, F., 2012. A unifying view on dataset shift in classification. Pattern      Kaiser, Ł., Polosukhin, I., 2017. Attention is all you need. Advances in
+   Recognition 45, 521–530. doi:https://doi.org/10.1016/j.patcog.2011.              neural information processing systems 30.
+   06.019.                                                                       Venkataramanan, S., Ghodrati, A., Asano, Y.M., Porikli, F., Habibian, A., .
+Mühlematter, D.J., Halbheer, M., Becker, A., Narnhofer, D., Aasen,                  Skip-attention: Improving vision transformers by paying less attention,
+   H., Schindler, K., Turkoglu, M.O., 2024. Lora-ensemble: Efficient                in: The Twelfth International Conference on Learning Representations.
+   uncertainty modelling for self-attention networks. arXiv preprint             Wang, D., Gong, B., Wang, L., 2022a. On calibrating semantic segmenta-
+   arXiv:2405.14438 .                                                               tion models: Analyses and an algorithm. 2023 IEEE/CVF Conference on
+Mukhoti, J., Kirsch, A., van Amersfoort, J., Torr, P.H., Gal, Y., 2023. Deep        Computer Vision and Pattern Recognition (CVPR) , 23652–23662URL:
+   deterministic uncertainty: A new simple baseline, in: Proceedings of the         https://api.semanticscholar.org/CorpusID:261092306.
+   IEEE/CVF Conference on Computer Vision and Pattern Recognition                Wang, D., Gong, B., Wang, L., 2023. On calibrating semantic segmentation
+   (CVPR), pp. 24384–24394.                                                         models: Analyses and an algorithm, in: Proceedings of the IEEE/CVF
+Newhouse, L., Hess, R.P., Cesista, F., Zahorodnii, A., Bernstein, J., Isola,        Conference on Computer Vision and Pattern Recognition, pp. 23652–
+   P., 2025. Training transformers with enforced lipschitz constants. arXiv         23662.
+   preprint arXiv:2507.13338 .                                                   Wang, G., Zhao, Y., Tang, C., Luo, C., Zeng, W., 2022b. When shift
+Onal, E., Flöge, K., Caldwell, E., Sheverdin, A., Fortuin, V., . Gaussian           operation meets vision transformer: An extremely simple alternative
+   stochastic weight averaging for bayesian low-rank adaptation of large            to attention mechanism, in: Proceedings of the AAAI conference on
+   language models, in: Sixth Symposium on Advances in Approximate                  artificial intelligence, pp. 2423–2430.
+   Bayesian Inference-Non Archival Track.                                        Wen, Y., Tran, D., Ba, J., . Batchensemble: an alternative approach to
+Paischer, F., Hauzenberger, L., Schmied, T., Alkin, B., Deisenroth, M.P.,           efficient ensemble and lifelong learning, in: International Conference on
+   Hochreiter, S., 2024. Parameter efficient fine-tuning via explained              Learning Representations.
+   variance adaptation. arXiv preprint arXiv:2410.07170 .                        Wen, Y., Vicol, P., Ba, J., Tran, D., Grosse, R.B., 2018. Flipout: Efficient
+Paul, R.D., Quercia, A., Fortuin, V., Nöh, K., Scharr, H., 2024. Parameter-         pseudo-independent weight perturbations on mini-batches. International
+   efficient bayesian neural networks for uncertainty-aware depth estima-           Conference on Learning Representations (ICLR) abs/1803.04386.
+   tion. arXiv e-prints , arXiv–2409.                                            White, C., Safari, M., Sukthanker, R., Ru, B., Elsken, T., Zela, A., Dey, D.,
+Postels, J., Segu, M., Sun, T., Gool, L.V., Yu, F., Tombari, F., 2021. On           Hutter, F., 2023. Neural architecture search: Insights from 1000 papers.
+   the practicality of deterministic epistemic uncertainty, in: International       arXiv preprint arXiv:2301.08727 .
+   Conference on Machine Learning.                                               Xie, E., Wang, W., Yu, Z., Anandkumar, A., Alvarez, J.M., Luo, P., 2021.
+Postels, J., Segù, M., Sun, T., Sieber, L.D., Van Gool, L., Yu, F., Tombari,        Segformer: Simple and efficient design for semantic segmentation with
+   F., 2022. On the practicality of deterministic epistemic uncertainty,            transformers. Advances in neural information processing systems 34,
+   in: International Conference on Machine Learning, PMLR. pp. 17870–               12077–12090.
+   17909.                                                                        Xin, J., Tang, R., Yu, Y., Lin, J., 2021. The art of abstention: Selective
+Quan, L., Feng, H., Lv, Y., Wang, Q., Zhang, C., Liu, J., Yuan, Z., 2019.           prediction and error regularization for natural language processing,
+   Maize seedling detection under different growth stages and complex               in: Zong, C., Xia, F., Li, W., Navigli, R. (Eds.), Proceedings of the
+   field environments based on an improved faster r–cnn. Biosystems                 59th Annual Meeting of the Association for Computational Linguis-
+   Engineering 184, 1–23. doi:https://doi.org/10.1016/j.biosystemseng.              tics and the 11th International Joint Conference on Natural Language
+   2019.05.002.                                                                     Processing (Volume 1: Long Papers), Association for Computational
+Ranftl, R., Bochkovskiy, A., Koltun, V., 2021. Vision transformers for dense        Linguistics, Online. pp. 1040–1051. URL: https://aclanthology.org/
+   prediction, in: Proceedings of the IEEE/CVF international conference on          2021.acl-long.84/, doi:10.18653/v1/2021.acl-long.84.
+   computer vision, pp. 12179–12188.                                             Xu, Z., Min, H., MacDonald, L.E., Luo, J., Tarmoun, S., Mallada, E., Vidal,
+Salehi, M., Mirzaei, H., Hendrycks, D., Li, Y., Rohban, M.H., Sabokrou,             R., 2025. Understanding the learning dynamics of lora: A gradient
+   M., 2021. A unified survey on anomaly, novelty, open-set, and out-of-            flow perspective on low-rank adaptation in matrix factorization, in:
+   distribution detection: Solutions and future challenges. Trans. Mach.            International Conference on Artificial Intelligence and Statistics, PMLR.
+   Learn. Res. 2022.                                                                pp. 4636–4644.
+Sensoy, M., Kaplan, L., Kandemir, M., 2018. Evidential deep learning             Yun, S., Han, D., Oh, S.J., Chun, S., Choe, J., Yoo, Y., 2019. Cutmix: Reg-
+   to quantify classification uncertainty. Advances in neural information           ularization strategy to train strong classifiers with localizable features,
+   processing systems 31.                                                           in: Proceedings of the IEEE/CVF international conference on computer
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                 Page 26 of 28
+                             One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+  vision, pp. 6023–6032.                                                      to avoid destabilizing previously learned features. Under the
+Zhang, M., Chen, H., Shen, C., Yang, Z., Ou, L., Yu, X., Zhuang, B., 2024a.   current experimental setup, where data and training duration
+  Loraprune: Structured pruning meets low-rank parameter-efficient fine-      are limited, fine-tuning all biases appears to introduce insta-
+  tuning, in: Findings of the Association for Computational Linguistics:
+  ACL 2024, pp. 3013–3026.                                                    bility rather than improving adaptation.
+Zhang, Q., Chen, M., Bukharin, A., He, P., Cheng, Y., Chen, W., Zhao, T.,
+  . Adaptive budget allocation for parameter-efficient fine-tuning, in: The   Batch Size and Learning Rate
+  Eleventh International Conference on Learning Representations.                  While varying the batch size does not appear to have a
+Zhang, S., Liu, H., Lin, S., He, K., 2024b. You only need less attention      noticeable effect on performance, the learning rate plays a
+  at each stage in vision transformers, in: Proceedings of the IEEE/CVF       crucial role in model behavior and stability.
+  Conference on Computer Vision and Pattern Recognition, pp. 6057–
+  6066.
+                                                                                  Ablation on the learning rate reveals two extreme regimes.
+Zhang, Z., Lin, Y., Liu, Z., Li, P., Sun, M., Zhou, J., 2022. Moefication:    When the learning rate is set to a large value (2 × 10−1 ), the
+  Transformer feed-forward layers are mixtures of experts, in: Findings of    model completely fails to learn meaningful representations
+  the Association for Computational Linguistics: ACL 2022, pp. 877–890.       as shown in Table 15, resulting in a mean IoU of 0.0 and a
+Zhou, B., Zhao, H., Puig, X., Xiao, T., Fidler, S., Barriuso, A., Torralba,   False Negative Rate of 1.0. This indicates that the model
+  A., 2019. Semantic understanding of scenes through the ade20k dataset.
+  International Journal of Computer Vision 127, 302–321.
+                                                                              collapses to predicting only the background class. Such
+                                                                              behavior is expected, as an excessively high learning rate
+                                                                              can destabilize optimization, causing the model to overshoot
+                                                                              minima and converge to degenerate solutions. Specifically
+A. Appendix A: Further Analysis of The                                        in Biderman et al. (2024) they mention that LoRA adapters
+   Ablation Study                                                             need smaller learning rate compared to full rank fine tuning.
+ST-LoRA Initializer                                                               At the other extreme, smaller learning rates such as
+     We also evaluate the impact of different ST-LoRA                         2 × 10−3 and 2 × 10−4 yield the highest mean IoU scores
+weight initialization strategies, including EVA, OST-LoRA,                    in our experiments (0.8860 ± 0.0018 and 0.8802 ± 0.0023,
+and PISSA Paischer, Hauzenberger, Schmied, Alkin, Deisen-                     respectively). Although these results might initially sug-
+roth and Hochreiter (2024); Büyükakyüz (2024); Meng,                          gest that very small learning rates are optimal. Very small
+Wang and Zhang (2024). As shown in Table 15, introducing                      learning rates might limit ST-LoRA diversity as we expect
+these specialized initializers does not lead to consistent per-               that with small learning rate the approach lose an aspect of
+formance improvements. The baseline configuration without                     diversification which leads to a degenerate solution reached
+any dedicated ST-LoRA initializer achieves the best overall                   by different checkpoints.
+performance, with a mean IoU of 0.8178 ± 0.0295, outper-
+                                                                              LoRA Dropout and Frozen Encoder/Decoder
+forming EVA (0.7795 ± 0.0455), OLoRA (0.7872 ± 0.0850),
+                                                                                  As shown in Table 16, fine tuning the dropout value
+and PISSA (0.8097 ± 0.0172).
+                                                                              enhances the performance. The baseline with 𝑝 = 0.10
+     While some initializers yield competitive results, with-
+                                                                              achieves mIoU of 68.09% while the best result achieved
+out specialized intializer option provide a clear advantage
+                                                                              is 69.0% with 𝑝 = 0.20. However the calibration metrics
+over the default initialization. This observation suggests that,
+                                                                              for the former dropout value is smaller compared to the
+for the considered segmentation task, explicit ST-LoRA ini-
+                                                                              later one, which reflects the tension between optimizing for
+tialization strategies may not be necessary. However, further
+                                                                              segmentation quality versus miscalibration reduction. Table
+experiments on different datasets and architectures would
+                                                                              16 shows that with a frozen encoder and increasing the rank
+be required to confirm whether this behavior generalizes
+                                                                              monotonically, mIoU and calibration metrics have shown
+beyond the current setting.
+                                                                              the worst performance compared to the case where only one
+Bias Setting                                                                  component from the encoder to be adapted by LoRA.
+    We further investigate the impact of different bias train-                    For Decoder, we tried to compare the role of fine tuning
+ing strategies, including fine-tuning all biases (Backbone                    the decoder compared to having it frozen during encoder
+and ST-LoRA), fine-tuning only ST-LoRA biases, and freez-                     fine-tuning. Table 18 shows a clear trend, for nearly all cases
+ing all biases. The results indicate that the performance                     the frozen decoder affects not only the segmentation quality
+gap between the None and ST-LoRA-only bias settings                           but degrades the calibration heavily.
+is negligible. In contrast, fine-tuning all biases leads to a
+substantial degradation in performance, resulting in a mean                   Further Information: Experimental Setup
+IoU of 0.4348 ± 0.3574 as shown in Table 15.                                  Settings
+    This significant drop in performance may be related to
+                                                                                  All experiments are conducted on NVIDIA A100-PCIE-
+the fact that the backbone has been pre-trained and already
+                                                                              80GB GPUs from the Marvin cluster, using up to four GPUs
+encodes useful representations through transfer learning.
+                                                                              per node for training and a single GPU for inference. RAM
+Allowing the backbone biases to be updated can perturb
+                                                                              allocation varies between 128 GB and 512 GB depending
+these learned representations, particularly given the depth of
+                                                                              on dataset and image size. All results are reported across
+the network. Properly adapting such pre-trained components
+                                                                              five random seeds (42, 123, 456, 789, 1337) for statistical
+typically requires larger training datasets and longer training
+                                                                              significance.
+
+Farag et al.: Preprint submitted to Elsevier                                                                                  Page 27 of 28
+                              One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+Table 13
+Effect of ST-LoRA hyperparameters and architectural choices on SegFormer-B2 performance on GrowliFlower-L. ↑: higher is
+better; ↓: lower is better. All results report mean ± std over 5 seeds, and best result per metric in bold.
+ Category                  Setting                             mIoU ↑             FNR ↓             ECE ↓            MECE ↓        Trainable Parameters (%) ↓
+                           2                               0.3151 ± 0.3863   0.6574 ± 0.4205   0.0646 ± 0.0303   0.1367 ± 0.0863               4.64
+                           4                               0.5553 ± 0.3191   0.4009 ± 0.3532   0.1021 ± 0.0338   0.2905 ± 0.1190               5.11
+                           8                               0.7285 ± 0.1081   0.2151 ± 0.1460   0.0744 ± 0.0688   0.2864 ± 0.1483               6.03
+ LoRA rank - 𝑟
+                           16                              0.6277 ± 0.3154   0.3257 ± 0.3409   0.0529 ± 0.0350   0.1748 ± 0.0640               7.81
+                           32 (baseline)                   0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+                           64                              0.8134 ± 0.0194   0.0973 ± 0.0442   0.0329 ± 0.0338   0.2165 ± 0.0835              17.26
+                           128                             0.8231 ± 0.0110   0.0879 ± 0.0180   0.0062 ± 0.0041   0.1607 ± 0.0750              27.20
+                           𝑞, 𝑘𝑣, 𝑓 𝑐1 , 𝑓 𝑐2 (baseline)   0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+                           𝑞, 𝑓 𝑐1 , 𝑓 𝑐2                  0.8469 ± 0.0021   0.0726 ± 0.0039   0.0041 ± 0.0008   0.1561 ± 0.0348               9.87
+ Components                𝑞, 𝑘𝑣, 𝑓 𝑐1                     0.8429 ± 0.0095   0.0719 ± 0.0097   0.0038 ± 0.0018   0.1280 ± 0.0601               8.97
+                           𝑞, 𝑘𝑣, 𝑓 𝑐2                     0.7505 ± 0.1439   0.1810 ± 0.1765   0.0358 ± 0.0604   0.1916 ± 0.1460               8.97
+                           𝑞, 𝑘𝑣                           0.8158 ± 0.0273   0.1300 ± 0.0394   0.0037 ± 0.0013   0.0999 ± 0.0290               6.63
+                           𝑓 𝑐1 , 𝑓 𝑐2                     0.8509 ± 0.0023   0.0718 ± 0.0045   0.0034 ± 0.0003   0.1231 ± 0.0124               8.97
+                           𝑘𝑣                              0.8311 ± 0.0128   0.1064 ± 0.0145   0.0025 ± 0.0018   0.0705 ± 0.0430               8.97
+                           𝑞                               0.8551 ± 0.0012   0.0557 ± 0.0016   0.0035 ± 0.0002   0.1163 ± 0.0057               8.97
+                           𝑓 𝑐2                            0.8498 ± 0.0046   0.0715 ± 0.0053   0.0035 ± 0.0002   0.1367 ± 0.0075               6.63
+                           𝑓 𝑐1                            0.8613 ± 0.0018   0.0513 ± 0.0021   0.0042 ± 0.0003   0.1686 ± 0.0079               6.63
+                           8                               0.8622 ± 0.0080   0.0498 ± 0.0109   0.0132 ± 0.0173   0.1719 ± 0.0334              11.19
+                           16                              0.8531 ± 0.0042   0.0551 ± 0.0034   0.0047 ± 0.0007   0.1760 ± 0.0190              11.19
+ LoRA scaling factor - 𝛼   32                              0.8290 ± 0.0163   0.0709 ± 0.0104   0.0091 ± 0.0085   0.2005 ± 0.0804              11.19
+                           64 (baseline)                   0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+                           128                             0.4645 ± 0.3796   0.5072 ± 0.4031   0.0492 ± 0.0379   0.1184 ± 0.1015              11.19
+                           EVA                             0.7795 ± 0.0455   0.1557 ± 0.0580   0.0130 ± 0.0164   0.1256 ± 0.0574              11.19
+                           OLoRA                           0.7872 ± 0.0850   0.1244 ± 0.1202   0.0261 ± 0.0350   0.2331 ± 0.0929              11.19
+ Initializer
+                           PISSA                           0.8097 ± 0.0172   0.1224 ± 0.0291   0.0299 ± 0.0353   0.1527 ± 0.0888              11.19
+                           None (baseline)                 0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+                           All                             0.4348 ± 0.3574   0.5515 ± 0.3690   0.0703 ± 0.0377   0.2537 ± 0.0958              11.45
+ Bias Setting              LoRA-only                       0.8103 ± 0.0232   0.1143 ± 0.0456   0.0142 ± 0.0160   0.1599 ± 0.0479              11.31
+                           None (baseline)                 0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+                           8                               0.8254 ± 0.0098   0.0899 ± 0.0162   0.0050 ± 0.0015   0.1405 ± 0.0518              11.19
+ Batch Size                16                              0.8106 ± 0.0212   0.1124 ± 0.0489   0.0408 ± 0.0421   0.2222 ± 0.0916              11.19
+                           32 (baseline)                   0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+                           2 × 10−1                        0.0000 ± 0.0000   1.0000 ± 0.0000   0.0820 ± 0.0148   0.0820 ± 0.0148              11.19
+                           2 × 10−2 (baseline)             0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+ Learning Rate
+                           2 × 10−3                        0.8860 ± 0.0018   0.0254 ± 0.0013   0.0050 ± 0.0003   0.2876 ± 0.0138              11.19
+                           2 × 10−4                        0.8802 ± 0.0023   0.0274 ± 0.0049   0.0057 ± 0.0005   0.2590 ± 0.0427              11.19
+                           2×10−3                          0.8135 ± 0.0021   0.1011 ± 0.0161   0.0248 ± 0.0188   0.2021 ± 0.0764              11.19
+                           2×10−4 (baseline)               0.8178 ± 0.0295   0.1093 ± 0.0410   0.0126 ± 0.0166   0.1367 ± 0.0198              11.19
+ 𝜂min
+                           2×10−5                          0.8096 ± 0.0212   0.1132 ± 0.0438   0.0310 ± 0.0330   0.2046 ± 0.0881              11.19
+                           2×10−6                          0.8148 ± 0.0304   0.0983 ± 0.0543   0.0240 ± 0.0341   0.2168 ± 0.0735              11.19
+
+
+
+    For snapshot-based methods (ST-LoRA and FRE), we
+retain the last four checkpoints of each training trajectory,
+discarding the first snapshot as the model is still in an early
+underfitting phase at that point and including it would distort
+the ensemble evaluation.
+    For DDU, we use features from the last layer of the pixel
+decoder to fit our GMM model. We use the number of pixels
+for each class in the dataset as a prior by counting the number
+of pixels for each class per dataset and dividing by the total
+number of pixels.
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                 Page 28 of 28
+                               One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Table 14
+Effect of ST-LoRA hyperparameters and architectural choices on Mask2Former segmentation performance on BUP20. 𝑞𝑑 , 𝑘𝑑 ,
+and cls denote the transformer decoder’s query projection, key projection, and class predictor, respectively. 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒 , and dense𝑒
+refer to the Swin-B encoder’s query, key, value projections and dense (MLP) layers. The rank, 𝛼, and dropout sweeps use 𝑞𝑑 , 𝑘𝑑 ,
+cls, dense𝑒 as target modules. ↑: higher is better; ↓: lower is better. All results report mean ± std over 5 seeds. and best result per
+metric in bold.
+  Category                Setting                                     mIoU ↑              ECE ↓            MECE ↓             ACE ↓            MACE ↓
+                          2                                       0.6582 ± 0.0170    0.0143 ± 0.0058   0.1507 ± 0.0410   0.0646 ± 0.0331   0.0961 ± 0.0377
+                          4                                       0.6734 ± 0.0223    0.0089 ± 0.0049   0.0833 ± 0.0361   0.0306 ± 0.0222   0.0510 ± 0.0246
+                          8 (baseline)                            0.6809 ± 0.0171    0.0028 ± 0.0017   0.0939 ± 0.0612   0.0041 ± 0.0020   0.0092 ± 0.0060
+  ST-LoRA rank – 𝑟
+                          16                                      0.6791 ± 0.0292    0.0036 ± 0.0019   0.1672 ± 0.0320   0.0024 ± 0.0009   0.0091 ± 0.0059
+                          32                                      0.6801 ± 0.0239    0.0030 ± 0.0003   0.0798 ± 0.0653   0.0018 ± 0.0008   0.0106 ± 0.0094
+                          64                                      0.6942 ± 0.0122    0.0045 ± 0.0039   0.1053 ± 0.0799   0.0019 ± 0.0025   0.0099 ± 0.0155
+                          2                                       0.6763 ± 0.0097    0.0161 ± 0.0043   0.2020 ± 0.0945   0.0505 ± 0.0202   0.0759 ± 0.0260
+                          4                                       0.6773 ± 0.0230    0.0062 ± 0.0015   0.0678 ± 0.0147   0.0137 ± 0.0045   0.0245 ± 0.0060
+  ST-LoRA scaling – 𝛼     8 (baseline)                            0.6809 ± 0.0171    0.0028 ± 0.0017   0.0939 ± 0.0612   0.0041 ± 0.0020   0.0092 ± 0.0060
+                          16                                      0.6831 ± 0.0140    0.0026 ± 0.0006   0.1033 ± 0.0968   0.0026 ± 0.0006   0.0074 ± 0.0044
+                          32                                      0.6766 ± 0.0145    0.0030 ± 0.0020   0.0746 ± 0.0402   0.0022 ± 0.0005   0.0087 ± 0.0029
+                          0.10 (baseline)                         0.6809 ± 0.0171    0.0028 ± 0.0017   0.0939 ± 0.0612   0.0041 ± 0.0020   0.0092 ± 0.0060
+                          0.15                                    0.6734 ± 0.0165    0.0037 ± 0.0020   0.1277 ± 0.0551   0.0048 ± 0.0010   0.0094 ± 0.0039
+  ST-LoRA dropout
+                          0.20                                    0.6908 ± 0.0153    0.0044 ± 0.0019   0.0752 ± 0.0342   0.0047 ± 0.0022   0.0098 ± 0.0060
+                          0.25                                    0.6825 ± 0.0209    0.0035 ± 0.0024   0.0711 ± 0.0301   0.0053 ± 0.0020   0.0105 ± 0.0054
+                          0.30                                    0.6752 ± 0.0144    0.0035 ± 0.0017   0.0622 ± 0.0428   0.0041 ± 0.0024   0.0081 ± 0.0071
+                          𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑞𝑒              0.6870 ± 0.0199    0.0030 ± 0.0013   0.0665 ± 0.0285   0.0042 ± 0.0018   0.0093 ± 0.0040
+                          𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑘𝑒              0.6976 ± 0.0099    0.0038 ± 0.0013   0.0796 ± 0.0518   0.0049 ± 0.0031   0.0098 ± 0.0051
+                          𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑣𝑒              0.6599 ± 0.0248    0.0030 ± 0.0011   0.0574 ± 0.0408   0.0040 ± 0.0019   0.0090 ± 0.0039
+  Components              𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑞𝑒 , 𝑘𝑒         0.6760 ± 0.0152    0.0027 ± 0.0013   0.0704 ± 0.0424   0.0032 ± 0.0010   0.0075 ± 0.0022
+                          𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑞𝑒 , 𝑣𝑒         0.6828 ± 0.0154    0.0041 ± 0.0026   0.0699 ± 0.0473   0.0043 ± 0.0017   0.0115 ± 0.0072
+                          𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑘𝑒 , 𝑣𝑒         0.6972 ± 0.0198    0.0040 ± 0.0012   0.0825 ± 0.0231   0.0036 ± 0.0015   0.0076 ± 0.0037
+                          𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒 , 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒    0.6767 ± 0.0313    0.0032 ± 0.0018   0.0990 ± 0.0296   0.0040 ± 0.0019   0.0098 ± 0.0049
+
+
+
+
+Table 15
+Effect of ST-LoRA hyperparameters and architectural choices on Mask2Former segmentation performance on BUP20 𝑞𝑑 , 𝑘𝑑 ,
+and cls denote the transformer decoder’s query projection, key projection, and class predictor, respectively. 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒 , and dense𝑒
+refer to the Swin-B encoder’s query, key, value projections and dense (MLP) layers. The rank sweep uses 𝑞𝑑 , 𝑘𝑑 , cls as target
+modules. Best result per category is in bold. We ablate the rank here with the encoder completely frozen.
+  Category              Setting                                      mIoU ↑              ECE ↓             MECE ↓             ACE ↓            MACE ↓
+                        2                                        0.2270 ± 0.0140    0.0720 ± 0.0253    0.3203 ± 0.0357   0.1619 ± 0.0347   0.2489 ± 0.0230
+                        4                                        0.2528 ± 0.0070    0.0480 ± 0.0043    0.2466 ± 0.0247   0.0933 ± 0.0199   0.1819 ± 0.0162
+                        8                                        0.2831 ± 0.0068    0.0487 ± 0.0014    0.2032 ± 0.0155   0.0533 ± 0.0160   0.1531 ± 0.0169
+  ST-LoRA rank – 𝑟
+                        16                                       0.3002 ± 0.0107    0.0467 ± 0.0038    0.1782 ± 0.0076   0.0386 ± 0.0096   0.1352 ± 0.0095
+                        32                                       0.3192 ± 0.0103    0.0445 ± 0.0035    0.1676 ± 0.0129   0.0363 ± 0.0066   0.1270 ± 0.0107
+                        64                                       0.3203 ± 0.0181    0.0478 ± 0.0040    0.1824 ± 0.0161   0.0316 ± 0.0093   0.1275 ± 0.0157
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒                        0.5818 ± 0.0073    0.0148 ± 0.0050    0.2164 ± 0.0900   0.0109 ± 0.0026   0.0416 ± 0.0126
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑘𝑒                        0.5594 ± 0.0256    0.0141 ± 0.0014    0.2528 ± 0.3065   0.0114 ± 0.0055   0.0407 ± 0.0076
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑣𝑒                        0.6310 ± 0.0235    0.0127 ± 0.0021    0.1133 ± 0.0115   0.0094 ± 0.0016   0.0383 ± 0.0033
+                        𝑞𝑑 , 𝑘𝑑 , cls, dense𝑒                    0.6839 ± 0.0174    0.0032 ± 0.0012    0.0619 ± 0.0258   0.0032 ± 0.0008   0.0057 ± 0.0010
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , 𝑘𝑒                   0.5982 ± 0.0086    0.0095 ± 0.0037    0.1035 ± 0.0154   0.0094 ± 0.0059   0.0271 ± 0.0133
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , 𝑣𝑒                   0.6692 ± 0.0153    0.0102 ± 0.0035    0.1146 ± 0.0488   0.0088 ± 0.0048   0.0295 ± 0.0091
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , dense𝑒               0.6833 ± 0.0199    0.0035 ± 0.0014    0.0851 ± 0.0573   0.0043 ± 0.0018   0.0092 ± 0.0038
+  Components            𝑞𝑑 , 𝑘𝑑 , cls, 𝑘𝑒 , 𝑣𝑒                   0.6647 ± 0.0142    0.0088 ± 0.0018    0.0921 ± 0.0135   0.0096 ± 0.0056   0.0258 ± 0.0059
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑘𝑒 , dense𝑒               0.6873 ± 0.0114    0.0033 ± 0.0012    0.0920 ± 0.0729   0.0048 ± 0.0018   0.0091 ± 0.0041
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑣𝑒 , dense𝑒               0.6833 ± 0.0248    0.0042 ± 0.0011    0.0774 ± 0.0610   0.0047 ± 0.0020   0.0106 ± 0.0036
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒              0.6704 ± 0.0237    0.0073 ± 0.0022    0.1206 ± 0.0461   0.0072 ± 0.0022   0.0213 ± 0.0077
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , 𝑘𝑒 , dense𝑒          0.6927 ± 0.0308    0.0036 ± 0.0006    0.0943 ± 0.0284   0.0043 ± 0.0009   0.0085 ± 0.0030
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , 𝑣𝑒 , dense𝑒          0.6844 ± 0.0209    0.0041 ± 0.0013    0.0871 ± 0.0478   0.0036 ± 0.0024   0.0075 ± 0.0043
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑘𝑒 , 𝑣𝑒 , dense𝑒          0.6867 ± 0.0214    0.0043 ± 0.0015    0.1151 ± 0.0459   0.0037 ± 0.0010   0.0093 ± 0.0019
+                        𝑞𝑑 , 𝑘𝑑 , cls, 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒 , dense𝑒     0.6859 ± 0.0175    0.0030 ± 0.0010    0.0741 ± 0.0430   0.0042 ± 0.0010   0.0076 ± 0.0021
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                                                Page 29 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+Table 16
+Relative change (%) when freezing the decoder versus fine-tuning performed on BUP20 by using Mask2Former architecture.,
+computed as 𝛿 = (𝑣frz − 𝑣ft ) ∕ 𝑣ft × 100. For mIoU: 𝛿 > 0 indicates the frozen decoder yields higher accuracy (improvement);
+𝛿 < 0 indicates degradation. For calibration metrics (ECE, MECE, ACE, MACE; lower is better): 𝛿 > 0 indicates higher error
+(degradation); 𝛿 < 0 indicates improvement.
+  Category           Setting                   Δ mIoU (%)   Δ ECE (%)      Δ MECE (%)        Δ ACE (%)      Δ MACE (%)
+                     2                            −1.7        +198.6          +97.3            +107.6          +86.4
+                     4                            −0.6        +21.3           +44.8             +5.6           −0.6
+                     8 (baseline)                 +1.0        +42.9           +12.7            +82.9           +42.4
+  Rank – 𝑟
+                     16                           +0.6        −27.8           −16.0            +62.5           −35.2
+                     32                           +0.2        −23.3           −11.4            +77.8           −25.5
+                     64                           −1.9        +46.7           −14.5            +100.0          +81.8
+                     2                            −3.3        +16.1           +75.2            +65.9           +48.7
+                     4                            −2.5        +27.4           +78.3            +60.6           +51.0
+  Scaling – 𝛼        8 (baseline)                 +1.0        +42.9           +12.7            +82.9           +42.4
+                     16                           −1.6         −7.7           −10.1            +30.8           +2.7
+                     32                           +0.2         −6.7           +22.7            +118.2          +43.7
+                     0.10 (baseline)              +1.0        +42.9           +12.7            +82.9           +42.4
+                     0.15                         +0.1        +35.1           −52.2            +112.5         +115.9
+  Dropout – 𝑝        0.20                         −1.2        +13.6           +9.8             +100.0          +60.2
+                     0.25                         −0.7        +42.9           +53.3            +84.9           +63.8
+                     0.30                         +0.3        +37.1           −9.3             +107.3          +83.9
+                     dns, cls (baseline)          +1.0        +42.9           +12.7            +82.9           +42.4
+                     dns, cls, 𝑞𝑒                 −1.8        +53.3           +46.8            +123.8          +76.3
+                     dns, cls, 𝑘𝑒                 −0.6        +42.1           +32.9            +114.3          +83.7
+                     dns, cls, 𝑣𝑒                 +1.6        +20.0           +38.3            +95.0           +60.0
+  Components
+                     dns, cls, 𝑞𝑒 , 𝑘𝑒            +2.5        +63.0           +25.7            +165.6          +96.0
+                     dns, cls, 𝑞𝑒 , 𝑣𝑒            −1.9        −17.1           +10.9            +69.8           −12.2
+                     dns, cls, 𝑘𝑒 , 𝑣𝑒            +0.1        +60.0           +8.0             +130.6         +117.1
+                     dns, cls, 𝑞𝑒 , 𝑘𝑒 , 𝑣𝑒       +1.0        +18.8           −15.7            +87.5           +38.8
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                   Page 30 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+                  Figure 11: Hyperparameters robustness against distribution shift measured by mIoU metric.
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                  Page 31 of 28
+                          One Trajectory, Many Predictions: Efficient UQ via LoRA Snapshot Ensembles
+
+
+
+
+                  Figure 12: Hyperparameters robustness against distribution shift measured by ECE metric.
+
+
+
+
+Farag et al.: Preprint submitted to Elsevier                                                                 Page 32 of 28
+

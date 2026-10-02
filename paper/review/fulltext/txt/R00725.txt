@@ -1,0 +1,1216 @@
+                                              TasselNetV4: A vision foundation model for cross-scene, cross-scale, and cross-species
+                                                                                plant counting
+
+                                               Xiaonan Hua , Xuebing Lib , Jinyu Xuc , Abdulkadir Duran Adana , Letian Zhoua , Xuhui Zhua , Yanan Lid , Wei Guoe , Shouyang
+                                                                                             Liuf , Wenzhong Liub , Hao Lua,∗
+                                         a National Key Laboratory of Multispectral Information Intelligent Processing Technology, School of Artificial Intelligence and Automation, Huazhong University
+
+                                                                                                  of Science and Technology, Wuhan, 430074, China
+                                             b China-Poland Joint Laboratory on Measurement and Control Technology, School of Artificial Intelligence and Automation, Huazhong University of Science and
+
+                                                                                                         Technology, Wuhan, 430074, China
+                                                                  c School of Cyber Science and Engineering, Huazhong University of Science and Technology, Wuhan, 430074, China
+                                                                         d School of Computer Science and Engineering, Wuhan Institute of Technology, Wuhan, 450205, China
+                                                             e Graduate School of Agricultural and Life Sciences, The University of Tokyo, 1-1-1 Midori-cho, Nishitokyo City, Tokyo, Japan
+                                             f Engineering Research Center of Plant Phenotyping, Ministry of Education, Jiangsu Collaborative Innovation Center for Modern Crop Production, Academy for
+arXiv:2509.20857v1 [cs.CV] 25 Sep 2025
+
+
+
+
+                                                                             Advanced Interdisciplinary Studies, Nanjing Agricultural University, Nanjing, 210095, China
+
+
+
+
+                                         Abstract
+                                            Accurate plant counting provides valuable information for agriculture such as crop yield prediction, plant density assessment,
+                                         and phenotype quantification. Vision-based approaches are currently the mainstream solution. Prior art typically uses a detection or
+                                         a regression model to count a specific plant. However, plants have biodiversity, and new cultivars are increasingly bred each year.
+                                         It is almost impossible to exhaust and build all species-dependent counting models. Inspired by class-agnostic counting (CAC) in
+                                         computer vision, we argue that it is time to rethink the problem formulation of plant counting, from what plants to count to how
+                                         to count plants. In contrast to most daily objects with spatial and temporal invariance, plants are dynamic, changing with time and
+                                         space. Their non-rigid structure often leads to worse performance than counting rigid instances like heads and cars such that current
+                                         CAC and open-world detection models are suboptimal to count plants. In this work, we inherit the vein of the TasselNet plant
+                                         counting model and introduce a new extension, TasselNetV4, shifting from species-specific counting to cross-species counting.
+                                         TasselNetV4 marries the local counting idea of TasselNet with the extract-and-match paradigm in CAC. It builds upon a plain vision
+                                         transformer and incorporates novel multi-branch box-aware local counters used to enhance cross-scale robustness. In particular,
+                                         two challenging datasets, PAC-105 and PAC-Somalia, are harvested. PAC-105 features 105 plant- and organ-level categories from
+                                         64 plant species, spanning various scenes. PAC-Somalia, specific to out-of-distribution validation, features 32 unique plant species
+                                         in Somalia. Extensive experiments against state-of-the-art CAC models show that TasselNetV4 achieves not only superior counting
+                                         performance but also high efficiency, with a mean absolute error of 16.04, an R2 of 0.92, and up to 121 FPS inference speed on
+                                         images of 384 × 384 resolution. Our results indicate that TasselNetV4 emerges to be a vision foundation model model for cross-
+                                         scene, cross-scale, and cross-species plant counting. To facilitate future plant counting research, we plan to release all the data,
+                                         annotations, code, and pretrained models at https://github.com/tiny-smart/tasselnetv4.
+                                         Keywords: Plant-agnostic counting, Class-agnostic counting, Vision foundation model, Agricultural remote sensing, Plant
+                                         phenotyping
+
+
+                                         1. Introduction                                                                      where it can face a wide spectrum of spatial scales and ima-
+                                                                                                                              ging conditions, ranging from remote sensing imagery via satel-
+                                             Plant counting facilitates various tasks in digital agriculture                  lites or unmanned aerial vehicles (UAVs) (Bai et al., 2023), to
+                                         such as plant phenotyping (Khoroshevsky et al., 2021), crop                          field-based imagery by handheld devices (Buzzy et al., 2020),
+                                         growth monitoring (Valente et al., 2020), yield estimation (Kit-                     and even microscopic imagery in laboratory environments (Zhu
+                                         ano et al., 2019), and crop management (Chamara et al., 2023).                       et al., 2021). To meet the need of monitoring large-scale plant
+                                         Efficient plant counting can substantially accelerate the cycle                      populations in diverse scenarios, a number of high-throughput
+                                         of scientific discovery in plant science. For example, counting                      vision-based plant counting approaches have been developed
+                                         tiller numbers of rice enables the identification of high-yield                      to count plants, such as tomatoes (Rahnemoonfar and Shep-
+                                         varieties, potentially reducing the breeding cycle by up to two                      pard, 2017), maize tassels (Hasan et al., 2018), and sorghum
+                                         years (Lin et al., 2020). Besides scientific research, plant count-                  heads (Ghosal et al., 2019).
+                                         ing is also required in day-to-day agricultural management,
+                                                                                                                                 Albeit effective, existing plant counting models can only
+                                                                                                                              count specific plants or organs, such as wheat spikes (Hasan
+                                         ∗       Corresponding author                                                         et al., 2018), rice plants (Deng et al., 2021), and sorghum
+    Input                     Density Map   Input                      Count Map
+                                      54                                       54
+                  Grape
+                 Counter
+
+
+                                      29                                       29
+                                                          Plant
+                  Wheat
+                                                         Agnostic
+                 Counter
+                                                         Counter
+
+
+                                     443                                      443
+                Sorghum
+                Counter
+
+
+
+       (a) Plant-specific Counting              (b) Plant-agnostic Counting
+
+
+Figure 1. Comparison between plant-specific counting and plant-agnostic                 Figure 2. Comparison between counting rigid objects and non-rigid plants.
+counting. In (a) plant-specific counting, each plant species requires training a        For rigid objects such as crowds, cars, birds, and cells, their shapes and physical
+specific model. For (b) plant-agnostic counting, one could resort to a single           sizes do not vary significantly across instances or change greatly with time,
+model to count any plant species given few plant exemplars (white boxes),               while for non-rigid plants, different instances from the same species could have
+without model retraining.                                                               rather different shapes and appearance at different growing stages. The counting
+                                                                                        instance of interest may also change with time.
+
+heads (Ghosal et al., 2019). When a target plant changes,
+the model becomes inapplicable and requires retraining. This
+                                                                                        plant-specific counting approaches. After realizing that the
+implies a repetitive loop of new data collection, data annota-
+                                                                                        shape and size variations of different plants can cause ambigu-
+tion, and model finetuning, introducing excessive costs for
+                                                                                        ous representation in the per-pixel density map (a standard re-
+practical applications. Indeed a standardizable plant count-
+                                                                                        gression target used by mainstream counting approaches), pre-
+ing model that enables cross-species plant counting is of ur-
+                                                                                        vious plant counting approaches have developed a robust count-
+gent need for modern agriculture. Inspired by Class-Agnostic
+                                                                                        ing paradigm—local counting (Lu et al., 2017)—to regress the
+Counting (CAC) (Lu et al., 2018) in computer vision, we
+                                                                                        counts directly from sub-image patches. Local counting avoids
+adapt this concept to the plant domain and introduce Plant-
+                                                                                        the hard per-pixel learning and alleviates potential occlusions.
+Agnostic Counting (PAC). As shown in Fig. 1, in contrast to
+                                                                                        In our previous work, TasselNet (Lu et al., 2017), we show that
+plant-specific counting that trains separate models for differ-
+                                                                                        the local counting paradigm works better than the density map
+ing plants, PAC aims to count all plants with a single, unified
+                                                                                        regression Lempitsky and Zisserman (2010) for plants. Tas-
+model.
+                                                                                        selNetV2 (Xiong et al., 2019; Lu and Cao, 2020) and Tassel-
+   Notice that the standard CAC benchmark FSC-147 (Ranjan
+                                                                                        NetV3 (Lu et al., 2021) further advance this paradigm. Given
+et al., 2021) has already included some plant categories1 such
+                                                                                        the success of these practices, we presume the local counting
+as apple and strawberry. Why create another PAC task spe-
+                                                                                        idea should also be applicable to PAC.
+cific to plants? In this paper, we show that directly adopting
+existing CAC approaches to PAC can be suboptimal, and vice                                 In this work, we introduce TasselNetV4, the new generation
+versa. Current CAC approaches typically focus on measuring                              of the TasselNet series models, for cross-scene, cross-scale,
+the similarity between exemplars and target objects, with an un-                        and cross-species plant counting. Specifically, TasselNetV4
+derlying assumption that intra-class variations are much smaller                        integrates the local counting idea into the CACViT frame-
+than inter-class ones. This assumption may hold for common ri-                          work (Wang et al., 2024b), a clean baseline implemented with
+gid objects (Fig. 2(a)), such as crowds (Zhang et al., 2015; Liu                        a plain vision transformer (ViT), the decoupled attention for
+et al., 2023), cars (Mundhenk et al., 2016; Guo et al., 2022),                          implicit similarity matching, and an aspect-ratio scale embed-
+birds (Akçay et al., 2020), and cells (Xue et al., 2016), but                           ding. Due to the adoption of token-level local counters, we
+not for plants. Plants are dynamic systems and often present                            evade the time-consuming ViT decoder blocks and upsampling
+non-rigid morphology: their shapes and appearance can change                            stages in CACViT. To enhance cross-scale generalization, we
+with space (different environmental conditions) and time (dif-                          propose multi-branch box-aware counters that dynamically ad-
+ferent growth stages). The category of interest for counting can                        apt to different plant scales conditioned on exemplar sizes. We
+also change as plants grow (Fig. 2(b)). For example, maize                              remark that, different from the physical-size variations derived
+tassels are counted during the tasseling and flowering stages,                          from the non-rigid nature of plants, plants can suffer from scale
+while maize ear kernels are counted at the maturity stage. A                            variations as well due to the perspective change and varying
+single plant may have multiple countable instances at different                         imaging heights. To make full use of the attention map, we also
+growth stages. They are more than the fruit category covered                            develop an attention-informed visualizer to visualize counting
+by FSC-147.                                                                             results. To facilitate the study of PAC and to validate our ap-
+   To address the problems above, we draw inspiration from                              proach, we construct the first two challenging plant-agnostic
+                                                                                        counting datasets, PAC-105 and PAC-Somalia. PAC-105 en-
+1    To clarify the term used, we use plant species to indicate different plant
+                                                                                        compasses 2, 646 images and 105 countable plant categories
+     varieties or cultivars and plant categories to denote different countable          from 64 plant species, including fruits, seeds, flowers, and
+     categories such as distinct plant organs of the same species.                      leaves, and additionally, covers morphologically diverse plants
+                                                                                    2
+across various growth stages. PAC-Somalia comprises 1, 542               counting and regression-based counting. Several approaches
+images from 32 exclusive plant species in Somalia. Most of               have been developed following the two paradigms, managing
+these images are not available online and are all manually cap-          to count leaves (Itzhaky et al., 2018), sorghum heads (Ghosal
+tured due to the difficulty of data collection, which is thus par-       et al., 2019), wheat spikes (Hasan et al., 2018), and so
+ticularly valuable and suitable for out-of-distribution (OOD)            on. TasselNetV2 (Xiong et al., 2019) and TasselNetV2+ (Lu
+evaluation.                                                              and Cao, 2020) emphasize the benefits of regression-based
+   Extensive experiments under both the 1-shot and 3-shot set-           methods with local context, especially in cases with overlaps
+tings demonstrate that TasselNetV4 achieves state-of-the-art             and varying object sizes typical in plant counting. Despite
+performance on the PAC-105 and PAC-Somalia datasets. Un-                 state-of-the-art efficiency and accuracy, redundancy in count
+der the 3-shot setting, TasselNetV4 achieves an MAE (Mean                maps hampers visualization clarity. To address this, Tassel-
+Absolute Error) of 16.04, an RMSE (Root Mean Square Error)               NetV3 (Lu et al., 2021) proposes an encoder-decoder architec-
+of 28.03, a WCA (Weighted Counting Accuracy) of 0.74, and                ture with guided upsampling, leading to improved explainab-
+an R2 (R-squared) value of 0.92 on the PAC-105 dataset. Addi-            ility. Detection-based methods (Yang et al., 2021; Lu et al.,
+tional results on the PAC-Somalia dataset also confirm the su-           2024; Li et al., 2023; Lu et al., 2023) have gained popularity due
+periority of our approach, achieving an MAE of 8.88, an RMSE             to YOLO (Redmon et al., 2016). While they typically outper-
+of 13.11, a WCA of 0.72, and an R2 value of 0.87. Visualization          form the TasselNet series, the improvement comes at the cost of
+results indicate that our model is capable of counting a target          more expensive bounding box annotations (Xiong et al., 2019),
+plant from complex background and of discriminating a target             compared to dotted annotations used by regression-based ap-
+plant from multiple plant species. Moreover, the model exhibits          proaches.
+strong robustness to scale variations, producing accurate pre-               Looking back to these methods, they generally follow a sim-
+dictions across varying scales, including both remote sensing            ilar workflow: targeting a specific plant, collecting new data of
+and in-field imagery. In terms of efficiency, our method also            the plant, annotating the data, and training a new model. Such
+achieves a runtime reduction of approximately 35.67% and re-             a plant-specific workflow leads to the repetitive execution of
+duces parameter counts by 18.10% compared with the standard              time-consuming tasks, and limits the standardization of a model
+CACViT baseline.                                                         to promote to wide plant species.
+   The contributions of this work include the following:
+                                                                         2.2. Class-agnostic counting
+• PAC: a new plant-orientated task called plant-agnostic count-             Counting objects from an image has been a long-standing
+  ing, customizing class-agnostic counting into the plant do-            problem in computer vision. Existing approaches mainly fo-
+  main and highlighting zero-shot generalization across fine-            cus on counting specific object classes (Zhang et al., 2015; Guo
+  grained plant species;                                                 et al., 2022; Xue et al., 2016). To mitigate class dependency, a
+                                                                         new direction of CAC emerges recently (Lu et al., 2018), aim-
+• TasselNetV4: a vision foundation model that inherits the vein
+                                                                         ing to build a counting model that generalizes to wide object
+  of TasselNet plant counting model series and that extends
+                                                                         categories. A dataset called FSC-147 is also constructed for
+  plant-specific counting to cross-scene, cross-scale, and cross-
+                                                                         CAC. CAC is typically formulated in an ‘extract-then-match’
+  species plant counting;
+                                                                         manner. Lu et al. (2018) applies a CNN to extract both image
+• PAC-105 and PAC-Somalia: two challenging PAC datasets,                 and exemplar features and uses inner product to match them.
+  which provides comprehensive benchmarks and facilitates                Radford et al. (2021) further introduces a correlation map to
+  future plant counting studies.                                         enable multi-scale matching. Shi et al. (2022) introduces simil-
+                                                                         arity guidance from a single matching stage to two stages, with
+                                                                         a dynamic similarity metric and a similarity loss. Instead of
+2. Related work                                                          using the similarity guidance implicitly, You et al. (2023) ex-
+                                                                         plicitly enhance the regression features, and Lin et al. (2022)
+2.1. Plant counting                                                      introduces a scale prior to the deformable convolution block.
+   The applications of computer vision in plant counting can                With Vision Transformer (ViT, Dosovitskiy et al. (2020)) be-
+date back to 2016 (Giuffrida et al., 2016), where a learning-            coming off-the-shelf, there is a growing interest in integrating
+based model is proposed to count the leaves of rosette plants.           the attention mechanism in CAC. Liu et al. (2022) first uses
+Simultaneously, DeepCount (Rahnemoonfar and Sheppard,                    self-attention blocks for feature extraction and then treats im-
+2017) applies a deep learning model to count tomatoes. Both              ages as queries and exemplars as keys and values to execute
+methods, however, were tested in controlled indoor environ-              cross-attention for matching. Wang et al. (2024a) embeds size
+ments. DeepFruit (Bargoti and Underwood, 2017) marked the                information into ViT, helping respond to the scale variations of
+first attempt to count plants in the field, using a CNN-based            different instances. Wang et al. (2024b) instead argues that it is
+method to detect and sum individual tomatoes in an orchard.              more straightforward for ViT to model images and exemplars in
+   TasselNet (Lu et al., 2017), a milestone in plant counting,           the same token sequence rather than separately as in CountTR.
+showcases one of the first applications of modern deep regres-           They expound this idea as ‘extract and match’ with a decoupled
+sion techniques in plant counting. It also triggers the debate           view of attention and report state-of-the-art performance on the
+of two mainstream plant counting paradigms: detection-based              FSC-147 dataset.
+                                                                     3
+Figure 3. Overview of the PAC-105 dataset. (a) Distribution of different plant categories. (b) Number of plants in an image. (c) Data annotation process. Each
+instance is labeled with a dot, while three instances are boxed as exemplars. (d) Example images in the dataset. (e) Visual challenges in the dataset. First three rows
+show instances with large intra-class variations, such as different stages (row 1), different colors (row 2), and different cultivars of a single species (row 3). The last
+row shows different imaging conditions, including extremely sparse and dense scenes (column 1 and 2), remote sensing imagery (column 3), poor lighting (column
+4), indoor environment (column 5) and outdoor environment (column 6).
+
+
+
+   In this work, we introduce the PAC task which not only ex-                              • Diversity across scenes. The dataset should cover differ-
+tends the problem connotation of CAC but also imposes new                                    ent real-world environmental variations such as weather
+challenges outside the standard CAC.                                                         and soil conditions, including not only controlled labor-
+                                                                                             atory environments but also field-based ones, with com-
+3. Materials and methods                                                                     plex backgrounds, differing illumination, various growth
+                                                                                             stages, and so on;
+   In this section, we first introduce two new PAC datasets,
+PAC-105 and PAC-Somalia, constructed following the prin-                                   • Diversity across scales. The dataset should feature di-
+ciples of biodiversity and environmental diversity. We then                                  verse observation scales, encompassing hand-held im-
+formulate the class-agnostic counting problem, introduce our                                 agery (smartphones), ground-based imagery (fixed digital
+baseline model CACViT, and elaborate on our improvements                                     cameras), and remote sensing imagery (drones and satel-
+towards PAC in detail.                                                                       lites).
+
+                                                                                        Following these principles, we construct two datasets, with a
+3.1. PAC-105 and PAC-Somalia datasets
+                                                                                        broad range of species, visual appearance, and environmental
+  In this work, we develope two datasets, including the PAC-                            variations. We reveal the data collection and annotation details
+105 dataset and the PAC-Somalia dataset. They are built with                            as follows.
+the following principles in mind:
+                                                                                        PAC-105 dataset. The PAC-105 dataset consists of 2, 646 im-
+   • Diversity between species. The dataset should cover a
+                                                                                        ages and features 64 plant species with 105 different countable
+     sufficient number of plant species to reflect biodiversity;
+                                                                                        cultivars, as shown in Fig. 3. The images are classified based
+   • Diversity within species. For a specific plant, the samples                        on the target organ and plant species. Each countable category
+     should cover sufficient differences in appearance, growth                          contains a minimum of 4 and a maximum of 50 images, cov-
+     stages, and other intrinsic factors;                                               ering a wide range of cereal crops (e.g., wheat and rice), orna-
+                                                                                    4
+                                                                              PAC-Somalia dataset. We also collect a nationwide PAC-
+                                                                              Somalia dataset for OOD evaluation. This dataset includes
+                                                                              1, 542 images from 32 unique plant species in Somalia. To
+                                                                              maximize species diversity, we include at least one species
+                                                                              unique to the local ecosystem in each sub-region of Somalia, as
+                                                                              shown in Fig. 4. All images are manually captured, with around
+                                                                              6000 kilometers traveling throughout the country, including
+                                                                              also multiple growth stages, a variety of viewing angles, hetero-
+                                                                              geneous lighting conditions, and differing spatial densities. We
+                                                                              annotate this dataset following the same principles as PAC-105.
+                                                                              Notably, plant species in PAC-Somalia are underrepresented in
+                                                                              public data, including PAC-105, such that they are neither vis-
+                                                                              ible to the training set nor to pretrained backbones, making the
+                                                                              dataset suitable for OOD evaluation.
+
+                                                                              3.2. Problem formulation of few-shot class-agnostic counting
+                                                                                 Class-agnostic counting (CAC) aims to count objects of in-
+                                                                              terest in an image without predefined categories (Lu et al.,
+                                                                              2018). In practice, the object of interest is specified by a user-
+                                                                              provided bounding box from the input image, a.k.a. the exem-
+                                                                              plar. Formally, given an input image I ∈ R3×H×W of height
+                                                                              H and width W and l exemplars Ie ∈ Rl×3×h×w of height h and
+Figure 4. Unique species from Somalia in the PAC-Somalia dataset. Local       of width w (exemplars are resized here), indicating the object of
+names are given for species without scientific names.                         interest, the goal of CAC is to learn a function Fθ parameterized
+                                                                              by θ that satisfies
+                                                                                                       C = Fθ (I, Ie ) ,                     (1)
+mental plants (e.g., tulip), vegetables (e.g., lettuce), fruits (e.g.,        where C can be any form of counting-related output such as a
+apple and orange), industrial plants (e.g., beet and rapeseed),               density map (Ranjan et al., 2021), a set of bounding boxes (Ji-
+and different organs of the plants, including the whole plant,                ang et al., 2024), or a count map (Lu et al., 2017) used by this
+seedling, fruit, leaf tip, seed, flower, and so on. The image                 work.
+data are collected from multiple sources to guarantee data di-
+versity, including existing publicly available datasets for plant             3.3. CACViT baseline
+detection (Zou et al., 2020; David et al., 2020), plant count-                   TasselNetV4 builds on our previous work CACViT (Wang
+ing (Lu et al., 2017, 2021; Guo et al., 2018), plant classification           et al., 2024b), a state-of-the-art class-agnostic counter based on
+datasets (Lin et al., 2014), and open-sourced images from the                 a plain vision transformer. CACViT takes the image I, the ex-
+Internet. The dataset is split into a training set and a testing set          emplars Ie , and an additional box-informed scale embedding S
+with disjoint plant-level or organ-level categories. In particular,           as input, regressing the density map to represent object counts.
+65 categories are assigned to the training set, and the remaining
+40 categories are assigned to the testing set, with 1, 656 and 991            Decoupled attention. At the core of CACViT is the proposition
+images, respectively.                                                         of decoupled attention. To exposit it, we begin with the self-
+                                                                              attention (Vaswani, 2017) in vision transformer. Assume that an
+   We highlight the distinguished high intra-class variations in
+                                                                              image I is tokenized to N tokens by a patch size p and generate
+our dataset. As depicted in Fig. 3(e), this intra-class vari-
+                                                                              a triplet of d-dimensional query Q, key K, and value V. They
+ation results mainly from three aspects: different growth stages,
+                                                                              form the self-attention mechanism
+phenotypic variations among different plant individuals of the
+same species (e.g., color and shape) and of different cultivars,
+                                                                                                                                !
+                                                                                                                        A(Q, K)
+and diversity in scenarios, including different weather condi-                           Attention(Q, K, V) = softmax     √       V,      (2)
+                                                                                                                            d
+tions (sunny, cloudy, rainy, and overcast), observation scales
+(remote sensing and ground-based measurements), and plant                     where N = HW p2
+                                                                                              , and A(Q, K) = QK T denotes the attention map
+distributions (sparse and dense).                                             of size N×N. Given Eq. (2), the attention-weighted value vector
+   We annotate our dataset following the FSC-147 dataset and                  v′i can be computed by
+we use the VGG Image Annotator (Group, 2016) for annota-
+                                                                                                          j=1 sim(qi , k j ) v j
+                                                                                                         PN
+tion. Each instance is marked with a dot, and three exemplars
+                                                                                                 v′i =                             ,        (3)
+                                                                                                              j=1 sim(qi , k j )
+                                                                                                         PN
+are given with bounding boxes. Specifically, dot annotations are
+marked around the center of each instance. For occlusion cases,
+the occluded instance is annotated only when the occlusion is                 where qi , ki , and v j correspond to the i-th query vector, the
+less than 90%. Three exemplars are chosen randomly.                           k-th key vector, and the j-th value vector, respectively, and
+                                                                          5
+                                                                                  where Swi (m, n) = n wwi and Shi (m, n) = m hhi . All resized exem-
+                                                                                  plars and their corresponding scale embeddings are concaten-
+                                                                                  ated as input to CACViT.
+                                                                                     To compensate for the magnitude loss, the size information
+                                                                                  is further passed to the ViT block to enhance the attention map.
+                                                                                  Given resized exemplars Ie ∈ Rl×3×h×w , we represent the mag-
+                                                                                  nitude embedding Me as:
+                                                                                                                     l
+                                                                                                                 1 X wh
+                                                                                                          Me =               .                   (6)
+                                                                                                                 l i=1 wi hi
+
+                                                                                  This variable serves as a scaling factor of Amatch to compensate
+                                                                                  for the magnitude loss caused by softmax.
+
+Figure 5. Decoupling, generation, and visualization of attention map in           Deficiency of unreasonable tokenization. While benefiting
+CACViT. Amatch and Aquery highlight the foreground, while Aclass highlights       from the simplicity of ViT, CACViT inherits a limitation of
+the background.                                                                                                      1
+                                                                                  large-stride patch tokenization ( 16 resolution of the original im-
+                                                                                  age). The fixed stride and limited resolution can cause prob-
+                      T                                                           lems when using a local counter and tackling plants of multiple
+sim(q, k) = exp( q√dk ) computes the similarity between query                     scales. Next we elaborate on how we address these problems
+and key vectors. Eq. (3) unifies self-attention and cross-                        with multi-branch box-aware token-level counters.
+attention. When qi , ki , and v j are from the same token se-
+quence, it is self-attention; when qi is from another query token                 3.4. TasselNetV4 for plant-agnostic counting
+sequence, it becomes cross-attention.
+                                                                                     Before presenting TasselNetV4, we first briefly recap the tra-
+   Given image and exemplar tokens, one can execute unified
+                                                                                  jectory from TasselNet to TasselNetV3.
+self-attention and cross-attention using Eq. (3). For a sequence
+of N = Nq +Ne tokens, where Nq and Ne represent the number of
+                                                                                  3.4.1. From TasselNet to TasselNetV3
+image and exemplar tokens respectively, attention at this level,
+shown in Fig. 5, functions as both self-attention and cross-                         TasselNet is a specialized framework designed for plant
+attention from a decoupled perspective as                                         counting. It leverages the idea of redundant local counting to
+                                                                                  address specific challenges in plant counting, such as occlu-
+                                                                                  sions, plant growth, and high intra-class variability. Basically,
+                          "                   #
+                            Aquery     Aclass
+                      A=                        ,              (4)                this framework comprises several key modules, including an
+                            Amatch      Aexp
+                                                                                  encoder E used to extract image features, a decoder D used to
+where Aquery ∈ RNq ×Nq and Aexp ∈ RNe ×Ne denote the self-                        recover image resolution and refine features, a counter C used
+attention map w.r.t. the image and the exemplar, respectively,                    to output redundant count values, a normalizer N used for de-
+Amatch ∈ RNe ×Nq denotes the image-to-exemplar cross-attention                    redundancy, and a visualizer V used to visualize counting res-
+map, and Aclass ∈ RNq ×Ne denotes the exemplar-to-image cross-                    ults. The decoder is optional. Fig. 6 compares different Tassel-
+attention map. This decoupled view achieves joint feature en-                     Nets.
+hancement and condition injection, allowing implicit matching
+between image and exemplar tokens. This ‘extract-and-match’                       TasselNetV1. Being one of the first deep regression based plant
+operation has proven to be more effective than the previous                       counting models, TasselNet (Lu et al., 2017) manages to count
+‘extract-then-match’ paradigm (Ranjan et al., 2021; Shi et al.,                   maize tassels in the field using a CNN encoder E1 and a simple
+2022).                                                                            local patch counter C1 implemented by three fully-connected
+                                                                                  layers, regressing the per-patch count r, which takes the form
+Aspect-ratio-aware scale embedding. To compensate for the                                                                    
+loss of both scale and magnitude, CACViT introduces an                                                C = N1 cat C1 (E1 (Ii )) ,               (7)
+                                                                                                                 i
+aspect-ratio-aware scale embedding approach for each exem-
+plar. Given l exemplars, the i-th exemplar is of size 3 × hi × wi ,               where Ii is the i-th local image patch, and cat accumulates and
+                                                                                                                                 i
+and it is resized to a fixed size of 3 × h × w before tokeniz-                    projects all elements back to a map indexed by i. The cat oper-
+ation, leading to the information loss of both aspect ratio and                   ator is used to accumulate overlapped image patches and their
+scale. CACViT generates a width map Swi ∈ Rh×w with column-                       local counts to form a redundant count map R, and the nor-
+vector values ranging from 0 to wi and a height map Shi ∈ Rh×w                    malizer N1 averages each per-patch count in R into per-pixel
+with row-vector values ranging from 0 to hi , forming the scale                   counts divided by the patch counting frequency to generate the
+embedding Si ∈ Rh×w to inform the scale and aspect ratio, for-                    normalized count map C. For output visualization, a visualizer
+mulated by                                                                        V1 applies spatial average unpooling to redistribute each local
+                          Si = Shi + Swi ,                     (5)                count to a local region. TasselNetV1 points out a promising
+                                                                              6
+Figure 6. Comparison between TasselNets. TasselNetV1 utilizes a CNN network to regress per-patch local counts and obtains the count map by spatial concat-
+enating after prediction, successfully applied to maize tassel counting. TasselNetV2 presents a fully convolutional local counter to process the whole input image,
+extending its applicability to wheat head counting. TasselNetV2+ proposes a GPU-based normalizer to speed up inference and adopts a new encoder and counter.
+It manages to count sorghum heads additionally. TasselNetV3 constructs an encoder-decoder framework to enhance the explainability of count map visualization.
+The new designed architecture expands its usage to more plants, including rice plant counting. TasselNetV4 integrates local count with ViT framework, managing
+to count plant regardless of species.
+
+
+
+direction for addressing non-rigid plant counting over conven-                       of the normalizer, therefore proposing a GPU-based imple-
+tional density based approaches.                                                     mentation N2 , reformulating the N1 with GPU-based operator.
+                                                                                     It also simplifies the encoder E1 with a pre-downsampled en-
+TasselNetV2. To make full use of the local context in Tassel-                        coder E2 and introduces a lightweight local counter C3 with
+Net, TasselNetV2 (Xiong et al., 2019) processes the input im-                        parameter-efficient global average pooling. The model demon-
+age I in a fully convolutional manner and accurately counts                          strates lossless performance on counting maize tassels, wheat
+wheat spikes and maize tassels. It is formulated by                                  spikes, and sorghum heads. The whole pipeline takes the form
+                          C = N1 (C2 (E1 (I))) ,                           (8)                                 C = N2 (C3 (E2 (I))) .                          (9)
+where C2 denotes the TasselNetV2 counter implemented by                              Despite being much faster, the visualizer V1 remains unsatis-
+equivalent 1 × 1 convolutional layers. For de-redundancy, the                        factory for intuitive count visualization.
+same normalizer N1 is also applied to obtain the count map C,
+followed by the same visualizer V1 . TasselNetV2 marks the ba-
+sic maturity of modular design of the framework, featuring an                        TasselNetV3. To enhance the explainability of the count map,
+encoder, a counter, a normalizer, and a visualizer in sequence.                      TasselNetV3 (Lu et al., 2021) attributes the poor visualization
+                                                                                     to spatially averaged unpooling, which hinders precise localiz-
+TasselNetV2+. To improve efficiency, TasselNetV2+ (Lu and                            ation. To address this, TasselNetV3 introduces a decoder D1
+Cao, 2020) profiles TasselNetV2 and identifies the bottleneck                        to generate the feature map of low resolution Fl and of high
+                                                                                 7
+             Input Image
+
+
+                                                                                                   Concatenate 𝐴
+                                                                                                                                                                                Counter
+                                                                                                                                                                                Scale 1
+𝐻
+
+
+
+
+                                                                      KV
+                                                                      Q
+
+                                                                           Decoupled Attention
+
+
+
+
+                                                                                                                                         Attention Enhance
+                                           Patch Embedding
+                                                              ViT
+
+
+
+
+                                                                                                 LayerNrom
+
+
+
+
+                                                                                                                          LayerNrom
+                                                                               Multihead
+                                                             Blocks
+
+
+
+                                                                      KV
+                                                                      Q
+                                                               xL                                                                                                               Counter
+
+
+
+
+                                                                                                                MLP
+                𝑊
+             Exemplars
+                                                             …                                                                                                                  Scale 2
+         𝑤
+                                                                      …
+
+
+
+
+                                                                                                                                                                                   …
+    ℎ
+                              Embedding
+
+
+
+
+                                                                                                                                                                  Scale Prior
+                                                                      KV
+                                                                      Q
+                                Scale
+
+
+
+
+         𝑤 Resize
+                                                                                                             Last Block
+
+
+
+
+                                                                                                                                                                                                                                        Box-aware
+     ℎ                                                                                                                                                                          Counter
+
+
+
+
+                                                                                                                                                                                                  Slack conv
+
+
+
+
+                                                                                                                                                                                                                                         Counter
+                                                                                                                                                                                                               Avg Pool
+         𝑤             𝑤                                                                                                                                                        Scale k
+
+
+
+
+                                                                                                                                                                                                                          Conv
+                                                                                                                                                                                                                                 Conv
+    ℎ             ℎ
+                                                                                                                                      Magnitude
+                                                                                                                                      Embedding
+
+             𝐻, 𝑊 , (ℎ , 𝑤 , ℎ , 𝑤 , ℎ , 𝑤 )
+
+
+Figure 7. Framework of TasselNetV4. An input image and query exemplars are first tokenized into patches to form a joint token sequence. Meanwhile, the width
+and height of image and exemplars are passed to compute the magnitude embedding (Eq. (6)) and scale prior (Eq. (22)). After several ViT blocks, the last block
+decouples the attention to obtain the Amatch (Fig. 5). By further enhancing the image features with Amatch and compensating with the magnitude embedding, the
+enhanced features are finally decoded with multi-branch local counters. For each image, an appropriate local counter is selected based on the scale prior to generate
+the final output.
+
+
+
+resolution Fh , that is,                                                                                                the inputs. Yet, different from CACViT, the goal turns to regress
+                                                                                                                        the normalized count map, formulated by
+                                Fl , Fh = D1 (E3 (I)) .                                                      (10)
+                                                                                                                                                                        C = N2 (C5 (E4 (I, Ie , S), S)) .                                           (12)
+Then TasselNetV3 proposes a novel counter C4 that leverages
+Fh to guide the re-distribution of local counts dynamically,                                                            The image and exemplars are first split into tokens and con-
+which amounts to                                                                                                        catenated to obtain the token sequence F ∈ R(Lq +Le )×d , where
+                                                                                                                        Lq and Le denote the token number of the image and exem-
+                               C = N3 (C4 (Fl , Fh )) .                                                      (11)       plars, respectively, and d denotes the token dimension. A ViT-
+                                                                                                                        based encoder with decoupled attention is then applied to ex-
+With the new counter, TasselNetV3 introduces a new visual-                                                              tract and to enhance image features. In particular, we use
+izer V2 that adopts Fh to improve the fidelity of the count map,                                                        standard ViT-B pretrained with masked autoencoders (He et al.,
+thus improving the explanability. It also expands the applica-                                                          2022) on the FSC-147 dataset as CounTR (Liu et al., 2022) and
+tion scenarios to counting rice plants and counting maize tassels                                                       CACViT (Wang et al., 2024b). After feature extraction, we ap-
+captured by UAVs.                                                                                                       ply a multi-branch box-aware local counter to regress the re-
+                                                                                                                        dundant map, utilizing the scale information from exemplars as
+Remark. Although these TasselNet series models have shown
+                                                                                                                        a prior to switch among different branches.
+promising results, they always need to train a new model for a
+new plant species. We address this dilemma in a novel plant
+counting framework TasselNetV4.
+
+3.4.2. TasselNetV4 architecture
+   TasselNetV4 follows the spirit of TasselNet and adopts a sim-                                                        Token-level local counter. Directly applying local counting
+ilar framework. Yet, to enable plant-agnostic counting, it signi-                                                       within ViT could be problematic. In previous CNN-based Tas-
+ficantly interacts the CACViT framework. Concretely, Tassel-                                                            selNets, a local counter regresses counts w.r.t. pixels from ar-
+NetV4 consists of a plain vision transformer as the encoder E4 ,                                                        bitrary image patches. Given the input image I ∈ R3×H×W , we
+a novel token-level multi-branch box-aware local counter C5 , a                                                         extract a set of overlapping image patches by sliding a window
+conventional normalizer N2 , and an attention-informed visual-                                                          of size k × k with stride z, where k > z. Each patch is indexed
+izer V3 . Fig. 7 illustrates the TasselNetV4 pipeline, and Fig. 6                                                                                                   z ⌋} and iy ∈ {0, ..., ⌊ z ⌋}.
+                                                                                                                        by i = (i x , iy ), where i x ∈ {0, ..., ⌊ W−k                      H−k
+
+compares it with previous versions.                                                                                     We then collect the set of image patches within the i-th local
+                                                                                                                        counting window by
+Network overview. Akin to CACViT, TasselNetV4 considers a
+                                                                                                                                                             Ii = Iz·i+(u,v)       (u, v) ∈ {0, . . . , k − 1}2 .
+                                                                                                                                                                 
+query image I, the exemplars Ie , and the scale embedding S as                                                                                                                                                                                      (13)
+                                                                                                                    8
+                                                                                    z, (k p , z p ) should satisfy
+
+                                                                                                               (k, z) = p · (k p , z p ) .         (21)
+
+                                                                                    For ease of understanding, we use the pixel-level parameters
+                                                                                    (k, z) in what follows, representing the block size and output
+                                                                                    stride, respectively, for a unified representation of the local
+                                                                                    count as in previous TasselNet. Fig. 8 compares the difference
+                                                                                    between pixel-level and token-level local counting windows.
+                                                                                       The token-level local counter enables the model to count
+Figure 8. How the local counter works at the pixel level and the token level.
+The pixel-level local counter counts on arbitrary image patches, while token-       without high-res density maps. This eliminates the need for
+level local counter counts on tokens only.                                          the ViT decoder, upsampling modules, and subsequent convo-
+                                                                                    lutions used in CACViT, simplying the model architecture and
+                                                                                    enabling faster inference with fewer parameters.
+After acquiring the set of features Fi w.r.t. Ii , the redundant
+count map can be obtained by
+                                                                                    Multi-branch box-aware local counter. Albeit effective for
+                                 R = cat C(Fi ) .                       (14)        non-rigid counting like plants, there is a latent prerequisite be-
+                                         i                                          hind the working mechanism of the local counting: the block
+Notably, the constraint k > z entails redundant pixels between                      size k should match that of the plant scale. In PAC, plant scales
+adjacent patches, formulated by                                                     can vary significantly. We presume the single-scale token-level
+                                                                                    local counter above may be suboptimal to address scale such
+     Ii ∩ Ii′ = Iz·i′ +(u,v) | 0 ≤ N(u, v) < k − z · |i − i′ | ,                    variations. To verify this, we conduct a sanity check with an ex-
+               
+                                                                        (15)
+                                                                                    periment on the PAC-105. Specifically, we train a single local
+where i and i′ satisfying                                                           counter with k set to 32 × 32 and evaluate performance across
+                                           $ %                                      exemplars of different scales. We consider the exemplars smal-
+                                            k                                       ler than 32 × 32 pixels as small exemplars, and those larger
+                               ∥i − i ∥∞ <
+                                     ′
+                                               .                        (16)
+                                            z                                       than 96 × 96 pixels as large ones. We use the ratio of predicted
+                                                                                    values to ground truth values as the evaluation metric. Accord-
+The redundant region characterized by Eq. (15) is defined at the                    ing to the violin plot in Fig. 9, the single-scale local counter
+pixel level, which arises from the pixel-wise overlap between                       performs better on small exemplars than on large ones. For
+adjacent image patches. We refer the local counter in this case                     small exemplars, 36.81% of the samples fall within the interval
+as the pixel-level local counter.                                                   [0.8, 1.2], indicating stable and accurate predictions. However,
+   Instead of processing image pixels, ViT creates visual repres-                   for large exemplars, only 24.64% of the samples fall within the
+entations with image tokens. Tokens are non-overlapped image                        same interval. Moreover, around 72.60% of the samples fall
+patches T = {T m,n ∈ R p×p        m ∈ {0, ..., Hp }, n ∈ {0, ..., Wp }},            within the interval (0, 0.8], indicating a consistent underestim-
+where p denotes the patch size. In this sense, a local counting                     ation on large exemplars. We interpret this discrepancy lying
+window used in ViT should contain one or multiple independ-                         in the receptive field of the counter. A sufficiently large recept-
+ent tokens. Here we define the set w.r.t. the token-level local                     ive field allows the counter to capture complete plants entirely;
+counting window of size k p × k p by                                                however, a small receptive field may only cover a fraction of the
+                                                                                    plant, leading to performance degradation. In reality, due to the
+            T j = T z· j+(u,v)      (u, v) ∈ {0, 1, ..., k p − 1}2 ,
+                 
+                                                                        (17)
+                                                                                    nature of varying scales in plant sizes and the potential imaging
+where j = ( j x , jy ) indexes the center token of the window. Thus,                scale fluctuations of different images, it is difficult to choose a
+we can rewrite Eq. (14) by                                                          local counter with fixed receptive field. Since k reflects the re-
+                                                                                    ceptive field of one local counter, it is rational to set k slightly
+                               R = cat C5 (T j ) .                      (18)        larger than the size of the counted plant.
+                                         j
+                                                                                       To address this challenge, our idea is to design multiple local
+Following Eq. (15), we further define the redundant tokens                          counters w.r.t. different plant scales. During inference, the
+between adjacent token windows by                                                   model can choose an appropriate counter conditioned on the
+                                                                                    exemplar scale dynamically. We use the exemplar scale s as a
+  T j ∩ T j′ = T z p · j′ +(u,v)   0 ≤ (u, v) < k p − z p · | j − j′ | , (19)       prior to estimate the plant scale and represent s as
+              
+                                                                                                                  v
+where z p is the window stride, and j and j′ satisfying
+                                                                                                                  u
+                                                                                                                  t l       l
+                                                                                                               1 X X
+                                                                                                           s=           hi     wi ,                 (22)
+                                   $ %
+                                    kp                                                                          l   i=1    i=1
+                      ∥ j − j ∥∞ <
+                             ′
+                                         .                              (20)
+                                    zp
+                                                                                    where hi , wi denote the height and width of the i-th exemplar.
+In view of the pixel-level local counting window k and the stride                     Considering a three-branch local counter, we can rewrite
+                                                                                9
+       Sum(C)
+
+
+
+
+                                                                                          Upsampling
+                                                                                            Direct
+       Sum(C)
+
+
+
+
+                                                                                          Visualizer
+                                                                                           Density
+                                                                  0.02%
+                        15.29%
+ 1.2
+                        36.81%
+
+
+
+
+                                                                                          Visualizer
+                                                         24.64%
+
+
+
+
+                                                                                          Detection
+ 0.8
+
+
+                        47.90%                           72.60%
+
+
+
+                 Performance on                  Performance on                          Figure 10. Comparison of different visualizers. One is designed to serve as a
+                                                                                         density-like representation and the other is designed to serve as a detection-like
+                 Small Exemplars                 Large Exemplars                         representation.
+
+Figure 9. The performance distribution of single local counter on the PAC-
+105 dataset with varying exemplar scales. The vertical axis represents the
+ratio of the predicted counts to the ground truth. The violin plot on the left
+                                                                                         tailor the visualizer to two different practical scenarios based
+represents the performance distribution for exemplars with the size smaller than         on this token-level guidance. One is for the detection-like task
+32 × 32, while the one on the right corresponds to exemplars with the size larger        with these top-k tokens serving as a mask; the other is to ap-
+than 96 × 96. The performance of single local counter reveals a clear distinction        ply a Hadamard product between these top-k tokens and the
+between small and large exemplars.
+                                                                                         local count map, enabling the visualization of the region distri-
+                                                                                         bution and density. As shown in Fig. 10, both the detection-like
+Eq. (18) as                                                                              visualizer and the density-like visualizer merge similarity and
+                                                                                        counting information at the token level, thus being aware of the
+             
+              C1 (E4 (I, Ie , S), S; θ1 ), if s ∈ (0, S 1 ]                             representation and location of the instance.
+              52
+             
+             
+           R= C5 (E4 (I, Ie , S), S; θ2 ), if s ∈ (S 1 , S 2 ] ,
+             
+                                                                           (23)
+             
+                                                                                        Training and testing pipelines. During training, the training
+             C3 (E4 (I, Ie , S), S; θ3 ), if s ∈ (S 2 , S 3 ]
+             
+             
+                                                                                         images, dotted annotations, up to three exemplars (indicated by
+                5
+                                                                                         bounding boxes) for each image, and the scale embedding of the
+where Ci5 denotes the i-th counter, θi denotes its counter para-                         exemplars are used as inputs to train the model. In the count-
+meters, and S i is a predefined threshold that defines the scale                         ing head, all-branch counters infer the redundant count map R,
+boundary of certain exemplars. Eq. (23) indicates that the                               while only the branch that fits the scale prior s will contribute to
+model determines which counter to use conditioned on the in-                             backpropagation. We use the standard ℓ1 loss, which is defined
+terval including the scale prior s. We optimize all counters sim-                        by
+ultaneously during training. Furthermore, an additional slack                                           X3
+layer implemented by 3 × 3 convolution is attached to each                                        ℓ1 =     1(S i−1 < s ≤ S i )∥R − Rgt ∥ , S 0 = 0 ,    (25)
+counter to adapt features to different plant scales. We will                                                i=1
+demonstrate the necessity of this slack layer in Sec. 4.5.                               where Rgt is the ground-truth redundant count map (cf. Tassel-
+                                                                                         NetV2+ (Lu and Cao, 2020)), and 1(·) is the indicator function.
+Attention-informed visualizer. After normalization, we still                                During testing, exemplars are also provided for each testing
+need a visualizer to inform which regions are counted. The pre-                          sample. Different from the training stage, only a single branch
+vious explainable visualizer in TasselNetV3 is not applicable                            counter infers the redundant count map conditioned on the ex-
+to TasselNetV4 due to the reliance on high-resolution features.                          emplar scale per Eq. (23). The same normalizer N2 as Tassel-
+Hence, we propose an attention-informed, parameter-free visu-                            NetV2+ is used to project the predicted redundant map R̂ back
+alizer specific to TasselNetV4.                                                          to the normalized count map C and obtain the image count by
+   With the count map C ∈ R( o +1)×( o +1) and the attention
+                                  H−b       W−b
+
+                   H W                                                                   summing over C.
+map Amatch ∈ R( p × p ) from the last decoupled attention layer,
+we first interpolate C to the same resolution of Amatch . Then
+we select the top-k points in Amatch , assign a value of 1 to these                      4. Results
+points and 0 to others to generate a hint map, indicating instance
+                                                                                            Here we present our experimental results. We first intro-
+locations. The number of chosen points Ntop is jointly determ-
+                                                                                         duce the baselines, implementation details, and evaluation met-
+ined by the final predicted count and the magnitude embedding
+                                                                                         rics. We then present our ablation study to justify our technical
+Me (Eq. (6)) as                 X                                                        improvements. Additional experiments are also conducted to
+                         Ntop =     ci j Me ,                  (24)                      compare plant-specific counting against plant-agnostic count-
+                                       i, j
+                                                                                         ing and to highlight the peculiarity of plants with cross-dataset
+where ci j is the local count in C indexed by i and j. We can                            evaluation on FSC-147 (Ranjan et al., 2021).
+                                                                                    10
+4.1. Baselines, implementation details, and evaluation metrics                input image and its exemplars while preserving the ori-
+Baselines. We select six CAC approaches as base plant count-                  ginal aspect ratio. 384 × 384 image patches are cropped as
+ing models.                                                                   training samples from the resized images.
+
+                                                                           • Training details. We employ the AdamW optimizer in
+  • FamNet (Ranjan et al., 2021) is a matching-based method
+                                                                             conjunction with OneCycle scheduling to dynamically ad-
+    for zero-shot counting. It uses a CNN to extract features
+                                                                             just the learning rate throughout the training process. The
+    from images and exemplars and matches them to predict
+                                                                             base learning rate is set to 0.0001. The number of training
+    a density map. It also proposes a dataset FSC-147, which
+                                                                             epochs is set to 200, and it takes around 6 hours to con-
+    has become the standard CAC benchmark.
+                                                                             verge on a single NVIDIA GeForce RTX 3090. Notably,
+  • BMNet+ (Shi et al., 2022) proposes a similarity-aware                    we train all models only on PAC-105, with PAC-Somalia
+    framework by jointly learning representation and similar-                serving as a test dataset. To improve training efficiency,
+    ity metric in an end-to-end manner.                                      we apply the following strategies during training:
+
+  • SAFECount (You et al., 2023) extends the similarity-                         – Auto-mixed-precision (amp). This technique enables
+    aware design in BMNet+ by introducing similarity-guided                        the model to process data with FP-16 and FP-32
+    feature extraction.                                                            smoothly.
+  • SPDCNet (Lin et al., 2022) embeds the scale information                      – Flash attention. This technique optimizes the self-
+    into deformable convolution. It dynamically adjusts the                        attention mechanism, which significantly reduces
+    receptive field according to different instance scales.                        memory usage and computation time by computing
+                                                                                   attention in a fused and hardware-friendly manner. It
+  • CountTR (Liu et al., 2022) is one of the first methods in-                     requires only the precision of FP-16.
+    troducing ViT into CAC. It regresses density map with an
+                                                                                 – Adaptive Gaussian kernel. We assign the Gaussian
+    ‘extract then match’ pipeline.
+                                                                                   kernel size dynamically conditioned on the size of
+  • T-Rex2 (Jiang et al., 2024) exploits the text-image synergy                    the exemplar(s).
+    using CLIP (Radford et al., 2021) to train an open-world
+    object detection model. This model could be easily adap-             To ensure a fair comparison, these adjustments were consist-
+    ted to address the task of CAC.                                      ently applied to all baselines.
+
+  • CACViT (Wang et al., 2024b) introduces the ‘extract-and-             Evaluation metrics. We report the standard MAE and RMSE
+    match’ pipeline to CAC. It provides a decoupled view on              metrics on the testing set. WCA and R2 are also provided to as-
+    the attention map.                                                   sess the practical value, and the Mean Percentage Error (MPE)
+                                                                         is introduced to assess over- or under-estimation in the main
+Implementation details. Here we provide detailed settings of             experiments. These metrics take the form
+the network structure, data augmentation, and training details.
+                                                                                                          M
+  • Network architecture. TasselNetV4 follows an encoder-                                             1 X
+                                                                                             MAE =        |pi − ci | ,                (26)
+    only structure. It tokenizes both the input image of size                                         M i
+    384 × 384 and exemplars of size 64 × 64 into patches of                                          v
+                                                                                                     t
+    size 16 × 16, followed by 12 self-attention layers with 768                                              M
+                                                                                                     1 X
+    hidden dimensions. At the last self-attention layer, we                               RMSE =             (pi − ci )2 ,            (27)
+                                                                                                     M i
+    decouple the attention map. As for the counter, we em-
+    ploy three parallel branches w.r.t. different scales. Dur-                                        PM
+                                                                                                            |ci − pi |
+    ing training, the block size and output stride (k, z) are set                           WCA = 1 − i P M             ,             (28)
+                                                                                                             i ci
+    to (32, 16), (64, 16), and (128, 16), respectively. We ad-                                       PM
+    opt 3-shot and 1-shot regimes following the standard CAC                                             (pi − ci )2
+    evaluation protocol. In the 3-shot setting, three exemplars                             R2 = 1 − PiM              ,               (29)
+                                                                                                                   2
+                                                                                                       i (c̄ − ci )
+    are provided during training and testing; in the 1-shot set-
+                                                                                                         M
+    ting, a random exemplar is chosen during testing. We it-                                         1 X (pi − ci )
+                                                                                            MPE =                   ,                 (30)
+    erate over all available exemplars and report the mean and                                       M i ci + ϵ
+    standard deviation.
+                                                                         where M denotes the number of testing images, pi indicates the
+  • Data augmentation. We highlight the random-mosaic                    prediction of the i-th image, ci is the corresponding ground truth
+    method, which merges part of the current image with other            count, c̄ denotes the average ground truth count, and ϵ denotes
+    images of different plant categories. This appears to be be-         a small number. Additionally, Frames Per Second (FPS) is re-
+    neficial for similarity modeling. Additionally, we fix the           ported to quantify the efficiency. We report the metrics above
+    shortest side of the input image to 384 and resize both the          under both the 1-shot and 3-shot settings (when applicable).
+                                                                    11
+               Table 1. Comparison with the state-of-the-art CAC approaches on the PAC-105 dataset. Best performance is in boldface.
+
+
+Method                           Venue & Year      Shot       MAE↓             RMSE↓             WCA↑               R2 ↑            MPE| ↓ |       FPS↑
+
+FamNet (Ranjan et al., 2021)      CVPR’21           3          31.70             62.58             0.49             0.56             0.24          89.65
+BMNet+ (Shi et al., 2022)         CVPR’22           3          27.03             60.18             0.56             0.61             0.02          43.08
+SPDCNet (Lin et al., 2022)        BMVC’22           3          25.21             48.99             0.58             0.52             0.21         155.84
+SAFECount (You et al., 2023)      WACV’23           3          25.59             52.04             0.63             0.74             0.04          13.98
+CountTR (Liu et al., 2022)        BMVC’22           3          27.65             48.24             0.62             0.76             0.12          50.49
+T-Rex2 (Jiang et al., 2024)       ECCV’24           3          16.64             49.39             0.73             0.74             -0.13           –
+CACViT (Wang et al., 2024b)       AAAI’24           3          19.51             29.59             0.68             0.89             0.29          89.65
+TasselNetV4 (Ours)                This Paper        3          16.04             28.03             0.74             0.92             -0.05        121.62
+
+FamNet (Ranjan et al., 2021)      CVPR’21           1      35.91±0.966       71.78±1.188       0.42±0.014        0.45±0.024       0.57±0.017         –
+BMNet+ (Shi et al., 2022)         CVPR’22           1      28.78±0.324       62.12±0.437       0.15±0.001        0.59±0.008       0.13±0.006         –
+CountTR (Liu et al., 2022)        BMVC’22           1      28.46±0.226       49.84±0.646       0.70±0.037        0.73±0.006       0.11±0.003         –
+CACViT (Wang et al., 2024b)       AAAI’24           1      21.80±0.429       38.40±1.526       0.64±0.005        0.84±0.013       0.29±0.002         –
+TasselNetV4 (Ours)                This Paper        1      18.04±0.339       32.04±1.213       0.71±0.005        0.90±0.009       0.02±0.000         –
+
+             Table 2. Comparison with the state-of-the-art CAC approaches on the PAC-Somalia dataset. Best performance is in boldface.
+
+
+Method                          Shot     Venue & Year          MAE↓               RMSE↓               WCA↑                   R2 ↑               MPE| ↓ |
+
+CountTR (Liu et al., 2022)        3       BMVC’22              12.71               23.87                  0.38               0.57                 0.27
+CACViT (Wang et al., 2024b)       3       AAAI’24              14.00               17.00                  0.55               0.78                 0.80
+TasselNetV4 (Ours)                3       This Paper           8.88                13.11                  0.72               0.87                 0.32
+
+CountTR (Liu et al., 2022)        1       BMVC’22           12.79±0.076        24.20±0.292          0.37±0.005          0.55±0.012             0.23±0.062
+CACViT (Wang et al., 2024b)       1       AAAI’24           14.74±0.138        18.23±0.446          0.53±0.005          0.75±0.012             0.80±0.008
+TasselNetV4 (Ours)                1       This Paper        10.98±0.065        16.73±0.150          0.65±0.000          0.80±0.005             0.42±0.001
+
+
+
+4.2. Main results                                                            Table 3. Plant-specific counting versus plant-agnostic counting on the MTC
+                                                                             dataset. † indicates that the model is finetuned on the MTC training set. Best
+   Here we benchmark TasselNetV4 against several baselines,                  performance is in boldface.
+evaluating the PAC performance on PAC-105 and the OOD gen-
+eralization on PAC-Somalia.                                                  Method                                    MAE ↓          RMSE ↓       R2 ↑
+
+Results on the PAC-105 dataset. We first evaluate on the PAC-                MCNN (Zhang et al., 2016)                     17.9         21.9       0.33
+105 dataset. We compare TasselNetV4 with state-of-the-art                    TasselNet (Lu et al., 2017)                    6.6          9.9       0.87
+CAC methods. Results are shown in Table 1. One can see that,                 TasselNetV2 (Xiong et al., 2019)               5.4          9.2       0.89
+generic CAC approaches do not adapt to plants well, even if                  TasselNetV2+ (Lu and Cao, 2020)                5.1          9.0       0.89
+their models are trained on the PAC-105 dataset, while Tassel-               TasselNetV3-Lite (Lu et al., 2021)             4.9          9.1       0.91
+NetV4 outperforms them and pushes the state of the art forward               TasselNetV4 (Ours)                            11.8         18.8       0.51
+under both the 3-shot and 1-shot settings, achieving an R2 value             TasselNetV4† (Ours)                           5.5          10.5       0.85
+of 0.92 and 0.90, respectively, significantly outperforming other
+competitors. Visualizations of the 3-shot setting are shown in
+Fig. 11. TasselNetV4 not only counts more accurately, but also               Among both 3-shot and 1-shot settings, TasselNetV4 con-
+informs individual plants with informative count maps.                       sistently achieves superior performance against previous ap-
+                                                                             proaches across all metrics.
+Results on the PAC-Somalia dataset. We further evaluate
+cross-domain generalization by reporting the performance on
+                                                                             4.3. Plant-agnostic counting versus plant-specific counting
+the PAC-Somalia dataset. Since PAC-Somalia has no over-
+lapped plant category against PAC-105, it is an ideal venue                     Here we conduct experiments to answer the question whether
+for evaluating the generalization of CAC models trained on                   plant-agnostic counting models can replace plant-specific ones.
+PAC-105. For simplicity, we compare TasselNetV4 with two                     We compare TasselNetV4 with previous TasselNets (Lu et al.,
+baselines sharing similar ViT-based architectures. Results are               2017; Lu and Cao, 2020; Lu et al., 2021) and MCNN (Zhang
+summarized in Table 2, and visualizations are shown in Fig. 12.              et al., 2016) on the Maize Tassels Counting (MTC) dataset. In
+                                                                        12
+Figure 11. Qualitative results of baselines and our method on the PAC-105 dataset. Our method consistently outperforms previous methods with more precise
+location and counting.
+
+
+
+particular, since the PAC-105 training set has contained some                   dataset (Ranjan et al., 2021), a generic CAC benchmark. We
+of the images in the MTC testing set, we remove these images                    compare two settings: i) FSC-147→PAC-105 (F → P), where
+from the PAC-105 training set and retrain the model for a fair                  the model is trained on the FSC-147 training set and tested on
+comparison. Results are shown in Table 3. We observe that Tas-                  the PAC-105 test set; and ii) PAC-105→FSC-147 (P → F),
+selNetV4 falls behind those plant-specific baselines, achieving                 where the model is trained on the PAC-105 training set and
+only 11.8 in MAE. To further justify whether the superiority                    tested on the FSC-147 test set. Additionally, we also compare a
+of previous TasselNets comes from the overfitting of the data-                  recent class-agnostic detection counting method GeCo (Pelhan
+set, we also finetune TasselNetV4 on the MTC training set and                   et al., 2024). Note that GeCo is only applicable to the F → P
+report the performance again. Surprisingly, the MAE reduces                     setting due to the unavailability of bounding box annotations
+significantly, from 11.8 to 5.5, which suggests existing plant-                 in the PAC-105 dataset, so we cannot compare it in the main
+specific models exhibits a certain degree of overfitting.                       experiments. For ease of comparison, we report results of in-
+                                                                                domain settings as well, that is, FSC-147 train → FSC-147 test
+4.4. Cross-dataset evaluation                                                   (F → F) and PAC-105 train → PAC-105 test ( P → P). As
+   We further conduct cross-dataset evaluation to highlight the                 shown in Table 4, all methods exhibit significant performance
+peculiarity of plants, that is, their non-rigid nature against most             degradation when the training and testing sets differ. Notably,
+rigid daily object classes. Specifically, we resort to the FSC-147              the F → P setting (G2, C2, and T2) yields substantially worse
+                                                                           13
+                                                                                  Table 4. Cross-dataset counting results between PAC-105 and FSC-147. A
+                                                                                  → B denotes that a model is trained on A but tested on B.
+
+
+                                                                                  Setting
+                                                                                                                  MAE↓ RMSE↓ WCA↑ R2 ↑
+                                                                                  No. Trained on Tested on
+                                                                                     GeCo (Pelhan et al., 2024)
+                                                                                  G1 FSC-147 → FSC-147        8.10            60.16      0.88      0.85
+                                                                                  G2 FSC-147 → PAC-105 43.49                 142.35      0.30     -1.16
+                                                                                       CACViT (Wang et al., 2024b)
+                                                                                  C1   FSC-147 → FSC-147 10.83                73.12      0.83     0.75
+                                                                                  C2   FSC-147 → PAC-105 38.49                82.35      0.38     0.28
+                                                                                  C3   PAC-105 → PAC-105 19.51               29.59       0.68     0.89
+                                                                                  C4   PAC-105 → FSC-147 26.68               107.43      0.60     0.46
+                                                                                       TasselNetV4 (Ours)
+                                                                                  T1   FSC-147 → FSC-147           16.16     110.56      0.76      0.43
+                                                                                  T2   FSC-147 → PAC-105           51.40     123.20      0.17     -0.62
+                                                                                  T3   PAC-105 → PAC-105           16.04     28.03       0.74      0.92
+Figure 12. Qualitative results of baselines and our method on the PAC-            T4   PAC-105 → FSC-147           25.04     122.35      0.62      0.30
+Somalia dataset. Our method consistently outperforms previous methods with
+more precise location and counting.
+
+                                                                                  the setting of Fig. 9: i) a small-exemplar subset with exemplar
+results than the P → F setting (C4 and T4). Even the SOTA                         sizes smaller than 32 × 32 and ii) a large-exemplar subset with
+method GeCo suffers a huge performance drop in the F → P                          sizes larger than 96 × 96. We re-evaluate those single-scale
+setting, with MAE increases from 8.10 (G1) to 43.49 (G2). This                    counters quantitatively. As shown in Table 6, for single-branch
+result underscores that the distinctive, non-rigid characteristics                counters in large exemplars, the performance of MAE and R2
+of plants are difficult to learn from predominantly rigid generic                 improves when the block size increases, reaches the peak at
+object categories, highlighting the need for a dedicated PAC                      128 × 128, and then degrades for larger ones. For small ex-
+dataset and specially designed models. Optimized for plant                        emplars, we observe the performance fluctuates with different
+counting, TasselNetV4 achieves the best MAE of 16.04 in the                       block sizes, with 32 × 32 yielding the best R2 and the 80 × 80
+P → P setting (T3). Interestingly, CACViT serves as a strong                      and 112 × 112 working competitively. Such size-conditioned
+CAC baseline on rigid-object counting (10.83 MAE in C1 vs.                        behaviors explain why 32 × 32 and 128 × 128 produce compar-
+16.10 MAE in T1), but fails to perform well in PAC (19.51                         able performance on the PAC-105 test set: 32 × 32 fits small
+MAE in C3 vs. 16.04 MAE in T3); and TasselNetV4 exhibits                          exemplars but fails to tackle the large ones, and the opposite for
+a reverse tendency, being the best performing model on PAC-                       128 × 128.
+105 but slightly falling behind other competitors on FSC-147.                        We then investigate the effectiveness of the slack layer.
+This suggests TasselNetV4 indeed has been customized to fit                       Table 5 reveals a significant performance improvement, sug-
+the nature of plants. We will discuss more in detail in Section 5.                gesting the slack layer plays a pivotal role in aligning the gen-
+                                                                                  eral features learned by the backbone with the specific require-
+4.5. Ablation study                                                               ments of the different box-aware counters. Furthermore, a joint
+  Here we conduct ablation studies to justify the effectiveness                   analysis of Table 5, 6, and Fig. 13 demonstrates that the incor-
+of the multi-branch counters, the necessity of the slack layer,                   poration of the multi-branch architecture contributes to more
+and how the local counter enhances model efficiency.                              stable performance across different PAC-105 and PAC-Somalia.
+
+Multi-branch box-aware local counters. We first justify the
+design of multi-brach box-aware counters. We begin with train-
+ing several single-scale counters of the model and study their                    Efficiency improvement. Here we study to what extent the local
+generalization across PAC-105 and PAC-Somalia. Fig. 13 il-                        counter could improve the efficiency of the model. We compare
+lustrates how performance changes with changed block sizes.                       our TasselNetV4 with a modified CACViT to make sure that
+Across PAC-105 and PAC-Somalia, we observe a general tend-                        different performance is caused only by the local counter. We
+ency of decreased performance with increased block sizes. Spe-                    compute Floating Point Operations Per Second (FLOPs) and
+cifically, on PAC-105, there are cases where counters with                        the number of parameters. According to Table 7, compared
+rather different block sizes perform similarly, such as 32 × 32                   with CACViT, the use of local counters reduces both learn-
+and 128 × 128. We conjecture that the effective block size may                    able and non-learnable parameters. Meanwhile, TasselNetV4
+correlate with the exemplar size. To validate this hypothesis,                    exhibits significantly lower GFLOPs, making it more friendly
+we partition the test set of PAC-105 into two subsets following                   to resource-constrained scenarios.
+                                                                             14
+               Table 5. Ablation study on the multi-branch box-aware counter. Best performance is in boldface, and second best is underlined
+                                                                               .
+                                                             PAC-105                                                       PAC-Somalia
+
+ Box setting        Slack layer        MAE ↓            RMSE ↓        WCA ↑             R2 ↑              MAE ↓         RMSE ↓           WCA ↑           R2 ↑
+
+ 32, 128                 ✗              23.95            51.14          0.61            0.72               19.51          34.95           0.38           0.08
+ 32, 128                 ✓              15.02            25.24          0.76            0.93               11.73          18.13           0.63           0.75
+ 32, 64, 128             ✓              16.04            28.03          0.74            0.92               8.88           13.11           0.72           0.87
+
+
+
+
+Figure 13. Effect of the block size k. (a) Performance on the PAC-105 dataset. (b) Performance on the PAC-Somalia dataset. Best results are in blue, and worst
+results are in red.
+
+
+Table 6. PAC-105 results stratified by small exemplars (< 32×32) and large                     Table 7. Comparison of computational overhead.
+exemplars (> 96 × 96). Best performance is in boldface, and second best is
+underline.
+                                                                                                                 #Param.
+                                                                                    methods                                                      GFLOPs↓
+                                                                                                       Learnable      Non-learnable
+                   Small exemplar set             Large exemplar set
+                                                                                    CACViT              99.77M                0.75M                 97.30
+Box setting    MAE ↓      RMSE ↓       R2 ↑     MAE ↓     RMSE ↓      R2 ↑          TasselNetV4         84.67M                0.45M                 52.37
+32              24.94        35.64     0.93      5.36       6.89      -0.05
+64              31.37        48.28     0.87      4.47       5.82       0.25
+80              25.11        40.68     0.90      4.43       5.83       0.25         and specially designed scale-aware counters, TasselNetV4 can
+96              30.32        53.05     0.84      3.75       4.80       0.49         act like a foundation model and achieves cross-scene, cross-
+112             24.66        38.73     0.91      3.83       4.88       0.48         scale, and cross-species plant counting, without retraining on
+128             25.55        41.56     0.90      3.65       4.73       0.51         new species.
+144             29.54        47.27     0.87      6.98       8.78      -0.70
+160             30.37        45.05     0.87      5.73       7.42      -0.22
+192             35.18        54.48     0.83      5.81       7.52      -0.25         Plant-agnostic counting is fine-grained class-agnostic count-
+32, 64, 128     26.01        39.41     0.91      3.73       4.61      0.53
+                                                                                    ing. Unlike common daily objects studied in computer vision,
+                                                                                    plants are non-rigid, dynamic in space and time, and exhibit
+                                                                                    large intra-variations, which violates the common assumption
+5. Discussions                                                                      in CAC that intra-class variations are smaller than inter-class
+                                                                                    ones. This insight is supported by our cross-dataset results. Ac-
+TasselNetV4 emerges to be an effective vision foundation model                      cording to Table 4, transferring a CAC model from FSC-147 to
+for cross-scene, cross-scale, and cross-species plant counting.                     PAC-105 (F→P) yields consistently poor performance, indicat-
+While previous TasselNets have been developed and optimized                         ing that the representations learned from common rigid objects
+for plant counting, they are tailored to specific plant species and                 can struggle to generalize to non-rigid plants. These observa-
+scenes and cannot generalize across species. Inspired by recent                     tions motivate us to treat PAC as a new task and to design cus-
+work on CAC, TasselNetV4 inherits the vein of its ancestors                         tomized models taking the fine-grained characteristics of plants
+but takes a great leap towards PAC. With versatile PAC datasets                     into account.
+                                                                               15
+Transferring from non-rigid plants to rigid generic objects ap-            non-rigid plant deformations. By contrast, local counting only
+pears easier than the opposite. While the cross-dataset results            requires the target plant to fall within a local window, yielding a
+in Table 4 have confirmed the soundness of PAC, we also ob-                fixed count regardless of shape or deformation. Taken together,
+serve another interesting phenomenon: P → F shows less                     these results show that the token-level local counter well suits
+performance degradation than F → P (cf. (C2–C1) vs. (C4–                   plant counting and is compatible with both convolutional net-
+C3) and (T2–T1) vs. (T4–T3), where (A–B) indicates the met-                works and ViTs.
+ric difference between A and B). This suggests the representa-
+tions learned from non-rigid plants seem to transfer more eas-             Local counting improves computational efficiency. Local
+ily to rigid objects. This is consistent with the intuition that           counting also simplifies the architecture because it does not re-
+a model trained on difficult cases often generalizes to simpler            quire high-resolution outputs. As shown in Table 7, our method
+ones, whereas the converse does not necessarily hold.                      reduces parameters by 15.13% and GFLOPs by 46.18% relat-
+                                                                           ive to CACViT, indicating improved computational efficiency.
+TasselNetV4 is customized and optimized for plant-agnostic                 This improvement primarily stems from the token-level local
+counting. According to Table 4, compared with the standard                 counter, which eliminates the decoder in CACViT. In CACViT,
+CAC baselines, TasselNetV4 underperforms them on FSC-147                   the decoder comprises four multi-head self-attention layers fol-
+(cf. G1, C1, and T1), but outperforms CACViT on PAC-105 (cf.               lowed by a convolutional density regressor, yielding O(N 2 ) time
+T3 vs. C3). Such results imply that TasselNetV4 has been cus-              complexity because of global self-attention. By contrast, our
+tomized and optimized to the plant domain, at the cost of sacri-           model applies a local counter directly to tokens, achieving a
+ficing certain capability to perceiving generic object categories.         lower time complexity of O(N × k2 ). This simplification sub-
+This may stem from the local counting paradigm adopted by                  stantially facilitates deployment, making the model more com-
+TasselNetV4. Compared with prior CAC methods that rely on                  putationally efficient than CACViT on resource-constrained
+density map regression which often under-represents deformed               platforms (e.g., UAVs).
+objects, token-level local counting can yield better robustness
+to non-rigid deformations. It is worth noting that TasselNetV4             Multi-branch box-aware local counters enhance cross-scale
+does not overfit the plant domain, because it still maintains non-         and cross-species generalization. This observation is suppor-
+trivial class-agnostic transferability in the setting of P → F (cf.        ted by a comparison of the single local counter with the multi-
+T4 vs. C4).                                                                branch, box-aware local counter. As shown in Fig. 13, the
+                                                                           single local counter has two main limitations. First, the op-
+Plant-agnostic counting points out a promising direction for               timal block size setting varies substantially between PAC-105
+plant counting with ample scope for future improvement. This               and PAC-Somalia. The best setting of the single local counter
+insight is backed by the plant-specific counting results on the            on the PAC-105 yields poor performance on the PAC-Somalia,
+MTC dataset (Lu et al., 2017) in Table 3. According to the res-            and vice versa. This suggests limited generalization to OOD
+ults, directly applying pretrained TasselNetV4 to MTC yields               species. Second, the single-scale local counter is sensitive to
+suboptimal performance. While a simple finetuning somehow                  the parameter of block size, which stems from the relationship
+fixes the problem, the results suggest there still exists a clear          between the exemplar size and the block size. As shown in
+performance gap between plant-agnostic counting and plant-                 Table 6, single-scale counters of different block size have dif-
+specific counting. The increased sensibility to broad categor-             ferent optimal intervals w.r.t. exemplar sizes. A small block
+ies seems to come at the cost of decreased counting accuracy.              size single-scale counter can fit well for plants with small ex-
+We remark that this phenomenon, while being undesirable, is in             emplar size, but struggles to handle plants with large-sized ex-
+accord with the famous no free lunch theorem, saying that “if              emplars. For a single-scale counter of large block size, vice
+an algorithm performs well on a certain class of problems then             versa. In contrast, the multi-branch, box-aware local counter
+it necessarily pays for that with degraded performance on the              aggregates these advantageous intervals, achieving competitive
+set of all remaining problems” (Wolpert and Macready, 2002).               performance on both subsets, and delivers stable cross-scale
+Nevertheless, on the positive side, the performance gap also re-           plant counting. Though demonstrating effective and efficient,
+veals a goal to develop better PAC approaches that are on par              the multi-branch box-aware local counters still have limitations
+with or even outperform plant-specific models.                             in design. Our current hard switching is heuristic, where branch
+Token-level local counting is more effective than density-based            selection relies on an exemplar-derived scale prior with a preset
+regression for plants. Previous work has shown that pixel-level            threshold. Table 6 further reveals that the optimal block size is
+local counting outperforms density map regression (Lu et al.,              not always the one slightly larger than the exemplar, which is
+2017). Yet, pixel-level local counting cannot be directly applied          likely due to that the exemplar size is an imperfect proxy for
+to ViT. In this work, we generalize the pixel-level local counter          the distribution of instance sizes within the image. All these
+to a token-level formulation and demonstrate its effectiveness             suggest promising directions for our future work.
+for plant counting, particularly in plant-agnostic settings. Our
+experiments show consistent performance gains. This advant-                6. Conclusion
+age stems from the inherent robustness of local counting. In
+density-map regression, each instance is encoded with a Gaus-                In this work, we introduce plant-agnostic counting and build
+sian kernel. This encoding is often inadequate for capturing               the first two datasets specific to this task, i.e., PAC-105 and
+                                                                      16
+PAC-Somalia. Technically, we present TasselNetV4, an effect-           Deng, R., Tao, M., Huang, X., Bangura, K., Jiang, Q., Jiang, Y.,
+ive, efficient approach based on a naive, plain ViT architec-            Qi, L., 2021. Automated counting grains on the rice panicle
+ture. We also customize this ViT-based framework with the                based on deep learning method. Sensors 21, 281.
+local counting idea by extending the previous pixel-level local
+counter to the token-level one. To enhance scale robustness,           Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D.,
+we introduce the multi-branch box-aware local counter, which             Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M.,
+leverages multiple parallel counters and a hard switching mech-          Heigold, G., Gelly, S., et al., 2020. An image is worth 16x16
+anism based on the exemplar scale. Extensive experiments on              words: Transformers for image recognition at scale. arXiv
+the two datasets demonstrate that TasselNetV4 enables cross-             Comput. Res. Repository .
+scene, cross-scale, and cross-species plant counting.
+                                                                       Ghosal, S., Zheng, B., Chapman, S.C., Potgieter, A.B., Jordan,
+   For future work, we plan to enrich the datasets with more
+                                                                         D.R., Wang, X., Singh, A.K., Singh, A., Hirafuji, M., Ni-
+plant species and extend the application scenarios to broader
+                                                                         nomiya, S., et al., 2019. A weakly supervised deep learning
+observation scales such as microscopy, broadening the applic-
+                                                                         framework for sorghum head detection and counting. Plant
+ability of plant counting to a wider range of real-world scen-
+                                                                         Phenomics .
+arios.
+                                                                       Giuffrida, M.V., Minervini, M., Tsaftaris, S.A., 2016. Learning
+Acknowledgement                                                          to count leaves in rosette plants. Proc. Comput. Vis. Probl.
+                                                                         Plant Phenotyping Workshop .
+  This work was partly supported by the National Natural
+Science Foundation of China under Grant No. 62576146,                  Group, V.G., 2016. Vgg image annotator : a standalone image
+partly supported by the National Key Research and Develop-               annotator application. https://gitlab.com/vgg/via.
+ment Program of China under Grant No. 2022YFE0204700,                    Accessed: 2025-09-10.
+No. 2022YFD2300700, and No. 2022YFE0116200, and partly
+                                                                       Guo, W., Zheng, B., Potgieter, A.B., Diot, J., Watanabe, K.,
+by the Young Scientists Fund of the National Natural Science
+                                                                         Noshita, K., Jordan, D.R., Wang, X., Watson, J., Ninomiya,
+Foundation of China under Grant No. 42201437. Wei Guo’s
+                                                                         S., et al., 2018. Aerial imagery analysis–quantifying appear-
+participation was partly supported by the Sarabetsu Village
+                                                                         ance and number of sorghum heads for applications in breed-
+“Endowed Chair for Field Phenomics” project in Hokkaido and
+                                                                         ing and agronomy. Front. Plant Sci. 9, 1544.
+partly by JSPS KAKENHI Grant No. JP25H01110, Japan.
+                                                                       Guo, Y., Wu, C., Du, B., Zhang, L., 2022. Density map-based
+References                                                               vehicle counting in remote sensing images with limited res-
+                                                                         olution. ISPRS J. Photogramm. Remote Sens. 189, 201–217.
+Akçay, H.G., Kabasakal, B., Aksu, D., Demir, N., Öz, M., Er-
+  doğan, A., 2020. Automated bird counting with deep learn-           Hasan, M.M., Chopin, J.P., Laga, H., Miklavcic, S.J., 2018.
+  ing for regional bird distribution mapping. Animals 10, 1207.          Detection and analysis of wheat spikes using convolutional
+                                                                         neural networks. Plant Methods 14, 1–13.
+Bai, X., Liu, P., Cao, Z., Lu, H., Xiong, H., Yang, A., Cai,
+  Z., Wang, J., Yao, J., 2023. Rice plant counting, locating,          He, K., Chen, X., Xie, S., Li, Y., Dollár, P., Girshick, R., 2022.
+  and sizing method based on high-throughput uav rgb images.             Masked autoencoders are scalable vision learners, in: IEEE
+  Plant Phenomics 5, 0020.                                               Conf. Comput. Vis. Pattern Recognit., pp. 16000–16009.
+
+Bargoti, S., Underwood, J., 2017. Deep fruit detection in orch-        Itzhaky, Y., Farjon, G., Khoroshevsky, F., Shpigler, A., Bar-
+  ards, in: Int. Conf. Robot. Autom., IEEE. pp. 3626–3633.                Hillel, A., 2018. Leaf counting: Multiple scale regression
+                                                                          and detection using deep cnns., in: Brit. Mach. Vis. Conf.,
+Buzzy, M., Thesma, V., Davoodi, M., Mohammadpour Velni,                   Newcastle.
+  J., 2020. Real-time plant leaf counting using deep object
+  detection networks. Sensors 20, 6896.                                Jiang, Q., Li, F., Zeng, Z., Ren, T., Liu, S., Zhang, L., 2024.
+                                                                          T-rex2: Towards generic object detection via text-visual
+Chamara, N., Bai, G., Ge, Y., 2023. Aicropcam: Deploying                  prompt synergy, in: Eur. Conf. Comput. Vis., Springer. pp.
+  classification, segmentation, detection, and counting deep-             38–57.
+  learning models for crop monitoring on the edge. Comput.
+  Electron. Agric. 215, 108420.                                        Khoroshevsky, F., Khoroshevsky, S., Bar-Hillel, A., 2021.
+                                                                         Parts-per-object count in agricultural images: Solving phen-
+David, E., Madec, S., Sadeghi-Tehran, P., Aasen, H., Zheng, B.,          otyping problems via a single deep neural network. Remote
+  Liu, S., Kirchgessner, N., Ishikawa, G., Nagasawa, K., Bad-            Sens. 13, 2496.
+  hon, M.A., et al., 2020. Global wheat head detection (gwhd)
+  dataset: A large and diverse dataset of high-resolution rgb-         Kitano, B.T., Mendes, C.C., Geus, A.R., Oliveira, H.C., Souza,
+  labelled images to develop and benchmark wheat head de-                J.R., 2019. Corn plant counting using deep learning and uav
+  tection methods. Plant Phenomics .                                     images. IEEE Trans. Geosci. Remote Sens. .
+                                                                  17
+Lempitsky, V., Zisserman, A., 2010. Learning to count objects             Pelhan, J., Lukezic, A., Zavrtanik, V., Kristan, M., 2024. A
+  in images, in: Lafferty, J., Williams, C., Shawe-Taylor, J.,              novel unified architecture for low-shot counting by detection
+  Zemel, R., Culotta, A. (Eds.), Adv. Neural Inf. Proc. Syst.,              and segmentation. Adv. Neural Inf. Proc. Syst. 37, 66260–
+  Curran Associates, Inc. URL: https://proceedings.                         66282.
+  neurips.cc/paper_files/paper/2010/file/
+                                                                          Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G.,
+  fe73f687e5bc5280214e0486b273a5f9-Paper.pdf.
+                                                                            Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J.,
+Li, P., Zheng, J., Li, P., Long, H., Li, M., Gao, L., 2023. To-             et al., 2021. Learning transferable visual models from natural
+  mato maturity detection and counting model based on mhsa-                 language supervision, in: Int. Conf. Mach. Learn., PMLR.
+  yolov8. Sensors 23, 6701.                                                 pp. 8748–8763.
+Lin, T., Zhou, C., Chen, G., Yu, J., Wu, W., Ge, Y., Liu, X.,             Rahnemoonfar, M., Sheppard, C., 2017. Deep count: fruit
+  Li, J., Jiang, X., Tang, W., et al., 2020. Heterosis-associated           counting based on deep simulated learning. Sensors 17, 905.
+  genes confer high yield in super hybrid rice. Theor. Appl.
+                                                                          Ranjan, V., Sharma, U., Nguyen, T., Hoai, M., 2021. Learn-
+  Genet. 133, 3287–3297.
+                                                                            ing to count everything, in: IEEE Conf. Comput. Vis. Pat-
+Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P.,                   tern Recognit., pp. 3393–3402. doi:10.1109/CVPR46437.
+  Ramanan, D., Dollár, P., Zitnick, C.L., 2014. Microsoft coco:             2021.00340.
+  Common objects in context, in: Eur. Conf. Comput. Vis.,
+                                                                          Redmon, J., Divvala, S., Girshick, R., Farhadi, A., 2016. You
+  Springer. pp. 740–755.
+                                                                            only look once: Unified, real-time object detection, in: IEEE
+Lin, W., Yang, K., Ma, X., Gao, J., Liu, L., Liu, S., Hou, J., Yi,          Conf. Comput. Vis. Pattern Recognit., pp. 779–788.
+  S., Chan, A.B., 2022. Scale-prior deformable convolution                Shi, M., Lu, H., Feng, C., Liu, C., Cao, Z., 2022. Represent,
+  for exemplar-guided class-agnostic counting., in: Brit. Mach.             compare, and learn: A similarity-aware framework for class-
+  Vis. Conf., p. 313.                                                       agnostic counting, in: IEEE Conf. Comput. Vis. Pattern Re-
+Liu, C., Lu, H., Cao, Z., Liu, T., 2023. Point-query quadtree for           cognit., pp. 9529–9538.
+  crowd counting, localization, and more, in: IEEE Int. Conf.             Valente, J., Sari, B., Kooistra, L., Kramer, H., Mücher, S., 2020.
+  Comput. Vis., pp. 1676–1685.                                              Automated crop plant counting from very high-resolution
+Liu, C., Zhong, Y., Zisserman, A., Xie, W., 2022. Countr:                   aerial imagery. Precis. Agric. 21, 1366–1384.
+  Transformer-based generalised visual counting. Brit. Mach.              Vaswani, A., 2017. Attention is all you need. Adv. Neural Inf.
+  Vis. Conf. .                                                              Proc. Syst. .
+Lu, C., Nnadozie, E., Camenzind, M.P., Hu, Y., Yu, K.,                    Wang, Y., Yang, B., Wang, X., Liang, C., Chen, J., 2024a.
+  2024. Maize plant detection using uav-based rgb imaging                  Satcount: A scale-aware transformer-based class-agnostic
+  and yolov5. Front. Plant Sci. 14, 1274813.                               counting framework. Neural Netw. 172, 106126.
+Lu, D., Ye, J., Wang, Y., Yu, Z., 2023. Plant detection and               Wang, Z., Xiao, L., Cao, Z., Lu, H., 2024b. Vision trans-
+  counting: Enhancing precision agriculture in uav and general             former off-the-shelf: A surprising baseline for few-shot
+  scenes. IEEE Access .                                                    class-agnostic counting, in: AAAI Conf. Artif. Intell., pp.
+Lu, E., Xie, W., Zisserman, A., 2018. Class-agnostic counting,             5832–5840.
+  in: Proc. Asian Conf. Comput. Vis., Springer. pp. 669–684.              Wolpert, D.H., Macready, W.G., 2002. No free lunch theorems
+                                                                           for optimization. IEEE Trans. Evol. Comput. 1, 67–82.
+Lu, H., Cao, Z., 2020. Tasselnetv2+: A fast implementation
+  for high-throughput plant counting from high-resolution rgb             Xiong, H., Cao, Z., Lu, H., Madec, S., Liu, L., Shen, C., 2019.
+  imagery. Front. Plant Sci. 11, 541960.                                    Tasselnetv2: in-field counting of wheat spikes with context-
+                                                                            augmented local regression networks. Plant methods 15, 150.
+Lu, H., Cao, Z., Xiao, Y., Zhuang, B., Shen, C., 2017. Tas-
+  selnet: counting maize tassels in the wild via local counts             Xue, Y., Ray, N., Hugh, J., Bigras, G., 2016. Cell counting by
+  regression network. Plant Methods 13, 1–17.                               regression using convolutional neural network, in: Eur. Conf.
+                                                                            Comput. Vis., Springer. pp. 274–290.
+Lu, H., Liu, L., Li, Y.N., Zhao, X.M., Wang, X.Q., Cao,
+  Z.G., 2021. Tasselnetv3: Explainable plant counting with                Yang, B., Gao, Z., Gao, Y., Zhu, Y., 2021. Rapid detection
+  guided upsampling and background suppression. IEEE                        and counting of wheat ears in the field using yolov4 with
+  Trans. Geosci. Remote Sens. 60, 1–15.                                     attention module. Agronomy 11, 1202.
+Mundhenk, T.N., Konjevod, G., Sakla, W.A., Boakye, K., 2016.              You, Z., Yang, K., Luo, W., Lu, X., Cui, L., Le, X., 2023. Few-
+ A large contextual dataset for classification, detection and               shot object counting with similarity-aware feature enhance-
+ counting of cars with deep learning, in: Eur. Conf. Comput.                ment, in: Proc. IEEE/CVF Winter Conf. Appl. Comput. Vis.,
+ Vis., Springer. pp. 785–800.                                               pp. 6315–6324.
+                                                                     18
+Zhang, C., Li, H., Wang, X., Yang, X., 2015. Cross-scene
+  crowd counting via deep convolutional neural networks, in:
+  IEEE Conf. Comput. Vis. Pattern Recognit., pp. 833–841.
+Zhang, Y., Zhou, D., Chen, S., Gao, S., Ma, Y., 2016. Single-
+  image crowd counting via multi-column convolutional neural
+  network, in: IEEE Conf. Comput. Vis. Pattern Recognit., pp.
+  589–597.
+Zhu, C., Hu, Y., Mao, H., Li, S., Li, F., Zhao, C., Luo, L., Liu,
+  W., Yuan, X., 2021. A deep learning-based method for auto-
+  matic assessment of stomatal index in wheat microscopic im-
+  ages of leaf epidermis. Front. Plant Sci. 12, 716784.
+Zou, H., Lu, H., Li, Y., Liu, L., Cao, Z., 2020. Maize tassels
+  detection: A benchmark of the state of the art. Plant Methods
+  16, 108.
+
+
+
+
+                                                                    19
+

@@ -1,0 +1,1571 @@
+                                                   Invariant Features for Global Crop Type Classification
+                                                                                 Xin-Yi Tong1 , Sherrie Wang1,2,3
+                                                                      1
+                                                                          Laboratory for Information and Decision Systems, MIT
+                                                                            2
+                                                                                Department of Mechanical Engineering, MIT
+arXiv:2509.03497v3 [cs.LG] 14 Apr 2026
+
+
+
+
+                                                                            3
+                                                                                Institute for Data, Systems, and Society, MIT
+                                                                                   Email: {xytong, sherwang}@mit.edu
+
+
+
+                                                                                                Abstract
+                                                  Accurate global crop type mapping supports agricultural monitoring and food security, yet remains
+                                              limited by the scarcity of labeled data in many regions. A key challenge is enabling models trained in one
+                                              geography to generalize reliably to others despite shifts in climate, phenology, and spectral characteris-
+                                              tics. In this work, we show that geographic transfer in crop classification is primarily governed by the
+                                              ability to learn invariant structure in multispectral time series. To systematically study this, we introduce
+                                              CropGlobe, a globally distributed benchmark dataset of 300,000 samples spanning eight countries and
+                                              five continents, and define progressively harder transfer settings from cross-country to cross-hemisphere.
+                                              Across all settings, we find that simple spectral–temporal representations outperform both handcrafted
+                                              features and modern geospatial foundation model embeddings. We propose CropNet, a lightweight con-
+                                              volutional architecture that jointly convolves across spectral and temporal dimensions to learn invariant
+                                              crop signatures. Despite its simplicity, CropNet consistently outperforms larger transformer-based and
+                                              foundation-model approaches under geographic domain shift. To further improve robustness to geographic
+                                              variation, we introduce augmentations that simulate shifts in crop phenology and reflectance. Combined
+                                              with CropNet, this yields substantial gains under large domain shifts. Our results demonstrate that
+                                              inductive bias toward joint spectral–temporal structure is more critical for transfer than model scale or
+                                              pretraining, pointing toward a scalable and data-efficient paradigm for worldwide agricultural mapping.
+                                              Our data and code are available publicly at https://github.com/x-ytong/CropNet/.
+
+
+                                         1    Introduction
+                                         Accurately identifying crop types and their spatial distribution at the global scale is essential for ensuring
+                                         food security, guiding agricultural production, and informing agricultural policy [1–3]. As pressures from
+                                         climate change, population growth, and increasing food demand continue to intensify, dynamic monitoring
+                                         of agricultural systems has become a central component of global sustainable development [4, 5].
+                                             Traditionally, crop type information has been obtained through field surveys and agricultural censuses.
+                                         While reliable, these approaches are labor-intensive and costly, making it difficult to update agricultural
+                                         statistics in a timely manner [6]. With the rapid development of Earth observation technologies and ma-
+                                         chine learning methods, remote sensing has played an increasingly prominent role in agricultural monitoring.
+                                         However, these products are largely limited to countries or regions with strong statistical capacities [7–9]
+                                         and such reliable crop type information remains unavailable across large parts of the world. Recent global
+                                         efforts such as WorldCereal [10] represent important progress, but remain limited to binary or aggregated
+                                         crop classes, leaving global multi-crop mapping an open challenge.
+                                             The fundamental bottleneck in expanding crop type maps is the lack of ground reference data. Without
+                                         labeled samples in the target region, machine learning models often suffer substantial performance degradation
+
+
+
+                                                                                                    1
+when applied to unseen areas [11, 12]. This raises a critical research question: what representations can
+transfer across geographies without local supervision?
+    We frame this as a problem of invariance. If crop types exhibit sufficient commonality across regions, then
+transferable models must rely on features that are stable under shifts in climate, phenology, and background
+conditions, rather than region-specific correlations. Identifying such invariant features is key to enabling cross-
+region crop type classification without ground labels. While a wide range of methods have been proposed
+for crop mapping — from harmonic features to one-dimensional convolutional neural networks (1D CNNs)
+to modern geospatial foundation models (GFMs) — their relative performance in cross-region transfer has
+not been systematically compared at a global scale.
+    In this paper, we show that geographically transferable crop signatures reside in the joint spectral–
+temporal space, and identifying these invariant features can be achieved with a specific inductive bias: CNNs
+with kernels that convolve jointly across both dimensions to capture coordinated spectral–temporal trajecto-
+ries. The central challenge for learning invariant features is not model capacity (i.e., parameter count), but
+how the spectral and temporal dimensions are represented.
+    To systematically study feature invariance, we construct CropGlobe, a dataset of 300,000 crop type
+samples across eight countries and five continents. We use this benchmark to evaluate feature transferabil-
+ity across three progressively more difficult scenarios: cross-country, cross-continent, and cross-hemisphere
+classification. We then propose CropNet, a lightweight convolutional architecture designed to enforce this
+spectral–temporal inductive bias. By convolving jointly across the temporal and spectral dimensions, Crop-
+Net is able to extract representations that are significantly more robust to geographic domain shifts than
+prior 1D temporal or foundation model baselines. We further complement this architecture with a tailored
+data augmentation strategy that simulates realistic phenological and spectral shifts, including time-warping
+and reflectance magnitude variations.
+    Our contributions are summarized as follows:
+    • CropGlobe Benchmark: We construct a multi-continental dataset spanning eight countries and six
+      key crops, enabling systematic evaluation of cross-region generalization.
+    • Analysis of Feature Invariance: We conduct a comprehensive comparison of representations —
+      including harmonic features, various deep learning models, and GFM embeddings — under progressively
+      difficult geographic transfer settings.
+    • Spectral–Temporal Inductive Bias (CropNet): We propose CropNet, an architecture that lever-
+      ages joint spectral–temporal convolutions to extract invariant features. We show that this inductive
+      bias outperforms both traditional temporal baselines and GFMs, with an additional 7% accuracy gain
+      from targeted data augmentation under limited training diversity.
+
+
+2     Related Work
+Previous studies devoted considerable effort to cross-geographic crop classification. Among them, some
+focused on constructing or learning more transferable remote sensing features, while others sought to reduce
+representation mismatch caused by phenological shifts.
+    Harmonic Features: Harmonic regression captures the within-year phenological rhythm of crops using
+a low-dimensional set of parameters [13, 14]. As a result, it is generally more robust to missing observations,
+noise, and differences in observation frequency. In the absence of field-level labels, harmonic features were
+used for cross-region crop classification in the U.S. Midwest [6], where a random forest (RF) classifier trained
+in one state was transferred to other states or other years. This demonstrated that, even without ground
+observations in the target region, models based on phenological features can still retain a certain degree of
+transferability. However, what such methods transfer is essentially the relative temporal structure of crop
+phenology. Once there are substantial differences between the source and target regions in planting dates,
+growth rates, or sensor background conditions, the stability of harmonic parameters declines.
+
+
+                                                        2
+    Temporal Median Features: Median features aggregate multi-temporal observations within predefined
+temporal windows and use the median to represent the spectral state at each stage [15, 16], thereby reducing
+the influence of clouds, noise, and anomalous observations. Biweekly Sentinel-2 (S2) median features were
+used for global cross-region soybean mapping [17]. By aligning time series based on crop phenology, consis-
+tency between regions was improved, which in turn enhanced cross-region transferability. This suggests that,
+although median features are simple in form, they can still achieve strong generalization when combined with
+appropriate temporal alignment. However, when features from the Northern Hemisphere were used to clas-
+sify soybean in the Southern Hemisphere, performance dropped sharply compared with within-hemisphere
+transfer. This may be because the combination of median features and phenological alignment captures only
+the overall seasonal trend and still cannot fully resolve cross-region representation mismatch.
+    GFM Embeddings: Handcrafted features often rely on task-specific design and may not generalize
+well across regions. In contrast, GFMs learn representations through large-scale self-supervised pretraining
+on diverse remote sensing data and provide general-purpose embeddings for downstream tasks. However,
+whether such pretraining promotes geographic invariance or instead encodes region-specific signals (e.g.,
+climate, topography, or phenology) remains an open question.
+    Among them, Presto [18] is a lightweight pretrained Transformer designed for pixel-level remote sensing
+time series. It learns representations in a self-supervised manner by reconstructing masked time steps and
+sensor modalities, with an emphasis on unified modeling of the temporal dimension, multi-sensor inputs, and
+missing observations. By contrast, AlphaEarth [19] is built around organizing multi-source Earth observation
+data into a globally consistent embedding field, that is, a general-purpose embedding representation that can
+be directly queried for each location on the Earth’s surface, thereby supporting large-scale mapping and
+monitoring under limited-label settings.
+    However, the requirements of agricultural applications are not entirely the same as those of general
+land-surface tasks. Results from yield prediction, tillage mapping, and cover crop mapping [20] show that
+AlphaEarth embeddings are competitive in agricultural downstream tasks, but also indicate limitations in
+temporal sensitivity and spatial transfer stability. For cross-domain crop classification, although GFM em-
+beddings provide strong general-purpose priors, their learned representations are not necessarily naturally
+aligned to crop phenology, and their effectiveness still needs to be validated in crop type mapping scenarios.
+    Data Augmentation for Transferability: Regardless of the feature type, failure in cross-region crop
+classification often lies in the inability of the training data to cover phenological variation in the target
+domain. Accordingly, an effective way to mitigate this problem is to actively simulate possible domain shifts,
+so that the model can encounter and adapt to such variation during training.
+    Temporal encoding [21] was proposed for cross-year crop classification transfer. Specifically, it uses Ran-
+dom Observations Selection to simulate changes in interannual observation sparsity, and Random Day Shifting
+to simulate phenological shifts between years, thereby improving robustness to temporal changes. For cross-
+region crop classification transfer, TimeMatch [22] estimates the temporal shift between the source and target
+domains by comparing model predictions under different temporal offsets, and then achieves alignment by
+iteratively updating the model with pseudo-label-based self-training. These studies show that introducing
+temporal variation can effectively improve transferability in crop classification.
+    However, these methods mainly focus on “early-or-late” shifts. In reality, cross-region differences are
+often more complex, the same crop may be planted earlier or later, but it may also grow faster or slower,
+with its growth rhythm stretched or compressed. More importantly, cross-region differences are not only
+about timing. Soil background, management practices, and climatic conditions can also lead to systematic
+shifts in overall reflectance levels. As a result, time shift alone is still insufficient to capture the full range of
+cross-region variation.
+
+
+
+
+                                                          3
+3     CropGlobe Dataset
+To facilitate our investigation into feature invariance in global crop type classification, we construct the
+CropGlobe dataset using 2023 as the reference year. It is built upon publicly available crop type reference
+products collected from eight countries across five continents: Argentina (ARG), Australia (AUS), Belgium
+(BEL), China (CHN), France (FRA), the Netherlands (NLD), the United Kingdom (GBR), and the United
+States (USA). To the best of our knowledge, these products represent the high-quality public crop maps
+available to us for this study.
+    We focus on six globally significant food and industrial crops: corn, soybeans, rice, wheat, sugarcane, and
+cotton, whose geographical distribution is displayed in Fig. 1. Including an “Other” class, CropGlobe consists
+of seven crop categories and contains more than 300,000 samples, each corresponding to a georeferenced pixel-
+level location on the Earth’s surface.
+    The following sections provide descriptions of crop type products (Section 3.1), satellite data source
+(Section 3.2), sample extraction procedures (Section 3.3), and crop phenologies by region (Section 3.4).
+
+
+
+
+         Corn         Soybeans         Rice          Wheat        Sugarcane        Cotton         Other
+
+
+Figure 1: The geographical distribution and category system of the CropGlobe dataset. It contains 300,000
+pixel-level samples from eight countries across five continents: ARG, AUS, BEL, CHN, FRA, GBR, NLD,
+and USA. For some countries, the sample coverage is not national in extent because the original reference
+crop type products are region-specific rather than country-wide.
+
+
+3.1    Reference Data
+Reference data are compiled from publicly available crop type mapping products selected for their data
+quality, public accessibility, and geographic diversity. Specifically, we use Argentina National Map of Crops
+(ANMC) [23] for ARG, Queensland Seasonal Crop (QSC) [24] for AUS, Landbouwgebruikspercelen (LGP) [25]
+for BEL, Crop Type in Northeast China (CTNC) [26] for CHN, Registre Parcellaire Graphique (RPG) [27]
+for FRA, Crop Map of England (CROME) [9] for GBR, Basisregistratie Gewaspercelen (BRP) [28] for NLD,
+and Cropland Data Layer (CDL) [7] for USA.
+    All reference products correspond to the year 2023. Where reported by the original products, mapping
+
+
+                                                      4
+Table 1: Reference crop type products used in CropGlobe. All products correspond to the year 2023.
+“Classes” denotes the number of crop categories in the original product, while “Classes Used” denotes the
+categories retained in this study. “Selected target crops” indicates which of the six target crops are available
+in each product, depending on product coverage.
+            Country   Product   Format           Label Source              Classes   Classes Used
+            ARG       ANMC      raster / 30 m    survey + classification   15        Selected target crops + Other
+            AUS       QSC       polygon vector   survey + classification   3         Cotton, Sugarcane + Other
+            BEL       LGP       polygon vector   farmer-reported           297       Selected target crops + Other
+            CHN       CTNC      raster / 10 m    survey + classification   3         Rice, Corn, Soybeans + Other
+            FRA       RPG       polygon vector   farmer-reported           372       Selected target crops + Other
+            GBR       CROME     polygon vector   survey + classification   81        Selected target crops + Other
+            NLD       BRP       polygon vector   farmer-reported           371       Selected target crops + Other
+            USA       CDL       raster / 30 m    survey + classification   254       Selected target crops + Other
+
+
+
+accuracy is generally high, with user and producer accuracies of around 95% and 90% for QSC [29], producer
+accuracy above 92% for CTNC [26], user and producer accuracies above 83% for major classes in CROME [9],
+and 85-95% accuracy for major classes in CDL [7]. Key characteristics of these reference products are
+summarized in Table 1, and direct access links are provided in Appendix A.
+    It should be noted that some products do not cover the full extent of the corresponding country. For
+example, QSC covers only Queensland in Australia, and CTNC covers only Northeast China. Nevertheless,
+for simplicity, we refer to these products by country names throughout the paper. In addition, the classes
+available in each product are constrained by the original mapping scheme rather than by the agricultural
+importance of particular crops in that country. For instance, although wheat is one of the major crops in
+Australia, it is not included in this study because the QSC winter-season product provides only a generic
+“Crop” class rather than crop-specific labels.
+    To ensure label quality and maintain a consistent category system, we perform category extraction and
+merging. For BEL, FRA, and NLD, which are based on high-accuracy farmer declarations, we remove
+non-agricultural classes and merge crop types outside the six target crops into a single “Other” class.
+    For ARG, GBR and USA, where the maps are derived from automatic classification with class-wise
+accuracy metadata, we apply stricter filtering. In ANMC and CROME, classes with user accuracy below
+80% are removed (all six target classes exceed this threshold), and the remaining non-target classes are
+merged into “Other”. In CDL, accuracy is reported at the state level; for each target class, only states with
+both producer and user accuracy above 85% are retained. Within those states, non-agricultural classes and
+double-cropping classes are removed, and only non-target classes with accuracy above 80% are retained and
+merged into “Other”. The filtering criteria differ between ARG, GBR and USA because ANMC and CROME
+have lower overall accuracy than CDL, and equally strict filtering in ARG and GBR would remove nearly all
+non-target classes and leave too few samples for “Other”.
+    In AUS and CHN, the source maps are three-class products, so no further class selection or merging is
+required. However, these maps do not provide explicit labels for non-target crop categories. To capture
+them, we incorporate ESA WorldCover [30]; specifically, pixels in the GEE collection ESA/WorldCover/v200
+labeled as “cropland” but not recognized by the source maps are assigned to the “Other” class.
+
+3.2    Satellite Data
+Sentinel-2 is part of the Copernicus Programme led by the European Space Agency (ESA), with a mission
+focused on the dynamic monitoring of terrestrial surfaces and vegetation. The system consists of two satel-
+lites equipped with the Multi-Spectral Instrument (MSI), which acquires imagery across 13 spectral bands
+spanning the visible, near-infrared, and shortwave infrared regions at spatial resolutions of 10–60 meters.
+    Combined, the two satellites provide a global revisit frequency of five days. With its relatively high
+spatial resolution, S2 is well suited for multispectral time-series analysis to capture phenological patterns
+
+
+                                                             5
+and differentiate crop types. It has become one of the most widely used data sources for agricultural dataset
+development and global crop mapping, such as in CropHarvest [31] and WorldCereal [10].
+   We obtain S2 Level-2A imagery from the Google Earth Engine (GEE) collection
+COPERNICUS/S2 SR HARMONIZED,          which   provides     surface   reflectance    corrected     for   atmo-
+spheric effects.      Cloudy pixels are filtered using Cloud Score+ from the GEE collection
+GOOGLE/CLOUD SCORE PLUS/V1/S2 HARMONIZED, with a threshold of 0.75, such that only pixels with
+non-cloud probability ≥ 75% are retained. Of the 13 available S2 bands, we exclude bands B1, B9, and B10
+(coastal aerosol, water vapor, and cirrus) and retain ten bands relevant for crop type classification (B2, B3,
+B4, B8, B5, B6, B7, B8A, B11, and B12).
+   For countries in the Northern Hemisphere, we collect S2 from January 1 to December 31, 2023. For
+countries in the Southern Hemisphere, the collection period is shifted by six months, from July 1, 2022 to
+June 30, 2023, to account for the phenological offset between hemispheres.
+
+                   Retained areas       Filtered areas                Grid size: 0.1° × 0.1° in latitude and longitude
+
+
+
+
+                                                                                              0   10   20   30   40   50   60
+                                                                                                                            km
+
+
+                 (a) Noise reduction via buffer filtering                (b) Uniform spatial grid sampling
+
+Figure 2: Illustration of noise reduction via buffered filtering and sample decorrelation through grid-based
+sampling.
+
+
+
+Table 2: Class distribution of the CropGlobe dataset by country. Values marked with ∗ correspond to samples
+derived from crop maps with ternary labels. The “Other” class may contain corn, soybeans, rice, wheat,
+sugarcane, or cotton, see Section 4.4 for processing details.
+              Country       Corn    Soybeans        Rice    Wheat      Sugarcane       Cotton          Other            Total
+              ARG           1,630       1,808       1,319         0         1,253        1,443           2,425          9,878
+              AUS               0           0           0         0         5,098        4,825          8,938∗         18,861
+              BEL           1,985           0           0     1,458             0            0           2,041          5,484
+              CHN           1,344       1,200       1,156         0             0            0          1,502∗          5,202
+              FRA          24,902      21,002       2,294    27,686             0            0          32,715        108,599
+              GBR           4,624           0           0     3,927             0            0           4,712         13,263
+              NLD           2,388           0           0     2,135             0            0           2,795          7,318
+              USA          22,224      17,093      17,613    23,226         9,897       14,799          28,427        133,279
+              Total       59,097      41,103      22,382    58,432        16,248       21,067          83,555         301,884
+
+
+
+
+3.3    Sample Collection
+To improve label reliability, we apply a 30-meter inward buffer (based on the CDL resolution) to all reference
+crop maps after importing them into GEE, which helps remove small noisy patches. As shown in Fig. 2(a),
+
+
+                                                              6
+erroneous labels within sample areas are removed after buffer filtering. We then match the buffered crop
+maps with S2 data in both space and time. The intersection of valid crop labels and available cloud-free
+pixels defines the final sampling region, ensuring that each sampled pixel has both a class label and satellite
+observations. To reduce sample correlation, the study region is divided into 0.1◦ × 0.1◦ cells in geographic
+coordinates (WGS84), and random samples are drawn within each cell at a spatial resolution of 30 meters,
+i.e., with a minimum distance of 30 meters between any two sampled points, as shown in Fig. 2(b). In the
+USA, one sample is drawn per cell, whereas in other countries with smaller mapped crop areas, five samples
+are drawn per cell to balance sample coverage across countries. Taking FRA as an example, a 0.1◦ × 0.1◦
+cell is approximately 7.7 km × 11.1 km, and five uniformly random samples with a minimum spacing of 30
+meters remain spatially distinct.
+     Each sample in the constructed CropGlobe dataset includes its geolocation, a full-year time series of acqui-
+sition dates, and the corresponding raw reflectance values for the ten spectral bands. The class distribution
+of the dataset is shown in Table 2.
+
+               ARG                         AUS                        BEL                         CHN
+NDVI
+
+
+
+
+               FRA                         GBR                        NLD                         USA
+
+
+
+
+              Corn         Soybeans         Rice           Wheat        Sugarcane       Cotton          Other
+
+
+
+Figure 3: Average NDVI curves per country in the CropGlobe dataset. The temporal span covers May–
+November 2023 for Northern Hemisphere countries and November 2022–May 2023 for Southern Hemisphere
+countries, with 5-day intervals. The distinct temporal patterns across regions demonstrate the diversity of
+phenological dynamics in the dataset.
+
+
+
+3.4    Visualization of Crop Time Series by Country
+To illustrate the diversity and complexity of CropGlobe, we visualize the average Normalized Difference
+Vegetation Index (NDVI) [32] curves for each country in Fig. 3. NDVI is calculated as (NIR - Red)/(NIR +
+Red) using the near-infrared (NIR; band B8) and red (band B4) bands from S2. We use a 5-day temporal
+window and focus on May–November 2023 for Northern Hemisphere countries and November 2022–May 2023
+for Southern Hemisphere countries, as this period is the most representative for distinguishing crop types
+according to the sensitivity analysis in Section 5.5.
+    The curves show clear cross-country differences in both shape and magnitude. Corn peaks at different
+times and with different widths across countries, while wheat shows clear temporal misalignment due to
+differences in planting and harvesting schedules. Peak NDVI values in FRA, GBR, and USA reach around
+0.9, whereas lower values are observed in AUS and ARG, possibly reflecting less vigorous canopy growth. Even
+
+
+                                                       7
+within the same crop class, curve smoothness, amplitude, and baseline noise vary substantially, highlighting
+the challenge of feature generalization.
+
+
+4     Methodology
+Next we describe feature construction (Section 4.1), the CropNet architecture (Section 4.2), data augmenta-
+tion (Section 4.3), and our experimental setup (Section 4.4).
+
+4.1    Feature Construction
+To systematically assess the geographic transferability of different remote sensing representations, we con-
+struct multiple types of features from S2 observations and geospatial foundation models. Specifically, we
+consider harmonic features, temporal median features, and GFM embeddings (Presto and AlphaEarth).
+     Harmonic Features: Harmonic coefficients are derived from four spectral bands, namely Narrow NIR
+(B8A), shortwave infrared 1 (SWIR 1; B11), SWIR 2 (B12), and NIR (B8). In addition, the Green Chlorophyll
+Vegetation Index (GCVI = NIR/Green - 1) is included [33]. Frequency-domain features are extracted by
+applying third-order harmonic regression independently to each spectral variable, resulting in a total of 35
+features [34]. This feature design follows prior work [6], which shows that this combination achieves nearly
+the same crop-type classification performance as using all spectral bands and a broader set of vegetation
+indices.
+     Temporal Median Features: To construct consistent median features from raw S2 observations, we
+adopt a window-based median compositing strategy. For each pixel, we define a time span of interest bounded
+by a start day-of-year (DOY) Ts and an end DOY Te , which typically covers the crop growing season. Al-
+though observations are collected throughout the year, not all periods contribute equally to crop type clas-
+sification. In our primary specification for the Northern Hemistphere, we restrict inputs to May–November,
+which allows the model to focus on the most relevant phenological phases.
+     The selected time span is then divided into equal-length temporal windows of size d, yielding t = ⌈(Te −
+Ts )/d⌉ discrete bins, where ⌈·⌉ denotes the ceiling operator. We choose a 5-day compositing interval (d = 5),
+which preserves fine-grained phenological dynamics while reducing noise from cloud contamination. For each
+bin, if valid (cloud-free) observations are available, we compute the median reflectance across all dates within
+that bin. If no valid observations are available because of cloud contamination, the missing value is filled by
+linear interpolation along the temporal axis [16]. If the time series contains too many gaps to support reliable
+interpolation, the sample is discarded. The final representation is reshaped into a 2D matrix of shape 10 × t,
+where rows represent spectral bands and columns correspond to temporal positions.
+     GFM Embeddings: We use two representative geospatial foundation models, Presto and AlphaEarth.
+     Presto [18] is a pretrained transformer for pixel-level remote sensing time series representation learning.
+We use the publicly released pretrained Presto model and provide S2 monthly median time series as input,
+matching the months to our CropNet input for fairness (e.g., May–November for the Northern Hemisphere);
+more details can be found in Appendix E. Through self-supervised pretraining, Presto learns to reconstruct
+masked observations across both temporal positions and sensor modalities, thereby learning unified spectral–
+temporal representations from large-scale Earth observation data. The extracted Presto embedding is a
+128-dimensional feature vector for each pixel.
+     AlphaEarth [19] provides globally consistent embeddings of the Earth’s surface derived from large-scale
+multi-source Earth observation data. We directly use the released AlphaEarth embeddings corresponding to
+each sample location for the year 2023 from the GEE collection GOOGLE/SATELLITE EMBEDDING/V1/ANNUAL.
+Each pixel is represented by a 64-dimensional embedding vector, which serves as a general-purpose learned
+feature for crop type classification.
+
+
+
+
+                                                       8
+                                                      Spectral-Temporal Feature                                                                                                            Spectral-Temporal Feature
+                                               Time convolve                                                                                                                             Time convolve
+
+
+
+
+                            convolve Spectra
+
+
+
+
+                                                                                                                                                                       Spectra
+                                                                    2D Convolution                                                                                                                        1D Convolution
+
+
+
+
+                                                                                                                                                                                                                                                               Linear Classifier
+                    Conv 3x3, 128,
+
+
+                                               Conv 3x3, 128
+
+
+
+
+                                                                                 Conv 3x3, 128
+
+                                                                                                 Conv 3x3, 128
+
+
+
+
+                                                                                                                                   Conv 3x3, 128
+
+                                                                                                                                                       Conv 3x3, 128
+
+
+
+
+                                                                                                                                                                                              Conv 3x3, 128
+
+                                                                                                                                                                                                              Conv 3x3, 128
+
+
+
+
+                                                                                                                                                                                                                                                Average Pool
+                                                               Spatial Dropout
+
+
+
+
+                                                                                                                 Spatial Dropout
+
+
+
+
+                                                                                                                                                                       Spatial Dropout
+
+
+
+
+                                                                                                                                                                                                                              Spatial Dropout
+                       Stride 2
+
+
+
+
+                                                                                                                                     CropNet
+
+
+Figure 4: Illustration of 2D versus 1D convolution for spectral–temporal features and architecture of Crop-
+Net. The network applies 2D convolution jointly along the temporal and spectral dimensions through four
+convolutional blocks, with spatial dropout used for regularization. Downsampling is performed in the first
+block. The final crop type prediction is produced by adaptive global average pooling followed by a linear
+classifier.
+
+
+4.2    CropNet: A Spectral–Temporal Convolutional Architecture
+1D CNNs have been widely used for multispectral time-series classification because they are highly lightweight,
+computationally efficient, and inherently invariant to shifts along the temporal dimension [35–37]. However,
+by treating the multispectral observations at each time step as an indivisible whole and exploring patterns
+only along the temporal dimension, as shown in Fig. 4, 1D CNNs may fail to fully exploit the local joint
+variation of temporal and spectral information throughout the growing season.
+    To overcome this limitation, we propose CropNet, with two simple yet effective modifications. First,
+CropNet performs convolution jointly along the temporal and spectral dimensions (Fig. 4) enabling the
+network to capture not only local temporal patterns but also local spectral–temporal patterns defined by
+inter-band interactions. Second, CropNet adopts spatial dropout [38] instead of standard dropout. By
+suppressing entire feature channels during training, spatial dropout prevents the model from over-relying on
+a small subset of spectral–temporal responses and encourages predictive evidence to be distributed across
+multiple channels.
+    Specifically, CropNet consists of four convolutional blocks. Each block contains two 2D convolutional
+layers with 3 × 3 kernels and 128 output channels, with each convolution followed by batch normalization
+and a Rectified Linear Unit (ReLU) activation. A spatial dropout layer is applied at the end of each block
+for regularization. Downsampling is performed in the first block through a stride-2 convolution, allowing
+the network to capture features at different effective scales while remaining computationally efficient. After
+the final convolutional stage, adaptive global average pooling reduces the feature map to a 1 × 1 representa-
+tion, which is then fed into a linear classifier for crop type prediction. Overall, these design choices enable
+CropNet to learn more robust and transferable spectral–temporal representations for cross-region crop type
+classification.
+
+4.3    Augmentation of Spectral–Temporal Sequences
+A major challenge in cross-region crop classification is that the training data often fail to cover the pheno-
+logical and spectral variation encountered in unseen regions. To mitigate this challenge, we propose a data
+augmentation strategy tailored to temporal median features. As illustrated in Fig. 5, the strategy introduces
+three transformations: time shift, time scale, and magnitude warping. These transformations are designed to
+
+
+                                                                                                                                                   9
+                                                        Original Sample
+                                                        Transformed Sample 1
+       Time Shift
+
+
+                        May Jun   Jul Aug Sep Oct Nov   Transformed Sample 2
+
+
+
+
+                                                                               Magnitude Warping
+                        May Jun   Jul Aug Sep Oct Nov
+
+
+                                                        Original Sample
+                                                        Transformed Sample 1
+       Time Scale
+
+
+
+
+                        May Jun   Jul Aug Sep Oct Nov   Transformed Sample 2
+
+
+
+
+                        May Jun   Jul Aug Sep Oct Nov
+
+
+
+Figure 5: Illustration of three transformations for temporal data augmentation: time shift (randomly shifting
+a fixed temporal window forward or backward), time scale (compressing or stretching the time axis), and
+magnitude warping (smoothly distorting the amplitude over time, with the same warping applied across
+spectral bands to preserve their physical relationships).
+
+
+simulate natural variation in crop phenology, observation timing, and reflectance magnitude that commonly
+occurs across regions and seasons. By exposing the model to such plausible variation during training, the
+proposed augmentation improves robustness and generalization in cross-region classification.
+    Time Shift simulates phenological shifts by randomly moving the entire time span forward or backward
+within a predefined range. Given the original DOY range [Ts , Te ], a random integer offset ∆shift is sampled
+and applied to both the start and end DOYs, resulting in a shifted range [Ts + ∆shift , Te + ∆shift ]. Median
+values are then recalculated over the shifted time span using the same temporal window size d as in the
+original setting, thereby preserving feature length consistency. This augmentation accounts for differences in
+planting dates or climatic conditions across regions.
+    Time Scale adjusts the temporal extent of the sampling period to capture variability in the duration of
+crop development. Specifically, the start and end DOYs of the original time span [Ts , Te ] are independently
+perturbed by random integer offsets ∆sscale and ∆escale , yielding a scaled range [Ts′ , Te′ ], where Ts′ = Ts + ∆sscale
+and Te′ = Te + ∆escale . Depending on the sampled offsets, the resulting time span may be either expanded or
+contracted. To maintain a fixed feature dimension, we compute a new temporal window size d′ = ⌈(Te′ −Ts′ )/t⌉,
+thereby keeping the total number of bins t unchanged. This augmentation mimics differences in growing
+season length arising from crop varieties, management practices, or climatic conditions.
+    Magnitude Warping perturbs the temporal curve of each spectral band through a smooth multiplicative
+modulation, with the aim of mimicking realistic deviations such as sensor noise, sub-pixel heterogeneity, or
+biomass variability (e.g., the same crop may exhibit different biomass conditions across fields) [39]. For a
+given sample and band b, let the temporal series be denoted by xb = (xb,1 , . . . , xb,t ). Each time point is
+scaled by a weight wi , such that x′b,i = wi xb,i , where the weights are generated from a cubic spline S(·)
+                                                                               j−1
+fitted to K anchor points (κj , aj ). The anchor abscissae are κj = 1 + K−1        (t − 1) and the ordinates are
+   i.i.d.
+aj ∼ N (1, σ 2 ) for j = 1, . . . , K; the weights are obtained by evaluating the spline at the bin indices
+wi = S(i) for i = 1, . . . , t [40, 41]. The same warping transformation is applied to all spectral bands within
+each sample, that is, the same spline S(·) is shared by every band. This design perturbs the temporal
+magnitude consistently across bands without changing their relative relationships, thereby maintaining the
+physical interpretability.
+    The proposed transformations encourage the model to capture more broadly transferable features, thereby
+improving robustness to spectral and temporal variability and enabling more stable performance across
+regions.
+
+
+
+
+                                                            10
+4.4    Experimental Setup
+We organize our experiments under three progressively more challenging geographic transfer scenarios: cross-
+country (FRA → BEL, FRA → NLD, FRA → GBR), cross-continent (USA → FRA, FRA → CHN, FRA
+→ USA), and cross-hemisphere (USA → AUS, USA → ARG, FRA → ARG). Here, “→” indicates that the
+model is trained on the source region and directly applied to the target region without using target-region
+labels during training. Under these settings, we conduct a systematic comparison of different remote sensing
+representations to assess their geographic invariance for crop type classification, including harmonic features,
+median features, and GFM embeddings from Presto and AlphaEarth.
+    Model Comparison: For harmonic features and GFM embeddings, we evaluate RF with 500 trees and
+MLP with eight hidden layers, each containing 128 hidden units. For 5-day temporal median features, we
+evaluate the proposed CropNet as well as a 1D variant obtained by replacing the 2D convolutions in CropNet
+with 1D convolutions while keeping the remaining settings unchanged. In addition, we compare CropNet
+with TempCNNs [35], a widely used 1D CNN architecture for crop type classification, and several widely
+used lightweight computer vision baselines, including ResNet50 [42], EfficientNetV2-S [43], and ConvNeXt-
+Tiny [44]. To accommodate low-dimensional input features, we reduce the degree of spatial downsampling
+in these networks to preserve sufficient resolution while keeping their overall architectures unchanged. All
+neural network models are trained for 50 epochs using the Adam optimizer with a learning rate of 0.0001
+and a batch size of 256.
+    Evaluation Metrics: We report Overall Accuracy (OA) and mean F1 score (mF1) to evaluate classifica-
+tion performance. The mF1 score is computed as the macro-averaged F1 across all categories, reflecting the
+model’s ability to balance class-wise overestimation and underestimation. For each experiment, we repeat
+training ten times with different random seeds and report the mean and standard deviation.
+    Category Alignment: Because crop categories differ across countries, we align labels to ensure con-
+sistent evaluation. When AUS or CHN (which have three-class crop type maps) are used as target regions,
+predictions for classes not explicitly defined in their available label set are reassigned to “Other”. In the FRA
+→ USA setting, sugarcane and cotton are excluded from evaluation because they are absent in the source
+region. No additional alignment is required for other transfer scenarios.
+    Sensitivity Analysis: Lastly, we conduct sensitivity analysis on the temporal window and time span,
+as well as ablation experiments on individual data augmentation components, to further examine the impact
+of these design choices.
+
+
+5     Results
+Our results are presented as follows: comparison of different features (Section 5.1); intepretation of CropNet
+features (Section 5.4); comparison of CNN models (Section 5.2); sensitivity analysis and ablation study
+(Section 5.3 and Section 5.5).
+
+5.1    Temporal Median Features and CropNet Improve Transfer
+Table 3 reports performance under progressively more challenging transfer settings. For harmonic, median,
+Presto, and AlphaEarth representations, we evaluate both RF and MLP; to keep the table concise, we report
+only the best-performing classifier for each feature type. The full RF/MLP comparison results are provided
+in Appendix B.
+    Overall, performance decreases as the domain shift increases, from cross-country to cross-continent to
+cross-hemisphere scenarios. Consistent patterns emerge across representations. First, replacing harmonic
+features with temporal median features yields substantial gains, indicating that preserving fine-grained tem-
+poral information facilitates transfer. Second, modeling temporal median features with neural networks fur-
+ther improves performance: MLP-based models outperform RF baselines, and temporal CNNs (CropNet 1D)
+improve upon MLPs by introducing temporal convolution. Finally, extending from 1D temporal modeling
+
+
+                                                       11
+Table 3: Crop type classification performance on CropGlobe. Each experiment is repeated ten times, and
+the mean and standard deviation are reported. “AUGM” denotes the use of data augmentation. Values in
+parentheses indicate performance gain from augmentation. We report only the best-performing classifier for
+each representation; full RF/MLP results are provided in Appendix B.
+                                       FRA → BEL                          FRA → NLD                     FRA → GBR
+              Method
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              Harmonic MLP      80.86 ± 0.52  84.77 ± 0.32         78.40 ± 0.81  82.47 ± 0.55    62.08 ± 1.52  66.05 ± 1.36
+              Median MLP        96.20 ± 0.71  96.79 ± 0.50         93.20 ± 0.91  93.72 ± 0.82    91.84 ± 0.78  92.07 ± 0.73
+ Cross-       Presto RF         96.35 ± 0.06  96.44 ± 0.06         91.09 ± 0.12  91.00 ± 0.13    85.62 ± 0.42  85.89 ± 0.40
+ Country      AlphaEarth MLP    96.99 ± 0.22  97.63 ± 0.19         92.72 ± 0.65  92.81 ± 0.69    93.73 ± 0.56  93.68 ± 0.56
+              CropNet 1D        96.13 ± 0.60  96.69 ± 0.70         93.73 ± 0.60  93.94 ± 0.57    92.53 ± 0.77  92.85 ± 0.47
+              CropNet           97.74 ± 0.55  97.99 ± 0.48         95.85 ± 0.43  95.98 ± 0.41    95.01 ± 1.19  95.14 ± 1.19
+              CropNet AUGM     98.24 ± 0.18 98.39 ± 0.15          96.15 ± 0.24 96.36 ± 0.25     95.75 ± 0.43 95.91 ± 0.46
+                                    (+ 0.50)      (+ 0.40)             (+ 0.30)      (+ 0.38)        (+ 0.74)      (+ 0.77)
+                                       USA → FRA                          FRA → CHN                     FRA → USA
+              Method
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              Harmonic MLP      52.20 ± 0.74  54.71 ± 0.78         74.60 ± 0.89  75.07 ± 0.92    53.15 ± 0.66  50.22 ± 1.05
+              Median MLP        81.42 ± 1.86  82.41 ± 1.93         44.64 ± 5.30  38.04 ± 5.61    56.43 ± 1.30  51.24 ± 1.75
+ Cross-       Presto RF         62.24 ± 0.53  53.56 ± 0.88         51.94 ± 0.25  34.84 ± 0.51    43.35 ± 0.32  27.11 ± 0.50
+ Continent    AlphaEarth MLP    61.74 ± 2.69  61.20 ± 3.79         39.64 ± 6.54  29.46 ± 9.43    79.53 ± 2.53  79.24 ± 3.69
+              CropNet 1D        82.49 ± 1.44  83.00 ± 1.17         76.94 ± 0.64  76.85 ± 0.68    68.84 ± 1.77  68.84 ± 1.93
+              CropNet           87.00 ± 0.75  89.44 ± 0.67         79.55 ± 3.20  79.31 ± 3.44    73.34 ± 1.95  72.60 ± 2.21
+              CropNet AUGM     87.76 ± 1.37 90.00 ± 1.24          82.52 ± 1.28 82.73 ± 1.27     80.37 ± 1.49 80.68 ± 1.51
+                                    (+ 0.76)      (+ 0.56)             (+ 2.97)      (+ 3.42)        (+ 7.03)      (+ 8.08)
+                                       USA → AUS                          USA → ARG                     FRA → ARG
+              Method
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              Harmonic MLP      64.52 ± 1.12  64.78 ± 1.01         54.48 ± 0.70  52.92 ± 0.62    45.66 ± 0.80  44.41 ± 1.00
+              Median MLP        77.01 ± 1.93  77.58 ± 1.72         67.52 ± 1.31  67.94 ± 1.43    53.24 ± 2.58  49.02 ± 2.63
+ Cross-       Presto RF         45.13 ± 1.11  30.19 ± 1.19         33.36 ± 3.15  21.20 ± 4.13    43.40 ± 1.63  26.98 ± 0.69
+ Hemisphere   AlphaEarth MLP   46.31 ± 10.16  30.90 ± 8.86         29.25 ± 6.46  18.29 ± 5.98    28.07 ± 8.44  13.62 ± 4.36
+              CropNet 1D        82.90 ± 1.21  82.80 ± 1.15         72.06 ± 0.63  72.14 ± 0.63    65.47 ± 0.95  67.95 ± 0.88
+              CropNet           86.74 ± 1.90  86.75 ± 1.87         74.15 ± 0.42  75.18 ± 0.45    70.92 ± 2.15  70.80 ± 2.40
+              CropNet AUGM     88.45 ± 0.96 88.38 ± 1.02          74.84 ± 0.79 75.63 ± 0.79     77.03 ± 1.01 77.41 ± 1.16
+                                    (+ 1.71)      (+ 1.63)             (+ 0.69)      (+ 0.45)        (+ 6.11)      (+ 6.61)
+
+
+
+to joint spectral–temporal convolution (CropNet) yields further gains, achieving the best performance across
+all transfer settings. For example, in FRA → USA, performance increases from 53.2% (Harmonic MLP) to
+56.4% (Median MLP) to 68.8% (CropNet 1D) and further to 73.3% (CropNet), demonstrating consistent
+improvements as stronger inductive biases are introduced. To make the overall trends easier to interpret, we
+summarize Table 3 by averaging the OA for each method under the three transfer settings. Fig. 6 provides
+a clearer comparison across methods.
+
+5.2    CropNet Outperforms Baseline CNN Models
+Table 4 presents a comparison between CropNet and several widely used CNN baselines, including TempCNN,
+ResNet50, EfficientNetV2-S, and ConvNeXt-Tiny, for cross-region crop type classification using median fea-
+tures. No data augmentation is applied in these experiments.
+   Compared to TempCNN (0.88M parameters), a strong temporal convolution baseline of similar parameter
+count, CropNet (1.04M) consistently achieves higher accuracy, indicating that modeling spectral and temporal
+dimensions jointly provides additional gains beyond temporal modeling alone.
+   Despite being lightweight, CropNet achieves superior performance compared with much larger vision
+backbones such as ResNet50 (23.57M), EfficientNetV2-S (20.24M), and ConvNeXt-Tiny (27.85M). CropNet’s
+advantage is most pronounced under larger domain shifts. For example, in the FRA → USA setting, CropNet
+
+
+
+                                                             12
+Figure 6: Summary of Table 3 showing the mean OA (%) of each method under the three transfer settings
+(cross-country, cross-continent, and cross-hemisphere).
+
+
+achieves 73.3% OA, compared to 60.9% for ResNet50 and 61.5% for ConvNeXt-Tiny. Similar gains are
+observed in cross-hemisphere transfer (e.g., FRA → ARG: 70.9% CropNet vs. 58.4% for ResNet50).
+    These results indicate that strong cross-region performance does not require large model capacity, but
+rather an appropriate inductive bias for modeling spectral–temporal structure.
+    Fig. 7 shows confusion matrices for three representative transfer experiments: USA → FRA, FRA →
+USA, and FRA → ARG, and compares Harmonic MLP, Median MLP, and CropNet. Overall, temporal
+median-based models yield clearer diagonals than harmonic features, indicating more reliable cross-region
+separability. On top of that, CropNet consistently reduces off-diagonal confusion, especially for crop pairs
+that are easily mixed under larger domain shifts.
+    The GFM embeddings show a noticeably different behavior. In cross-country transfer, Presto and Al-
+phaEarth can be competitive, indicating that pretrained representations can work well when the source and
+target domains are relatively close and the shift is mild. However, in cross-continent and especially cross-
+hemisphere transfer, their performance degrades substantially. For example, in the USA → AUS setting,
+Presto achieves 45.1% and AlphaEarth achieves 46.3% OA, whereas CropNet reaches 86.7%, demonstrating
+a large gap under cross-hemisphere transfer.
+
+5.3    Data Augmentation Improves Transfer
+Data augmentation improves performance and generally reduces variance, with the largest gains appearing
+when the source region is limited in diversity.
+    For example, in the FRA → USA setting, augmentation improves OA from 73.3% to 80.4%, while in FRA
+→ ARG it increases from 70.9% to 77.0%.
+    Although we sample France at higher density, its geographic extent is still relatively limited, which
+constrains the diversity of crop calendars and background conditions seen during training. When the target
+region exhibits larger phenological and radiometric shifts than seen in the source region, augmentation helps
+compensate for the lack of diversity by exposing the model to plausible temporal and magnitude variations.
+In comparison, when training on the USA, the benefit of augmentation is smaller (e.g., USA → AUS: 86.7%
+to 88.5%). This is likely because USA already spans a wide range of climates and management regimes,
+providing a more diverse source distribution.
+
+
+                                                     13
+USA → FRA
+FRA → USA
+FRA → ARG
+
+
+
+
+                Harmonic_MLP           Median_MLP                CropNet              CropNet_AUGM
+
+
+Figure 7: Confusion matrices for three representative transfer settings (USA → FRA, FRA → USA, and
+FRA → ARG) from Table 3. Rows correspond to ground-truth crop types and columns to predicted labels.
+
+
+    We conduct an ablation study on the data augmentation components (Table 5) to understand their
+relative contributions. The experiments are conducted under challenging transfer settings where the source
+domain is relatively limited in diversity (FRA → USA and FRA → ARG) or performance is otherwise lower
+(USA → AUS). Time shift provides the largest improvement over the no-augmentation baseline, yielding
+substantial gains across all settings. Adding time scale and magnitude warping each leads to smaller additional
+improvements. For example, in FRA → USA, performance improves from 73.3% (no augmentation) to
+79.4% with time shift and to 80.5% with time shift and time scale, while adding magnitude warping yields
+comparable performance.
+
+5.4         Interpreting CropNet’s Learned Spectral–Temporal Features
+To better understand what drives CropNet’s predictions, as well as the reason for its advantage over Crop-
+Net 1D, we use Class Activation Maps (CAMs) [45] to visualize the input regions that contribute most to
+classification. Specifically, we compute CAMs for both CropNet and CropNet 1D by backpropagating gradi-
+
+
+                                                      14
+Table 4: Comparison of CNN models for crop type classification on CropGlobe. All models operate on
+median features and no data augmentation is applied.
+       CNN Model                        TempCNNs              ResNet50       EfficientNetV2-S    ConvNeXt-Tiny      CropNet (Ours)
+       Parameters                            0.88 M            23.57 M                20.24 M           27.85 M              1.04 M
+                     FRA → BEL         97.70 ± 0.43        96.57 ± 1.09           97.28 ± 0.51      97.22 ± 0.59     97.74 ± 0.55
+       Cross-
+                     FRA → NLD         95.52 ± 0.23        93.16 ± 0.67           94.14 ± 1.09      94.10 ± 0.54     95.85 ± 0.43
+       Country
+                     FRA → GBR         94.21 ± 0.65        91.91 ± 1.44           93.04 ± 2.12      93.20 ± 0.68     95.01 ± 1.19
+                     USA → FRA         85.94 ± 0.71        81.46 ± 1.88           84.09 ± 1.90      81.36 ± 1.66     87.00 ± 0.75
+       Cross-
+                     FRA → CHN        66.17 ± 10.29        39.46 ± 3.80           69.37 ± 6.71    80.01 ± 1.88         79.55 ± 3.20
+       Continent
+                     FRA → USA         62.86 ± 1.01        60.89 ± 1.79           64.52 ± 1.91      61.49 ± 2.55     73.34 ± 1.95
+                     USA → AUS         84.04 ± 0.94        78.56 ± 2.74           82.02 ± 2.13      78.63 ± 3.59     86.74 ± 1.90
+       Cross-
+                     USA → ARG         70.86 ± 0.44        68.07 ± 1.12           69.39 ± 0.92      64.21 ± 1.63     74.15 ± 0.42
+       Hemisphere
+                     FRA → ARG         60.65 ± 1.48        58.42 ± 2.88           58.93 ± 3.48      61.27 ± 2.37     70.92 ± 2.15
+
+
+
+Table 5: Ablation study on the components of data augmentation. We evaluate the individual and combined
+impact of time shift, time scale, and magnitude warping.
+                                                       FRA → USA                        FRA → ARG                      USA → AUS
+ Components
+                                                     OA (%)       mF1 (%)             OA (%)       mF1 (%)           OA (%)       mF1 (%)
+ No Augmentation                                73.34 ± 1.95  72.60 ± 2.21       70.92 ± 2.15  70.80 ± 2.40     86.74 ± 1.90  86.75 ± 1.87
+ Time Shift                                     79.38 ± 1.20  79.65 ± 1.40       75.66 ± 1.01  75.86 ± 1.24     87.33 ± 1.70  87.20 ± 1.77
+ Time Shift + Time Scale                       80.48 ± 2.34   80.66 ± 2.49       76.01 ± 0.69  76.41 ± 0.79     87.70 ± 0.85  87.60 ± 0.90
+ Time Shift + Time Scale + Magnitude Warping    80.37 ± 1.49 80.68 ± 1.51       77.03 ± 1.01 77.41 ± 1.16      88.45 ± 0.96 88.38 ± 1.02
+
+
+
+ents from the predicted class to intermediate convolutional layers, producing importance patterns distributed
+over spectral–temporal features.
+    Fig. 8 shows the CAM-based importance maps for three crop types, revealing differences in how the two
+convolutional architectures organize discriminative information. The high-response regions of CropNet are
+not distributed only along the temporal axis, but form compact local regions in the spectral–temporal plane.
+This indicates that 2D convolutions are able to capture joint variation patterns among several key spectral
+bands within specific temporal windows. At a given growth stage, what is truly discriminative is often not
+that all bands are important simultaneously, but that a subset of specific bands, together with that time
+period, forms a stable basis for recognition. The figure also shows that the most informative bands are
+consistently concentrated in the Red, Red Edge, NIR, and SWIR ranges (Red, Red Edge 1/2/3, Narrow
+NIR, SWIR 1/2). These bands are known to be sensitive to chlorophyll content, canopy structure, and water
+content, which are key biophysical factors that differentiate crop growth trajectories.
+    In contrast, the high responses of CropNet 1D mainly appear as several relatively broad temporal intervals
+and lack clear spectral structure. This suggests that CropNet 1D primarily learns when informative signals
+occur, but is less able to express which spectral bands are most important at those times.
+    To further examine cross-region generalization, we visualize CAMs for the same crop (soybeans and rice)
+under different target regions (Fig. 9). For a given crop, the most important time periods shift across
+regions, consistent with variations in planting dates and growth rates, while the key spectral bands remain
+largely stable. For soybeans, the most informative bands are typically from Red through Red Edge 2 and
+from Narrow NIR through SWIR 2, capturing changes in photosynthetic activity and moisture stress. For
+rice, importance concentrates more strongly around Red Edge 3 to SWIR 1, which is responsive to canopy
+structure and water-related dynamics associated with paddy systems. Together, these results suggest that
+while phenology is region-dependent, the underlying spectral sensitivities exploited by the model are more
+consistent, enabling shared cues to transfer across geographic domains.
+
+
+
+
+                                                                    15
+                    Corn (USA → FRA)              Soybeans (USA → ARG)                Rice (FRA → CHN)
+CropNet
+
+
+
+
+                    Corn (USA → FRA)              Soybeans (USA → ARG)                Rice (FRA → CHN)
+CropNet_1D
+
+
+
+
+Figure 8: Visualization of feature importance maps from CropNet and CropNet 1D for three crop and transfer
+settings. The x-axis indicates time, and the y-axis shows S2 spectral bands. For ARG, time has been shifted
+six months earlier. The highlighted areas indicate the most informative feature regions for classification,
+illustrating how 2D convolution and 1D convolution capture crop-discriminative cues differently.
+
+                   Soybeans (USA → FRA)           Soybeans (USA → ARG)              Soybeans (FRA → CHN)
+CropNet
+
+
+
+
+                     Rice (USA → FRA)               Rice (USA → ARG)                  Rice (FRA → CHN)
+CropNet
+
+
+
+
+Figure 9: Feature importance maps of the same crop (soybeans and rice) in different target regions. The
+x-axis denotes time, and the y-axis indicates S2 spectral bands. While the time importance is distributed
+across different bins due to region-specific crop growth phenology, the most informative spectral bands remain
+consistent across regions.
+
+
+5.5          Sensitivity Analysis
+We examine how temporal window and time span affect transfer performance. Shorter compositing windows
+consistently perform better, with 5-day intervals providing the strongest results across all transfer settings,
+highlighting the importance of preserving fine-grained phenological dynamics. The effect of time span becomes
+more pronounced under larger domain shifts: performance is relatively stable for cross-country transfer, but
+
+
+                                                       16
+more sensitive for cross-continent and cross-hemisphere transfer. Including early-year observations may
+introduce mismatched vegetation signals, whereas restricting inputs to the main growing season improves
+robustness. Overall, a May–November time span provides the best trade-off across settings and is therefore
+adopted in all main experiments.
+    We also assess sensitivity to data augmentation parameters. Moderate perturbation ranges consistently
+yield the best performance. In particular, time shift and time scale are most effective under moderate ranges
+([−30, +30]), while magnitude warping performs best when introducing mild, smooth reflectance variation
+(σ = 0.1, knots = 5). These results suggest that augmentation is most beneficial when it reflects realistic
+but bounded variation in crop growth dynamics.
+    These conclusions are supported by detailed analyses of temporal window, time span, and data augmen-
+tation parameters, which are provided in Appendix C.
+
+
+6     Discussion
+6.1    What Enables Geographic Transfer in Crop Type Mapping?
+Our results reveal that the invariant signatures of major crops reside in the coupled spectral–temporal domain.
+A key finding is that S2 temporal features (5-day medians) transfer better than commonly assumed. Even
+with a lightweight 1D temporal CNN, this representation delivers strong baseline accuracy across cross-
+continent and cross-hemisphere settings. This is likely because temporal convolution is inherently tolerant
+to shifts along the time axis, allowing the model to recognize phenological patterns even when planting dates
+vary between regions.
+    At the same time, CropNet’s 2D spectral–temporal convolutions provide an even better inductive bias
+for geographic transfer. As shown in Table 3, CropNet consistently outperforms 1D temporal CNNs in all
+transfer settings. Why do 2D convolutions offer an advantage? A natural hypothesis is that convolving
+over the spectral axis could introduce a form of spectral shift invariance, allowing the model to recognize
+crop signals even when reflectance drifts across adjacent bands due to atmospheric or background effects.
+However, our CAM analysis (Figure 9) does not provide strong evidence for such cross-band shifts.
+    A more plausible explanation is that joint convolution more effectively captures coupled physical relation-
+ships across spectral bands over time. A 1D model treats all bands as a whole, and the spectral dimension
+is fully compressed after convolution. In contrast, a 2D architecture continuously maintains features in a
+spectral–temporal form. By applying shared kernels across both time and wavelength, CropNet can learn
+the most critical local spectral–temporal correlations — such as coordinated changes in the Red Edge bands
+— which appear to be more stable across regions.
+    We also observe that GFM embeddings are not uniformly reliable for crop type transfer. In relatively
+mild shifts (e.g., cross-country transfer within Western Europe), Presto and AlphaEarth can be competitive.
+However, their performance degrades substantially in more challenging cross-continent and cross-hemisphere
+settings. This suggests that the issue is not necessarily a lack of discriminative power, but rather the
+encoding of geographically dependent features that act as effective “shortcuts” for in-region classification but
+become confounding noise in distant regions. More broadly, this indicates that self-supervised reconstruction
+objectives do not inherently enforce invariance to geographic shifts and permit the retention of region-specific
+signals that hinder transfer.
+    Beyond representation and model design, temporal data augmentation further improves robustness.
+Strategies such as time shift, time scale, and magnitude warping yield the largest gains when the source
+region is limited and the target domain shift is large. This suggests that augmentation can partially compen-
+sate for insufficient source diversity by exposing the model to plausible variations in crop growth dynamics.
+
+
+
+
+                                                      17
+6.2    When Does Transfer Work, and When Does it Break Down?
+Our results show that cross-region crop mapping is feasible in many settings without local labels when
+appropriate spectral–temporal representations are used. These findings suggest that sharing data and models
+across regions can enable rapid deployment in new areas and reduce annotation costs for maintaining existing
+maps. In addition, we expect similar benefits to extend across years (e.g., under anomalous seasons). We
+report USA cross-temporal transfer results in Appendix F, but cross-year transfer is not the focus of this
+work.
+    Notably, transfer performance is influenced not only by the representation and model, but also strongly by
+the diversity of the training data. To better understand this effect, we visualize feature distributions using t-
+SNE [46] for FRA (before and after augmentation) and USA (Fig. 10). USA samples are more dispersed, with
+weaker class separation, indicating greater variability in spectral–temporal patterns. In contrast, FRA forms
+tighter clusters, reflecting lower within-class variability but also narrower coverage of real-world conditions.
+Augmentation expands the FRA distribution and increases within-class diversity, but only within a limited
+range.
+    This reveals a key constraint: transfer performance is limited by the diversity of the source domain. When
+the source region does not capture the range of spectral–temporal variation present in the target, models fail
+to generalize, even if the underlying representation is strong.
+    Geographic coverage remains another limitation of our study. Our evaluation focuses primarily on rel-
+atively high-income countries. These settings differ systematically from many low-income regions; most
+notably, intercropping is uncommon in our study countries but prevalent in Sub-Saharan Africa and parts
+of South Asia. Yield levels and variability also differ markedly across these contexts (e.g., due to inputs,
+cultivars, irrigation, and field structure), which can shift spectral–temporal signatures and label noise. These
+differences limit truly global applicability, and direct transfer to such regions will likely be more challenging.
+
+                     FRA                              FRA_AUGM                                 USA
+
+
+
+
+              Corn               Soybeans               Rice               Wheat                Other
+
+
+Figure 10: t-SNE visualization of S2 median features (May–November; 5-day intervals) for FRA (pre-/post-
+augmentation) and USA. For comparability, USA is restricted to the same five classes as FRA.
+
+
+6.3    Does Transfer Performance Correlate with Regional Yield Levels?
+To further probe what drives transferability, we examine whether crop productivity influences the invariance
+of spectral–temporal features across regions. The underlying hypothesis is that transferability may be higher
+between regions with more similar yields, particularly when both are high yielding, because in such conditions
+S2 reflectance is less influenced by soil, and management practices across regions tend to be more uniform.
+    We collect 2023 crop yield statistics from the Food and Agriculture Organization of the United Nations
+(https://www.fao.org/home/en) and summarize them in Table 6. We then compare these with classification
+
+
+                                                       18
+results from selected transfer settings, as shown in the confusion matrices in Fig. 11.
+    For rice, yield differences between USA (8572.8 kg/ha) and CHN (7132.5 kg/ha) or ARG (6723.7 kg/ha)
+are smaller than those between USA and FRA (5632.8 kg/ha), yet USA → FRA shows better classification
+accuracy than USA → CHN or USA → ARG.
+    For wheat, despite USA having much lower yield (3269.4 kg/ha) than FRA (7201.6 kg/ha) and NLD
+(8467.0 kg/ha), classification accuracy remains high in both transfer directions. This shows that, at least
+under the roughly twofold yield gap in this example, yield differences do not prevent high performance in
+cross-continent transfer.
+    Taken together, within the yield ranges represented in our study (mostly modest, except for approximately
+twofold differences in wheat), we do not find a consistent relationship between yield levels and cross-region
+accuracy; other factors, such as training-data quantity and quality, class balance, and the spectral–temporal
+distinctiveness of the crop types, appear to matter more. At the same time, our analysis cannot rule out
+yield as a dominant factor when gaps are much larger (e.g., in low-input smallholder systems typical of parts
+of Sub-Saharan Africa), where lower canopy density and greater soil/background influence may substantially
+alter S2 signals. Evaluating such settings requires data that span a broader yield spectrum and will be a
+direction for future work.
+
+                Table 6: Crop yields (kg/ha) for target crop types across countries in 2023.
+                            Yield (kg/ha)     Corn    Soybeans     Rice    Wheat    Sugarcane    Cotton
+                            ARG              5109.4      1744.5   6723.7        –      30309.6    1751.6
+                            AUS                   –           –        –        –      98619.5    3787.4
+                            BEL              9828.9           –        –   8424.7            –         –
+                            CHN              6532.0      1952.6   7132.5        –            –         –
+                            FRA              9762.5      2458.4   5632.8   7201.6            –         –
+                            GBR                   –           –        –   8127.9            –         –
+                            NLD             10265.5           –        –   8467.0            –         –
+                            USA             11130.6      3398.7   8572.8   3269.4      79309.2    2843.0
+
+
+
+
+            USA → FRA                  USA → NLD                            USA → CHN                      USA → ARG
+
+Figure 11: Confusion matrices of CropNet with data augmentation for four cross-region transfer settings,
+used to analyze the potential relationship between classification performance and crop yields.
+
+
+6.4    How Can Transferability Reach the Regions Most in Need?
+An especially important next step is to transfer crop type mapping tools to regions that are most food
+insecure and in urgent need of reliable agricultural statistics. For instance, many countries in sub-Saharan
+Africa remain chronically data-scarce despite being highly vulnerable to food crises [47, 48]. Our results
+show that cross-hemisphere transfer is feasible: being in the Southern Hemisphere is not a barrier. The key
+question is when transfer fails.
+
+
+                                                                  19
+    The yield range in the CropGlobe dataset does not reach the lower levels common in many African
+systems: corn yields in some areas are less than 5 t/ha (CropGlobe’s lowest is ARG at approximately 5.1
+t/ha), and rice yields are often less than 2 t/ha (FRA in our dataset is about 5.6 t/ha). Under such low-yield
+(low-biomass) conditions, combined with differences in phenology and environment, models trained on our
+data may not transfer directly to these more challenging regions.
+    Even so, our results already show that S2 spectral–temporal features achieve consistently strong cross-
+country accuracy, and we hypothesize a feasible path forward. By collecting crop type data from neighboring
+or similar countries to supplement the training data, the model can be exposed to spectral–temporal patterns
+close to those expected in the target. Approaches such as soft labels [49, 50], label transfer [51], and weak
+constraints [52] can be used to anchor the model to the target region’s distribution and require only a small
+amount of local ground truth for calibration. This path does not require the same quantity or quality of
+labels as in our study, but can improve robustness and, while moving toward operational mapping, greatly
+reduce local labeling needs and costs.
+    The transfer learning method developed here is able to serve as a first step. On this basis, future work
+will extend to more challenging settings, such as lower-yield, intercropped, and highly heterogeneous systems.
+A longer-term aim is to enable operational crop type mapping in low-income, data-scarce countries and to
+lower labeling and statistical costs. This is a promising route to bring cost-effective crop type mapping to
+the regions that need it most.
+
+
+7    Conclusion
+This study systematically investigates the geographic invariance of various remote sensing representations
+for cross-region crop type classification. By constructing the CropGlobe dataset, which spans eight countries
+across five continents, we conduct experiments under three transfer settings: cross-country, cross-continent,
+and cross-hemisphere. The results show that the 5-day temporal median features derived from S2 exhibit
+significant advantages in geographic transferability. To better capture the spectral–temporal structure, we
+introduce CropNet, a lightweight CNN that outperforms mainstream convolutional models, indicating that
+an appropriate inductive bias is more important than model scale for cross-region crop classification. We
+further show that augmentation of temporal median features improves robustness to geographic variation. By
+simulating realistic shifts in crop phenology and reflectance magnitude, the proposed augmentation strategy
+yields substantial gains when the source region is limited in diversity and the target domain shift is large. Our
+work provides initial evidence that global crop type mapping can be practical in many settings with fewer
+local ground samples, and it offers a data resource and a methodological framework for studying feature
+invariance in crop type identification. Looking ahead, as the dataset expands and methods evolve, this
+study could help move from region-specific applications toward more broadly generalizable solutions, with
+the potential to support agricultural monitoring, food-security planning, and policy analysis.
+
+
+References
+ [1] C. Monfreda, N. Ramankutty, and J. A. Foley, “Farming the planet: 2. geographic distribution of crop
+     areas, yields, physiological types, and net primary production in the year 2000,” Global Biogeochemical
+     Cycles, vol. 22, no. 1, 2008.
+ [2] I. Becker-Reshef, C. Justice, B. Barker, M. Humber, F. Rembold, R. Bonifacio, M. Zappacosta,
+     M. Budde, T. Magadzire, C. Shitote et al., “Strengthening agricultural decisions in countries at risk
+     of food insecurity: The geoglam crop monitor for early warning,” Remote Sensing of Environment, vol.
+     237, p. 111553, 2020.
+ [3] D. B. Lobell and S. M. Gourdji, “The influence of climate change on global crop productivity,” Plant
+     Physiology, vol. 160, no. 4, pp. 1686–1697, 2012.
+
+
+                                                       20
+ [4] M. Haasnoot, J. H. Kwakkel, W. E. Walker, and J. Ter Maat, “Dynamic adaptive policy pathways:
+     A method for crafting robust decisions for a deeply uncertain world,” Global Environmental Change,
+     vol. 23, no. 2, pp. 485–498, 2013.
+
+ [5] J. A. Foley, N. Ramankutty, K. A. Brauman, E. S. Cassidy, J. S. Gerber, M. Johnston, N. D. Mueller,
+     C. O’Connell, D. K. Ray, P. C. West et al., “Solutions for a cultivated planet,” Nature, vol. 478, no.
+     7369, pp. 337–342, 2011.
+ [6] S. Wang, G. Azzari, and D. B. Lobell, “Crop type mapping without field-level labels: Random forest
+     transfer and unsupervised clustering techniques,” Remote Sensing of Environment, vol. 222, pp. 303–317,
+     2019.
+ [7] U.S. Department of Agriculture, National Agricultural Statistics Service, “Cropland data layer,” https:
+     //nassgeodata.gmu.edu/CropScape/, 2024.
+ [8] Agriculture and Agri-Food Canada, “Annual crop inventory,” https://search.open.canada.ca/openma
+     p/ba2645d5-4458-414d-b196-6303ac06c1c9, 2023.
+ [9] UK Rural Payments Agency, “Crop map of england (crome),” https://environment.data.gov.uk/datase
+     t/a27312b5-d6c9-4710-ad5e-382d727c1b05, 2023.
+[10] K. Van Tricht, J. Degerickx, S. Gilliams, D. Zanaga, M. Battude, A. Grosu, J. Brombacher, M. Lesiv,
+     J. C. L. Bayas, S. Karanam et al., “Worldcereal: a dynamic open-source system for global-scale, seasonal,
+     and reproducible crop and irrigation mapping,” Earth System Science Data, vol. 15, no. 12, pp. 5491–
+     5515, 2023.
+[11] D. M. Kluger, S. Wang, and D. B. Lobell, “Two shifts for crop mapping: Leveraging aggregate crop
+     statistics to improve satellite-based maps in new regions,” Remote Sensing of Environment, vol. 262, p.
+     112488, 2021.
+
+[12] G. Yang, X. Li, P. Liu, X. Yao, Y. Zhu, W. Cao, and T. Cheng, “Automated in-season mapping of winter
+     wheat in china with training data generation and model transfer,” ISPRS Journal of Photogrammetry
+     and Remote Sensing, vol. 202, pp. 422–438, 2023.
+[13] M. Belgiu, W. Bijker, O. Csillik, and A. Stein, “Phenology-based sample generation for supervised crop
+     type classification,” International Journal of Applied Earth Observation and Geoinformation, vol. 95, p.
+     102264, 2021.
+[14] M. Belgiu and O. Csillik, “Sentinel-2 cropland mapping using pixel-based and object-based time-weighted
+     dynamic time warping analysis,” Remote Sensing of Environment, vol. 204, pp. 509–523, 2018.
+[15] D. M. Johnson and R. Mueller, “Pre-and within-season crop type classification trained with archival
+     land cover information,” Remote Sensing of Environment, vol. 264, p. 112576, 2021.
+
+[16] Y. Cai, K. Guan, J. Peng, S. Wang, C. Seifert, B. Wardlow, and Z. Li, “A high-performance and in-
+     season classification system of field-level crop types using time-series landsat data and a machine learning
+     approach,” Remote Sensing of Environment, vol. 210, pp. 35–47, 2018.
+[17] X. Huang, A. Vrieling, Y. Dou, M. Belgiu, and A. Nelson, “A robust method for mapping soybean by
+     phenological aligning of sentinel-2 time series,” ISPRS Journal of Photogrammetry and Remote Sensing,
+     vol. 218, pp. 1–18, 2024.
+[18] G. Tseng, R. Cartuyvels, I. Zvonkov, M. Purohit, D. Rolnick, and H. Kerner, “Lightweight, pre-trained
+     transformers for remote sensing timeseries,” arXiv preprint arXiv:2304.14065, 2023.
+
+
+
+                                                       21
+[19] C. F. Brown, M. R. Kazmierski, V. J. Pasquarella, W. J. Rucklidge, M. Samsikova, C. Zhang, E. Shel-
+     hamer, E. Lahera, O. Wiles, S. Ilyushchenko et al., “Alphaearth foundations: An embedding field model
+     for accurate and efficient global mapping from sparse label data,” arXiv preprint arXiv:2507.22291, 2025.
+[20] Y. Ma, Y. Shen, A. Swatantran, and D. B. Lobell, “Harvesting alphaearth: Benchmarking the geospatial
+     foundation model for agricultural downstream tasks,” arXiv preprint arXiv:2601.00857, 2025.
+[21] V.-D. Pham, G. Tetteh, F. Thiel, S. Erasmi, M. Schwieder, D. Frantz, and S. van der Linden, “Temporally
+     transferable crop mapping with temporal encoding and deep learning augmentations,” International
+     Journal of Applied Earth Observation and Geoinformation, vol. 129, p. 103867, 2024.
+[22] J. Nyborg, C. Pelletier, S. Lefèvre, and I. Assent, “Timematch: Unsupervised cross-region adaptation
+     by temporal shift estimation,” ISPRS Journal of Photogrammetry and Remote Sensing, vol. 188, pp.
+     301–313, 2022.
+[23] D. De Abelleyra, S. Veron, S. Banchero, M. J. Mosciaro, T. Propato, A. Ferraina, M. G. Taffarel,
+     L. Dacunto, A. Franzoni, and J. Volante, “First large extent and high resolution cropland and crop type
+     map of argentina,” in IEEE Latin American GRSS & ISPRS Remote Sensing Conference. IEEE, 2020,
+     pp. 392–396.
+[24] Queensland Government, “Queensland seasonal crop (qsc) mapping — summer and winter crop classifica-
+     tions,” https://www.qld.gov.au/environment/land/management/mapping/statewide-monitoring/crops,
+     2023.
+[25] Flemish Department of Agriculture and Fisheries, “Landbouwgebruikspercelen (lgp) — annual crop
+     parcel declarations in belgium,” https://landbouwcijfers.vlaanderen.be/open-geodata-landbouwgebruik
+     spercelen, 2023.
+[26] Q. Li, H. Wang, Y. Zhang, X. Du, Y. Dong, Y. Shen et al., “Mapping crop type in northeast
+     china during 2017–2023 (including code for classification),” figshare. Dataset, 2024. [Online]. Available:
+     https://doi.org/10.6084/m9.figshare.25346038.v1
+[27] Agence de Services et de Paiement, “Registre parcellaire graphique (rpg) — annual agricultural parcel
+     database of france,” https://geoservices.ign.fr/rpg, 2023.
+[28] Netherlands Enterprise Agency, “Basisregistratie gewaspercelen (brp) — annual agricultural parcel and
+     crop type register of the netherlands,” https://service.pdok.nl/rvo/brpgewaspercelen/atom/v1 0/basis
+     registratie gewaspercelen brp.xml, 2023.
+[29] M. J. Pringle, “Detecting the annual areal extent of sugarcane crops in queensland, australia,” Remote
+     Sensing Applications: Society and Environment, vol. 22, p. 100496, 2021.
+[30] D. Zanaga, R. Van De Kerchove, D. Daems et al., “Esa worldcover 10 m 2021 v200,” 2022. [Online].
+     Available: https://doi.org/10.5281/zenodo.7254221
+[31] G. Tseng, I. Zvonkov, C. L. Nakalembe, and H. Kerner, “Cropharvest: A global dataset for crop-type
+     classification,” 2021, conference on Neural Information Processing Systems Datasets and Benchmarks
+     Track.
+[32] J. W. Rouse, R. H. Haas, J. A. Schell, and D. W. Deering, “Monitoring vegetation systems in the
+     great plains with erts,” in Third Earth Resources Technology Satellite-1 Symposium, ser. NASA Special
+     Publication, vol. SP-351. Washington, D.C.: NASA, 1973, pp. 309–317.
+[33] A. A. Gitelson, A. Viña, V. Ciganda, D. C. Rundquist, and T. J. Arkebauer, “Remote estimation of
+     canopy chlorophyll content in crops,” Geophysical Research Letters, vol. 32, no. 8, 2005.
+
+
+                                                      22
+[34] J. L. Soler, T. Friedel, and S. Wang, “Combining deep learning and street view imagery to map small-
+     holder crop types,” in Proceedings of the AAAI Conference on Artificial Intelligence, vol. 38, no. 20,
+     2024, pp. 22 202–22 212.
+
+[35] C. Pelletier, G. I. Webb, and F. Petitjean, “Temporal convolutional neural network for the classification
+     of satellite image time series,” Remote Sensing, vol. 11, no. 5, p. 523, 2019.
+[36] H. K. Zhang, D. P. Roy, and D. Luo, “Demonstration of large area land cover classification with a one
+     dimensional convolutional neural network applied to single pixel temporal metric percentiles,” Remote
+     Sensing of Environment, vol. 295, p. 113653, 2023.
+
+[37] P. Perbet, L. Guindon, J.-F. Cote, and M. Beland, “Evaluating deep learning methods applied to landsat
+     time series subsequences to detect and classify boreal forest disturbances events: The challenge of partial
+     and progressive disturbances,” Remote Sensing of Environment, vol. 306, p. 114107, 2024.
+[38] J. Tompson, R. Goroshin, A. Jain, Y. LeCun, and C. Bregler, “Efficient object localization using convolu-
+     tional networks,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition,
+     2015, pp. 648–656.
+[39] G. Forestier, F. Petitjean, H. A. Dau, G. I. Webb, and E. Keogh, “Generating synthetic time series to
+     augment sparse datasets,” in IEEE International Conference on Data Mining. IEEE, 2017, pp. 865–870.
+[40] B. K. Iwana and S. Uchida, “An empirical survey of data augmentation for time series classification with
+     neural networks,” Plos One, vol. 16, no. 7, p. e0254841, 2021.
+[41] ——, “Time series data augmentation for neural networks by time warping with a discriminative
+     teacher,” in International Conference on Pattern Recognition. IEEE, 2021, pp. 3558–3565.
+[42] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in Proceedings of
+     the IEEE Conference on Computer Vision and Pattern Recognition, 2016, pp. 770–778.
+
+[43] M. Tan and Q. Le, “Efficientnetv2: Smaller models and faster training,” in International Conference on
+     Machine Learning. PMLR, 2021, pp. 10 096–10 106.
+[44] Z. Liu, H. Mao, C.-Y. Wu, C. Feichtenhofer, T. Darrell, and S. Xie, “A convnet for the 2020s,” in
+     Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2022, pp.
+     11 976–11 986.
+[45] B. Zhou, A. Khosla, A. Lapedriza, A. Oliva, and A. Torralba, “Learning deep features for discriminative
+     localization,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition,
+     2016, pp. 2921–2929.
+[46] L. v. d. Maaten and G. Hinton, “Visualizing data using t-sne,” Journal of Machine Learning Research,
+     vol. 9, no. Nov, pp. 2579–2605, 2008.
+[47] J. Sarron, D. Beillouin, J. Huat, J.-M. Koffi, J. Diatta, É. Malézieux, and E. Faye, “Digital agriculture
+     to fulfil the shortage of horticultural data and achieve food security in sub-saharan africa,” in All Africa
+     Horticultural Congress: Transformative Innovations in Horticulture, 2021, pp. 239–246.
+
+[48] D. Lee, W. Anderson, X. Chen, F. Davenport, S. Shukla, R. Sahajpal, M. Budde, J. Rowland,
+     J. Verdin, L. You et al., “Harveststat africa–harmonized subnational crop statistics for sub-saharan
+     africa,” Scientific Data, vol. 12, no. 1, p. 690, 2025.
+[49] S. Wang, W. Chen, S. M. Xie, G. Azzari, and D. B. Lobell, “Weakly supervised deep learning for
+     segmentation of remote sensing imagery,” Remote Sensing, vol. 12, no. 2, p. 207, 2020.
+
+
+                                                       23
+[50] X.-Y. Tong, R. Dong, and X. X. Zhu, “Global high categorical resolution land cover mapping via weak
+     supervision,” ISPRS Journal of Photogrammetry and Remote Sensing, vol. 220, pp. 535–549, 2025.
+
+[51] X. Zhu, Z. Ghahramani, and J. D. Lafferty, “Semi-supervised learning using gaussian fields and harmonic
+     functions,” in Proceedings of the International Conference on Machine Learning, 2003, pp. 912–919.
+[52] K. Ganchev, J. Graça, J. Gillenwater, and B. Taskar, “Posterior regularization for structured latent
+     variable models,” The Journal of Machine Learning Research, vol. 11, pp. 2001–2049, 2010.
+
+
+
+
+                                                    24
+Appendix
+
+A     Public Access Links for Reference Crop Type Data
+    - Argentina National Map of Crops (ANMC):
+      https://zenodo.org/records/10103323
+    - Queensland Seasonal Crop (QSC):
+      https://www.qld.gov.au/environment/land/management/mapping/statewide-monitoring/crops
+    - Landbouwgebruikspercelen (LGP):
+      https://landbouwcijfers.vlaanderen.be/open-geodata-landbouwgebruikspercelen
+    - Crop Type in Northeast China (CTNC):
+      https://figshare.com/articles/dataset/Mapping_crop_type_in_Northeast_China_during_20
+      17-2023_Including_code_for_classification_/25346038
+    - Registre Parcellaire Graphique (RPG):
+      https://geoservices.ign.fr/rpg
+    - Crop Map of England (CROME):
+      https://environment.data.gov.uk/dataset/a27312b5-d6c9-4710-ad5e-382d727c1b05
+    - Basisregistratie Gewaspercelen (BRP):
+      https://service.pdok.nl/rvo/brpgewaspercelen/atom/v1_0/basisregistratie_gewaspercele
+      n_brp.xml
+    - Cropland Data Layer (CDL):
+     https://croplandcros.scinet.usda.gov/
+
+
+
+B     Classifiers for Representations
+Table 7 reports the full RF/MLP comparison for harmonic, median, Presto, and AlphaEarth representations.
+These results are used to select the best-performing classifier for each feature type and support the summary
+in Table 3. The preferred classifier varies across transfer settings, but overall the strongest choices are
+Harmonic MLP, Median MLP, Presto RF, and AlphaEarth MLP.
+
+
+C     Sensitivity Analysis
+We conduct a sensitivity analysis to investigate how temporal window and time span affect model performance
+across transfer settings. As shown in Fig. 12, results are reported as mean OA averaged over all transfer
+directions within each setting.
+    In terms of temporal window, shorter windows (e.g., 5-day intervals) consistently lead to better classifi-
+cation results. This suggests that longer intervals (e.g., 15 or 30 days) may compress multiple growth stages
+into a single observation, causing critical signals to be smoothed out.
+    Regarding time span, the impact differs by transfer type. For cross-country transfer, the choice of time
+span has little effect because FRA, BEL, NLD, and GBR are geographically close and have similar climate,
+crop calendars, and phenology.
+
+
+
+                                                     25
+Table 7: RF/MLP comparison for different representations. For harmonic, median, Presto, and AlphaEarth,
+we evaluate both RF and MLP. In Table 3, we report only the best-performing classifier for each represen-
+tation.
+                                       FRA → BEL                          FRA → NLD                     FRA → GBR
+              Method
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              Harmonic RF      80.99 ± 0.15   83.14 ± 0.12         78.22 ± 0.24  79.83 ± 0.22   69.54 ± 0.20 71.05 ± 0.17
+              Harmonic MLP      80.86 ± 0.52 84.77 ± 0.32         78.40 ± 0.81 82.47 ± 0.55      62.08 ± 1.52  66.05 ± 1.36
+ Cross-       Median RF         92.28 ± 0.09  94.56 ± 0.06         89.18 ± 0.11  90.45 ± 0.09    89.37 ± 0.13  90.10 ± 0.09
+ Country      Median MLP       96.20 ± 0.71 96.79 ± 0.50          93.20 ± 0.91 93.72 ± 0.82     91.84 ± 0.78 92.07 ± 0.73
+              Presto RF         96.35 ± 0.06  96.44 ± 0.06        91.09 ± 0.12 91.00 ± 0.13     85.62 ± 0.42 85.89 ± 0.40
+              Presto MLP       96.39 ± 0.35 96.50 ± 0.33           88.39 ± 1.41  88.16 ± 1.54    82.11 ± 3.94  82.42 ± 3.96
+              AlphaEarth RF     96.07 ± 0.06  96.38 ± 0.06         90.86 ± 0.26  90.75 ± 0.27    92.77 ± 0.12  92.69 ± 0.12
+              AlphaEarth MLP   96.99 ± 0.22 97.63 ± 0.19          92.72 ± 0.65 92.81 ± 0.69     93.73 ± 0.56 93.68 ± 0.56
+                                       USA → FRA                          FRA → CHN                     FRA → USA
+              Method
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              Harmonic RF      53.35 ± 0.18   50.28 ± 0.21         56.57 ± 0.75  52.34 ± 0.98    45.10 ± 0.09  38.71 ± 0.12
+              Harmonic MLP      52.20 ± 0.74 54.71 ± 0.78         74.60 ± 0.89 75.07 ± 0.92     53.15 ± 0.66 50.22 ± 1.05
+ Cross-       Median RF         75.24 ± 0.15  74.93 ± 0.19        62.65 ± 1.75 62.13 ± 2.79     57.14 ± 0.08   50.19 ± 0.11
+ Continent    Median MLP       81.42 ± 1.86 82.41 ± 1.93           44.64 ± 5.30  38.04 ± 5.61    56.43 ± 1.30 51.24 ± 1.75
+              Presto RF        62.24 ± 0.53   53.56 ± 0.88        51.94 ± 0.25 34.84 ± 0.51     43.35 ± 0.32 27.11 ± 0.50
+              Presto MLP        61.55 ± 3.35 60.59 ± 4.52          31.33 ± 2.78  16.20 ± 4.09    38.02 ± 2.79  26.85 ± 3.06
+              AlphaEarth RF     45.69 ± 1.36  45.47 ± 1.27         35.77 ± 0.91  22.82 ± 1.18    68.14 ± 2.16  67.77 ± 2.53
+              AlphaEarth MLP   61.74 ± 2.69 61.20 ± 3.79          39.64 ± 6.54 29.46 ± 9.43     79.53 ± 2.53 79.24 ± 3.69
+                                       USA → AUS                          USA → ARG                     FRA → ARG
+              Method
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              Harmonic RF       61.12 ± 0.15  58.05 ± 0.16         44.90 ± 0.23  43.64 ± 0.25    39.33 ± 0.20  33.69 ± 0.25
+              Harmonic MLP     64.52 ± 1.12 64.78 ± 1.01          54.48 ± 0.70 52.92 ± 0.62     45.66 ± 0.80 44.41 ± 1.00
+ Cross-       Median RF         69.84 ± 0.40  66.14 ± 0.51        68.89 ± 0.17 70.13 ± 0.13      46.62 ± 0.26  38.72 ± 0.34
+ Hemisphere   Median MLP       77.01 ± 1.93 77.58 ± 1.72           67.52 ± 1.31  67.94 ± 1.43   53.24 ± 2.58 49.02 ± 2.63
+              Presto RF        45.13 ± 1.11 30.19 ± 1.19          33.36 ± 3.15 21.20 ± 4.13     43.40 ± 1.63 26.98 ± 0.69
+              Presto MLP       33.80 ± 10.49  22.90 ± 9.74         27.33 ± 9.23  15.53 ± 7.59    33.77 ± 0.00  12.63 ± 0.01
+              AlphaEarth RF    47.57 ± 0.03   21.88 ± 0.08         24.82 ± 0.14   7.25 ± 0.35   33.76 ± 0.00   12.68 ± 0.08
+              AlphaEarth MLP   46.31 ± 10.16 30.90 ± 8.86         29.25 ± 6.46 18.29 ± 5.98      28.07 ± 8.44 13.62 ± 4.36
+
+
+
+    In contrast, cross-continent results are more sensitive to time span. The best performance is achieved with
+May–October, whereas including early-year months (January—March) degrades performance. To analyze
+this, we visualize the average NDVI of corn, soybeans, and rice in FRA and USA (Fig. 13). In FRA, we
+observe significant NDVI activity during January to March, particularly for corn and soybeans. This is likely
+due to crop rotation practices (e.g., planting rapeseed in the off-season), which elevate NDVI values and
+introduce noisy signals unrelated to the target summer crops. When such signals from non-growing season
+are included, the model may overfit to these phenological patterns, which do not appear in target regions
+(e.g., USA, where early-year NDVI remains low).
+    For cross-hemisphere transfer, the best performance is achieved with May—November. Moreover, we find
+that including November consistently improves accuracy regardless of the start month. This is because crops
+such as wheat, sugarcane, and cotton often have longer growth cycles. Considering the trade-offs across
+different settings, we select May—November as the time span used in our main experiments.
+    To further refine our understanding of the data augmentation design, we conduct a sensitivity analysis
+on the key parameters in time shift, time scale, and magnitude warping. These experiments are carried out
+under four challenging transfer settings: FRA → CHN, FRA → USA, FRA → ARG and USA → AUS.
+Results are reported as the mean OA averaged across these transfer tasks.
+    Fig. 14 presents the results when applying time shift or time scale alone. For time shift, performance
+peaks at a shift range of [−30, +30]. When the range becomes larger, accuracy starts to decline. Note that
+our base time span is fixed to May–November; when a shifted window extends beyond the current year, we
+
+
+                                                             26
+                   (a) Temporal Window                                       (b) Time Span
+
+Figure 12: Impact of (a) different temporal windows and (b) different time spans on mean OA (%) across
+cross-country, cross-continent, and cross-hemisphere settings.
+
+                          FRA                                                    USA
+
+
+
+
+Figure 13: NDVI time series for corn, soybeans, and rice in FRA and USA over a full year. In France, NDVI
+values are already high from January to April, indicating the presence of vegetation during the early months
+of the year. This may be due to early-sown crops, winter crops, or crop rotation practices.
+
+
+clip it to the year boundary and compute median composites on the remaining valid dates. Therefore, overly
+large shifts may effectively truncate the seasonal profile, reducing the amount of informative growing-season
+observations.
+    A similar trend is observed for time scale. Allowing moderate expansion or contraction of the season
+improves performance, with the best result achieved at [−30, +30]. More aggressive scaling leads to slightly
+worse results, suggesting that overly strong stretching/compression can distort crop development patterns.
+    Fig. 15 investigates the parameters of magnitude warping. The left panel shows that performance is highest
+at σ = 0.1 and gradually decreases as σ increases, indicating that magnitude warping is most effective when it
+introduces realistic but not overly strong reflectance perturbations. The right panel shows that performance
+peaks at knots = 5 and declines when fewer or more knots are used, suggesting that this setting best balances
+smoothness and flexibility.
+
+
+
+                                                     27
+                    (a) Time Shift Range                                   (b) Time Scale Range
+
+Figure 14: Sensitivity analysis of parameters for data augmentation: (a) impact of time shift range; (b)
+impact of time scale range. Only one transformation (either time shift or time scale) is applied in each
+experiment. Mean OA (%) values are averaged over the FRA → CHN, FRA → USA, FRA → ARG and
+USA → AUS transfer settings.
+
+
+
+
+          (a) Deviation for magnitude warping                 (b) Number of knots for magnitude warping
+
+Figure 15: Sensitivity analysis of (a) Gaussian deviation and (b) the number of spline knots for magnitude
+warping. Only magnitude warping is applied in this set of experiments. Mean OA (%) values are averaged
+over the FRA → CHN, FRA → USA, FRA → ARG and USA → AUS transfer settings.
+
+
+D     S1 + S2 Feature Combination
+Sentinel-1 (S1) synthetic aperture radar (SAR) data are also widely used for crop type classification. SAR
+is insensitive to clouds and illumination conditions and provides complementary information on canopy
+structure, vegetation water content, and soil moisture. As a result, many studies combine S1 and S2 to
+improve robustness, especially when optical observations are sparse.
+    We further examine whether S1 provides additional transferable information under cross-region transfer.
+For each CropGlobe sample, we extract S1 observations at the same location and use VV and VH as additional
+input channels. We then fuse S1 and S2 by channel-wise concatenation: the original S2 median feature of
+size 10 × t becomes 12 × t after appending VV and VH, and the same classifier is trained on the fused input.
+    Table 8 reports the results. Overall, S1 + S2 improves performance in several transfer settings, with gains
+often becoming larger when combined with data augmentation. This suggests that under cross-region shifts,
+SAR provides complementary structure- and moisture-related cues beyond optical reflectance.
+    At the same time, the benefit of S1 is not always consistent. In some settings, OA improves while mF1
+
+
+                                                      28
+Table 8: Experiments on S1 + S2 feature combination. To examine whether SAR can further improve
+geographic transfer, we download S1 observations at the same coordinates as the CropGlobe samples and use
+VV and VH as additional channels.
+                                          FRA → BEL                      FRA → NLD                     FRA → GBR
+                   Data
+                                        OA (%)       mF1 (%)           OA (%)       mF1 (%)          OA (%)       mF1 (%)
+      Cross-       S2              97.74 ± 0.55  97.99 ± 0.48     95.85 ± 0.43  95.98 ± 0.41    95.01 ± 1.19  95.14 ± 1.19
+      Country      S2 AUGM         98.24 ± 0.18  98.39 ± 0.15     96.15 ± 0.24  96.36 ± 0.25    95.75 ± 0.43  95.91 ± 0.46
+                   S1 + S2         98.11 ± 0.20  98.31 ± 0.20     96.85 ± 0.15  97.05 ± 0.14    95.54 ± 0.48  95.66 ± 0.47
+                   S1 + S2 AUGM   98.29 ± 0.24 98.44 ± 0.24      96.92 ± 0.24 97.11 ± 0.21     96.48 ± 0.58 96.62 ± 0.59
+                                          USA → FRA                      FRA → CHN                     FRA → USA
+                   Data
+                                        OA (%)       mF1 (%)           OA (%)       mF1 (%)          OA (%)       mF1 (%)
+      Cross-       S2              87.00 ± 0.75  89.44 ± 0.67     79.55 ± 3.20  79.31 ± 3.44    73.34 ± 1.95  72.60 ± 2.21
+      Continent    S2 AUGM         87.76 ± 1.37  90.00 ± 1.24     82.52 ± 1.28 82.73 ± 1.27    80.37 ± 1.49 80.68 ± 1.51
+                   S1 + S2         88.36 ± 1.34  89.88 ± 1.13     79.19 ± 5.12  71.22 ± 3.77    76.13 ± 0.70  75.66 ± 0.89
+                   S1 + S2 AUGM   89.04 ± 1.03 90.33 ± 0.91      83.42 ± 0.71   75.25 ± 1.87    80.29 ± 1.19  80.66 ± 1.25
+                                          USA → AUS                      USA → ARG                     FRA → ARG
+                   Data
+                                        OA (%)       mF1 (%)           OA (%)       mF1 (%)          OA (%)       mF1 (%)
+      Cross-       S2              86.74 ± 1.90  86.75 ± 1.87     74.15 ± 0.42  75.18 ± 0.45    70.92 ± 2.15  70.80 ± 2.40
+      Hemisphere   S2 AUGM        88.45 ± 0.96 88.38 ± 1.02       74.84 ± 0.79 75.63 ± 0.79     77.03 ± 1.01  77.41 ± 1.16
+                   S1 + S2         87.09 ± 0.79  86.98 ± 0.81     79.83 ± 0.54  69.25 ± 0.62    74.28 ± 0.96  72.39 ± 1.32
+                   S1 + S2 AUGM    87.86 ± 0.87  87.81 ± 0.87    80.88 ± 0.40   70.56 ± 0.64   78.87 ± 0.62 77.72 ± 0.72
+
+
+
+
+        FRA → CHN (S2_AUGM)         FRA → CHN (S1+S2_AUGM)           USA → ARG (S2_AUGM)       USA → ARG (S1+S2_AUGM)
+
+
+Figure 16: Confusion matrices comparing S2 and S1 + S2 inputs with data augmentation under two transfer
+settings (FRA → CHN and USA → ARG) from Table 8.
+
+
+decreases (e.g., FRA → CHN and USA → ARG), indicating gains for dominant classes but worse performance
+for minority or more heterogeneous categories (Fig. 16). This may be because SAR responses are affected by
+soil moisture, tillage, and surface roughness, which vary across regions and introduce additional uncertainty
+under transfer.
+    In the main text, we focus on S2 because it provides the most widely available and easily reusable time-
+series input at the global scale. S1 + S2 combination is a valuable direction, and we provide these results in
+the Appendix as a supplement, leaving a more in-depth multi-sensor study for future work.
+
+
+E     Input Settings for Presto
+Presto is a reconstruction-based foundation model pretrained to recover masked observations from remote
+sensing time series. It supports flexible inputs, including single-modality or multi-modality sequences, and
+can be applied using either full-year data or a subset of months. To examine how its performance depends
+
+
+                                                                29
+Table 9: Presto performance under different input settings and classification heads. We vary temporal
+coverage: all year (AY), May–November (MN); and input modalities: S2 vs. S1 + S2.
+                                       FRA → BEL                          FRA → NLD                     FRA → GBR
+              Setting
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              RF S2 AY          94.10 ± 0.18  94.25 ± 0.18         84.08 ± 0.27  83.48 ± 0.30    79.86 ± 0.44  80.22 ± 0.45
+              MLP S2 AY         95.42 ± 0.32  95.75 ± 0.29         81.92 ± 2.48  81.67 ± 2.62    74.03 ± 3.29  73.93 ± 3.57
+ Cross-
+              RF S2 MN          96.35 ± 0.06  96.44 ± 0.06         91.09 ± 0.12  91.00 ± 0.13   85.62 ± 0.42 85.89 ± 0.40
+ Country
+              MLP S2 MN         96.39 ± 0.35  96.50 ± 0.33         88.39 ± 1.41  88.16 ± 1.54    82.11 ± 3.94  82.42 ± 3.96
+              RF S1 + S2 AY     94.14 ± 0.06  94.30 ± 0.06         84.67 ± 0.20  84.27 ± 0.22    79.29 ± 0.36  79.57 ± 0.37
+              MLP S1 + S2 AY    95.46 ± 0.38  95.81 ± 0.34         78.92 ± 2.24  78.58 ± 2.46    74.05 ± 3.36  73.96 ± 3.57
+              RF S1 + S2 MN     96.59 ± 0.08  96.67 ± 0.08        91.45 ± 0.15 91.38 ± 0.15      84.74 ± 0.34  85.05 ± 0.33
+              MLP S1 + S2 MN   96.71 ± 0.27 96.85 ± 0.23           87.46 ± 1.54  87.19 ± 1.54    79.40 ± 3.18  79.69 ± 3.34
+                                       USA → FRA                          FRA → CHN                     FRA → USA
+              Setting
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              RF S2 AY          58.15 ± 0.58  48.77 ± 0.70         35.54 ± 0.21  21.90 ± 0.22    38.99 ± 0.23  25.62 ± 0.34
+              MLP S2 AY         63.14 ± 4.31 61.33 ± 4.06          31.81 ± 2.43  17.21 ± 3.86    38.92 ± 3.96  30.28 ± 5.06
+ Cross-
+              RF S2 MN          62.24 ± 0.53  53.56 ± 0.88         51.94 ± 0.25  34.84 ± 0.51    43.35 ± 0.32  27.11 ± 0.50
+ Continent
+              MLP S2 MN         61.55 ± 3.35  60.59 ± 4.52         31.33 ± 2.78  16.20 ± 4.09    38.02 ± 2.79  26.85 ± 3.06
+              RF S1 + S2 AY     60.65 ± 0.69  52.87 ± 1.02         44.41 ± 2.03  26.75 ± 1.10    40.06 ± 0.21  26.61 ± 0.51
+              MLP S1 + S2 AY    59.78 ± 5.50  58.92 ± 4.53         30.73 ± 4.04  20.91 ± 4.46    39.22 ± 3.38 30.63 ± 4.50
+              RF S1 + S2 MN    65.69 ± 0.53   59.42 ± 0.94        59.88 ± 0.25 35.40 ± 0.35     43.83 ± 0.31   28.20 ± 0.61
+              MLP S1 + S2 MN    59.87 ± 4.51  58.40 ± 5.29         34.75 ± 4.55  24.49 ± 4.20    40.20 ± 2.95  29.87 ± 3.92
+                                       USA → AUS                          USA → ARG                     FRA → ARG
+              Setting
+                                     OA (%)       mF1 (%)               OA (%)       mF1 (%)          OA (%)       mF1 (%)
+              RF S2 AY         52.31 ± 1.26 39.94 ± 1.63           37.30 ± 1.73 26.24 ± 2.16     23.30 ± 1.26  11.86 ± 1.63
+              MLP S2 AY        46.70 ± 12.78 37.83 ± 14.27         34.04 ± 6.51  20.51 ± 4.57    33.76 ± 0.00  12.62 ± 0.00
+ Cross-
+              RF S2 MN          45.13 ± 1.11  30.19 ± 1.19         33.36 ± 3.15  21.20 ± 4.13    43.40 ± 1.63 26.98 ± 0.69
+ Hemisphere
+              MLP S2 MN        33.80 ± 10.49  22.90 ± 9.74         27.33 ± 9.23  15.53 ± 7.59    33.77 ± 0.00  12.63 ± 0.01
+              RF S1 + S2 AY     51.58 ± 1.23  39.24 ± 2.29         48.12 ± 0.85  25.92 ± 1.88    20.96 ± 1.73  11.47 ± 1.86
+              MLP S1 + S2 AY   47.38 ± 11.40 36.71 ± 10.43         38.67 ± 1.42  14.07 ± 4.18    39.86 ± 0.00  14.25 ± 0.00
+              RF S1 + S2 MN     46.57 ± 1.08  32.89 ± 0.97        48.42 ± 1.57   25.41 ± 1.93   44.05 ± 1.76   24.26 ± 2.12
+              MLP S1 + S2 MN   35.84 ± 11.30 25.01 ± 10.94        28.71 ± 14.02  13.19 ± 5.87    39.86 ± 0.00  14.25 ± 0.00
+
+
+
+on the inputs, Table 9 compares different settings, varying temporal coverage (all year vs. May–November)
+and modalities (S2 only vs. S1 + S2).
+    Restricting the input to May–November generally performs better than using the full year. Although
+Presto is pretrained with a reconstruction objective, its embedding still depends on the observations provided
+at inference time. Using only the main growing season may therefore yield representations that are more
+focused on crop-discriminative patterns. Adding S1 does not consistently improve performance. A possible
+reason is that the reconstruction objective encourages the model to encode information useful for recovering
+missing observations rather than features that are most discriminative for cross-region crop classification.
+    In the main text, for fairness and consistency across methods, we report Presto results using S2 inputs
+over May–November in Table 3.
+
+
+F     Cross-Temporal Transfer
+Updating crop maps across years is important in practice for agricultural monitoring, annual statistics, and
+year-to-year comparisons. At the same time, cross-year crop classification is challenging: even within the
+same country, inter-annual changes in weather and management can shift crop calendars, growth trajectories,
+and background conditions, creating temporal distribution shifts.
+   Motivated by this, we conduct cross-temporal transfer experiments in the USA: models are trained on
+USA 2023 and directly transferred to earlier years (USA 2017 and USA 2020) without using target-year
+labels. Table 10 summarizes the sample distribution for each year, and Fig. 17 visualizes the corresponding
+
+
+                                                             30
+Table 10: Sample distribution across years for the USA data used in the cross-temporal transfer experiments
+(2017, 2020, and 2023).
+              Year          Corn     Soybeans      Rice     Wheat     Sugarcane     Cotton     Other        Total
+              USA 2017      3,391        2,624     4,279      5,705        2,358      3,909      9,157     31,423
+              USA 2020      4,165        2,827     4,287      5,764        2,273      3,347      8,316     30,979
+              USA 2023     22,224       17,093    17,613     23,226        9,897     14,799     28,427    133,279
+              Total       29,780       22,544    26,179     34,695       14,528     22,055     45,900     195,681
+
+
+              USA_2017                                     USA_2020                                       USA_2023
+
+
+
+
+                         Corn       Soybeans     Rice        Wheat      Sugarcane     Cotton      Other
+
+
+
+Figure 17: Spatial distribution of USA samples used for cross-temporal transfer (USA 2017, USA 2020, and
+USA 2023).
+
+
+spatial coverage.
+    Table 11 reports the results. Across methods, performance on USA 2023 → USA 2020 is generally
+higher than on USA 2023 → USA 2017, which is consistent with the intuition that a larger year gap tends
+to introduce stronger distribution shifts. To understand how this shift affects different classes, we show
+confusion matrices in Fig. 18.
+    A notable result is that AlphaEarth performs particularly well in this within-country, cross-year setting,
+with both RF and MLP reaching nearly 96% in OA and mF1. Compared with time-series features that rely
+more directly on within-season trajectories, the annual AlphaEarth embedding provides a more stable year-
+scale representation. Because it aggregates multi-source information and is designed to be globally consistent,
+it may be less sensitive to year-specific fluctuations such as weather-driven shifts in temporal curves. As a
+result, when the main challenge is inter-annual variation within the same region rather than large geographic
+differences, such a representation can be advantageous. The confusion matrices support this interpretation:
+AlphaEarth shows fewer concentrated errors and a cleaner diagonal, indicating more stable class separability
+across years.
+    Even so, CropNet remains highly competitive in this cross-year setting. With only 133k training samples
+from USA 2023 and a lightweight architecture requiring far less computation, CropNet clearly outperforms
+Presto and achieves strong performance relative to AlphaEarth, a much larger foundation model trained
+on massive data. This result highlights the strong potential of spectral–temporal representations for cross-
+temporal crop classification.
+
+
+
+
+                                                             31
+Table 11: Cross-temporal transfer results within the USA. Models are trained on USA 2023 and evaluated
+on USA 2017 and USA 2020 without using target-year labels.
+                                                USA 2023 → USA 2017           USA 2023 → USA 2020
+                      Method
+                                                   OA (%)       mF1 (%)          OA (%)       mF1 (%)
+                      Presto RF               85.39 ± 0.08  85.66 ± 0.09    87.68 ± 0.06  88.31 ± 0.06
+                      Presto MLP              87.11 ± 0.33  88.00 ± 0.27    89.38 ± 0.15  90.37 ± 0.16
+                      AlphaEarth RF          95.52 ± 0.04 96.03 ± 0.05     96.37 ± 0.03 96.81 ± 0.03
+                      AlphaEarth MLP          95.11 ± 0.15  95.50 ± 0.17    96.34 ± 0.13  96.74 ± 0.12
+                      CropNet S2 AUGM         90.85 ± 0.21  91.51 ± 0.23    92.71 ± 0.24  93.34 ± 0.22
+                      CropNet S1 + S2 AUGM    91.38 ± 0.15  92.06 ± 0.15    93.22 ± 0.24  93.82 ± 0.23
+USA_2023 → USA_2017
+USA_2023 → USA_2020
+
+
+
+
+                      Presto_MLP             AlphaEarth_RF          CropNet_S2_AUGM      CropNet_S1+S2_AUGM
+
+
+Figure 18: Confusion matrices for cross-temporal transfer within the USA from Table 11. Models are trained
+on USA 2023 and evaluated on USA 2017 and USA 2020 without using target-year labels.
+
+
+
+
+                                                             32
+

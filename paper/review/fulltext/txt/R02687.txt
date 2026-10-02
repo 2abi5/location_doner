@@ -1,0 +1,528 @@
+                                                              Surgical fine-tuning for Grape Bunch Segmentation
+                                                                          under Visual Domain Shifts
+                                                    Agnese Chiatti1 , Riccardo Bertoglio1 , Nico Catalano1 , Matteo Gatti2 , and Matteo Matteucci1
+
+
+                                                                                                                            The widespread application of Deep Learning (DL) meth-
+                                           Abstract— Mobile robots will play a crucial role in the                       ods has considerably accelerated the progress in various
+                                        transition towards sustainable agriculture. To autonomously                      visual perception tasks, including plant phenotyping [8].
+                                        and effectively monitor the state of plants, robots ought to be
+                                        equipped with visual perception capabilities that are robust to                  However, supervised DL methods typically require abundant
+                                        the rapid changes that characterise agricultural settings. In                    training data and are susceptible to changes in the data
+                                                                                                                         distribution. Moreover, training all model parameters on new
+arXiv:2307.00837v1 [cs.RO] 3 Jul 2023
+
+
+
+
+                                        this paper, we focus on the challenging task of segmenting
+                                        grape bunches from images collected by mobile robots in                          data is a costly process in terms of computational power
+                                        vineyards. In this context, we present the first study that applies              and memory footprint, especially when working on edge
+                                        surgical fine-tuning to instance segmentation tasks. We show
+                                        how selectively tuning only specific model layers can support                    devices and mobile platforms. To address these issues, one
+                                        the adaptation of pre-trained Deep Learning models to newly-                     possible approach is to pre-train the model on a large-
+                                        collected grape images that introduce visual domain shifts, while                scale source domain and fine-tune the parameters on a few
+                                        also substantially reducing the number of tuned parameters.                      examples from the target domain. The aim of fine-tuning
+                                                I. INTRODUCTION AND BACKGROUND                                           is to adapt the model to the target domain while retaining
+                                                                                                                         the information learned during pre-training, particularly in
+                                           The climate change crisis has highlighted the impor-                          cases where the source and target distributions significantly
+                                        tance of increasing the sustainability of food production, as                    overlap despite the shift. This process is commonly known
+                                        prescribed in the European Commission’s “Farm to Fork”                           as transfer learning. A traditional transfer learning practice
+                                        strategy1 . In this regard, digital technologies are playing a                   known as linear probing involves fine-tuning only the last
+                                        crucial role in reducing the amount of water and chemicals                       few layers of a Deep Neural Network (DNN) while reusing
+                                        used in agriculture [1]. One of the key applications of digital                  features from earlier layers. This approach was based on
+                                        technologies is the deployment of mobile robots, which can                       initial evidence suggesting that representations in earlier
+                                        perform a range of tasks such as plant spraying [2], weeding                     layers may be more transferable to new data and tasks than
+                                        [3], and harvesting [4]. To carry out these tasks effectively,                   the specialised features learned in higher layers [9].
+                                        robots need the ability to autonomously monitor plant traits                        Recent research [10], [11] has explored effective alterna-
+                                        and status, a task also known as plant phenotyping. For                          tives to this consolidated fine-tuning practice. Indeed, Lee
+                                        example, in vineyards, a robot must be capable of detecting                      et al. [10] discovered that selectively tuning only the earlier,
+                                        plant organs for posing the appropriate cuts during winter                       intermediate, or last layers of a DNN can counteract different
+                                        pruning operations [5]. They also ought to accurately identify                   types of distribution shifts and often even outperform cases
+                                        the presence of grape bunches, their level of ripeness, and                      where all model parameters are tuned. They have named this
+                                        promptly detect the emergence of any diseases that may                           approach surgical fine-tuning (SFT). Their study concerned
+                                        compromise the fruit quality.                                                    transfer learning across different image classification bench-
+                                           Robot’s perception systems deployed in agricultural set-                      marks, such as CIFAR and ImageNet. However, the authors’
+                                        tings face particular challenges due to the significant weather                  conclusions have yet to be validated on image segmentation
+                                        and seasonal variations that characterise these environments.                    tasks and data gathered in real-world application scenarios,
+                                        Thus, ensuring the effective reuse of visual patterns and fea-                   e.g., from mobile robots.
+                                        tures learned under specific environmental conditions (e.g.,                        This paper focuses on the task of grape bunch seg-
+                                        in terms of weather, lighting, and plant diversity) becomes                      mentation, which is a critical prerequisite for autonomous
+                                        crucial. This requirement stems from the need to guarantee                       plant phenotyping and yield forecast in vineyards [12]–
+                                        accurate plant monitoring, even when the underlying con-                         [14]. Our research investigates whether surgical fine-tuning
+                                        ditions change. For instance, viewpoint changes caused by                        can support grape bunch segmentation under visual domain
+                                        different sensor positions and occlusions caused by leaves are                   shifts. To address this research question, we extend the study
+                                        prominent factors that can hinder the accurate monitoring of                     of surgical fine-tuning from image classification models to
+                                        fruit [6], [7].                                                                  instance segmentation architectures in the specific case of
+                                          1 Department of Electronics, Information and Bioengineering (DEIB),            viticulture. The work in [12] is most closely related to this
+                                        Politecnico di Milano, Milan, Italy {name.surname}@polimi.it                     study, because it evaluates the utility of linear probing for
+                                          2 Department of Sustainable Crop Production, Università Cattolica del
+                                                                                                                         grape segmentation. However, the experiments in [12] did
+                                        Sacro Cuore, Piacenza, Italy matteo.gatti@unicatt.it
+                                          1 https://food.ec.europa.eu/horizontal-topics/                                 not examine the option of fine-tuning layers other than the
+                                        farm-fork-strategy_en                                                            classification head.
+
+                                        ©2023 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any current or future media,
+                                        including reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for resale or redistribution to servers
+                                        or lists, or reuse of any copyrighted component of this work in other works.
+   To facilitate the analysis of different types of visual             TABLE I: Domain shifts from source to target data.
+domain shifts that characterise vineyards, we introduce the          Dataset            Changes introduced   Shift types[10]   Instances
+VINEyard Piacenza Image Collections (VINEPICs) [15],
+                                                                     Source: WGISD      -                    -                 2,020
+a comprehensive and novel grape image archive. In [14],
+Santos et al. presented the Embrapa Wine Grape Instance                                 geographic area,     natural,
+Segmentation Dataset (WGISD), which is a large-scale col-            Fine-tuning set:   vineyard,            feature-level
+                                                                     VINEPICs21         Red Globe            input-level       668
+lection of vineyard images displaying high-resolution in-                               camera setup
+stances of grape bunches across five different grapevine
+varieties. Our dataset was gathered in a distinct geographic         Target sets:
+                                                                     VINEPICs22R        temporal:            input-level       100
+area and it encompasses different grapevine varieties from                              different years
+those in the WGISD dataset, including wine and table
+grapes. Crucially, the proposed VINEPICs dataset contains
+                                                                     VINEPICs22RV       temporal,            input-level       112
+additional variations in terms of camera viewpoint, scene                               camera viewpoint
+occlusion, and time of data collection. Moreover, we captured
+images using a consumer-grade camera mounted on a mobile
+                                                                     VINEPICs22RF       temporal,            input-level       105
+robot, which presents additional challenges due to possible                             foliage occlusion
+motion blur from the robot’s movement. As such, the con-
+tributed dataset more closely resembles realistic setups in
+                                                                     VINEPICs22C        temporal,            input-level       138
+autonomous vineyard phenotyping compared to the WGISD                                   grape variety        feature-level
+benchmark.                                                                              (Cabernet S.: red)
+   Our results from applying the widely-adopted Mask R-
+CNN model [16]–[18] to challenging robot-collected images            VINEPICs22O        temporal,            input-level       135
+indicate that adopting a surgical fine-tuning strategy can                              grape variety        feature-level
+significantly outperform both linear probing and full param-                            (Ortrugo: white)
+eter tuning when novel samples that introduce distribution
+shifts are considered. The paper is structured as follows. In
+Section II, we present the reference datasets, ablation study,
+technical implementation, and evaluation metrics used in our        The images were captured at the Guaspari Winery (Espı́rito
+experiments. We then discuss the experimental results in            Santo do Pinhal, São Paulo, Brazil) in April 2018, with the
+Section III. Concluding remarks and future extensions of this       exception of images of the Syrah dataset that was collected in
+work are left to Section IV.                                        April 2017. Grape bunches were photographed while keeping
+                                                                    the camera principal axis approximately perpendicular to the
+               II. M ATERIALS AND METHODS                           vineyard row, using both a Canon EOS REBEL T3i DSLR
+   To test the performance of applying surgical fine-tuning         camera and a Motorola Z2 Play smartphone and were resized
+to instance segmentation models, we ran a set of layered            and stored at a resolution of 2048x1365. At the time of data
+experiments. Consistently with [10], we set up the training         collection, no defoliation treatments were applied except for
+in two stages. First, we pre-trained on the largest available set   the routine canopy management for wine production adopted
+of examples for the grape segmentation task: namely WGISD           in the region. In the original data split used in [14], 110
+in this case [19]. Then, we considered different target sets        images (accounting for 1612 grape instances) were jointly
+that introduce a distribution shift from the source set. The        devoted to training and validation, whereas 27 images (i.e.,
+goal was evaluating the extent to which transfer learning can       408 grape instances) were held out for testing. However, the
+be achieved from source to target, with minimal adjustments,        actual split between training and validation was not provided.
+thanks to surgical fine-tuning. Differently from [10], where        Therefore, we decided to use a 20% validation split stratified
+the evaluation set was held out from the same data used for         across grape varieties from the original training subset.
+fine-tuning, we ran inferences on a different dataset, collected       VINEPICs. The VINEyard Piacenza Image Collections
+one year after the fine-tuning set. This setup resembles            (VINEPICs) dataset consists of grape images collected at the
+the real-world challenges of viticulture applications. Indeed,      vineyard facility of Università Cattolica del Sacro Cuore in
+grape images can be collected only at specific times of the         Piacenza, Italy. The VINEPICs dataset is publicly available
+year and adapting learning models from past years to newly-         under CC BY 4.0 (Attribution 4.0 International) license and
+collected data becomes essential.                                   accessible at this link https://doi.org/10.5281/
+                                                                    zenodo.7866442. The acronym VINEPICs21 refers to
+A. Datasets                                                         the first collection of images gathered in the summer of
+   Embrapa WGISD. The Embrapa Wine Grape Instance                   2021 on Red Globe vines (Vitis vinifera L.) grafted on Se-
+Segmentation Dataset (WGISD) [19] comprises 300 high-               lection Oppenheim 4 (SO4), i.e., the vine rootstock, growing
+resolution images depicting 2,020 grape bunches from five           outdoors in 25 L pots. This set includes 73 RGB images
+Vitis vinifera L. grapevine varieties: Chardonnay, Cabernet         captured on three different dates: 26 images of resolution
+Franc, Cabernet Sauvignon, Sauvignon Blanc, and Syrah.              480x848 were collected at beginning of grape ripening on
+July 27th, 23 images of resolution 720x1280 on August                          lighting variations); ii) feature-level shifts, where the source-
+23rd when berries were fully coloured, and 24 images of                        target shift is caused by different populations of the same
+resolution 720x1080 at harvest on September 9th. An Intel                      class, in our case, different grape varieties; and iii) natural
+D435i RGB-D camera was used to capture the data, which                         shifts, which are due to collecting the source and target
+was mounted on a SCOUT 2.0 AgileX robotic platform, a                          data in different environments, in our case, different growing
+four-wheeled differential steering mobile robot2 . The plants                  conditions (potted vines vs. experimental vineyard). Output-
+were arranged along two, vertically shoot-positioned, North-                   level shifts do not concern our use-case, since the target
+South oriented rows and hedgerow-trained for a canopy wall                     class (grape bunches) remains unchanged throughout the
+extending about 1.3 m above the main wire. Each vine had a                     experiments detailed in this paper.
+∼1 m cane bearing 10-11 nodes that was raised 80 cm from
+the ground. Between fruit-set (BBCH 71) and berry touch
+                                                                               B. Surgical fine-tuning for instance segmentation
+(BBCH 79) [20], the leaves around bunches were gradually
+removed for a resulting fully defoliated fruit zone with                          Given the focus on image classification tasks, the experi-
+reduced incidence of berry sunburns [21]. Before veraison,                     ments described in [10] consider ResNet architectures [22] as
+eight vines were subjected to crop thinning to control for fruit               a reference and utilize surgical fine-tuning to manipulate the
+occlusions caused by excessive fruit density. Accordingly,                     different residual blocks. However, in the context of instance
+a basal bunch was kept every second shoot for about six                        segmentation tasks, supplementary modules are introduced
+retained bunches/vine; the remaining unthinned vines were                      for detecting and segmenting object regions. Region-based
+clustered into two groups with about 10 and 4 bunches/vine.                    segmentation architectures such as the widely utilized Mask
+During data collection, the camera principal axis was rotated                  R-CNN model [16] merge CNN feature extraction layers
+to form an angle of approximately 45◦ with the scanned                         with a Region Proposal Network (RPN) that extracts Regions
+plant row. The grape bunch regions were annotated using                        of Interest (ROI) from input images. Predicted object regions
+polygonal masks through the Computer Vision Annotation                         are then fed to three network heads that operate in parallel,
+Tool (CVAT)3 , and the annotations followed the COCO                           generating predictions for the object class, bounding box,
+annotation format4 .                                                           and polygonal mask (Figure 1). A popular implementation of
+A second and more extensive dataset, named VINEPICs22,                         this generalized architecture uses a combination of ResNets
+was collected at the same vineyard facility of Università                     and Feature Pyramid Networks (FPN) as a backbone for the
+Cattolica del Sacro Cuore in Piacenza, Italy, on two separate                  feature extraction step [17], [18].
+dates in August and September 2022, approximately one                             To assess the efficacy of surgical fine-tuning in the context
+year after the previous set. This dataset comprises 165                        of region-based segmentation models, we also ought to ex-
+annotated images, representative of different types of domain                  amine the impact of selectively fine-tuning the FPN and RPN
+shifts, including 1464 grape bunch instances. From this                        components, along with the residual blocks and classification
+dataset, we extracted subsets of data to control for the                       heads. Hence, we conduct experiments that compare the
+incremental changes we expect from the fine-tuning domain                      following model ablations:
+(VINEPICs21) to the target domain, as detailed in Table
+I. Specifically, the VINEPICs22R set includes new images                         • Tune All: This configuration fine-tunes all model pa-
+collected from the same grape variety (Red Globe), by main-                        rameters.
+                                                                                 • Linear Probing: In this classic configuration, only
+taining the same camera viewpoint, and level of defoliation
+as VINEPICs21. VINEPICs22RV introduces a change in the                             parameters in the three ROI heads are updated, while
+camera viewpoint (i.e., the camera principal axis is perpen-                       earlier layer parameters remain fixed at values learned
+dicular to the plant rows), while set VINEPICs22RF was                             during pre-training.
+                                                                                 • Res n: This setup involves fine-tuning only the ResNet
+captured first on non-defoliated canopies. Furthermore, sets
+VINEPICs22C and VINEPICs22O maintain the same camera                               layers, specifically the residual block identified by the
+viewpoint and defoliation level as VINEPICs21 but represent                        number n. We use the keyword “stem” to refer to the
+different grape varieties, namely Cabernet Sauvignon (red                          first residual block, and the notation “res n” for blocks
+grape) and Ortrugo (white grape), growing in a experimental                        numbered 2 and higher. This setup follows the rationale
+vineyard. Table I maps the changes introduced for each                             applied in [10].
+                                                                                 • Joint SFT: Res Block n + FPN at n: This configuration
+fine-tuning and target set to the taxonomy of shift types
+adopted in [10]. The selected target sets cover three shift                        is a variation of the previous setup, where the selected
+types: i) input-level shifts, which occur due to variations                        residual blocks are fine-tuned simultaneously with the
+in the visual appearance of the same environment (e.g.,                            related Feature Pyramid Network (FPN) operations.
+                                                                                 • RPN: In this setup, we only apply surgical fine-tuning
+observing the same vineyard on different days introduces
+                                                                                   to the Region Proposal Network (RPN) in the Mask
+   2 The analyses presented in this paper only concern RGB images, but we          R-CNN model.
+also collected depth data to support a wider range of applications, such as,
+e.g., estimating the volume of grape bunches.
+                                                                                  To the best of our knowledge, this is the first study on the
+   3 https://github.com/opencv/cvat                                            application of surgical fine-tuning to instance segmentation
+   4 https://cocodataset.org/                                                  tasks.
+                                                    ResNet Backbone                                        Region Proposal Network
+ Input image                                                                                                        (RPN)
+
+                               res2
+                                          res3                                                                            region proposals
+                                                                res4
+                                                                                    res5
+                                                                                                                ROI Heads
+
+                 stem
+                                                                                                                                             Object class:
+                                                                                                               Classification Head           grape bunch
+
+
+
+
+                                                                                                                   Box Head
+
+
+
+
+                                                                                                                  Mask Head
+                                                                                             ROI Pooling
+                              FPN res2      FPN res3             FPN res4        FPN res5
+
+
+                                                 Feature Pyramid Network (FPN)
+
+
+Fig. 1: Overview of the Mask R-CNN architecture. The backbone of the architecture is based on ResNet50, and features
+from blocks 2 to 5 are extracted and passed through a Feature Pyramid Network (FPN). The Region Proposal Network
+(RPN) generates region proposals, which are then combined with the upsampled features and input to three model heads,
+which predict object class, bounding box, and polygonal mask in parallel.
+
+         TABLE II: Inference results from pre-training baseline instance segmentation models on the WGISD dataset.
+                            Baseline                                             AP0.3−0.9      P0.3−0.9        R0.3−0.9             F10.3−0.9
+                            Mask R-CNN ResNet101 (results from [14])                 0.540        0.683             0.649               0.665
+                            Mask R-CNN ResNet101 [18]                                0.550        0.789             0.588               0.674
+                            Mask R-CNN ResNet50 [18]                                 0.571        0.806             0.607               0.693
+                            Mask R-CNN ResNet50 [17]                                 0.623        0.796             0.663               0.724
+
+
+
+TABLE III: Number of fine-tuned parameters in the evalu-                              (GN). We experimented with different weight initializations
+ated ablations.                                                                       following the Detectron2 Mask R-CNN baselines for the
+                        Ablation         Parameters
+                                                                                      COCO instance segmentation task. In the first configuration,
+                                                                                      we used the weights obtained from the method introduced
+                        tune all         ∼ 45.3M
+                        linear probing   ∼ 17.8M                                      in [18], where the model was trained from scratch on
+                        stem             ∼ 9.5K                                       COCO with an extended training schedule and an augmented
+                        res2             ∼ 215K                                       jittering scale. In the second configuration, we initialized
+                        res2 + FPN       ∼ 872K
+                        res3             ∼ 1.22M                                      the model with the weights from the method presented in
+                        res3 + FPN       ∼ 1.94M                                      [17], where Mask R-CNN was trained on COCO instances
+                        res4             ∼ 7.1M                                       from scratch, i.e., with random weight initialization, rather
+                        res4 + FPN       ∼ 7.95M
+                        res5             ∼ 14.9M                                      than reusing initialization values derived from ImageNet.
+                        res5 + FPN       ∼ 16.1M                                      All models were trained with a batch size of 2 images,
+                        RPN              ∼ 594K                                       and we used an early stopping criterion if the validation
+                                                                                      loss did not improve for 30 consecutive evaluation checks,
+                                                                                      with one evaluation check every 220 minibatch iterations.
+C. Implementation details                                                             We optimized model parameters using stochastic gradient
+   To apply surgical fine-tuning as described in the previ-                           descent, with a constant learning rate set to 0.01.
+ous section, we customised the Detectron25 implementation
+                                                                                      D. Evaluation metrics
+of the Mask R-CNN architecture. The code for reproduc-
+ing these trials is available at https://github.com/                                     We evaluate the instance segmentation performance by
+AIRLab-POLIMI/SFT_grape_segmentation.                                                 measuring the Average Precision (AP) of predicted object
+   We augmented our training examples by applying vari-                               regions, as well as the standard Precision (P), Recall (R),
+ous transformations such as Gaussian blur, additive Gaus-                             and F1 score of predicted object instances. The metrics were
+sian noise, random brightness, contrast, and saturation,                              averaged over Intersection over Union (IoU) values ranging
+pixel dropout, and random flipping transformations. During                            from 0.3 to 0.9, to allow for comparison with the results
+pre-training on the source domain, we utilized ResNet50                               presented in [14]. Consistently with [14], only predictions
+and ResNet101 backbones employing Group Normalization                                 with confidence greater than 0.9 for the grape class are
+                                                                                      considered in the evaluation. We prioritize improvements in
+ 5 https://github.com/facebookresearch/detectron2                                     terms of F1 over individual P and R scores, as detecting
+all true positives is as important as minimizing the false         viewpoint conditions that are comparable to the tuning set.
+positives in the target use-case.                                  Similarly to the case of the temporal shifts introduced in
+                                                                   VINEPICs22R, the top performance was achieved by tuning
+              III. R ESULTS AND D ISCUSSION                        the third ResNet block. However, in this case, while the
+   Before conducting the ablation study, we pre-trained three      highest AP score was achieved in the “res3” configuration,
+Mask R-CNN models on the WGISD dataset. Table II                   the highest F1 was reached by jointly tuning res3 with FPN.
+demonstrates that on our task, ResNet50 backbones gen-                When we shift the target domain towards different grape
+erally delivered better results than ResNet101 backbones.          varieties, the drop in performance from the fine-tuning set to
+Furthermore, initializing the model with weights obtained          the target sets is significant. Indeed, although the source set
+after training from scratch on the COCO dataset [17] yielded       (WGISD) already included examples of both red and white
+the best combination of segmented object region quality (in        grape bunches, the VINEPICs22C and VINEPICs22O sets
+terms of AP) and grape class prediction quality (in terms          are drastically more challenging than previously examined
+of F1), compared to using weights from longer training             sets. First, the number of instances to be detected in each
+schedules and large-scale jittering [18]. Therefore, we have       frame is significantly higher in this case, as exemplified
+chosen the “Mask R-CNN ResNet50 [17]” model as the                 in Figure 2. Moreover, images in these sets were captured
+baseline for fine-tuning on VINEPICs21.                            at a lower resolution than WGISD and in lower lighting
+   During the fine-tuning stage, we applied the different          conditions than both the WGISD and the VINEPICs21
+ablations presented in Section II-B and evaluated the results      sets. Thus, this setup complicates not only the learning
+on the five target sets selected from VINEPICs22. The top-         but also the manual annotation of grape instances. Under
+performing methods in each set of trials, together with the        these challenging conditions, selectively tuning the stem
+“linear probing” and “tune all” alternatives, are summarised       and RPN was ineffective and prevented the model from
+in Table IV. The complete evaluation results can be found          providing any grape predictions (Table V). Conversely, ap-
+in the appendix of this paper (Table V). We also report the        plying surgical fine-tuning to intermediate layers resulted
+number of parameters tuned in each configuration in Table          in a significant improvement over the near-zero baseline
+III.                                                               performance. In the case of the Cabernet Sauvignon variety
+   Results on the VINEPICs22R sets approximate scenarios           (VINEPICs22C) tuning only the parameters in the fourth
+where the only change introduced is the date and time of           ResNet block improved the AP by 10% and the F1 by
+data collection, while considering the same grape variety          12%, compared to “linear probing”. In the case of the
+(Red Globe), camera viewpoint, and defoliation level as the        Ortrugo variety (VINEPICs22O), jointly tuning res4 with
+fine-tuning set. In this case, fine-tuning the first four CNN      FPN outperformed “linear probing” by 8%, in terms of AP,
+layers individually, excluding the stem, ensured a higher AP       and by 14%, in terms of F1.
+than the scenario when all model parameters are tuned. In             Overall, results from these experiments support the view
+particular, tuning the third ResNet block led to the highest       that selecting intermediate network layers can outperform
+AP and F1 scores, outperforming linear probing.                    the common practice of only re-training the classification
+   Changing camera viewpoint, in VINEPICs22RV, led to              head of the model, when visual domain shifts are introduced.
+generally higher scores than the previous set of trials. No-       In particular, we found that selecting the third block for
+tably, the AP scores are even higher than the AP achieved on       fine-tuning best supported temporal changes, as well as
+the VINEPICs21 test set, for the majority of tested ablations.     changes in the level of plant defoliation. Selecting the fourth
+This result may be due to the fact that a perpendicular camera     ResNet block, instead, contributed to mitigating the impact
+viewpoint is more similar to the setup adopted in the WGISD        of viewpoint and grape variety shifts. Importantly, adopting
+set, i.e., the source set. Moreover, it is worth noting that the   a surgical fine-tuning approach allowed us to substantially
+VINEPICs21 test split comprises nearly twice as many grape         reduce the number of parameter updates, compared to the
+instances as the VINEPICs22RV set. As a result, the average        costly alternative of re-training the complete model from
+scores in the VINEPICs21 case provide more conservative            scratch: from over 45M total parameters to nearly 1M and
+performance figures than VINEPICs22, which accounts for            7M in the res3 and res4 cases (Table III).
+approximately 100 instances for each subset (Table I). In
+this case, tuning the third and fourth ResNet blocks led to the                       IV. CONCLUSIONS
+most marked improvement over the the “tune all” and “linear
+probing” performance. In particular, tuning the fourth ResNet         To effectively deploy mobile robots for agricultural ap-
+block in combination with its FPN layers led to the highest        plications, improving the adaptability of visual perception
+results with respect to the AP of region predictions, Recall       methods based on Deep Learning to rapidly-changing en-
+and F1 of instance predictions. Interestingly, the top precision   vironments is essential. In particular, we have considered
+was achieved when tuning the Region Proposal Network in            the task of autonomously segmenting grape instances from
+isolation, albeit generating a higher number of false positives,   images collected in real vineyards. In this context, we showed
+as indicated by the lower recall scores.                           that pre-training on large-scale, high-resolution training ex-
+   We then considered grape images captured in the presence        amples and fine-tuning only selected layers on more chal-
+of occluding foliage (VINEPICs22RF), under temporal and            lenging robot-collected data can support knowledge transfer
+    (a)                   (b)                     (c)                         (d)                          (e)                          (f)
+VINEPICs21            VINEPICs22R             VINEPICs22RV                VINEPICs22RF                 VINEPICs22C                  VINEPICs22O
+           Fig. 2: Image examples from the VINEPICs sets. Examples from the WGIS set are available in [19].
+
+               TABLE IV: Inference results on test sets, after applying surgical fine-tuning on VINEPICs21.
+                          Test set          Ablations        AP0.3−0.9      P0.3−0.9      R0.3−0.9      F10.3−0.9
+                          VINEPICs21 test   tune all           0.374          0.767         0.404         0.529
+                                            tune all           0.254          0.682         0.273         0.390
+                          VINEPICs22R       linear probing     0.226          0.689         0.234         0.350
+                                            res3               0.395          0.602         0.421         0.496
+                                            tune all           0.387          0.634         0.436         0.517
+                          VINEPICs22RV      linear probing     0.409          0.660         0.454         0.538
+                                            res4 + FPN         0.463          0.595         0.515         0.552
+                                            RPN                0.305          0.687         0.325         0.442
+                                            tune all           0.342          0.696         0.371         0.484
+                          VINEPICs22RF      linear probing     0.290          0.711         0.305         0.426
+                                            res3               0.469          0.577         0.512         0.542
+                                            res3 + FPN         0.461          0.607         0.503         0.550
+                                            tune all           0.007          0.571         0.004         0.008
+                          VINEPICs22C       linear probing     0.003          0.286         0.002         0.004
+                                            res2               0.013          0.643         0.009         0.018
+                                            res4               0.068          0.534         0.073         0.129
+                                            res4 + FPN         0.068          0.548         0.071         0.126
+                                            tune all           0.022          0.762         0.017         0.033
+                          VINEPICs22O       linear probing     0.021          0.449         0.023         0.044
+                                            res4 + FPN         0.102          0.625         0.111         0.189
+
+
+
+to newly-collected grape images that introduce changes in the          different layers, as proposed in [11]. The availability of the
+camera viewpoint, foliage occlusion level, and grape variety.          VINEPICs resource can facilitate the progress in tackling
+   Notably, tuning intermediate network layers improves the            these unexplored research directions.
+robustness of the model to input-level and feature-level                                             APPENDIX
+shifts. These findings complement the evidence gathered in
+[10] on image classification benchmarks, where input-level               Table V reports the complete evaluation results for the
+shifts were best supported by tuning the initial network               VINEPICs22 target sets.
+layers. These results also withstand the popular practice
+                                                                                            ACKNOWLEDGMENTS
+of only tuning the last layers on a new target domain.
+Even in challenging scenarios where images of novel grape                 This paper is supported by the Italian L’Oreal-UNESCO
+varieties are introduced at test time, surgical fine-tuning on         program “For Women in Science”, the European Union’s
+intermediate network blocks allowed us to bootstrap the                Digital Europe Programme under grant agreement Nº
+grape segmentation performance, while drastically reducing             101100622 (AgrifoodTEF). The study was conducted within
+the number of parameters required for fine-tuning.                     the Agritech National Research Center and received fund-
+                                                                       ing from the European Union Next-GenerationEU (PIANO
+   Our evaluation of the utility of surgical fine-tuning to
+                                                                       NAZIONALE DI RIPRESA E RESILIENZA (PNRR) –
+support grape segmentation has been limited to methods
+                                                                       MISSIONE 4 COMPONENTE 2, INVESTIMENTO 1.4 –
+derived from the widely-applied Mask R-CNN architecture.
+                                                                       D.D. 1032 17/06/2022, CN00000022).
+Thus, future research directions include the study of instance
+segmentation models that are based on Transformers, such                                             R EFERENCES
+as [23], for instance. Another transfer learning approach
+                                                                        [1] R. Bertoglio, C. Corbo, F. M. Renga, and M. Matteucci, “The digital
+that we have not yet explored concerns the combination                      agricultural revolution: A bibliometric analysis literature review,” IEEE
+of linear probing with the selection of useful features from                Access, vol. 9, pp. 134 762–134 782, 2021.
+ [2] H. Li, C. Guo, Z. Yang, J. Chai, Y. Shi, J. Liu, K. Zhang, D. Liu,          [22] K. He, X. Zhang, S. Ren, and J. Sun, “Deep Residual Learning
+     and Y. Xu, “Design of field real-time target spraying system based on            for Image Recognition,” in Proceedings of the IEEE Conference on
+     improved yolov5,” Frontiers in Plant Science, vol. 13, p. 5192, 2022.            Computer Vision and Pattern Recognition (CVPR), 2016, pp. 770–778.
+ [3] R. Bertoglio, A. Mazzucchelli, N. Catalano, and M. Matteucci, “A            [23] Y. Fang, W. Wang, B. Xie, Q. Sun, L. Wu, X. Wang, T. Huang,
+     comparative study of fourier transform and cyclegan as domain                    X. Wang, and Y. Cao, “Eva: Exploring the limits of masked visual
+     adaptation techniques for weed segmentation,” Smart Agricultural                 representation learning at scale,” arXiv preprint arXiv:2211.07636,
+     Technology, p. 100188, 2023.                                                     2022.
+ [4] G. Kootstra, X. Wang, P. M. Blok, J. Hemming, and E. Van Henten,
+     “Selective harvesting robotics: current research, trends, and future
+     directions,” Current Robotics Reports, vol. 2, pp. 95–104, 2021.
+ [5] P. Guadagna, M. Fernandes, F. Chen, A. Santamaria, T. Teng, T. Frioni,
+     D. Caldwell, S. Poni, C. Semini, and M. Gatti, “Using deep learning
+     for pruning region detection and plant organ segmentation in dormant
+     spur-pruned grapevines,” Precision Agriculture, pp. 1–23, 2023.
+ [6] T. Zaenker, C. Lehnert, C. McCool, and M. Bennewitz, “Combining
+     local and global viewpoint planning for fruit coverage,” in 2021
+     European Conference on Mobile Robots (ECMR). IEEE, 2021, pp.
+     1–7.
+ [7] Y. Tang, J. Qiu, Y. Zhang, D. Wu, Y. Cao, K. Zhao, and L. Zhu,
+     “Optimization strategies of fruit detection to overcome the challenge
+     of unstructured background in field orchard environment: a review,”
+     Precision Agriculture, pp. 1–37, 2023.
+ [8] M. H. Saleem, J. Potgieter, and K. M. Arif, “Automation in agricul-
+     ture by machine and deep learning techniques: A review of recent
+     developments,” Precision Agriculture, vol. 22, pp. 2053–2091, 2021.
+ [9] J. Yosinski, J. Clune, Y. Bengio, and H. Lipson, “How transferable
+     are features in deep neural networks?” Advances in neural information
+     processing systems, vol. 27, 2014.
+[10] Y. Lee, A. S. Chen, F. Tajwar, A. Kumar, H. Yao, P. Liang, and C. Finn,
+     “Surgical fine-tuning improves adaptation to distribution shifts,” in
+     Proceedings of the The Eleventh International Conference on Learning
+     Representations (ICLR), 2023.
+[11] U. Evci, V. Dumoulin, H. Larochelle, and M. C. Mozer, “Head2toe:
+     Utilizing intermediate representations for better transfer learning,” in
+     International Conference on Machine Learning. PMLR, 2022, pp.
+     6009–6033.
+[12] H. Cecotti, A. Rivera, M. Farhadloo, and M. A. Pedroza, “Grape
+     detection with convolutional neural networks,” Expert Systems with
+     Applications, vol. 159, Nov. 2020.
+[13] A. S. Aguiar, S. A. Magalhães, F. N. dos Santos, L. Castro, T. Pinho,
+     J. Valente, R. Martins, and J. Boaventura-Cunha, “Grape Bunch
+     Detection at Different Growth Stages Using Deep Learning Quantized
+     Models,” Agronomy, vol. 11, no. 9, Sept. 2021.
+[14] T. T. Santos, L. L. de Souza, A. A. dos Santos, and S. Avila, “Grape
+     detection, segmentation, and tracking using deep neural networks
+     and three-dimensional association,” Computers and Electronics in
+     Agriculture, vol. 170, p. 105247, 2020.
+[15] R. Bertoglio, M. Gatti, S. Poni, and M. Matteucci, “VINEyard
+     Piacenza Image Collections - VINEPICs,” 2023. [Online]. Available:
+     https://doi.org/10.5281/zenodo.7866442
+[16] K. He, G. Gkioxari, P. Dollár, and R. Girshick, “Mask R-CNN,” in
+     Proceedings of the IEEE International Conference on Computer Vision
+     (ICCV), 2017, pp. 2961–2969.
+[17] K. He, R. Girshick, and P. Dollár, “Rethinking imagenet pre-training,”
+     in Proceedings of the IEEE/CVF International Conference on Com-
+     puter Vision, 2019, pp. 4918–4927.
+[18] G. Ghiasi, Y. Cui, A. Srinivas, R. Qian, T.-Y. Lin, E. D. Cubuk, Q. V.
+     Le, and B. Zoph, “Simple copy-paste is a strong data augmentation
+     method for instance segmentation,” in Proceedings of the IEEE/CVF
+     conference on computer vision and pattern recognition, 2021, pp.
+     2918–2928.
+[19] T. T. Santos, L. L. de Souza, A. A. dos Santos, and S. Avila, “Embrapa
+     Wine Grape Instance Segmentation Dataset – Embrapa WGISD,”
+     2019. [Online]. Available: https://doi.org/10.5281/zenodo.3361736
+[20] D. Lorenz, K. Eichhorn, H. Bleiholder, R. Klose, U. Meier, and
+     E. Weber, “Growth stages of the grapevine: Phenological growth stages
+     of the grapevine (vitis vinifera l. ssp. vinifera)—codes and descriptions
+     according to the extended bbch scale,” Australian Journal of Grape
+     and Wine Research, vol. 1, no. 2, pp. 100–103, 1995.
+[21] M. Gatti, A. Garavani, A. Cantatore, M. G. Parisi, N. Bobeica, M. C.
+     Merli, A. Vercesi, and S. Poni, “Interactions of summer pruning
+     techniques and vine performance in the white vitis vinifera cv. o
+     rtrugo,” Australian Journal of Grape and Wine Research, vol. 21, no. 1,
+     pp. 80–89, 2015.
+TABLE V: Inference results on test sets, after applying surgical fine-tuning on VINEPICs21.
+         Test set          Ablations        AP0.3−0.9   P0.3−0.9      R0.3−0.9   F10.3−0.9
+         VINEPICs21 test   tune all           0.374        0.767       0.404      0.529
+                           tune all           0.254        0.682       0.273      0.390
+                           linear probing     0.226        0.689       0.234      0.350
+                           stem               0.101        0.579       0.104      0.177
+                           res2               0.296        0.626       0.313      0.417
+                           res2 + FPN         0.347        0.638        0.37      0.468
+                           res3               0.395        0.602       0.421      0.496
+         VINEPICs22R
+                           res3 + FPN         0.389        0.607       0.407      0.488
+                           res4               0.277        0.613       0.294      0.398
+                           res4 + FPN         0.338        0.571        0.36      0.442
+                           res5               0.226        0.619       0.241      0.347
+                           res5 + FPN         0.222        0.624       0.237      0.343
+                           RPN                0.009        0.185       0.031      0.053
+                           tune all           0.387        0.634       0.436      0.517
+                           linear probing     0.409        0.660       0.454      0.538
+                           stem               0.391        0.681       0.420      0.519
+                           res2               0.392        0.615       0.450      0.520
+                           res2 + FPN         0.447        0.621       0.493      0.550
+                           res3               0.440        0.555       0.510      0.531
+         VINEPICs22RV
+                           res3 + FPN         0.437        0.567       0.511      0.538
+                           res4               0.430        0.584       0.475      0.524
+                           res4 + FPN         0.463        0.595       0.515      0.552
+                           res5               0.412        0.604       0.448      0.514
+                           res5 + FPN         0.391        0.625       0.430      0.510
+                           RPN                0.305        0.687       0.325      0.442
+                           tune all           0.342        0.696       0.371      0.484
+                           linear probing     0.290        0.711       0.305      0.426
+                           stem               0.220        0.694       0.231      0.347
+                           res2               0.405        0.688       0.432      0.531
+                           res2 + FPN         0.415        0.626       0.453      0.525
+                           res3               0.469        0.577       0.512      0.542
+         VINEPICs22RF
+                           res3 + FPN         0.461        0.607       0.503      0.550
+                           res4               0.391        0.556       0.434      0.487
+                           res4 + FPN         0.423        0.566       0.475      0.516
+                           res5               0.332        0.563       0.375      0.450
+                           res5 + FPN         0.299        0.626       0.328      0.430
+                           RPN                0.041        0.295       0.045      0.078
+                           tune all           0.007        0.571       0.004      0.008
+                           linear probing     0.003        0.286       0.002      0.004
+                           stem                no       predictions    from       model
+                           res2               0.013        0.643       0.009      0.018
+                           res2 + FPN         0.016        0.500       0.014      0.028
+                           res3               0.040        0.543       0.039      0.073
+         VINEPICs22C
+                           res3 + FPN         0.066        0.442       0.070      0.121
+                           res4               0.068        0.534       0.073      0.129
+                           res4 + FPN         0.068        0.548       0.071      0.126
+                           res5               0.039        0.543       0.039      0.073
+                           res5 + FPN         0.029        0.571       0.029      0.055
+                           RPN                 no       predictions    from       model
+                           tune all           0.022        0.762       0.017      0.033
+                           linear probing     0.021        0.449       0.023      0.044
+                           stem                no       predictions    from       model
+                           res2               0.017        0.428       0.013      0.025
+                           res2 + FPN         0.045        0.614       0.045      0.085
+                           res3               0.047        0.527       0.051      0.093
+         VINEPICs22O
+                           res3 + FPN         0.071        0.571       0.076      0.134
+                           res4               0.070        0.676       0.075      0.135
+                           res4 + FPN         0.102        0.625       0.111      0.189
+                           res5               0.059        0.458       0.064      0.113
+                           res5 + FPN         0.077        0.661       0.078      0.140
+                           RPN                 no       predictions    from       model
+

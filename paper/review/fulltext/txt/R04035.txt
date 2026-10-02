@@ -1,0 +1,463 @@
+                                         Sugar-Beet Stress Detection using Satellite Image
+                                                           Time Series
+
+                                                      Bhumika Laxman Sadbhave ( )[0009−0004−1129−5729] ,
+                                                              Philipp Vaeth[0000−0002−8247−7907] ,
+                                                            Denise Dejon, Gunther Schorcht, and
+                                                            Magda Gregorová[0000−0002−1285−8130]
+arXiv:2507.13514v1 [cs.CV] 17 Jul 2025
+
+
+
+
+                                            Center for Artificial Intelligence and Robotics, Technical University of Applied
+                                             Sciences Würzburg-Schweinfurt, Franz-Horn-Straße 2, Würzburg, Germany
+                                          sadbhavebhumika21@gmail.com, philipp.vaeth@thws.de, dejon@greenspin.de,
+                                                        schorcht@greenspin.de, magda.gregorova@thws.de
+
+
+
+                                               Abstract. Satellite Image Time Series (SITS) data has proven effec-
+                                               tive for agricultural tasks due to its rich spectral and temporal nature.
+                                               In this study, we tackle the task of stress detection in sugar-beet fields
+                                               using a fully unsupervised approach. We propose a 3D convolutional au-
+                                               toencoder model to extract meaningful features from Sentinel-2 image
+                                               sequences, combined with acquisition-date-specific temporal encodings
+                                               to better capture the growth dynamics of sugar-beets. The learned rep-
+                                               resentations are used in a downstream clustering task to separate stressed
+                                               from healthy fields. The resulting stress detection system can be directly
+                                               applied to data from different years, offering a practical and accessible
+                                               tool for stress detection in sugar-beets.
+
+                                               Keywords: Satellite Image Time Series (SITS) · Autoencoder · 3D Con-
+                                               volution · Representation Learning
+
+
+                                         1   Introduction
+                                         Sugar beet (Beta vulgaris) is a major industrial crop in Europe, particularly
+                                         in countries like Germany, France, and Poland. The European Union accounts
+                                         for nearly 50% of the world’s sugar-beet production, with Germany playing a
+                                         significant role in both cultivation and processing [1]. Within Germany, the re-
+                                         gion of Bavaria is especially important due to its favourable soil, climate, and
+                                         established farming practices. Sugar beet is not only crucial for granulated sugar
+                                         production but also supports livestock feed, fermentation industries, and biofuel
+                                         applications, making it economically and environmentally valuable.
+                                             Sugar-beet cultivation is subject to a wide range of stress factors including
+                                         biotic stress such as diseases and pests, and abiotic stress like drought, heat, and
+                                         nutrient deficiencies. These conditions negatively affect both yield and sugar
+                                         content, and reduce the overall quality and productivity of the crop. Therefore,
+                                         identifying stress within sugar beet fields is essential for gaining insights into
+                                         crop health and guiding better management practices.
+2       B.L. Sadbhave et al.
+
+    Sugar-beet fields are large and widely distributed, making manual inspec-
+tion for stress time-consuming and labor-intensive. High-resolution imagery and
+labeled datasets are often costly and impractical for small-scale farmers. This
+study proposes a method for sugar-beet stress detection using publicly avail-
+able Sentinel-2 satellite data. The main challenge in this study is the limited
+availability of labeled data, with only 5% of sugar-beet fields being labeled.
+Therefore, we use labeled data exclusively for evaluation, and develop a fully
+unsupervised framework leveraging both spectral and temporal characteristics
+of Sentinel-2 data. The code used in this study is available at: https://github.
+com/bhumikasadbhave/Sugar-beet-Stress-Detection-System.git.
+
+
+
+2     Related Work
+
+Traditionally, classical computer vision and machine learning methods have been
+used for plant disease detection from satellite images, relying on hand-crafted
+features such as statistical descriptors and vegetation indices like Normalised
+Difference Vegetation Index (NDVI)[9,7,8]. Inspired by these approaches, we
+include histogram-based features as a baseline for comparison with the proposed
+model.
+    Recent studies[12,14,6] have explored deep learning for agricultural tasks
+like crop classification and disease detection. For instance, TempCNNs [6] use
+3D convolutions to model temporal satellite data. These studies treat disease
+detection as a classification task requiring labeled datasets. While effective, such
+supervised methods can be impractical for small-scale industries that lack the re-
+sources to label massive datasets. To address this, recent work[15,4,2] has applied
+autoencoders for unsupervised feature extraction from satellite data. Addition-
+ally, Vision Transformer (ViT) based models[10,4,2] demonstrate the value of
+temporal encodings in learning data representations. Inspired by these studies,
+we propose an autoencoder model with 3D convolution and temporal encodings
+derived from acquisition dates for feature learning, followed by clustering for
+stress detection– thereby eliminating the need for labeled data.
+
+
+2.1   Auto-encoders
+
+Autoencoders are neural networks used for unsupervised representation learning,
+enabling tasks such as dimensionality reduction and feature extraction. They en-
+code the high-dimensional input x into a lower-dimensional latent representation
+z through an encoder, capturing essential features while discarding irrelevant de-
+tails. A decoder then reconstructs the original input from z, producing x̂. This
+process is summarised as:
+
+                               x̂ = Decoder(Encoder(x))
+                                        Sugar-Beet Stress Detection using SITS      3
+
+
+
+
+Fig. 1. Image data represented as a sequence of temporal instances from t1 to t7. Each
+cube corresponds to a single instance with dimensions (H, W, C).
+
+
+   Loss Function: The model is trained to minimise reconstruction error be-
+tween x and x̂, most commonly using Mean Squared Error (MSE):
+                                            n
+                                        1X               2
+                           L(x, x̂) =         ∥xi − x̂i ∥ ,                       (1)
+                                        n i=1
+
+where x is the input data, x̂ is the reconstructed data, and n is the number of
+examples. This optimisation enables the model to learn compact, informative
+representations of the data.
+
+
+3    Data
+
+This study uses Sentinel-2 Level 2A images [3] of agricultural areas in Germany,
+each containing multiple sugar-beet fields. Images have spatial dimensions of
+(1000, 1000), with float32 reflectance values typically between 0 and 1, occa-
+sionally exceeding 1 in highly reflective areas. The data covers June to early
+September 2019, covering the sugar-beet growth cycle from early development
+to harvest. We use 10 spectral bands (excluding Sentinel-2 bands 1, 9, and 10
+due to redundancy and cloud mask availability), all resampled to 10 m reso-
+lution. Each image includes multiple temporal instances, from which we select
+seven cloud-free temporal instances spread accross the growth season. An image
+is represented as I ∈ RH×W ×C×T , where H = 1000, W = 1000, C = 10, and
+T = 7 denote the height, width, number of channels, and timepoints, respec-
+tively (Fig. 1). Three auxiliary masks are used in pre-processing: a cloud mask
+derived from the Sentinel-2 Scene Classification Map [5] to remove clouds, a
+sugar-beet field ID mask using the field numbers assigned by us for tracking and
+identification, and an acquisition date mask for temporal encoding.
+    The evaluation set for the 2019 season currently includes 35 stressed and
+26 healthy sugar-beet fields. However, class imbalance remains a potential con-
+cern—both in the unlabeled 2019 training set and in future datasets such as
+4       B.L. Sadbhave et al.
+
+
+
+
+Fig. 2. Data preprocessing overview. Each temporal instance is represented as
+(H, W, C), and the sequence of seven instances is denoted by t1 , t2 , . . . , t7 .
+
+Table 1. Summary of tensor variants used. Each tensor represents a pre-processed
+sugar-beet sub-patch over seven temporal instances.
+
+Variant Channel Composition                                             Channels
+B10      All original Sentinel-2 bands (excluding bands 1, 9, 10)           10
+MVI      NDVI, EVI, and MSI vegetation indices                              3
+B4       Sentinel Bands 2, 4, 8, 11 (used in NDVI, EVI and MSI)             4
+
+
+
+the upcoming 2024 season. This imbalance may arise from two primary fac-
+tors. First, environmental conditions can lead to widespread stress across fields,
+making healthy cases relatively rare. Second, ground-truth labels are primar-
+ily collected by farmers, who tend to report stressed fields more frequently due
+to their agronomic relevance. As a result, the datasets may potentially over-
+represent stressed cases.
+
+
+3.1   Data Preprocessing
+
+The preprocessing pipeline converts raw Sentinel-2 images into model-ready ten-
+sors (Fig. 2). We first binarise the sugar-beet field ID mask and apply it pixel-wise
+across all channels and timepoints to retain only the sugar-beet pixels. We then
+extract each sugar-beet field as a temporal patch and pad it symmetrically with
+zeros to a uniform spatial size of (64, 64). Using the cloud mask, we remove
+cloud-covered temporal instances, as accurate reflectance values are critical for
+stress detection. We select seven cloud-free instances– two per month from June
+to August and one from September– to ensure seasonal coverage. To avoid noise
+from adjacent vegetation, we exclude border pixels of the sugar-beet fields.
+    Next, we split each patch into non-overlapping (4, 4) sub-patches. We discard
+the empty sub-patches that contain no sugar-beet pixels, and fill the partially
+                                       Sugar-Beet Stress Detection using SITS   5
+
+empty sub-patches with the channel-wise average of the sugar-beet field pix-
+els within that sub-patch. We then create three tensor variants using different
+channel combinations for experimentation, as detailed in Table 1. The vegetation
+indices Normalised Difference Vegetation Index (NDVI), Enhanced Vegetation
+Index (EVI), and Moisture Stress Index (MSI) are used as channels in the MVI
+tensor. The B10 variant uses all Sentinel-2 bands (except bands 1, 9 and 10), and
+the B4 variant uses Sentinel-2 bands 2, 4, 8, and 11– used to calculate vegetation
+indices as channels. Each sub-patch is represented as a 4D tensor x ∈ R4×4×C×7 ,
+where C depends on the tensor variant.
+
+
+4   Model
+
+Temporal information is essential for understanding the sugar-beet growth and
+evolution of stress patterns. Although Sentinel-2 provides frequent images, cloud
+cover often limits its usability. We select seven non-clouded images per field
+spread accross the growth season. However, the acquisition dates vary across
+sugar-beet fields and the temporal sequences are not uniformly spaced. We ad-
+dress this by adding acquisition-date-specific temporal encodings to the input
+tensor. We use sinusoidal encodings [11] to represent acquisition dates, mapping
+each day d ∈ [1, 365] to a continuous annual cycle. The encodings are computed
+as follows:
+                                                                     
+                                     2πd                          2πd
+                      es = sin                 ,   ec = cos
+                                     365                          365
+    These are added element-wise to all pixels of the input data tensors during
+the forward pass.
+    The modeling process comprises of feature extraction, downstream clustering,
+and converting sub-patch predictions to field-level labels.
+    To obtain compact and meaningful representations from the preprocessed
+sub-patch tensors, we use the autoencoder architecture, with 3D convolutions.
+Temporal encodings are first added to the input tensor, which is then passed
+through 3D convolutional layers that preserve the spatiotemporal dimensions
+while progressively increasing the number of feature maps, to capture both tem-
+poral and spectral characteristics. The resulting tensor is flattened and passed
+through fully connected layers to produce a latent representation z ∈ R. The de-
+coder reconstructs the input tensor from the latent representation using trans-
+posed 3D convolutions, thus restoring the original dimensions. We train the
+model using the MSE loss (equation (1)), after which, we extract the latent rep-
+resentations and use them as feature vectors for downstream clustering. We use
+B10 tensor as the default and refer to this model as 3D_AE_B10 (Fig. 3).
+    Due to limited labeled data, we categorise the sugar-beet sub-patches as
+stressed or healthy by applying unsupervised clustering on the learned features
+z instead of supervised classification. We use k-means to group the features into
+two clusters, which we interpret as the target classes.
+6       B.L. Sadbhave et al.
+
+
+
+                                      Input data tensor
+
+
+
+          Sinusoidal Encoding
+          of Acquisition Dates                        Temporal Encodings
+
+
+
+
+                                     Modified input tensor
+
+
+
+                                 Encoder                              Decoder
+
+
+
+                                           Conv3D                                   Linear
+
+
+                                           Conv3D                                   Linear
+
+
+                                           Conv3D
+                                                                                   Unflatten
+
+
+                                            Flatten
+                                                                              ConvTranspose3D
+
+
+                                            Linear                            ConvTranspose3D
+
+
+                                            Linear                            ConvTranspose3D
+
+
+
+
+                                       Latent Bottleneck                   Reconstructed data tensor
+
+
+
+
+                 Fig. 3. 3D_AE_B10 model with temporal encodings.
+
+
+
+    Since ground truth labels are only available for the entire sugar-beet fields,
+we aggregate sub-patch predictions using a threshold α ∈ [0, 1]. If more than α%
+of the sub-patches are predicted as stressed, the entire sugar-beet field is labeled
+stressed. We use α = 0.5 as the default value and analyse the effect of varying
+this threshold in the experiment section.
+
+
+5   Experiments
+
+A total of 1857 unlabeled cloud-free sugar-beet fields corresponding to 1228
+patches are partitioned into 33128 sub-patches. Of these, 80% are used for train-
+ing and 20% for testing the 3D_AE_B10 model. The latent features extracted
+from all 1857 unlabeled fields are then used for k-means clustering. The evalua-
+tion set comprises of 61 cloud-free sugar-beet fields corresponding to 48 patches,
+further divided into 1197 sub-patches.
+                                     Sugar-Beet Stress Detection using SITS         7
+
+Table 2. K-means clustering results on sugar-beet fields using various feature extrac-
+tion methods.
+
+Method                        Data Temporal Threshold Accuracy F1-score
+                             Tensor Encodings   α       (%)      (%)
+Raw data                       B10        ✗           0.5       63.93      74.42
+Histogram features             B10        ✗           0.5       63.93       69.7
+2D_AE_B10                      B10        ✗           0.5       60.11      67.78
+3D_AE_B10                      B10        ✗           0.5       59.56      67.25
+3D_AE_B10                      B10        ✓           0.5       69.40      75.21
+3D_AE_MVI                     MVI         ✓           0.5        52.46      64.32
+3D_AE_B4                      B4          ✓           0.5        60.65      68.84
+
+
+
+    Model performance is calculated over sugar-beet fields, specifically across the
+61 fields in the evaluation set, using both accuracy and F1-score. While accuracy
+reflects the overall correctness, the F1 score provides a deeper insight, since the
+primary focus is detecting stressed fields while minimizing false positives. Due to
+potential class imbalance in the dataset, as highlighted in the data section, accu-
+racy by itself can be misleading. The results are averaged over three independent
+executions to account for randomness in initialisation and training.
+
+
+5.1   Modeling Results
+
+The proposed 3D_AE_B10 model is evaluated against three baselines. The first
+applies k-means directly on the sub-patch tensors, without any feature abstrac-
+tion. The second uses k-means on histogram features [13] computed across all
+temporal instances. The third, 2D_AE_B10, is a 2D convolutional variant of
+the 3D_AE_B10 model. It processes input with temporal instances stacked
+along the channel dimension and omits temporal encodings, resulting in shape
+RH×W ×C·T . We also evaluate the 3D_AE_B10 model without temporal encod-
+ings to assess their impact on performance.
+    As shown in Table 2, 3D_AE_B10 with temporal encodings achieves the
+highest F1-score, indicating that both 3D convolutions and temporal encod-
+ings help to capture meaningful spatiotemporal patterns. It is however closely
+followed by the raw data representation, indicating that the raw input may al-
+ready contain strong discriminative signals. Removing temporal encodings leads
+to a clear drop in performance for the 3D variant. The 2D_AE_B10 model
+also performs poorly, with an F1-score similar to the 3D variant without encod-
+ings. This suggests that treating temporal frames as channels is not sufficient to
+capture temporal dynamics. The histogram-based approach scores lower, likely
+due to loss of detail during feature aggregation. Overall, F1-score comparisons
+show that temporal encodings and 3D structure lead to useful, although modest
+improvements in performance, highlighting the value of explicitly incorporating
+the temporal information.
+8         B.L. Sadbhave et al.
+
+
+
+
+      Fig. 4. Precision-Recall curve for varying the sub-patch-to-patch threshold α.
+
+
+
+    While B10 is the primary input for model comparison, we additionally eval-
+uate the 3D_AE architecture using two alternative tensors: MVI with multiple
+vegetation indices, and B4 with four Sentinel-2 bands used to compute MVI
+(Table 1). The result of this experiment suggests that the choice of input ten-
+sor impacts the model performance significantly. As shown in Table 2, the B10
+tensor achieves the highest F1-score, highlighting the value of its richer spec-
+tral content for feature learning. In comparison, the MVI tensor performs worst,
+showing that vegetation indices alone may lack the spectral detail needed for
+effective unsupervised learning. Interestingly, the B4 tensor outperforms MVI,
+indicating that even limited raw band data can retain more useful information
+than pre-computed vegetation indices.
+
+
+
+5.2     Effect of varying the sub-patch-to-patch threshold α
+
+
+We further examine the impact of varying the sub-patch-to-patch threshold α ∈
+[0, 1]. A sugar-beet field is labeled as stressed if the proportion of its sub-patches
+predicted as stressed exceeds the threshold α. Fig. 4 presents the precision-
+recall and F1-score curves for the 3D_AE_B10 model and the best-performing
+baseline (raw data), with α varying from 0.1 to 1.0.
+     At lower thresholds, the baseline achieves higher recall than 3D_AE_B10
+and nearly equivalent F1-scores, highlighting its strength in detecting stressed
+fields. As the threshold increases, a larger proportion of sub-patches must be
+predicted as stressed for the entire field to be labeled as stressed. Under these
+stricter conditions, 3D_AE_B10 begins to outperform the baseline, particularly
+in precision—and consequently in F1-score. This shift reflects the tendency of the
+baseline model to incorrectly label healthy fields as stressed when the threshold
+is high. While both models perform comparably around the default threshold
+α = 0.5, 3D_AE_B10 shows greater robustness at higher thresholds, main-
+taining better precision and a slightly higher F1-score. This suggests that the
+spatiotemporal representations learned by 3D_AE_B10 lead to more reliable
+stress detection under higher thresholds.
+                                      Sugar-Beet Stress Detection using SITS          9
+
+6   Conclusion
+
+In this study, we developed a fully unsupervised system for stress detection in
+sugar-beet fields using publicly available satellite images. The approach requires
+no labeled training data and specifically highlights the importance of incorpo-
+rating temporal acquisition dates as part of the model input. Given the limited
+availability of labeled data, the current results are exploratory in nature. Nev-
+ertheless, they demonstrate the potential of unsupervised methods to generate
+actionable insights in scenarios with limited labeled data. Moreover, the devel-
+oped stress detection system is designed to generalise across years, making it
+easily deployable on future datasets.
+
+
+Future Work: Once labeled data becomes available, we plan to transition from
+downstream clustering to supervised classification, enabling more reliable model
+performance and clearer benchmarking. We also aim to validate our system on
+the 2024 sugar-beet season once the corresponding ground truth labels are avail-
+able. This study forms part of a broader effort focused on early stress detection
+in sugar-beet fields, with the goal of enabling timely interventions and reducing
+crop losses. As part of this effort, we will explore using temporal data from June
+to July instead of the full sugar-beet growth cycle from June to September, for
+facilitating earlier detection. Additionally, while the current pipeline operates at
+the sub-patch level, future work will explore pixel-level stress detection for more
+fine-grained analysis.
+    By providing a reusable and generalisable framework, this study lays the
+groundwork for a more robust stress detection system, and for advancing unsu-
+pervised representation learning in agriculture.
+
+
+References
+ 1. Commission, E.: Sugar production, https://agriculture.ec.europa.eu/
+    farming/crop-productions-and-plant-based-products/sugar_en
+ 2. Cong, Y., Khanna, S., Meng, C., Liu, P., Rozi, E., He, Y., Burke, M., Lobell,
+    D., Ermon, S.: Satmae: Pre-training transformers for temporal and multi-spectral
+    satellite imagery. Advances in Neural Information Processing Systems 35, 197–211
+    (2022)
+ 3. Copernicus, S.: Copernicus sentinel-2 collection 1 msi level-2a (l2a), https:
+    //sentinels.copernicus.eu/sentinel-data-access/sentinel-products/
+    sentinel-2-data-products/collection-1-level-2a
+ 4. He, K., Chen, X., Xie, S., Li, Y., Dollár, P., Girshick, R.: Masked autoencoders are
+    scalable vision learners. In: Proceedings of the IEEE/CVF conference on computer
+    vision and pattern recognition. pp. 16000–16009 (2022)
+ 5. Hub, S.: Sentinel-2 collection scene classification map, https://custom-scripts.
+    sentinel-hub.com/custom-scripts/sentinel-2/scene-classification/
+ 6. Ji, S., Zhang, C., Xu, A., Shi, Y., Duan, Y.: 3d convolutional neural networks
+    for crop classification with multi-temporal remote sensing images. Remote Sensing
+    10(1), 75 (2018)
+10      B.L. Sadbhave et al.
+
+ 7. Raza, M.M., Harding, C., Liebman, M., Leandro, L.F.: Exploring the potential of
+    high-resolution satellite imagery for the detection of soybean sudden death syn-
+    drome. Remote Sensing 12(7), 1213 (2020)
+ 8. Rumpf, T., Mahlein, A.K., Steiner, U., Oerke, E.C., Dehne, H.W., Plümer, L.:
+    Early detection and classification of plant diseases with support vector machines
+    based on hyperspectral reflectance. Computers and electronics in agriculture 74(1),
+    91–99 (2010)
+ 9. Shanmugam, L., Adline, A.A., Aishwarya, N., Krithika, G.: Disease detection in
+    crops using remote sensing images. In: 2017 IEEE Technological Innovations in
+    ICT for Agriculture and Rural Development (TIAR). pp. 112–115. IEEE (2017)
+10. Tarasiou, M., Chavez, E., Zafeiriou, S.: Vits for sits: Vision transformers for satellite
+    image time series. In: Proceedings of the IEEE/CVF Conference on Computer
+    Vision and Pattern Recognition (2023)
+11. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser,
+    Ł., Polosukhin, I.: Attention is all you need. Advances in neural information pro-
+    cessing systems 30 (2017)
+12. Victor, B., Nibali, A., He, Z.: A systematic review of the use of deep learning in
+    satellite imagery for agriculture. IEEE Journal of Selected Topics in Applied Earth
+    Observations and Remote Sensing (2024)
+13. Wikipedia: Image histogram, https://en.wikipedia.org/wiki/Image_histogram
+14. Yu, R., Luo, Y., Zhou, Q., Zhang, X., Wu, D., Ren, L.: Early detection of pine
+    wilt disease using deep learning algorithms and uav-based multispectral imagery.
+    Forest Ecology and Management 497, 119493 (2021)
+15. Zhao, C., Cheng, H., Feng, S.: A spectral–spatial change detection method based on
+    simplified 3-d convolutional autoencoder for multitemporal hyperspectral images.
+    IEEE Geoscience and Remote Sensing Letters 19, 1–5 (2021)
+

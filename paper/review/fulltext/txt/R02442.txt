@@ -1,0 +1,1009 @@
+IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026                                                  21179
+
+
+
+
+  Weak-to-Gold Label Training of Spatio-Temporal
+ Deep Learning Models for Cross-Region Coffee and
+               Forest Segmentation
+   Natasha Randall , Sven Wöhrle , Simon Pena Pereira , Alana Kasahara Neves , and Gernot Heisenberg
+
+
+    Abstract—Deep learning models can effectively segment classes                     Current remote sensing maps provide useful global coverage
+of interest from remote sensing data, which has applications for                   for EUDR monitoring, but they face significant limitations for
+the real-time monitoring of agricultural crops. The European                       verifying deforestation-free products. Inconsistent classifica-
+Union regulation on deforestation-free products has amplified the
+importance of monitoring coffee plantations and forests. However,                  tions and deviations between class definitions can lead to the
+there are limited previous works on automated coffee classification                overestimation of forest and potential misclassification of defor-
+utilizing deep learning methodologies, particularly with regards                   estation, especially where forests border other tree-covered land
+to separating it from forest, as well as across multiple different                 uses. Conceptual constraints also remain: Beyer et al. [2] found
+regions. One of the reasons for this is the lack of reliable coffee and
+                                                                                   that among 21 forest/nonforest datasets assessed for EUDR
+forest labels available on which to train deep learning models. In
+order to overcome this limitation, we created a dataset containing                 compliance, none could reliably distinguish forests from other
+a large number of poor-quality “weak” labels and a very small                      tree-based systems such as coffee.
+number of high-quality gold-standard hand-annotated labels,                           Although previous works have demonstrated the effective-
+associated with time series remote sensing patches. We then devel-                 ness of deep learning models on the segmentation of various
+oped a weak-to-gold label pre-training and fine-tuning strategy to
+                                                                                   agricultural crops [3], there is limited research specifically on
+teach a spatio-temporal model both generalizability (from the weak
+label pretraining) and precision (from the fine-tuning). Our model                 coffee classification, particularly with regards to differentiating
+achieved a per-class “coffee” F1 score of 0.886 and “forest” F1 score              it from forested areas. Hunt et al. [4] argue that this is due
+of 0.874. The model was also able to make accurate predictions in                  to the complexity of coffee production systems, and coffee’s
+regions falling outside of our weak label dataset, demonstrating                   phenological cycle in which the crop significantly changes its
+its capacity to be deployed for deforestation-free coffee monitoring
+                                                                                   appearance and spectral signature. Le et al. [5] found that coffee
+tasks.
+                                                                                   plantations were especially difficult to distinguish from trees and
+   Index Terms—Agriculture, deep learning, deforestation, image                    sparse forests, particularly in early growth phases.
+segmentation, weak supervision.                                                       Research on identifying coffee crops from remote sensing
+                                                                                   data have typically utilised simple machine learning models such
+                            I. INTRODUCTION                                        as Random Forest Models [6], [7], [8], which perform pixel-
+      HE availability of remote sensing data today has offered                     wise or patch-wise classification, with limited works focusing
+T     significant advantages for near real-time monitoring of
+crop development, such as of coffee plantations. With the intro-
+                                                                                   on the segmentation of coffee parcels utilizing deep learning
+                                                                                   models [5]. The above studies also both train and evaluate their
+duction of the new EU regulation (EUDR) on deforestation-free                      models in the same geographically limited small regions. The
+products [1], remote sensing data also play a critical role in the                 predominant reason for these restrictions is the lack of enough
+monitoring of coffee-related deforestation. However, in order                      reliable ground truth coffee and forest class labels over a wider
+to analyze the data at a larger scale, AI and deep learning                        extent, which are necessary for the model training process,
+based approaches must be developed to classify and segment                         particularly for deep learning models. Furthermore, weakly
+the parcels of coffee and forest within the satellite imagery.                     supervised remote sensing models, trained on a large quantity
+                                                                                   of low quality segmentation labels, is highly under-researched.
+   Received 24 March 2026; revised 15 May 2026; accepted 13 June 2026. Date           To address this research gap, the unique contributions of
+of publication 17 June 2026; date of current version 6 July 2026. This work        our article include the development of a weak-to-gold label
+was supported by AI4SusCo Project via the AiF by the German Federal Min-
+istry for Economic Affairs and Climate Action under Grant KK5620101LU3.
+                                                                                   pre-training and fine-tuning strategy, to target the issue of in-
+(Corresponding author: Natasha Randall.)                                           sufficient class labels. We train our models on a large amount
+   Natasha Randall, Sven Wöhrle, and Gernot Heisenberg are with the Institute of   of poor-quality weak labels, and then fine-tune them on a very
+Information Science, Cologne University of Applied Sciences, 50678 Cologne,
+Germany (e-mail: natasha.randall@th-koeln.de; sven.woehrle@th-koeln.de;
+                                                                                   small number of high-quality gold hand-annotated labels, to
+gernot.heisenberg@th-koeln.de).                                                    achieve both accurate segmentation performance and strong
+   Simon Pena Pereira and Alana Kasahara Neves are with GRAS Global                generalisability to different regions of Brazil and different
+Risk Assessment Services GmbH, 50672 Cologne, Germany (e-mail:
+pereira@gras-system.org; neves@gras-system.org).
+                                                                                   types of coffee crop. We utilise spatio-temporal deep learning
+   Digital Object Identifier 10.1109/JSTARS.2026.3704675                           model architectures integrating Sentinel-1 and -2 time series
+
+
+                   © 2026 The Authors. This work is licensed under a Creative Commons Attribution 4.0 License. For more information, see
+                                                        https://creativecommons.org/licenses/by/4.0/
+21180                                    IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+data, to improve our classifications and achieve a more precise        segmentation. Zhao et al. [16] compare the performance of ma-
+segmentation.                                                          chine learning and deep learning models with spectral-temporal-
+   The primary goal and main strength of our work is its in-           spatial data inputs for land cover classification. They found
+creased accessibility in comparison to current state-of-the-art        that the deep learning architectures which integrated temporal
+approaches. In our study, we demonstrate the effectiveness of          information, (a convolutional neural network, recurrent neural
+our training strategy for coffee and forest segmentation, however      network, and vision transformer), performed equally well, but
+our approach is designed to be class-agnostic, and could be            significantly better than the traditional machine learning models.
+extended to the classification of other agricultural or land-use       Solorzano et al. [17] concluded that multispectral data from
+and land-cover (LULC) classes, to support LULC applications.           both Sentinel-1 and Sentinel-2 datasets assist in distinguishing
+In order to assess aspects of the applicability and usability of our   forest classes, and used a U-Net 3D-CNN architecture with
+training strategy, we define the following research questions.         an additional temporal dimension to detect deforestation on
+   1) RQ1: Which spatial data input size and temporal compos-          three-month composite remote sensing imagery [18].
+       ite enables the most accurate coffee and forest segmenta-          Agricultural classification tasks for crop type segmentation
+       tion?                                                           have similarly benefited from the utilization of deep learning
+   2) RQ2: How effectively does a Transformer-based deep               techniques incorporating temporal datasets, as plants have dis-
+       learning architecture perform on coffee and forest seg-         tinct phenological characteristics represented in their spectral
+       mentation in comparison to a simpler but more efficient         signatures over time [19], [20]. da Silva et al. [21] showed
+       3D-CNN baseline spatio-temporal model?                          how attention mechanisms and transformer networks for crop
+   3) RQ3: How accurately are the coffee and forest classes            monitoring are rapidly increasing in popularity, although the use
+       segmented by a model that has been pre-trained on many          of convolutional networks still dominates; e.g., [22] found that a
+       weak labels, and fine-tuned on a small number of gold           ConvLSTM model architecture achieved the best performance
+       labels?                                                         on classifying regional croplands in Senegal. Garnot et al. [23]
+   RQ1 and RQ2 evaluate the accuracy-efficiency trade off with         use an encoder architecture with self-attention layers to classify
+regards to both data and model complexity, whereas RQ3 di-             agricultural land, then extended upon their work by developing a
+rectly evaluates the performance of our proposed methodology.          U-Net model with CNN kernels and temporal attention encoders,
+   The rest of this article is organized as follows. Section II        in addition to introducing the benchmark PASTIS dataset for
+describes related works on land use, agriculture, and coffee           crop parcel segmentation [3]. Yuan et al. [24] use a Transformer
+classification from remote sensing data (Section II-A), as well        architecture to generate crop and general LULC mappings,
+as the framework for our training strategy (Section II-B).             whereas Wang et al. [25] combine Transformers and CNNs to
+Section III outlines our methodologies, including the creation         recognise local structures using the CNN kernels, and provided
+of our dataset (Section III-A) and modelling approach (Section         the global context using the Transformer. Lei et al. [26] apply a
+III-B). Section IV presents the results from our three main exper-     class-aware feature decoupling and class rebalancing on top of
+iments addressing our three research questions (Sections IV-A,         popular models to improve the mapping of high numbers of crop
+IV-B, IV-C), in addition to an analysis of the models’ limitations     types in their FineCrop dataset. Chang et al. [27] achieve very
+(Section IV-D) and a cross-region evaluation (Section IV-E).           strong results on the benchmark dataset PASTIS with a com-
+Section V contains a discussion of the results and an outlook to       putationally expensive and complex pipeline of an edge-guided
+future work. Finally, Section VI concludes this article.               spatial attention module, progressive feature enhancement strat-
+                                                                       egy, and differential awareness attention module. Nevertheless,
+                       II. RELATED WORK                                the TSViT (Temporo-Spatial Vision Transformer) model from
+                                                                       Tarasiou et al. [28] represents the current state-of-the-art per-
+A. Remote Sensing for Agriculture and Coffee Classification            formance on the official PASTIS leaderboard for semantic crop
+   Land use and land cover (LULC) classification tasks, such as        segmentation from satellite image time series.
+the identification of classes like “forest” on an observed surface,       There are a limited number of previous works that specifically
+have greatly benefited from the development of computer vision         target coffee classification from remote sensing data [4], and the
+models to process remote sensing data [9], which have advan-           most recent developments to deep learning approaches that are
+tages over field-based measurements with regards to the open-          evidenced in agricultural classification and crop segmentation
+access, multitemporal, and global properties of the data [10].         research, have not been extended to the field of coffee prediction.
+Machine learning models such as random forests and support             Early works have typically utilised mathematical and rule based
+vector machines have been successfully applied to LULC clas-           approaches [29], [30], [31], [32], maximum likelihood estima-
+sification tasks [11], however, the utilization of deep learning       tion [33], Fourier transforms [34] and genetic programming [31].
+architectures has enhanced performance even further, as a result       Machine learning approaches have also been applied to cof-
+of their aptitude to process large multispectral and multitemporal     fee classification, including decision trees [35], Bayesian net-
+datasets [12]. Convolutional neural networks (CNNs) have been          works [36], and linear support vector machines [37]. However,
+for a long time standard for LULC classification [13], [14], but       the most popular approach by far is the use of Random Forest
+are gradually being replaced by spatio-temporal 3D-CNN and             models [6], [7], [8], [38], [39]. In their works, Feng et al. [14]
+Transformer-based models; for example, Scheibenreif et al. [15]        and Silva et al. [30] identified that combining multi-spectral
+use a SWIN Transformer built into a U-Net model for LULC               Sentinel-2 data and cloud cover penetrating radar Sentinel-1 data
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                  21181
+
+
+
+provided models with the most optimal information. Vegetation          image scales and band combinations tested (see Fig. 10 in the
+indices, calculated from Sentinel-2 bands, have shown to be also       appendix). SAM was developed for use on conventional high
+very useful for coffee identification [8].                             spatial resolution RGB images, and low resolution has been
+   Although the above papers on coffee segmentation achieve            stated to be one of the main challenges for applying SAM
+strong performance, reporting overall accuracy metrics between         on satellite imagery [58], [59]. This poor result is therefore
+80% to 90%, their study areas comprise very small regions used         unsurprising, as remote sensing works often tend to inappropri-
+for both training and evaluation, thus arguably reducing the           ately inherit frameworks from segmentation models that were
+generalisability and wider applicability of the described models.      designed for natural images [60].
+For example, Kelley et al. [6] and Maskell et al. [7] analyze             Entirely unsupervised methodologies also fail to exploit the
+only three small districts in Northern Nicaragua and Vietnam           limited relevant information that exists within available weak
+respectively, Chemura et al. [38] a few farms in Zimbabwe,             labels. In our study, we have a high quantity of low quality
+and Tridawati et al. [39] parts of a single district in Indonesia.     labels, which can hence be defined as weak supervision [61],
+Because these works utilised only small datasets, they hence           [62]. Weak supervision for remote sensing data is significantly
+relied on simpler machine learning models. There are a few             under-researched; Hosseiny et al. [50] found that only 7.3%
+studies that employ the use of deep learning models, however           of papers using nonsupervised approaches focused on weak
+the majority focus on the general classification of entire image       supervision, as opposed to 33% on unsupervised learning and
+patches, rather than the more complex segmentation task [40],          26.9% on transfer learning.
+[41], [42]. To the best of our knowledge, a total of only six             The most common weak supervision method applied in re-
+studies to date have applied deep learning models to coffee            mote sensing works focuses on expanding point based data
+segmentation [5], [43], [44], [45], [46], [47]. Le et al. [5],         into pseudolabels for segmentation tasks [63], [64], [65] or
+Ribeiro et al. [47], and Fiorillo and West [45] train a simple         converting image-level classification labels into multiclass seg-
+CNN U-Net on nontemporal data. Pisl et al. [44] and Baeta              mentation labels [60], [66]. In these studies, the quality of the
+et al. [43] focus their research on a single region of Brazil, where   labels are high, but their format is inappropriate for a seg-
+Pisl et al. [44] additionally utilize a dataset with a temporal        mentation model. However our research targets the utilization
+dimension, however, they generated their ground truth labels           of segmentation labels that are unreliable and of low quality,
+using the external commercial tool “Picterra”, the quality of          exhibiting ambiguous class boundaries, a coarse resolution,
+which were not validated. de Carvalho et al. [46] demonstrated         and temporal mismatches. Typical approaches to handle poor
+strong results on mapping coffee plantations in Brazil, but relied     quality labels include pre-processing and cleaning the dataset
+on the commercial very high resolution Planet NICFI data in            to correct mislabeled data [67], such as aggregating the labels
+order to do so. As such, current works on coffee segmentation          from multiple annotators [68] or using human-in-the-loop [69].
+are either highly limited or utilise inaccessible methodologies,       However, these approaches require a huge amount of effort for
+which is an aspect that is particularly important to our research.     very large datasets, which may not be feasible from a resource
+                                                                       or time cost perspective.
+                                                                          As such, in our developed strategy, we train our models
+B. Model Training Strategies                                           directly on the weak labels. Rolnick et al. [70] demonstrate that
+   One of the core methodologies forming our training strategy         deep learning models are incredibly robust to label noise, as their
+is model pretraining, an approach that improves the ability of the     model performed and generalized well on a training dataset in
+model to generalise, reduces the amount of label data required         which label accuracy was as low as 1 percent above chance. Veit
+and thus increases the accuracy of the models [48], [49]. Yuan         et al. [71] also successfully leveraged a large corpus of noisily
+et al. [24] and Scheibenreif et al. [15] found that pre-training       labeled training data in conjunction with a small set of clean
+their models reduced the required number of labels to one tenth        labels to train a deep convolutional image classification model.
+compared to nonpretrained models, for LULC and crop map-               They argue that real-world weak label datasets are typically
+ping. However, our pretraining dataset contains predominantly          not entirely random and independent, but rather consist of at
+unreliable, weak labels, whereas supervised learning performs          least some structure, which can be subsequently exploited. Aprit
+best when both the quantity and quality of data labels for model       et al. [72] suggested that deep learning models are capable of
+training are high. Unsupervised, self-supervised, and semisu-          learning the dominant patterns shared among weak data labels,
+pervised approaches can be applied when the label quantity is          as a result of the distributed and hierarchical representation
+low to none; because unlabelled data is the easiest to collect,        inherent in their architectures.
+many methodologies have subsequently been developed for the               This theoretical framework thus underpins our developed pre-
+unsupervised training of models on remote sensing data [50].           training and fine-tuning strategy. The previously described state-
+   For example, Lu et al. [51] used a self-supervised encoder          of-the-art methodologies for agricultural segmentation from
+to generate pseudolabels from class-activation maps. However,          remote sensing data (in Section II-A) tend to be very compu-
+the consistently most popular approach leverages the Segment           tationally expensive, and reliant on high quality data labels. In
+Anything Model (SAM) [52] to perform unsupervised crop                 our study, we cannot guarantee state-of-the-art results, but aim
+parcel segmentation [53], [54], [55], [56], [57]. During initial       to fill a significant research gap on weakly supervised crop seg-
+experiments, we had applied SAM to our coffee and forest               mentation, by developing models that demonstrate reasonable
+segmentation dataset, but it achieved poor results at all input        performance even when trained on low quality data. Hacheme
+21182                                   IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+et al.’s work on “Weak Labeling for Cropland Mapping in               Products (EUDR) [1] consists of weak and gold labels which
+Africa” [73] achieves successful results with a training strategy     aim to represent the following three target classes as follows.
+similar to ours. However they do not consider spatial or temporal        1) Forest: Areas considered as forest according to the FAO
+generalization in their experiments, using a simplistic set-up, and          definition [76], which requires areas spanning more than
+training and evaluating in the same area of interest. In our work,           0.5 hectares with trees higher than 5 m and a canopy cover
+we target cross-region generalizability, with a stronger evalua-             of more than 10%, excluding land predominantly under
+tion scheme and wider applicability of our results. We use coffee            agricultural or urban use.
+as our example use-case crop, because coffee classification is           2) Coffee: Areas under coffee cultivation.
+also highly under-researched.                                            3) Other: All land use types not classified as forest or coffee.
+                                                                         To create large-scale weak labels for initial model pre-
+                                                                      training, we relied on the annual land use and land cover dataset
+                      III. METHODOLOGY                                from MapBiomas Collection 9 [77], [78], and official coffee data
+                                                                      from the Brazilian National Supply Company, CONAB [79].
+A. Dataset                                                            All datasets were resampled to 10 m using nearest-neighbour
+    Our study focuses on the primary coffee-producing regions         interpolation to spatially align with Sentinel-2 imagery.
+of Brazil, encompassing the states of Minas Gerais, São Paulo,           MapBiomas provides land-cover classifications at 30 m res-
+Espírito Santo, and Bahia. These states collectively represent        olution based on multi-sensor imagery and machine-learning
+the core of Brazil’s coffee production, according to the Brazilian    models. For the forest class, MapBiomas categories correspond-
+Institute of Geography and Statistics [74].                           ing to native forest formations were selected and aggregated,
+    The pre-training dataset was organized using the Sentinel         including:
+tiling system, which divides the study area into tiles of approx-        1) Class 3: Forest Formation;
+imately 110 × 110 km. Four tiles were selected from this grid            2) Class 5: Mangrove;
+based on their high proportion of coffee plantations and forest ar-      3) Class 6: Floodable Forest; and
+eas. To capture seasonal variability and phenological dynamics,          4) Class 49: Wooded Sandbank Vegetation (Restinga Ar-
+a temporal framework was established using composites with                   bórea).
+varying temporal resolutions (monthly, quarterly, and annual)            The weak label coffee data were generated using the following
+derived from Sentinel-2 optical imagery and Sentinel-1 SAR            two complementary sources.
+data. The resulting composites were structured into one-year             1) MapBiomas Coffee Layer (Class 46): MapBiomas pro-
+time series for the observation period spanning from 2019 to                 vides a specific class for coffee plantations, which was
+2023.                                                                        extracted from the 2019-2023 classification layer.
+    The analysis integrates multisource Earth observation data           2) CONAB Coffee Data: CONAB provides official coffee
+from the Copernicus Sentinel missions, combined with derived                 crop monitoring data.
+indices and temporal composites to capture spatial and seasonal          The MapBiomas coffee weak labels were enriched using
+variability. We integrated Sentinel-2 multispectral imagery and       CONAB data for the states of Bahia, Distrito Federal, Goiás, Mi-
+resampled the sensor’s lower-resolution bands to 10 m using a         nas Gerais, Paraná, Rio de Janeiro, and São Paulo. The Sentinel
+nearest-neighbour method. A total of 10 bands were integrated:        tiles selected for model training encompass high-coverage areas
+blue (B2), green (B3), red (B4), red edge 1 (B5), red edge 2          of CONAB. These areas were labelled between 2016 and 2024,
+(B6), red edge 3 (B7), near-infrared (B8, NIR), red edge 4            with the majority of labels produced prior to 2019. Given the long
+(B8A), short-wave infrared 1 (B11, SWIR 1), and short-wave            life span of coffee plants and the assumption that coffee planta-
+infrared 2 (B12, SWIR 2). Cloud masking was applied using the         tion land use remains stable over time, all CONAB labels were
+QA60 band and bitwise operations to remove cirrus and clouds.         temporally aggregated into a single reference layer. This layer
+Temporal composites were generated for each interval defined          was spatially merged with each annual MapBiomas coffee clas-
+in the temporal framework using 30th-percentile aggregation           sification layer, producing coffee maps for years 2019 to 2023.
+to reduce residual cloud contamination and ensure robust sea-         Each year-specific coffee layer was then combined with the
+sonal representation. Sentinel-1 IW 10 m (VV/VH) data were            corresponding MapBiomas forest classification. In overlapping
+processed following Descals et al. [75], using SRTM-based             areas where MapBiomas identified forest cover, but CONAB
+local incidence angle correction and combining ascending and          indicated coffee, the coffee pixels were used to overwrite forest
+descending orbits to reduce terrain-related artifacts.                pixels. This strategy explicitly prioritizes CONAB labels in areas
+    To enhance biophysical interpretation, vegetation and mois-       of disagreement, reducing false positives in the forest class while
+ture indices were computed from Sentinel-2 composites, in-            complementing the MapBiomas coffee class.
+cluding the Normalized Difference Vegetation Index (NDVI)                The definition of forest adopted by MapBiomas is designed
+and the Normalized Difference Moisture Index (NDMI). The              primarily to be compatible with both FAO [80] and IBGE [81]
+resulting dataset comprises harmonized optical and radar com-         frameworks, but varies between biomes. The training, valida-
+posites across different temporal resolutions, forming the basis      tion, and test patches used in this study fall within the Atlantic
+for subsequent classification analyses.                               Forest, Cerrado (Brazilian Savanna), and Caatinga biomes. In
+    The dataset used for monitoring coffee-driven deforestation       the Atlantic Forest biome [82], the forest definition generally
+under the Regulation (EU) 2023/1115 on Deforestation-Free             includes areas larger than 0.5 ha with trees of at least 5 m
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                                 21183
+
+
+
+in height; however, it is restricted to formations with tree
+crown cover exceeding approximately 60–80%, depending on
+the forest type. In the Cerrado biome [83], beyond references to
+FAO [76] and IBGE [81] definitions, class definitions follow a
+locally established physiognomic classification framework. This
+framework, detailed by Ribeiro and Walter [84], characterizes
+forest types based on a minimum of 50% tree cover and tree
+height of at least 8 m, without enforcing a strict threshold for
+canopy cover density. In the Caatinga biome [85], where forest
+formations are less prevalent than in the other two biomes,
+no explicit quantitative thresholds are defined. Instead, forest
+classes are described qualitatively, for example by the presence
+of “continuous canopy” in specific formations such as Seasonal
+Semi-Deciduous Forest.
+   It is important to emphasize that, although IBGE [81] and
+Ribeiro and Walter [84] provide indicative structural thresh-
+olds, these are not used as strict criteria to delineate vegetation
+types. In fact, other savanna physiognomies described in Ribeiro
+and Walter [84] may satisfy similar structural thresholds yet
+are not classified as forest formations. This is because both
+frameworks [81], [84] rely on detailed floristic compositions,
+particularly the presence of characteristic tree species, which         Fig. 1. Our study area within Brazil. The black patches represent the locations
+are interpreted jointly with structural attributes when defining        and extents of the four weak label training tiles. The smaller red, blue and green
+                                                                        patches depict the training, validation and test gold label patches, respectively.
+vegetation classes. In summary, none of these biome-specific            The gold label patch indicators have been artificially enlarged in order to aid
+definitions fully aligns with the forest definition required by         visibility.
+the EUDR, particularly regarding the canopy cover threshold of
+greater than 10%.                                                       ensure consistency and comparable quality across annotators.
+   Furthermore, the coarse resolution of the MapBiomas weak             The protocol specified the following:
+labels characterzses this dataset as not suitable to be directly           1) annotation classes must correspond to the target classes
+used for a precise coffee and forest segmentation task. The                   forest, coffee, and other;
+majority of labels in the CONAB data were annotated before                 2) annotations must be based on high-resolution imagery
+2019, hence the CONAB dataset also cannot be directly reliably                acquired between 2019 and 2024;
+utilised to perform coffee segmentation from 2020 and beyond.              3) each patch must be associated with a single acquisition
+These limitations of the available “weak labels” thus justify the             date (month and year);
+necessity of our developed training stategy.                               4) the outline of the classes must exceed the border of the
+   To complement the large-scale weak labels from MapBiomas                   patch to ensure that the patch extent is entirely covered;
+and CONAB, a small set of gold-standard labels was created                 5) patches are only labelled when the land cover is clearly
+to fine-tune the model and improve the delineation of classes.                identifiable; and
+While weak labels provide extensive spatial coverage, they are             6) temporarily cleared areas or transitional states were ex-
+not ground truth and may contain classification errors. In con-               cluded to avoid ambiguity, particularly for forest areas
+trast, gold labels were manually annotated with high precision,               under the FAO definition (“or trees able to reach these
+ensuring reliable reference data for model refinement.                        thresholds in situ”).
+   The selection of areas for the gold labels was conducted by di-         The annotators were also provided with exemplar images
+viding the coffee-growing region into 256 × 256-pixel patches.          demonstrating sample polygons for each class, with many
+A candidate set for the labeling process was then generated             examples for complex cases such as sparse forest. The annotators
+using two selection criteria. Firstly, patches were required to be      aimed to delineate polygons as precisely as possible while
+geographically well distributed across the study area. To avoid         acknowledging that labels are ultimately rasterized to a 10 m
+spatial clustering, a limited number of patches were sampled            resolution due to fusion with Sentinel imagery. To account for
+within each Sentinel tile in the same region. Secondly, the             interpretation differences and potential delineation errors, all
+patches had to cover both coffee and forest areas according to          test patches were independently reviewed by two annotators
+the weak labels provided by MapBiomas and CONAB, ensuring               separately, to evaluate inter-annotator agreement. Each finalised
+that the final set of gold labels offered a sufficient representation   patch was linked to the acquisition date of the reference image,
+of the key classes of interest.                                         and the corresponding one-year Sentinel time series preceding
+   The gold label annotations were created by three trained             that date was extracted for model training.
+remote sensing students using high-resolution satellite imagery.           Fig. 1 depicts the geographical locations of the weak and
+Each patch was initially annotated by a single annotator, fol-          gold label data, whereas Fig. 2 provides a sample visualization
+lowing a shared and predefined annotation protocol designed to          of the labels. Comparing the Sentinel-2 patch with the Hand
+21184                                       IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+
+Fig. 2. Comparison of a sample patch, as represented by its associated
+Sentinel-2 RGB bands, the MapBiomas weak label, a combination of the Map-
+Biomas and CONAB weak labels, and finally the gold-standard hand-annotated
+label.
+
+
+(Gold) Label example (Fig. 2), we can observe clear visual
+differences in the coffee-growing region caused by variation in
+growth stages. The internal access roads within the cultivated
+                                                                             Fig. 3. Diagram of our proposed training strategy. The weak label dataset is
+areas were included into the coffee class because they are integral          composed of Sentinel-2 data, Sentinel-1 data, and indices calculated from the
+components of the coffee production system in Brazil, as they                Sentinel-2 bands. These inputs correspond to labels generated from MapBiomas
+allow mechanised harvesting and other management operations.                 and CONAB. After model initialization, the entire weak label dataset is used
+                                                                             to pretrain the model (here utilizing the U-Net architecture). The gold label
+These nuances are clearly recognisable through expert visual                 dataset is composed of the same data inputs (Sentinel-2, Sentinel-1, indices)
+interpretation, but are difficult to incorporate into automatic clas-        which are matched to hand annotated labels. The gold label dataset is split into
+sification systems, such as the weak labels based on MapBiomas               training, validation, and test subsets. The training subset is used to fine-tune
+                                                                             the pre-trained model, validation for hyperparameter optimization, and the test
+data.                                                                        subset is used to generate the results to evaluate the final model.
+   In total 41 420 256 × 256 pixel weak label patches were
+created from the four tiles across five years. A minimal number
+                                                                             Adam optimizer and a cosine learning rate scheduler. For the
+of 64 patches were hand-annotated in order to demonstrate the
+                                                                             fine-tuning of the models, the batch size was lowered to 8 and
+effectiveness of our training strategy even with just a small
+                                                                             the learning rate increased to 0.0005, as these parameters were
+number of gold standard labels, thus limiting the manual effort
+                                                                             found to perform better when training the models on the much
+required. The 64 hand (gold) label patches were split into 45 in
+                                                                             smaller gold label dataset. Freezing the encoder of the pretrained
+the training (fine-tuning) subset, 10 in the validation subset and
+                                                                             model during fine-tuning, was found to provide no benefits.
+9 in the held-out test subset.
+                                                                             Class weights were also not used when training the final models.
+   There were therefore 589 824 pixels on which to finally
+                                                                             When the loss function was modified to assign a higher weight
+evaluate the performance of the models. Some of the gold label
+                                                                             to the minority coffee class, the model’s coffee segmentation
+patches in the training subset overlapped with the weak label
+                                                                             performance (as measured by the F1 metric) decreased. This
+patches (see the red patches in Fig. 1), but the gold label patches
+                                                                             was because the model would then tend to strongly over-predict
+in the validation and test subsets were chosen to avoid overlaps
+                                                                             coffee, losing a lot of precision. The performance of models
+and to ensure a wide spatial distribution. The class balance in the
+                                                                             trained on different patch sizes and temporal composites was
+weak label dataset comprised 70% of the other class, 19% forest,
+                                                                             explored, the results of which are presented in Section IV-A.
+and 11% coffee. In the gold label dataset, our sampling method
+achieved a more balanced set of classes, with 37% of other,                     Three model architectures were implemented. U-Net [86] is a
+                                                                             widely used baseline convolutional neural network that utilises
+30% of forest and 33% of coffee. In the gold label test subset
+                                                                             a U-shaped architecture containing an encoder, bottleneck and
+specifically, there was a higher emphasis on the nonbackground
+                                                                             decoder, with skip connections between them; a structure which
+classes, with 33% other, 36% forest, and 31% coffee.
+                                                                             has proven to be highly effective for image segmentation tasks.
+                                                                             The U-Net architecture was used for the nontemporal annual
+B. Modelling
+                                                                             composite data inputs. U-Net-3D [87] extends upon the U-Net
+   Our methodological approach to modelling is to pre-train the              architecture by incorporating an additional temporal dimension,
+models on the full set of weak label patches; the pretrained                 replacing the 2-D operations with 3-D versions, to handle time
+models are then fine-tuned on the training subset of gold labels.            series data. In our experiments, U-Net-3D represented a stan-
+A diagram of this approach is provided in Fig. 3. The test subset            dard, efficient spatio-temporal model architecture. TSViT was
+of gold labels is used to evaluate all of the models, the results            developed by Tarasiou et al. [28], who modified the Vision
+of which are reported in Section IV. The metrics used for the                Transformer architecture to incorporate satellite time series data.
+evaluation are F1, Recall, and Precision, which were calculated              They utilize a temporal-then-spatial factorization to achieve
+individually per class, rather than globally, so that the predictions        state-of-the-art performance on crop type segmentation tasks,
+can be better analyzed for each class of interest separately.                as measured on the benchmark PASTIS dataset [3]. We im-
+   The validation subset of the gold labels was used for the hyper-          plemented TSViT in order to analyze the performance of a
+parameter tuning. For the model pre-training on the weak label               modern Transformer-based architecture designed specifically
+dataset, the optimal hyperparameter values were determined to                for agricultural segmentation, when applied to our coffee and
+be 100 epochs, batch size of 32, learning rate of 0.0001, with               forest segmentation problem. TSViT is also a conceptually more
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                                            21185
+
+
+
+
+Fig. 4. Predictions of models trained on temporal quarterly data composites          Fig. 6. Predictions from the pretrained only, and pretrained and fine-tuned
+and nontemporal annual data composites, on sugarcane plantations. The quar-          models, where the models struggle to predict the areas of forest that are
+terly model better correctly recognises the plantation as the other class, and not   particularly sparse.
+as coffee.
+
+
+
+
+                                                                                     Fig. 7. Example prediction from the model that was fine-tuned on gold labels
+                                                                                     which included an additional sparse forest class, represented in yellow.
+
+
+
+
+Fig. 5. Two visual examples of model predictions (U-Net-3D on quarterly
+composite 128 × 128 pixel data) in comparison to the gold labels, from the
+evaluative test set of images.
+
+
+complex model that requires more GPU memory, for example,
+for 128 × 128 pixel inputs with a batch size of 32, TSViT requires
+approximately 60 GB of GPU memory, whereas U-Net-3D
+requires only 12 GB. A comparison of the results from each
+of the temporal model architectures is made in Section IV-B.
+   The code was implemented in PyTorch version 2.6.0 with
+CUDA 12.6. The models were trained on two NVIDIA RTX
+6000 Ada Generation GPUs.                                                            Fig. 8. Examples of model predictions in regions of Brazil far outside of the
+                                                                                     weak label training dataset; (a) is located in the North West of our study area,
+                                                                                     and (b) in the Centre of our study area.
+                                IV. RESULTS
+   The following section describes the results from the main                            Confidence intervals were calculated for all the metrics re-
+research experiments: analysing different temporal and spatial                       sults. Because pixels are not independent observations, but likely
+input data configurations (Section IV-A) and a comparison of                         exhibit spatial autocorrelation, the confidence intervals were
+model architectures (Section IV-B), in order to evaluate the                         computed by bootstrapping the individual patches in the test
+accuracy-efficiency trade off. Section IV-C presents the effec-                      subset, using 10,000 resamples with replacement to estimate a
+tiveness of our developed training strategy, whereas we explore                      95% confidence interval. In order to enhance readability, these
+model limitations in Section IV-D and perform a cross-region                         intervals are provided in Tables VI–X in the appendix, which
+evaluation in Section IV-E.                                                          correspond to each of the results Tables I–V.
+   Example model predictions are visualized and interpreted                             All of the features were utilized for training the models, as
+throughout the results. In each of the Figs. 4–8, the “In-                           the best model performance was consistently achieved when
+put” image displays one sample time step of the B4, B3, and                          all three of the feature sets–Sentinel-2, Sentinel-1, and remote
+B2 Sentinel-2 bands (RGB) from the input time series data.                           sensing indices–were used, with performance reducing when
+The “Gold Label” and “Model Prediction” columns depict the                           any one of the features was dropped from the model (see table V
+ground truth and predicted class segmentations respectively,                         in the appendix for the feature ablation results). Sentinel-2 was
+where the other class is represented in black, forest in green,                      the most important and informative data source, as even a model
+and coffee in brown.                                                                 trained only on the two indices calculated from the Sentinel-2
+21186                                    IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+                                                               TABLE I
+                                    PERFORMANCE METRICS FOR DIFFERENT TEMPORAL AND SPATIAL MODELS
+
+
+
+
+bands achieved reasonable metric scores. However, utilizing               Fig. 4 depicts sugarcane plantations, which from visual in-
+only the RGB bands from Sentinel-2 significantly reduced               spection alone at the 10 m/pixel resolution of the Sentinel-2
+performance, highlighting the importance of multispectral              imagery, are almost indistinguishable from coffee plantations.
+imagery, particularly in combination with time series data.            The U-Net-3D model trained on quarterly data composites how-
+                                                                       ever, is arguably able to utilise the crop’s spectral signature in
+                                                                       the temporal data in order to correctly distinguish the sugarcane
+                                                                       as other. In comparison, the U-Net model trained on nontem-
+A. Temporal and Spatial                                                poral annual data composites partly classifies the plantations as
+   Table I presents the results from the temporal and spatial          coffee.
+experiments. The performance of 12 different models is com-               Regarding the quarterly results, the larger image sizes also
+pared, each of which is trained on data utilizing a different          outperform the smaller sizes, with 256 × 256 pixel inputs
+temporal dimension (a monthly, quarterly or annual composite),         (equivalent to an area of 6.5 km2 ) resulting in a coffee F1 score of
+and different input data size (32 × 32, 64 × 64, 128 × 128,            0.887, whereas 32 × 32pixels (0.1 km2 ) achieve an F1 score of
+or 256 × 256 pixels). The metrics used for evaluation are F1,          0.861. Tarasiou et al. [28] argued that even 24 × 24 pixel input
+precision, and recall, which are reported individually for each        sizes are sufficient for the task of crop segmentation, because
+of the classes: other, forest and coffee.                              crops can be cultivated independently of a field’s size or shape,
+   Even though the monthly composite data contains the most            and this lack of structure means that spatial patterns are far
+temporally rich data, its models performed relatively poorly in        less informative of crop type than temporal signatures in time
+comparison to the quarterly and annual composite models, as            series data. Our findings however demonstrate that for coffee
+measured by the F1 scores on all of the classes. The likely cause      plantations, providing the model with additional contextual in-
+of this result is the increased amount of cloud cover present in the   formation in the form of larger input data sizes is beneficial to
+monthly remote sensing data, as there are fewer cloud-free pixels      performance. This may be due to the model being better able to
+available within the shorter time frame, making it difficult for the   utilise external indicative features such as internal access roads
+model to create segmentations based on the obscured Sentinel-2         running alongside the coffee plantations.
+images. In the monthly composite data, at least one of the time
+steps in seven of the test patches had more than 5% cloud cover,
+whereas for the quarterly composite data, this occurred in only        B. Architectures
+one time step of one of the test patches. One of the monthly              Table II presents the comparative performance of two model
+composite images had cloud cover entirely obscuring 57% of             architectures: TSViT, which utilizes a Transformer-based ar-
+the image, greatly affecting the model’s capability to process         chitecture, and U-Net-3D, a standard baseline spatio-temporal
+the data.                                                              architecture, which is a conceptually much simpler and smaller
+   The models trained on the quarterly composite data achieve          model in comparison to TSViT. The quarterly temporal compos-
+the highest F1 scores for all three of the classes, demonstrating      ite is used for the experiments, due to its optimal performance as
+the benefit to segmenting both coffee and forest, of integrating       demonstrated in Table I, whereas the cloud cover issues distort
+a temporal dimension in the data. The quarterly structured data        the results from the monthly composite data.
+produced the best balance of minimizing cloud cover while still           Tarasiou et al. [28] originally developed TSViT to be trained
+providing the model with temporal information that helps it to         on small 24 × 24 pixel data inputs; accordingly, TSViT achieves
+identify coffee crops from the spectral signature over time.           its highest coffee F1 score when input with our smallest image
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                  21187
+
+
+
+                                                              TABLE II
+                                      PERFORMANCE METRICS FOR THE DIFFERENT MODEL ARCHITECTURES
+
+
+
+
+size of 32 × 32 pixels. (We utilize 32 × 32 pixel and 128 ×           Transformer [88], Vision Transformer [89] and ResNet [90], are
+128 pixel inputs, so that each of our full 256 × 256 pixel patches    outlined in Section IV-C.
+can be evaluated via 64 and 4 smaller data inputs respectively,
+thus enabling a fair comparison between the different input
+sizes). At this spatial size, TSViT also outperforms the U-Net-3D     C. Training Strategy
+model with regards to coffee segmentation (with its signifi-             Tables I and II demonstrated that the U-Net-3D architecture
+cant phenological cycle), revealing its advantage over the basic      trained on quarterly data with 128 × 128 pixel image inputs
+CNN-based structure for crop detection at small input sizes.          performed the best when considering the F1 scores for all
+TSViT slightly underperforms for the forest class, which has a        classes, and thus these parameters were fixed for the following
+relatively small variance in its phenological cycle in the tropics.   experiment.
+   Because the TSViT architecture was not designed to handle             Table III displays the performance of four models utilizing
+larger input data sizes, when the image size is increased from 32     four different training strategies. The “MapBiomas” model was
+× 32 to 128 × 128 pixels, the performance of TSViT reduces            trained only on weak labels from the MapBiomas dataset. The
+dramatically, from 0.872 to 0.777 coffee F1 score, and from           “MapBiomas & CONAB” model was trained on weak labels
+0.809 to 0.785 forest F1 score.                                       combined from both the MapBiomas and the CONAB coffee
+   In comparison, the coffee F1 score for the U-Net-3D model          datasets. The “Pre-trained and Fine-tuned” model was initialized
+increases from 0.861 to 0.886, and the forest F1 score increases      from the (pretrained) “MapBiomas & CONAB” model, and
+from 0.811 to 0.874, which represents the overall best perfor-        then fine-tuned on the gold hand-annotated labels. The “Gold
+mance, higher than the metrics of TSViT at 32 × 32 pixels.            Labels” model was trained on the gold labels only, with no
+A Wilcoxon signed-rank test indicated significant differences         pretraining.
+in the performance of the TSViT and U-Net-3D models, with                With regards to both the coffee F1 scores and forest F1 scores,
+p-values of 0.008, 0.04, and 0.004 for the coffee, forest, and        a clear progressive improvement can be seen when moving
+other F1 scores respectively.                                         from the “MapBiomas” pretrained model, to the “MapBiomas &
+   The U-Net-3D architecture also has the advantage that it is        CONAB” pre-trained model, to the “Pre-trained and Fine-tuned”
+a more efficient model, which is faster to train. Furthermore,        model. The coffee segmentation performance in particular im-
+due to the smaller size of the U-Net-3D base model, it can            proves strongly between the pretrained only and fine-tuned
+still run on lower-memory GPUs even when the spatial size             models, from a coffee F1 score of 0.752 to 0.886. This result
+of the input data is increased, which in turn then leads to           evidences the effectiveness of our training strategy–to pretrain
+increased segmentation performance. U-Net-3D is also able to          on a large amount of weak label data, and fine-tune on very small
+make effective predictions from data with a temporal dimension        amount of gold hand-labelled data– in order to achieve strong
+of just 4 (quarterly composite), whereas TSViT was designed           model performance on the coffee and forest segmentation task.
+to train on data containing up to 60 time points, and thus            The model trained on the gold labels alone did not perform as
+requires a much higher volume of data in order to perform most        well as the pre-trained and then fine-tuned model on any of the
+effectively. However utilizing such a large temporal dimension        metrics or classes, demonstrating the benefit of the additional
+not only significantly increases data storage requirements and        weak label pre-training.
+further reduces model efficiency, but would also impact model            In comparison to the coffee class, there is a greater increase
+performance due to the increased cloud coverage present in            in the forest F1 scores, between the pre-trained on MapBiomas
+noncomposited Sentinel-2 imagery.                                     only, to the fine-tuned model: 0.698 to 0.874. This result is likely
+   Comparisons to further model architectures were not included       due to the EU regulation’s definition of forest including very
+in this study, as our work focuses on the analysis of our ap-         sparsely forested land, which is represented in the training and
+proach to data processing and training on weak labels and gold        evaluation gold label data, but does not reflect the classification
+labels. We compared model performance with TSViT and U-               of forest by typical weak label datasets like MapBiomas. This
+Net-3D in order to demonstrate the effectiveness of our training      outcome again shows how training a model on just a small
+strategy even on a conceptually simpler model that is able to         number of hand-labelled patches refines its predictions for a
+fit on smaller GPUs. Results from utilizing foundational pre-         specifically defined task; however the best overall performance
+trained models, which employ architectures including the Swin         was still only achieved by the fine-tuned model that had been
+21188                                  IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+                                                             TABLE III
+                                        PERFORMANCE METRICS FOR DIFFERENT TRAINING STRATEGIES
+
+
+
+
+previously pre-trained on the weak labels. This result occurred         Fig. 6 demonstrates how, although the model is capable of
+even though our weak label forest class did not fully correspond     correctly identifying areas of dense, primary forest, it struggles
+to the the forest class in the gold labels.                          to classify areas that have a much sparser number of trees as
+   A Wilcoxon signed-rank test indicated significant differences     forest, which nevertheless fall within the EU regulation’s defini-
+between the performance of the weakly pre-trained and final          tion of a forest. This arguably atypical definition is represented
+fine-tuned model, with p-values of 0.02, 0.004, and 0.02 for         only within the small number of gold labels that the models
+the coffee, forest, and other F1 scores, respectively. The best      were fine-tuned on, and not within the larger weak label training
+performing model also showed highly consistent metrics across        dataset. In Fig. 6, the pre-trained only model therefore fails
+multiple runs. The “Pre-trained and Fine-tuned” model was            to recognise these areas as forest entirely, and although the
+retrained 15 times, and the standard deviations were 0.007 for       fine-tuned model greatly improves upon its performance, some
+the coffee F1 score, 0.011 for forest F1 score, and 0.009 for the    segmentation errors are still made.
+other class F1 score.                                                   To quantify the extent of this issue, we created a new class
+   Initializing the weights from a model that has been pretrained    to represent “sparse forest,” and modified all of the gold label
+on a generic dataset, such as ImageNet [91], is a common ap-         forest annotations to delineate sparse and dense forest classes.
+proach to many computer vision and image classification prob-        We then fine-tuned the best performing pretrained model on the
+lems. However, when we incorporated an additional pre-training       updated gold labels that included this additional fourth class.
+step, by beginning with an foundational model pre-trained on            This model achieved a poor F1 score on sparse forest of 0.31,
+remote sensing data–such as Prithvi [92] or Satlas [93]–trained      precision of 0.36, and recall of 0.27. An example prediction is
+it on our weak labels, and then fine-tuned it on our gold labels,    provided in Fig. 7, with the new sparse forest class depicted
+we found no performance gains, and instead often a reduction         in yellow. The ability of the model to learn to distinguish
+in segmentation performance. We theorise that the lack of per-       the forest types is restricted by the very limited amount of
+formance gain is due to the fact that we already have access         sparse forest in the dataset. In the full gold label set, the class
+to a large amount of data for pretraining in the form of our         distribution includes 24% dense forest and 6% sparse forest,
+weak labels dataset, which the generic remote sensing data does      but even this value is highly skewed, because in many of the
+not provide much in addition to. The reductions in performance       patches there is no sparse forest at all. This class is also difficult
+are likely caused by the reduced number of features, for ex-         to confidently annotate precisely, due to the highly ambiguous
+ample, the Prithvi model is trained on only 6 channels: Blue,        boundaries between the two forest classes, as can be seen in
+Green, Red, NIR, SWIR1, and SWIR2. Our dataset however               Fig. 7.
+utilizes 14 features, including additional Sentinel-1 bands, and        The pre-trained and fine-tuned model from Table III, which
+NDVI and NDMI indices calculated from the Sentinel-2 bands,          had been trained on the original forest class, was then evaluated
+which are particularly relevant to coffee classification, as per     only in areas of sparse forest. It achieved a recall score of
+Section II.                                                          0.66, indicating a level of transferability from the dense forest
+                                                                     described by the labels to sparse forest, which is also evident in
+                                                                     Fig. 6. However improvements still need to be made in order for
+D. Model Limitations
+                                                                     the model to fully fulfil the requirements defined by the FAO for
+   Fig. 5 visualises two example patches from the evaluative test    forest classification.
+set of images. Although the model broadly accurately predicts
+the correct locations for both the forest and coffee classes, some
+errors are still evident. These inaccuracies were found to often     E. Cross-Region Evaluation
+occur in locations where a coffee plantation exists, but where          Fig. 8 displays model predictions on patches that are located
+coffee was not actively being grown at the reference time point      far from the weak label tiles, in the North West [Fig. 8(a)] and
+used for the annotation of the gold labels. Discrepancies thus       Centre [Fig. 8(b)] of the study region.
+sometimes occurred, as the weak label sources on which the              These examples evidence the model’s capabilities to general-
+models were primarily trained were derived annually, taking          ize to new regions of Brazil, even when it has not been pretrained
+into account the full year.                                          on those regions. Our training strategy enables the model to make
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                             21189
+
+
+
+                                                                      TABLE IV
+                                                 PERFORMANCE METRICS FOR THE CROSS-REGION EVALUATION
+
+
+
+
+                                                                                  three regions–North West, North, and Centre–were utilized for
+                                                                                  the cross-region evaluation, as these would be completely unseen
+                                                                                  by a pretrained model.
+                                                                                     Table IV displays the performance of three different models
+                                                                                  for each of these three regions. The “Pre-trained” model was
+                                                                                  trained only on the weak label tiles. The “Gold Only” model was
+                                                                                  not pre-trained on the weak label data, but only trained on the
+                                                                                  gold labels in all of the regions except for the evaluated region.
+                                                                                  Finally, the “Fine-tuned” model used our strategy to pre-train a
+                                                                                  model on the weak label tiles, and then fine-tune it on the gold
+                                                                                  labels, excluding those in the evaluated region.
+                                                                                     For the Centre and North regions, either the fine-tuned or
+                                                                                  pretrained model always achieved the highest F1, precision,
+                                                                                  and recall scores, demonstrating how the generalizability of the
+                                                                                  model is a result of the weak label pre-training. However, the pre-
+                                                                                  trained model had poorer forest F1 scores in all regions, impacted
+                                                                                  by its difficulty to correctly predict areas of sparse forest, as
+                                                                                  discussed previously in Section IV-D. Nevertheless, fine-tuning
+                                                                                  the model greatly improves the forest metrics, evidencing the
+                                                                                  importance of our weak-to-gold training strategy.
+                                                                                     The models particularly struggled with predicting the coffee
+Fig. 9. Our study area within Brazil, as divided into six named regions for the   class in the North West, because coffee production in this region
+cross-region experiments. The black patches represent the locations and extents   consists mainly of circular irrigated cultivation systems, which
+of the four weak label training tiles. The smaller red and green patches depict
+the training and test gold label patches, which have been artificially enlarged   are atypical to the rest of our study area. However, the model that
+in order to aid visibility. The underlying brown and green heatmap delineates     was pretrained and then fine-tuned on all of the gold label patches
+Arabica and Robusta coffee production amounts, respectively.                      (from Table III) performed well on the test gold labels within
+                                                                                  the North West region, as can be seen in Fig. 8(a), validating the
+successful predictions in new areas, by transfer learning through                 benefit of regional transfer learning, even with only a few gold
+fine-tuning the model on only an extremely small number of                        label patches in the target region.
+hand-labeled gold patches representing the area of interest.
+   In order to further evaluate the cross-regional capabilities of
+the model, we conducted a “leave-one-region-out” experiment.                                               V. DISCUSSION
+We divided our study area into six distinct regions based on                         With regards to our original three research questions, the
+coffee-relevant signals (see Fig. 9) such as production levels,                   results are thus summarized and then discussed.
+growing systems and coffee bean types, rather than less mean-                        RQ1: Which spatial data input size and temporal compos-
+ingful political state divisions. In Brazil, coffee production is                 ite enables the most accurate coffee and forest segmentation?
+clustered into several hubs [94], as depicted by the brown (Ara-                     The models trained on monthly composite data performed
+bica) and green (Robusta) heatmap in Fig. 9. Each of our regions                  worse than lower temporal resolutions due to the high amount of
+(outlined in black) contained approximately the same number                       cloud cover occurring in the monthly data. Models trained on the
+of gold labels, and three of the regions–South West, South,                       quarterly composite data outperformed those trained on annual
+and East–contained our weak label training tiles. The remaining                   composite data, demonstrating the importance of utilizing time
+21190                                   IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+series datasets for coffee and forest segmentation tasks. The         many current state-of-the-art approaches, due to its grounding
+models that used larger spatial data input sizes achieved higher      in easily obtainable weak labels.
+F1 scores for both the forest and coffee classes. The 128 × 128          Nevertheless, future work should be carried out to improve
+and 256 × 256 pixel inputs performed similarly, thus the 128          the performance of the segmentation models even further. The
+× 128 inputs (and quarterly composites) were retained for the         monthly composite dataset comprises the most temporal infor-
+following experiments, due to the additional benefits to model        mation that could be exploited by the model to make predictions,
+efficiency.                                                           however in practicality this dataset was unusable, as our QA60
+   RQ2: How effectively does a Transformer-based deep                 cloud masking approach was ineffective for our tropical study
+learning architecture perform on coffee and forest segmen-            region, resulting in a heavy amount of cloud cover obscuring
+tation in comparison to a simpler but more efficient 3D-CNN           the monthly imagery. Model robustness to cloudy input should
+baseline spatio-temporal model?                                       therefore be improved, and more advanced cloud detection
+   The TSViT model reported competitive F1 scores when input          and handling algorithms integrated to reduce the amount of
+with 32 × 32 pixel data, but could not benefit from an increase       cloud-covered pixels, so that the temporal benefits of utilizing
+in the spatial size of the patches. The simpler U-Net-3D model        monthly data can be properly evaluated. Furthermore, the per-
+hence achieved higher coffee and forest F1 scores than TSViT          formance of model architectures like TSViT, which rely more
+when input with 128 × 128 pixel patches and quarterly com-            heavily on larger temporal dimensions, could then be better
+posite data. U-Net-3D is also less computationally expensive,         evaluated.
+as it is smaller and faster to train. The TSViT architecture was         The time series datasets could also be extended to incorporate
+originally developed to be utilised with very small spatial sizes     two years instead of just one, which may better reflect the
+and a very large temporal dimension, however we demonstrate           two year phenological cycle of coffee plants [4]. Conversely
+that for real-world applications in the tropics these requirements    static, non-temporal features like topographic elevation, have
+may be difficult to fulfil, particularly as cloud coverage proved     been previously shown to be a useful contributing predictor
+to be a significant complication in the monthly composite data.       for agricultural crop classification [39]. Intermittent failures
+   RQ3: How accurately are the coffee and forest classes              of the Sentinel-1 satellites, resulting in some data unavailabil-
+segmented by a model that has been pre-trained on many                ity for coffee-relevant regions [95], could be supplemented
+weak labels, and fine-tuned on a small number of gold labels?         by additional synthetic aperture radar sources such as ALOS-
+   The model that was both pre-trained and then fine-tuned            PALSAR [96]. While integrating all of these new features and
+achieved higher F1 scores on all of the segmentation classes,         extending the temporal dimension may offer segmentation per-
+(other: 0.808, forest: 0.874, coffee: 0.886), than the models         formance benefits, the increase in the amount of data required
+that were pretrained only, or trained only on the fine-tuning         must be balanced in order to not overly inhibit model efficiency.
+dataset.                                                              The importance of the different features for the coffee and forest
+   The weak labels derived from the MapBiomas data sources            prediction task should be analyzed, to select only the most
+were unreliable, of poor quality and had lower resolution than the    effective variables.
+input data, whereas the CONAB data suffered from a temporal              In Table III we compared the performance of a model trained
+mismatch to our input data features, and thus both datasets were      on MapBiomas data alone to a model trained on a combination of
+not suitable for exclusively training a final model. Furthermore,     MapBiomas and CONAB data. However, additional weak label
+the forest class in the weak labels did not fully meet EUDR           experiments–with varying levels of label weakness–should also
+requirements. However, we demonstrate how the very large              be conducted on more datasets to further analyze the model’s
+amount of weak labels available can be leveraged for model            antinoise capabilities.
+pretraining, teaching the model to recognise broader coffee and          Finally, future work must be carried out to better align the
+forest related patterns, and increasing its ability to generalise,    predictions of models to the EU regulation on deforestation-free
+as evidenced by the capability of the model to make successful        products definition of forest. This definition incorporates sparse
+predictions in regions outside of the weak label dataset. The         land areas that are typically described by the weak label datasets
+model was then fine-tuned on gold labels that were small in           as other land uses, therefore the models were only able to learn
+number but of a much higher quality. This fine-tuning step im-        to classify these areas as forest during the fine-tuning stage.
+proves the model’s segmentation precision, particularly around        The very small number of gold labels do not contain enough
+the borders of classes, as well as refines its predictions for the    information to fully teach the model how to update its forest
+defined task. Overall, our developed training strategy overcomes      definition, leading to errors in the class segmentations. The
+the limitation presented by the lack of good coffee and forest        EUDR definition of forest thus should be already integrated into
+labels available for classification tasks. Our approach to pretrain   the weak label pretraining dataset. As the pre-defined classes in
+on weak labels that are of poor quality but large in number,          most existing LULC datasets are insufficient for this purpose,
+in combination with fine-tuning on gold labels that are small         a combination of different data sources should be explored,
+in number but of high quality, results in a model that is both        including deriving new weak labels or soft labels from the
+generalisable and precise, hence achieving the best performance.      amalgamation of multiple datasets, to synthesise the EUDR
+Furthermore, our approach is considerably more accessible than        forest definition from a variety of different classes.
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                     21191
+
+
+
+                                                              TABLE V
+                                         PERFORMANCE METRICS FOR DIFFERENT FEATURE ABLATIONS
+
+
+
+
+                                                              TABLE VI
+                       CONFIDENCE INTERVALS CORRESPONDING TO TABLE I, FOR DIFFERENT TEMPORAL AND SPATIAL MODELS
+
+
+
+
+                                                             TABLE VII
+                         CONFIDENCE INTERVALS CORRESPONDING TO TABLE II FOR THE DIFFERENT MODEL ARCHITECTURES
+
+
+
+
+                       VI. CONCLUSION
+    The introduction of the new EU regulation on deforestation-
+free products has necessitated new developments in accurate
+monitoring of coffee plantations and forested areas. The com-
+bination of remote sensing data and deep learning models, has
+facilitated the segmentation of forest and coffee crop parcels
+across temporal bounds at large scales. Nevertheless, the lack
+of reliable coffee and forest labels available on which to train
+models has restricted their real-world applicability, particularly
+with regards to generalizability over wider extents.
+    In order to overcome this limitation, we developed a weak-to-
+gold label pretraining and fine-tuning strategy, where our model     Fig. 10. Representative example of the poor Segment Anything Model (SAM)
+                                                                     performance. SAM predominantly segments forest (yet not all of the forest
+is trained on a large amount of poor-quality weak labels, and then   patches) and entirely fails to segment the coffee crop parcels.
+fine-tuned on a small number of high-quality gold-standard hand
+labels. The final model achieved a coffee F1 score of 0.886, and
+forest F1 score of 0.874, demonstrating both generalizability        generate better weak labels from innovative combinations of
+(from the weak label pretraining) and predictive precision (from     multiple existing LULC datasets.
+the fine-tuning step). Our analysis also concluded that larger
+spatial data patches and higher dimension temporal composites                                      APPENDIX
+input into a standard spatio-temporal model architecture outper-        Fig. 10 presents a sample segmentation by the Segment
+forms nontemporal approaches.                                        Anything Model (SAM), as described in Section II-B. Table V
+    However, future work is critical to further enhance model per-   presents the feature ablation study results, as introduced in
+formance, including improved cloud cover algorithms to exploit       Section III-B. Tables VI–X provide the 95% confidence in-
+monthly composite data, integrating additional data features         tervals for the metrics in each of the corresponding results
+such as elevation, and finally developing new approaches to          Tables I–V.
+21192                                            IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+                                                                   TABLE VIII
+                               CONFIDENCE INTERVALS CORRESPONDING TO TABLE III FOR THE DIFFERENT TRAINING STRATEGIES
+
+
+
+
+                                                                    TABLE IX
+                                  CONFIDENCE INTERVALS CORRESPONDING TO TABLE IV FOR THE CROSS-REGION EVALUATION
+
+
+
+
+                                                                    TABLE X
+                                CONFIDENCE INTERVALS CORRESPONDING TO TABLE V FOR THE DIFFERENT FEATURE ABLATIONS
+
+
+
+
+                           ACKNOWLEDGMENT                                            [10] N. Joshi et al., “A review of the application of optical and radar remote
+                                                                                          sensing data fusion to land use mapping and monitoring,” Remote Sens.,
+  The authors would like to thank the GRAS students Majid Ab-                             vol. 8, no. 1, 2016, Art. no. 70.
+dalla, Paul Brück, and Surbhi Patil for their precise and dedicated                  [11] S. Talukdar, P. Singha, S. Mahato, S. Pal, Y.-A. Liou, and A. Rahman,
+                                                                                          “Land-use land-cover classification by machine learning classifiers for
+annotation work. Their careful generation of the gold labels from                         satellite observations—A review,” Remote Sens., vol. 12, no. 7, 2020,
+high-resolution imagery was fundamental to this study.                                    Art. no. 1135.
+                                                                                     [12] A. Vali, S. Comai, and M. Matteucci, “Deep learning for land use
+                                   REFERENCES                                             and land cover classification based on hyperspectral and multispectral
+                                                                                          earth observation data: A review,” Remote Sens., vol. 12, no. 15, 2020,
+ [1] European Commission, “Regulation on deforestation-free products,”                    Art. no. 2495.
+     2025. [Online]. Available: https://environment.ec.europa.eu/topics/             [13] H. Ghanbari, M. Mahdianpari, S. Homayouni, and F. Mohammadimanesh,
+     forests/deforestation/regulation-deforestation-free-products_en                      “A meta-analysis of convolutional neural networks for remote sensing
+ [2] J. F. Beyer, M. Köthke, and M. Lippe, “Assessing the suitability of available        applications,” IEEE J. Sel. Topics Appl. Earth Observ. Remote Sens.,
+     global forest maps as reference tools for EUDR-compliant deforestation               vol. 14, pp. 3602–3613, 2021.
+     monitoring,” Remote Sens., vol. 17, no. 17, 2025, Art. no. 3012.                [14] Q. Feng et al., “Integrating multitemporal Sentinel-1/2 data for coastal land
+ [3] V. S. F. Garnot and L. Landrieu, “Panoptic segmentation of satellite image           cover classification using a multibranch convolutional neural network:
+     time series with convolutional temporal attention networks,” in Proc.                A case of the yellow river delta,” Remote Sens., vol. 11, no. 9, 2019,
+     IEEE/CVF Int. Conf. Comput. Vis., 2021, pp. 4872–4881.                               Art. no. 1006.
+ [4] D. A. Hunt et al., “Review of remote sensing methods to map coffee              [15] L. Scheibenreif, J. Hanna, M. Mommert, and D. Borth, “Self-supervised
+     production systems,” Remote Sens., vol. 12, no. 12, 2020, Art. no. 2041.             vision transformers for land-cover segmentation and classification,”
+ [5] Q. T. Le et al., “Deep learning model development for detecting coffee tree          in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit., 2022,
+     changes based on Sentinel-2 imagery in Vietnam,” IEEE Access, vol. 10,               pp. 1422–1431.
+     pp. 109097–109107, 2022.                                                        [16] L. Zhao and S. Ji, “CNN, RNN, or ViT? An evaluation of different deep
+ [6] L. C. Kelley, L. Pitcher, and C. Bacon, “Using Google Earth Engine to map            learning architectures for spatio-temporal representation of Sentinel time
+     complex shade-grown coffee landscapes in northern Nicaragua,” Remote                 series,” IEEE J. Sel. Topics Appl. Earth Observ. Remote Sens., vol. 16,
+     Sens., vol. 10, no. 6, 2018, Art. no. 952.                                           pp. 44–56, 2023.
+ [7] G. Maskell, A. Chemura, H. Nguyen, C. Gornott, and P. Mondal, “Inte-            [17] J. V. Solórzano, J. F. Mas, Y. Gao, and J. A. Gallardo-Cruz, “Land
+     gration of Sentinel optical and radar data for mapping smallholder coffee            use land cover classification with U-Net: Advantages of combining
+     production systems in Vietnam,” Remote Sens. Environ., vol. 266, 2021,               Sentinel-1 and Sentinel-2 imagery,” Remote Sens., vol. 13, no. 18, 2021,
+     Art. no. 112709.                                                                     Art. no. 3600.
+ [8] A. Escobar-López, M. Á. Castillo-Santiago, J. L. Hernández-Stefanoni, J.        [18] J. V. Solórzano, J. F. Mas, J. A. Gallardo-Cruz, Y. Gao, and A. F .M
+     F. Mas, and J. O. López-Martıńez, “Identifying coffee agroforestry system           de Oca, “Deforestation detection using a spatio-temporal deep learning
+     types using multitemporal Sentinel-2 data and auxiliary information,”                approach with synthetic aperture radar and multispectral images,” ISPRS
+     Remote Sens., vol. 14, no. 16, 2022, Art. no. 3847.                                  J. Photogrammetry Remote Sens., vol. 199, pp. 87–101, 2023.
+ [9] M. Digra, R. Dhir, and N. Sharma, “Land use land cover classification           [19] V. Mazzia, A. Khaliq, and M. Chiaberge, “Improvement in land cover and
+     of remote sensing images based on the deep learning approaches: A                    crop classification based on temporal features learning from Sentinel-2
+     statistical analysis and review,” Arabian J. Geosci., vol. 15, no. 10, 2022,         data using recurrent-convolutional neural network (R-CNN),” Appl. Sci.,
+     Art. no. 1003.                                                                       vol. 10, no. 1, 2019, Art. no. 238.
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                                             21193
+
+
+
+[20] M. F. Guerri, C. Distante, P. Spagnolo, F. Bougourzi, and A. Taleb-Ahmed,       [41] K. Nogueira, O. A. Penatti, and J. A. dos Santos, “Towards better exploiting
+     “Deep learning techniques for hyperspectral image analysis in agriculture:           convolutional neural networks for remote sensing scene classification,”
+     A review,” ISPRS Open J. Photogrammetry Remote Sens., vol. 12, 2024,                 Pattern Recognit., vol. 61, pp. 539–556, 2017.
+     Art. no. 100062.                                                                [42] K. Nogueira, W. R. Schwartz, and J. A. dos Santos, “Coffee crop recog-
+[21] M. P. da Silva et al., “Advancing agricultural remote sensing: A compre-             nition using multi-scale convolutional neural networks,” in Proc. 20th
+     hensive review of deep supervised and self-supervised learning for crop              Iberoamerican Congr. Progress Pattern Recognit., Image Anal., Comput.
+     monitoring,” Comput. Graph., vol. 133, 2025, Art. no. 104434.                        Vis., Appl., Montevideo, Uruguay, Nov. 2015, pp. 67–74.
+[22] M. T. Le et al., “Evaluation of deep learning approaches for classifying        [43] R. Baeta, K. Nogueira, D. Menotti, and J. A. dos Santos, “Learning deep
+     regional croplands with satellite image time series in Senegal,” IEEE J.             features on multiple scales for coffee crop recognition,” in Proc. 30th
+     Sel. Topics Appl. Earth Observ. Remote Sens., vol. 19, pp. 9922–9933,                SIBGRAPI Conf. Graph., Patterns Images, 2017, pp. 262–268.
+     2026.                                                                           [44] J. Pisl, G. Lenczner, D. Tuia, and F. De Morsier, “Semantic segmentation of
+[23] V. S. F. Garnot, L. Landrieu, S. Giordano, and N. Chehata, “Satellite                coffee plantations from Sentinel-2 time series,” in Proc. IEEE Int. Geosci.
+     image time series classification with pixel-set encoders and temporal                Remote Sens. Symp., 2024, pp. 1526–1530.
+     self-attention,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit.,        [45] E. Fiorillo and T. P. West, “Deep learning for high-resolution map-
+     2020, pp. 12325–12334.                                                               ping of coffee cultivation in Minas Gerais, Brazil,” SSRN, 2025,
+[24] Y. Yuan, L. Lin, Q. Liu, R. Hang, and Z.-G. Zhou, “Sits-former: A pre-               doi: 10.2139/ssrn.5659497.
+     trained spatio-spectral-temporal representation model for Sentinel-2 time       [46] O. A. de Carvalho, A. O. de Albuquerque, O. L. F. de Carvalho, J. M.
+     series classification,” Int. J. Appl. Earth Observ. Geoinf., vol. 106, 2022,         de Moura, H. C. de Castro Filho, and D. S. Antony, “Mapping coffee
+     Art. no. 102651.                                                                     plantations in Brazil using Sentinel-1 and planet NICFI data with deep
+[25] H. Wang, X. Chen, T. Zhang, Z. Xu, and J. Li, “Cctnet: Coupled CNN and               learning models,” in Proc. IEEE Int. Geosci. Remote Sens. Symp., 2025,
+     transformer network for crop segmentation of remote sensing images,”                 pp. 8224–8229.
+     Remote Sens., vol. 14, no. 9, 2022, Art. no. 1956.                              [47] J. M. Ribeiro, V. A. N. de Assis, L. B. Palos, J. O. de Souza Nogueira, J.
+[26] L. Lei, X. Wang, Y. Zhong, and L. Zhang, “Finecrop: Mapping fine-grained             E. Candido, and A. R. Backes, “Semantic segmentation of coffee regions
+     crops using class-aware feature decoupling and parcel-aware class rebal-             from satellite images using deep learning,” Revista de Informática Teórica
+     ancing with Sentinel-2 time series,” ISPRS J. Photogrammetry Remote                  e Aplicada, vol. 33, no. 2, pp. 202–209, 2026.
+     Sens., vol. 228, pp. 785–803, 2025.                                             [48] J. Mesmer-Magnus and C. Viswesvaran, “The role of pre-training interven-
+[27] M. Chang, S. Li, S. Peng, Z. He, and K. Anders, “Cropland segmentation               tions in learning: A meta-analysis and integrative review,” Hum. Resource
+     leveraging a synergistic edge enhancement and temporal difference-aware              Manage. Rev., vol. 20, no. 4, pp. 261–282, 2010.
+     network with Sentinel-2 time-series imagery,” Int. J. Digit. Earth, vol. 18,    [49] H. H. Mao, “A survey on self-supervised pre-training for sequential
+     no. 2, 2025, Art. no. 2554350.                                                       transfer learning in neural networks,” 2020, arXiv:2007.00800.
+[28] M. Tarasiou, E. Chavez, and S. Zafeiriou, “Vits for sits: Vision transformers   [50] B. Hosseiny, M. Mahdianpari, M. Hemati, A. Radman, F. Moham-
+     for satellite image time series,” in Proc. IEEE/CVF Conf. Comput. Vis.               madimanesh, and J. Chanussot, “Beyond supervised learning in remote
+     Pattern Recognit., 2023, pp. 10418–10428.                                            sensing: A systematic review of deep learning approaches,” IEEE J.
+[29] C. C. Lelong and A. Thong-Chane, “Application of textural analysis on                Sel. Topics Appl. Earth Observ. Remote Sens., vol. 17, pp. 1035–1052,
+     very high resolution panchromatic images to map coffee orchards in                   2024.
+     Uganda,” in Proc. IEEE Int. Geosci. Remote Sens. Symp. Proc., vol. 2,           [51] X. Lu, Z. Jiang, and H. Zhang, “Weakly supervised remote sensing image
+     2003, pp. 1007–1009.                                                                 semantic segmentation with pseudo-label noise suppression,” IEEE Trans.
+[30] W. F. Silva, B. F. Rudorff, A. R. Formaggio, W. R. Paradella, and J. C.              Geosci. Remote Sens., vol. 62, 2024, Art. no. 5406912.
+     Mura, “Discrimination of agricultural crops in a tropical semi-arid region      [52] A. Kirillov et al., “Segment anything,” in Proc. IEEE/CVF Int. Conf.
+     of Brazil based on L-band polarimetric airborne SAR data,” ISPRS J.                  Comput. Vis., 2023, pp. 4015–4026.
+     Photogrammetry Remote Sens., vol. 64, no. 5, pp. 458–463, 2009.                 [53] J. Sun, S. Yan, X. Yao, B. Gao, and J. Yang, “A segment anything model
+[31] J. Santos, F. Faria, R. Calumby, R. d. S. Torres, and R. A. Lamparelli,              based weakly supervised learning method for crop mapping using Sentinel-
+     “A genetic programming approach for coffee crop recognition,” in Proc.               2 time series images,” Int. J. Appl. Earth Observ. Geoinf., vol. 133, 2024,
+     IEEE Int. Geosci. Remote Sens. Symp., 2010, pp. 3418–3421.                           Art. no. 104085.
+[32] M. Schmitt-Harsh, S. P. Sweeney, and T. P. Evans, “Classification of            [54] H. Wang et al., “Improving the crop classification performance by
+     coffee-forest landscapes using Landsat TM imagery and spectral mix-                  unlabeled remote sensing data,” Expert Syst. Appl., vol. 236, 2024,
+     ture analysis,” Photogrammetric Eng. Remote Sens., vol. 79, no. 5,                   Art. no. 121283.
+     pp. 457–468, 2013.                                                              [55] S. Cao et al., “The blessing of depth anything: An almost unsupervised
+[33] J. Gaertner, V. B. Genovese, C. Potter, K. Sewake, and N. C. Manoukis,               approach to crop segmentation with depth-informed pseudo labeling,”
+     “Vegetation classification of coffea on Hawaii island using worldview-               Plant Phenomics, vol. 7, no. 1, 2025, Art. no. 100005.
+     2 satellite imagery,” J. Appl. Remote Sens., vol. 11, no. 4, 2017,              [56] J. Li et al., “Segts: Subseries-driven temporo-spatial learning with segment
+     Art. no. 046005.                                                                     anything model for crop segmentation in satellite image time series,”
+[34] D.-M. Tsai and W.-L. Chen, “Coffee plantation area recognition in satellite          Comput. Electron. Agriculture, vol. 246, 2026, Art. no. 111626.
+     images using Fourier transform,” Comput. Electron. Agriculture, vol. 135,       [57] K. Hu, Y. Feng, V. Lysenko, Y. Guo, and H. Wu, “Sam-aug: Leveraging
+     pp. 115–127, 2017.                                                                   sam priors for few-shot parcel segmentation in satellite time series,” 2026,
+[35] F. S. Kawakubo and R. P. PérezMachado, “Mapping coffee crops in                      arXiv:2601.09110.
+     southeastern Brazil using spectral mixture analysis and data mining             [58] J. Sun et al., “Enhancing crop mapping through automated sample gener-
+     classification,” Int. J. Remote Sens., vol. 37, no. 14, pp. 3414–3436,               ation based on segment anything model with medium-resolution satellite
+     2016.                                                                                imagery,” Remote Sens., vol. 16, no. 9, 2024, Art. no. 1505.
+[36] A. Mukashema, A. Veldkamp, and A. Vrieling, “Automated high resolu-             [59] B. Gui, A. Bhardwaj, and L. Sam, “Evaluating the efficacy of segment
+     tion mapping of coffee in Rwanda using an expert Bayesian network,” Int.             anything model for delineating agriculture and urban green spaces in
+     J. Appl. Earth Observ. Geoinf., vol. 33, pp. 331–340, 2014.                          multiresolution aerial and spaceborne remote sensing images,” Remote
+[37] J. A. Dos Santos, P.-H. Gosselin, S. Philipp-Foliguet, R. d. S. Torres, and          Sens., vol. 16, no. 2, 2024, Art. no. 414.
+     A. X. Falao, “Multiscale classification of remote sensing images,” IEEE         [60] J. Zhang, Q. Zhang, Y. Gong, J. Zhang, L. Chen, and D. Zeng, “Weakly su-
+     Trans. Geosci. Remote Sens., vol. 50, no. 10, pp. 3764–3775, Oct. 2012.              pervised semantic segmentation with consistency-constrained multiclass
+[38] A. Chemura and O. Mutanga, “Developing detailed age-specific thematic                attention for remote sensing scenes,” IEEE Trans. Geosci. Remote Sens.,
+     maps for coffee (coffea Arabica L.) in heterogeneous agricultural land-              vol. 62, 2024, Art. no. 5621118.
+     scapes using random forests applied on landsat 8 multispectral sensor,”         [61] G. Algan and I. Ulusoy, “Image classification with deep learning in the
+     Geocarto Int., vol. 32, no. 7, pp. 759–776, 2017.                                    presence of noisy labels: A survey,” Knowl.-Based Syst., vol. 215, 2021,
+[39] A. Tridawati et al., “Mapping the distribution of coffee plantations from            Art. no. 106771.
+     multi-resolution, multi-temporal, and multi-sensor data using a random          [62] Z.-H. Zhou, “A brief introduction to weakly supervised learning,” Nat.
+     forest algorithm,” Remote Sens., vol. 12, no. 23, 2020, Art. no. 3933.               Sci. Rev., vol. 5, no. 1, pp. 44–53, 2018.
+[40] K. Nogueira, M. Dalla Mura, J. Chanussot, W. R. Schwartz, and J. A. dos         [63] Y. Zhao, G. Sun, Z. Ling, A. Zhang, and X. Jia, “Point-based weakly super-
+     Santos, “Learning to semantically segment high-resolution remote sensing             vised deep learning for semantic segmentation of remote sensing images,”
+     images,” in Proc. 23rd Int. Conf. Pattern Recognit., 2016, pp. 3566–3571.            IEEE Trans. Geosci. Remote Sens., vol. 62, 2024, Art. no. 5638416.
+21194                                            IEEE JOURNAL OF SELECTED TOPICS IN APPLIED EARTH OBSERVATIONS AND REMOTE SENSING, VOL. 19, 2026
+
+
+
+[64] Z. Cai et al., “A cost-effective and robust mapping method for diverse crop     [87] Ö. Çiçek, A. Abdulkadir, S. S. Lienkamp, T. Brox, and O. Ronneberger,
+     types using weakly supervised semantic segmentation with sparse point                “3D U-Net: Learning dense volumetric segmentation from sparse annota-
+     samples,” ISPRS J. Photogrammetry Remote Sens., vol. 218, pp. 260–276,               tion,” in Proc. Int. Conf. Med. Image Comput. Comput.- Assist. Interven-
+     2024.                                                                                tion, 2016, pp. 424–432.
+[65] D. Moraes, M. L. Campagnolo, and M. Caetano, “A weakly supervised               [88] Z. Liu et al., “Swin Transformer: Hierarchical vision transformer using
+     and self-supervised learning approach for semantic segmentation of land              shifted windows,” in Proc. IEEE/CVF Int. Conf. Comput. Vis., 2021,
+     cover in satellite images with national forest inventory data,” Remote Sens.,        pp. 10012–10022.
+     vol. 17, no. 4, 2025, Art. no. 711.                                             [89] A. Dosovitskiy, “An image is worth 16 × 16 words: Transformers for
+[66] Z. Li, X. Zhang, and P. Xiao, “One model is enough: Toward multiclass                image recognition at scale,” in proc. Int. Conf. Learn. Representations,
+     weakly supervised remote sensing image semantic segmentation,” IEEE                  2021.
+     Trans. Geosci. Remote Sens., vol. 61, 2023, Art. no. 4503513.                   [90] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image
+[67] D. Karimi, H. Dou, S. K. Warfield, and A. Gholipour, “Deep learning                  recognition,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit., 2016,
+     with noisy labels: Exploring techniques and remedies in medical image                pp. 770–778.
+     analysis,” Med. image Anal., vol. 65, 2020, Art. no. 101759.                    [91] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “ImageNet:
+[68] D. Stutz et al., “Evaluating medical AI systems in dermatology                       A large-scale hierarchical image database,” in Proc. IEEE Conf. Comput.
+     under uncertain ground truth,” Med. Image Anal., vol. 103, 2025,                     Vis. Pattern Recognit., 2009, pp. 248–255.
+     doi: 10.1016/j.media.2025.103556.                                               [92] D. Szwarcman et al., “Prithvi-EO-2.0: A Versatile Multitemporal Foun-
+[69] F. Yang et al., “Assessing inter-annotator agreement for medical image               dation Model for Earth Observation Applications,” IEEE Trans. Geosci.
+     segmentation,” IEEE Access, vol. 11, pp. 21300–21312, 2023.                          Remote Sens., vol. 64, pp. 1–20, 2026, doi: 10.1109/TGRS.2025.3642610.
+[70] D. Rolnick, A. Veit, S. Belongie, and N. Shavit, “Deep learning is robust       [93] F. Bastani, P. Wolters, R. Gupta, J. Ferdinando, and A. Kembhavi, “Sat-
+     to massive label noise,” 2017, arXiv:1705.10694.                                     lasPretrain: A large-scale dataset for remote sensing image understanding,”
+[71] A. Veit, N. Alldrin, G. Chechik, I. Krasin, A. Gupta, and S. Be-                     in Proc. IEEE/CVF Int. Conf. Comput. Vis., 2023, pp. 16772–16782.
+     longie, “Learning from noisy large-scale datasets with minimal super-           [94] Trase, “Brazil - production of arabica and robusta coffee,” 2026, [Online].
+     vision,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit., 2017,                   Available: https://trase.earth/open-data?country=BRAZIL&commodity=
+     pp. 839–847.                                                                         COFFEE
+[72] D. Arpit et al., “A closer look at memorization in deep networks,” in Proc.     [95] I. Woodhouse, “The impact of the Sentinel-1b failure and looking forward
+     Int. Conf. Mach. Learn., 2017, pp. 233–242.                                          to Sentinel-1c,” 2022. [Online]. Available: https://www.earthblox.io/
+[73] G. Q. Hacheme et al., “Weak labeling for cropland mapping in africa,” in             resources/the-impact-of-the-sentinel-1b-failure-and-looking-forward-
+     Proc. IEEE Int. Geosci. Remote Sens. Symp., 2024, pp. 258–262.                       to-sentinel-1c
+[74] Instituto brasileiro de geografia e estatıśtica (IBGE), “produção agrıćola    [96] A. Rosenqvist, M. Shimada, N. Ito, and M. Watanabe, “ALOS PALSAR: A
+     municipal: Culturas temporárias e permanentes,” IBGE, Rio de Janeiro,                pathfinder mission for global-scale monitoring of the environment,” IEEE
+     2024. [Online]. Available: https://sidra.ibge.gov.br/pesquisa/pam/tabelas            Trans. Geosci. Remote Sens., vol. 45, no. 11, pp. 3307–3316, Nov. 2007.
+[75] A. Descals, S. Wich, E. Meijaard, D. L. Gaveau, S. Peedell, and Z. Szantoi,
+     “High-resolution global map of smallholder and industrial closed-canopy
+     oil palm plantations,” Earth Syst. Sci. Data, vol. 13, no. 3, pp. 1211–1231,
+     2021.
+[76] Food and Agriculture Organization of the United Nations, “Terms and                                       Natasha Randall received the M.Sc. degree in dig-
+     definitions–fra 2020,” FAO, Rome, Forest Resources Assessment Working                                     ital sciences: Data and information science from the
+     Paper 188, 2018. [Online]. Available: https://www.fao.org/3/I8661EN/                                      Cologne University of Applied Sciences, Germany,
+     i8661en.pdf                                                                                               in 2024, where she is currently working towards the
+[77] C. M. Souza, Jr et al., “Reconstructing three decades of land use and land                                Ph.D. degree in AI and data science with the Institute
+     cover changes in Brazilian biomes with landsat archive and earth engine,”                                 of Information Science.
+     Remote Sens., vol. 12, no. 17, 2020, Art. no. 2735.                                                          Her research interests include the use of artificial
+[78] MapBiomas Project, “Mapbiomas project–collection 9 of the annual series                                   intelligence and machine learning to develop solu-
+     of maps of land cover and use of Brazil,” 2025. [Online]. Available: https:                               tions for environmental sustainability.
+     //brasil.mapbiomas.org/en/
+[79] CONAB — Brazilian National Supply Company, “Mapeamentos
+     agrıćolas,” 2025. [Online]. Available: https://portaldeinformacoes.conab.
+     gov.br/mapeamentos-agricolas.html
+[80] Food and Agriculture Organization of the United Nations, “Manual for                                      Sven Wöhrle received the M.Sc. degree in physical
+     integrated field data collection,” FAO, Rome, Italy, NFMA Working Paper                                   geography from the University of Cologne, Germany,
+     37/E, 2012.                                                                                               in 2019.
+[81] Instituto Brasileiro de Geografia e Estatıśtica (IBGE), “Manual Técnico                                     He is currently a Research Associate with the In-
+     Da vegetação Brasileira,” IBGE, Rio de Janeiro, Brazil, Manual Técnico                                    stitute of Information Science, Cologne University of
+     1, 2012.                                                                                                  Applied Sciences (TH Köln). His research interests
+[82] MapBiomas, “Atlantic forest - appendix: Algorithm theoretical basis                                       include leveraging remote sensing, artificial intelli-
+     document (ATBD), collection 9, version 1,” MapBiomas Project,                                             gence, and machine learning to develop sustainable
+     Tech. Rep., 2024, Accessed: May 8, 2026. [Online]. Available:                                             solutions for environmental challenges.
+     https://amazonia.mapbiomas.org/wp-content/uploads/sites/10/2024/
+     09/MataAtlantica-Appendix-ATBD-Col9_final.docx.pdf
+[83] MapBiomas, “Cerrado - Appendix: Algorithm Theoretical Basis
+     Document (ATBD), Collection 9, version 1,” MapBiomas Project,
+     Tech. Rep., 2024, Accessed: May 8, 2026. [Online]. Available:
+     https://amazonia.mapbiomas.org/wp-content/uploads/sites/10/2024/                                         Simon Pena Pereira received the B.Sc. degree in
+     09/Cerrado-Appendix-ATBD-Collection-9.pdf                                                                geography from the University of Bonn, Bonn, Ger-
+[84] J. F. Ribeiro and B. M. T. Walter, “As principais fitofisionomias do bioma                               many, in 2020, and the M.Sc. degree in geomatics
+     cerrado,” Cerrado: Ecologia e Flora, vol. 1, pp. 151–212, 2008.                                          from TU Delft, Delft, The Netherlands, in 2023.
+[85] MapBiomas, “Caatinga - Appendix: Algorithm theoretical basis                                                He currently works as a remote sensing Project
+     document (ATBD), collection 9, version 1,” MapBiomas Project,                                            Manager with GRAS, Cologne, Germany, where his
+     Tech. Rep., 2024, Accessed: May 8, 2026. [Online]. Available: https:                                     work focuses on detecting and analyzing land use
+     //Brasil.mapbiomas.org/wp-content/uploads/sites/4/2024/08/Caatinga-                                      classifications, particularly within agricultural areas
+     Appendix-ATBD-Col-9-2024.pdf                                                                             and related land use changes. He is responsible for
+[86] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional networks                                  data driven remote sensing approaches and for ap-
+     for biomedical image segmentation,” in Proc. Int. Conf. Med. Image                                       plying artificial neural networks to perform semantic
+     Comput. Comput.- Assist. Intervention, 2015, pp. 234–241.                       segmentation of Earth observation data.
+RANDALL et al.: WEAK-TO-GOLD LABEL TRAINING OF SPATIO-TEMPORAL DEEP LEARNING MODELS                                                                              21195
+
+
+
+                          Alana Kasahara Neves received the B.Sc. degree                                        Gernot Heisenberg received the M.Sc. degree in
+                          in environmental engineering and renewable energy                                     theoretical physics from RWTH Aachen University
+                          from the Federal Rural University of the Amazon,                                      of Technology, Aachen, Germany, in 1996, and the
+                          Brazil, in 2014, and the M.Sc. and Ph.D. degrees in                                   Ph.D. degree in computer science from the University
+                          remote sensing from the Brazilian National Institute                                  of Pretoria, South Africa, in 2001.
+                          for Space Research, Brazil, in 2017 and 2021 respec-                                     He is currently a Professor for information research
+                          tively.                                                                               and data analytics and Managing Director of the In-
+                             She is currently working as a remote sensing                                       stitute for Information Management (IIM), University
+                          Project Manager with GRAS, Cologne, Germany.                                          of Applied Sciences Cologne (TH Köln), Germany.
+                          Her research interests include remote sensing, time                                   Before joining TH Köln in 2016, he held professor-
+                          series analysis, land use and land cover classification,                              ships with RheinMain University of Applied Sciences
+deforestation, change detection, machine learning, and deep learning.                and Bonn-Rhein-Sieg University of Applied Sciences. Earlier in his career, he
+                                                                                     worked as a group Manager at the Fraunhofer Institute for Media Communica-
+                                                                                     tion (IMK), where he led research projects in collaborative simulation and virtual
+                                                                                     environments. He gained industry experience as CEO of flexilution GmbH,
+                                                                                     focusing on real-time simulation technologies. His research interests include
+                                                                                     data analytics, machine learning, computer vision, and explainable artificial
+                                                                                     intelligence, with applications in predictive modeling and human–machine
+                                                                                     interaction.
+

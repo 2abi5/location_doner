@@ -1,0 +1,737 @@
+                                               ReLeaf: Benchmarking Leaf Segmentation across Domains and Species
+
+                                          Robert Martinko1,2 Daniel Steininger1 Julia Simon1 Andreas Trondl1 Matthias Blaickner2
+                                                   1
+                                                     AIT Austrian Institute of Technology, Center for Vision, Automation & Control
+                                            2
+                                              University of Applied Sciences Technikum Wien, Computer Science & Applied Mathematics
+                                                    {robert.martinko,daniel.steininger,julia.simon,andreas.trondl.fl}@ait.ac.at
+                                                                              matthias.blaickner@technikum-wien.at
+arXiv:2605.03784v1 [cs.CV] 5 May 2026
+
+
+
+
+                                                                Abstract
+                                        Rising global food demand and growing climate pressure
+                                        increase the need for sustainable, precise agricultural prac-
+                                        tices. Automated, individualized plant treatment relies
+                                        on fine-grained visual analysis, yet leaf-level segmenta-
+                                        tion remains underexplored despite its value for assess-
+                                        ing crop health, growth dynamics, yield potential and lo-
+                                        calized stress symptoms. Progress is limited by a lack
+                                        of dedicated datasets, especially regarding species cover-
+                                        age, and by the absence of systematic evaluations of mod-
+                                        ern instance-segmentation architectures for this task. We
+                                        address these gaps by surveying current data and iden-
+                                        tifying four suitable, publicly available leaf-segmentation
+                                        datasets. Using them, we compare one-stage, two-stage and           Figure 1. Representative samples from CropAndWeed [33] and
+                                        Transformer-based detectors and identify a YOLO26 model             leaf-level annotations for our CropAndWeedAndLeaf benchmark,
+                                        configuration to provide the best trade-off for real-world          along with results of the multi-domain ReLeaf model, illustrating
+                                        precision-agriculture tasks. Extensive cross-domain gener-          its generalization to unseen species.
+                                        alization experiments reveal substantial performance drops
+                                        across plant species and recording setups, especially for
+                                        models trained solely on laboratory data. To strengthen             alized treatment relies on automated image-based analy-
+                                        data availability, we introduce a new benchmark dataset             sis, yet variable field conditions across seasons and sen-
+                                        with leaf-level masks for 23 plant species, created via             sor setups make robust performance difficult and demand
+                                        semi-automatic annotation of selected CropAndWeed im-               models with strong cross-domain generalization. While
+                                        ages. A model trained on all four existing datasets achieves        plant-level classification and detection have progressed no-
+                                        a mean mAP50-95 of 83.9% across their corresponding test            tably, pixel-level segmentation provides more fine-grained
+                                        sets and 40.2% on our new benchmark, demonstrating im-              morphological information most useful for plant-specific
+                                        proved generalization and highlighting the need for diverse         decision-making [5, 33].
+                                        leaf-segmentation datasets in robust precision agriculture.
+                                                                                                                Within this context, leaf segmentation is both particu-
+                                                                                                            larly complex and comparatively underexplored. Segment-
+                                                                                                            ing individual leaves reveals morphological traits that indi-
+                                        1. Introduction                                                     cate plant health [9], growth stage and yield potential [13],
+                                                                                                            and enables computation of the Leaf Area Index [11, 15].
+                                        As global food demand continues to rise and climate con-            Leaf-level masks also facilitate early detection of localized
+                                        ditions intensify, agriculture faces the dual challenge of          stress symptoms such as fungal infections or drought dam-
+                                        increasing productivity while reducing resource consump-            age [9, 30, 32]. Beyond field crops, robust methods for
+                                        tion. Precision agriculture offers a promising path by en-          fine-grained part segmentation are relevant for related do-
+                                        abling targeted, plant-level interventions that minimize fer-       mains such as autonomous fruit-harvesting systems [20] or
+                                        tilizer, pesticide and water requirements. Such individu-           industrial inspection of overlapping objects.
+
+
+                                                                                                        1
+Figure 2. Representative processing pipeline, illustrating the typical context of leaf segmentation. Image patches depicting individual
+detected plants are cropped from larger-resolution field recordings for fine-grained analysis. While the upstream tasks of plant-level
+detection and instance segmentation are well researched for common species, tasks related to leaf-segmentation remain underrepresented.
+
+
+   Although modern model architectures perform strongly                2. Related work
+on large-scale benchmarks like MS COCO [23] and Ima-
+geNet [10], their accuracy often degrades on agricultural              Automated phenotyping has undergone major changes as
+imagery due to substantial domain shift. Only limited                  traditional feature- or threshold-based methods reached
+work compares state-of-the-art architectures specifically for          their limits [1], particularly due to the growing need for pre-
+leaf-level segmentation, which is an important gap since               cise leaf-level analysis [26, 40]. Deep-learning approaches
+real-time robotics benefit from efficient one-stage detectors          have since become the standard [28], with convolutional
+such as YOLO26 [16], while two-stage systems like De-                  neural networks demonstrating strong performance in learn-
+tectron2 [42] can better capture fine-grained, overlapping             ing complex plant patterns directly from raw imagery [22].
+structures. Transformer-based models, such as RF-DETR                      Early deep-learning phenotyping relied heavily on se-
+[27], may handle long-range dependencies but remain chal-              mantic segmentation, with U-Net [29] emerging as the dom-
+lenging for real-time deployment. Progress is further lim-             inant architecture. Numerous studies [12, 33, 40] showed
+ited by the scarcity of dedicated datasets due to the difficulty       that U-Net variants reliably separate leaf regions from back-
+and cost of producing pixel-accurate leaf masks (Fig. 1).              ground, even in challenging soil conditions. However, se-
+                                                                       mantic approaches struggle when leaf-level traits are re-
+   To address these gaps, this work evaluates the general-
+                                                                       quired, as overlapping leaves are merged into a single region
+izability of modern deep-learning architectures and datasets
+                                                                       [19, 28]. To address this limitation, instance-segmentation
+for leaf segmentation and expands data availability for this
+                                                                       models have gained traction. Mask R-CNN, for exam-
+task by proposing the following key contributions:
+                                                                       ple, has been shown to better separate overlapping leaves
+• We evaluate the applicability of three representative deep-          [19, 40], albeit with higher computational demands [22].
+  learning architectures for leaf-segmentation tasks, com-                 The adoption of instance segmentation accelerated with
+  paring segmentation performance and runtime efficiency               modular frameworks like Detectron2 [42], which provides
+  across multiple configurations.                                      high-performance Mask R-CNN implementations widely
+                                                                       used as baselines in agricultural research. To reduce compu-
+• We conduct extensive cross-domain generalization ex-                 tational cost, other studies [4, 14, 37, 38] explored one-stage
+  periments to quantify the adaptation potential of leaf-              detectors such as the YOLO family [16], which offer sub-
+  segmentation models trained on four selected datasets,               stantial speed advantages enabling real-time field-robot ap-
+  covering real-world and laboratory settings.                         plications. However, CNN-based detectors remain lim-
+                                                                       ited by their local receptive fields. Recent computer-vision
+• We introduce a novel benchmark dataset created by
+                                                                       trends increasingly rely on Vision Transformers for global
+  semi-automatically annotating a selected subset of the
+                                                                       context modeling [6, 43, 44] or foundation models [39],
+  CropAndWeed [33] dataset with leaf-segmentation masks
+                                                                       which are, however, hardly compatible with the demands
+  for 23 plant species, allowing a comprehensive analysis
+                                                                       of real-time field applications. Although state-of-the-art
+  of model generalization.1
+                                                                       models demonstrate impressive performance on general-
+    1 Dataset, code and models are available for academic use at       purpose data, results degrade sharply when applied to
+https://github.com/cropandweed/releaf                                  precision-agriculture tasks due to strong domain shifts [3].
+
+
+                                                                   2
+   To address these challenges, our work systematically
+evaluates how representative detectors perform on leaf-level
+instance segmentation and examines their generalization
+across datasets and recording conditions.
+
+3. Leaf-segmentation datasets
+In realistic applications, the task of leaf segmentation is usu-
+ally embedded in a processing pipeline similar to Fig. 2,
+where images of crops in the field are first processed by
+detection or instance-segmentation models to extract im-
+age patches corresponding to individual crops or weeds.
+These can then be analyzed on a fine-grained level produc-
+ing downstream outputs, such as bounding boxes, masks or
+counts of individual leaves. While the tasks of plant-level
+detection and instance-segmentation have been addressed                Figure 3.       Representative images from leaf-segmentation
+by numerous works, delivering robust results for many com-             datasets, depicting Realistic field settings [18, 41] and controlled
+mon plant species [17, 21], learning tasks related to individ-         Laboratory environments [31, 35], or Excluded due to incompat-
+ual leaves remain strongly underrepresented.                           ible leaf annotations [2, 34, 36].
+    Likewise, publicly available precision-agriculture
+datasets are increasingly abundant for tasks such as clas-
+sification, detection and segmentation, including high                 able recording resolutions. While the Aberystwyth dataset
+variability regarding plant species, environmental con-                operates at high image sizes of up to 2,560×1,920 pixels,
+ditions and sensor setups [7, 33, 40]. However, despite                the field datasets have significantly lower resolutions. Addi-
+the growing importance of leaf-level analysis, data for                tionally, the examined datasets vary widely regarding their
+this task remains drastically underrepresented. Accord-                numbers of images and plant instances. PhenoBench pro-
+ingly, our extensive survey of available datasets providing            vides 23,062 individual instances and thereby clearly sur-
+leaf-segmentation annotations for field crops and corre-               passes all other datasets, which, however, still provide suf-
+sponding weeds results in only seven potential sources.                ficient numbers to be useful for our proposed experiments.
+The following subsections provide details regarding their                  The datasets furthermore differ in the annotations
+properties and selection, as well as a description of our own          they include. Beyond leaf segmentation, PhenoBench,
+contribution to mitigating this data gap.                              GrowliFlower, Komatsuna and LSC support the full range
+                                                                       of learning tasks from classification and detection to plant-
+3.1. Data analysis                                                     level instance segmentation, while Airphen and Aberyst-
+We identified seven datasets potentially suitable for fine-            wyth are limited to semantic-segmentation tasks, yet pro-
+grained leaf segmentation under field conditions, which are            vide additional annotation modalities. Aberystwyth uses a
+listed with representative samples in Fig. 3. As visible in            color-coding system which indicates the growth phase ac-
+Tab. 1, the quantity and quality of images and annotations             cording to the order of the leaves, thus facilitating the mod-
+vary significantly between these datasets.                             eling of plant development. Airphen offers a unique edge-
+    One important distinction is their recording setup. LSC            based separation between inner and outer leaves to address
+[31], Komatsuna [35] and Aberystwyth [2] use controlled                challenges in dense vegetation. WeedGrowthState takes a
+laboratory settings, which facilitate cultivating the plants           completely different approach, not focusing on geometry
+under constant environmental conditions and recording                  but on classical classification tasks, and labels plants in nine
+them with controlled lighting and specialized sensor setups,           different growth stages based on their numbers of leaves.
+such as RGB-D cameras in the Komatsuna dataset or high-                    For the purpose of this work, only leaf-level instance-
+frequency top-down recordings in Aberystwyth. In contrast,             segmentation masks are relevant. However, they need to
+PhenoBench [41], GrowliFlower [18], Airphen [36] and                   be assignable to individual plant instances, since we plan
+WeedGrowthState [34] were captured under natural field                 to evaluate patch-based approaches compatible with the
+conditions, which present challenges such as weed pressure,            pipeline described in Fig. 2. LSC and Komatsuna explic-
+varying soil conditions and fluctuating light levels. While            itly provide cropped image patches for each plant with
+PhenoBench relies on UAV RGB imagery, GrowliFlower                     corresponding leaf annotations, while GrowliFlower and
+and Airphen integrate multispectral sensors (e.g., 6-band or           PhenoBench allow their automatic inference by providing
+RGB-IR) to improve the spectral separation between vege-               plant-level instance masks for images containing multiple
+tation and background. This furthermore influences avail-              plants. Airphen and Aberystwyth, on the other hand, only
+
+
+                                                                   3
+Table 1. Key statistics of selected, excluded and newly annotated datasets: Annotations of leaves (either per Plant, per Image or as
+classification labels for leaf Counting), numbers of Plants in the original dataset and Selected patches with a a minimum area of 600 pixels
+(unknown for Airphen due to image-level leaf annotations), numbers of plant Species, median original Image sizes, median cropped Patch
+sizes of selected instances, recording Sensors and Settings.
+
+Dataset                               Anno      Plants (Selected)        Species     Image size       Patch size      Sensors     Setting
+LSC [31]                              Plant         810 (707)              2          441×441          274×241         RGB          Lab
+Komatsuna [35]                        Plant       1,200 (1,055)            1          480×480          176×142        RGB-D         Lab
+GrowliFlower [18]                     Plant       2,587 (2,432)            1          448×368          154×151         RGB          Real
+PhenoBench [41]                       Plant      23,062 (13,752)           1        1,024×1,024        152×141         RGB          Real
+WeedGrowthState [34]                  Count            9,372               18             -            205×205        RGB           Real
+Aberystwyth [2]                       Image             916                 1       2,560×1,920           -           RGB           Lab
+Airphen [36]                          Image              -                  1        1,196×805            -          RGB-IR         Real
+CropAndWeedAndLeaf (Ours)             Plant         8,819 (345)            23       1,920×1,088        286×201         RGB          Real
+
+
+provide leaf masks on the level of entire images without                 retained instances and species exhibiting pronounced inter-
+differentiating individual plants, while WeedGrowthState is              class variability relative to the training distribution, yielding
+only annotated for leaf counting and does not provide any                a curated set of 23 species (fully listed in the supplemen-
+kind of masks.                                                           tary material) and a pool of 8,819 instances meeting our
+                                                                         criteria. To balance statistical significance for benchmark-
+3.2. Data unification and aggregation                                    ing and manual annotation efforts, we randomly sample 15
+Based on our dataset survey, we select PhenoBench,                       image patches per species from the filtered data. This re-
+GrowliFlower, LSC and Komatsuna as the only leaf-                        sults in a total number of 345 samples in our dataset, evenly
+segmentation datasets that meet the requirements for evalu-              distributed across the included classes. For annotation, we
+ating this task on image patches containing a single plant in-           developed a scalable pipeline that couples model-assisted
+stance. To enable a consistent comparison across these het-              pre-annotation with targeted expert refinement. A prelim-
+erogeneous data sources, we created a unified aggregation                inary model from our ablation study is applied to gener-
+pipeline to normalize all inputs into a common format. All               ate initial leaf masks that are subsequently verified and cor-
+selected leaf-segmentation datasets are converted into im-               rected by human annotators in CVAT [8]. Typical edits in-
+age patches tightly cropped on individual plants to closely              clude resolving artifacts caused by low resolution, handling
+resemble the output of the detection stage in Fig. 2. To en-             pronounced phenotype variability, recovering tiny leaves
+sure adequate spatial resolution for downstream analysis,                missed by the model and splitting adjacent leaves that were
+only patches with areas of at least 600 pixels are included              incorrectly merged. This process preserves efficiency while
+in the training and test data. This results in a total of 17,946         enforcing consistent leaf boundaries. Representative exam-
+image patches across all four datasets, as visible in Tab. 1.            ple annotations for two classes of the dataset are visualized
+                                                                         in Fig. 1 and Fig. 6.
+3.3. Benchmark dataset creation
+Our survey shows that leaf-level annotations are extremely               4. Methodology
+scarce in existing public datasets and limited to only four
+plant species (sugar beet, cauliflower, tobacco and ara-                 To identify suitable training configurations and data com-
+bidopsis) in the datasets suitable for patch-based applica-              binations for leaf segmentation tasks, we first compare the
+tions. To mitigate this gap and extend our quantitative eval-            accuracy and efficiency of three model architectures. Based
+uation to a wider set of species, we enriched a selected                 on the most suitable variant, we conduct cross-domain gen-
+subset of the established CropAndWeed [33] dataset with                  eralization experiments to evaluate the potential of all avail-
+high-quality, leaf-level segmentation masks using a semi-                able datasets for different application scenarios.
+automatic annotation approach, thereby creating a novel
+CropAndWeedAndLeaf benchmark dataset. To select suit-                    4.1. Architecture ablation
+able data, we first extract image patches of all plant in-
+stances from CropAndWeed with a minimum instance size                    We evaluate three architecturally distinct model families on
+of 128 pixels along both dimensions. To limit label noise                leaf-segmentation data to thoroughly assess their trade-off
+and distribution shift, we exclude species with fewer than 15            between inference speed and segmentation accuracy:
+
+
+                                                                     4
+One-stage CNN YOLO26 [16] represents a fast con-                       (192^{2}, 384^{2}, 576^{2}, 768^{2} pixels). The resolutions are delib-
+volutional one-stage baseline. Its architecture follows                erately chosen as multiples of 32 to account for the maxi-
+the principles of CNN-based real-time detectors and con-               mum downsampling rate of all architectures and thereby en-
+sists of a backbone for hierarchical feature extraction,               sure that feature maps, anchors, and ROI operations are cor-
+a feature-aggregation neck and a task-specific prediction              rectly aligned and no artifacts arise from padding or round-
+head. The model is optimized for real-time inference on                ing errors. However, at the lowest resolutions (1922 and
+compute-restricted platforms, making it well suited for mo-            3842 ), a standard stride of 32 would result in feature maps
+bile or embedded deployment scenarios.                                 of only 6×6 or 12×12 pixels, which is insufficient for de-
+                                                                       tecting small heart leaves. Therefore, for the Detectron2
+Two-stage CNN Detectron2 [42] is used as a high-                       baseline, we manually adjust the stride stages (down to 8
+accuracy baseline, adopting an optimized Mask R-CNN im-                and 16) to maintain a higher spatial resolution in the deeper
+plementation. The combination of region proposals and                  layers of the feature pyramid. Training and evaluation are
+ROI-aligned mask refinement provides strong segmentation               performed on an NVIDIA RTX 2080 Ti with 11GB VRAM.
+performance. To better preserve details of small leaves at             Due to the limited GPU memory capacity, gradient accu-
+low resolutions, we reduce early-stage backbone strides for            mulation is used for the Transformer and two-stage models
+low input sizes, preventing overly coarse feature maps.                trained over 50 epochs to increase the effective batch size
+                                                                       and improve training stability. All other hyperparameters
+                                                                       and augmentation techniques are set according to standard
+Vision Transformer RF-DETR [27] serves as the third                    configurations of the respective architectures.
+baseline, using a DINOv2 [25] Transformer backbone
+and hybrid encoder for fully attention-based detection                 4.4. Evaluation metrics
+and segmentation. Its self-attention mechanism captures                Since precision-agriculture applications typically involve
+long-range spatial relationships between leaf structures,              platforms with limited hardware resources, we evaluate
+leveraging the representational strength of Transformers.              model architectures in terms of both their segmentation ac-
+                                                                       curacy and inference speed.
+   For the architecture ablation, pre-trained models are fine-            The accuracy metric, as the primary measure of seg-
+tuned on PhenoBench, which is the largest and most diverse             mentation quality, is calculated using the mean average pre-
+of our selected datasets, using the respective standard train-         cision (mAP) based on the COCO standard [23], specifi-
+ing pipeline of each framework. We use the same split into             cally the mAP50-95 , which represents the average precision
+training, validation and test data with a ratio of 70:15:15            over ten Intersection-over-Union thresholds from 0.50 to
+across all experiments. To ensure comparability, models are            0.95 and is therefore more robust against small segmenta-
+evaluated using a uniform evaluation protocol based on py-             tion and localization errors, but also more challenging, than
+cocotools [23], thus avoiding framework-specific deviations            the commonly used mAP50 .
+in metrics calculation.                                                   Model latency is measured per patch as the pure pro-
+                                                                       cessing time within the respective model API after a warm-
+4.2. Cross-dataset generalization                                      up phase of 100 runs. The metric includes the forward
+To investigate generalizability, the best-performing archi-            pass as well as framework-internal pre- and post-processing
+tecture is evaluated in cross-dataset experiments. For this            steps, including non-maximum suppression.
+purpose, we split each of the four selected datasets into
+training, validation and test sets with a ratio of 70:15:15.           5. Results
+We then fine-tune pre-trained weights of the selected archi-           This section summarizes the central results of our architec-
+tecture on each training set and their combination (ReLeaf ),          ture ablation and cross-dataset experiments. More detailed
+resulting in a total of five models to be evaluated. Each one          quantitative and qualitative insights are included in the sup-
+is applied separately to the test set corresponding to its own         plementary material.
+training data, as well as all samples in each of the remaining
+datasets, ensuring that training and test data are strictly sep-       5.1. Architecture ablation
+arated for both in-domain and cross-domain experiments.                To thoroughly compare the model architectures described
+                                                                       in Sec. 4.1, we train and evaluate multiple variants of each
+4.3. Hardware setup and training parameters                            and analyze the influence of model complexity and input
+For all experiments, weights pre-trained on the COCO                   resolution, as summarized in Fig. 4. RF-DETR was omit-
+dataset (train2017 and val2017) are fine-tuned for instance            ted from this chart and further analysis, since initial exper-
+segmentation of individual leaves. The experiments inves-              iments showed accuracy, runtime and training time to be
+tigate different model capacities at four input resolutions            significantly inferior to the other architectures when trained
+
+
+                                                                   5
+                                                                          Figure 5. Qualitative leaf-segmentation results on representative
+                                                                          test images from PhenoBench [41] using selected model variants
+                                                                          of YOLO26 (Medium with 768^{2} pixels) and Detectron2 (ResNet-
+                                                                          101 with 576^{2} pixels).
+Figure 4. Comparison of leaf-segmentation performance (%
+mAP50–95 ) and inference time (ms) for multiple model-architecture
+variants and input resolutions on the PhenoBench test set. Selected       actually decreases with higher resolutions and is only sur-
+variants providing a reasonable trade-off for real-time deployment        passed by the ResNext variant, which, however, signifi-
+are marked by circles.                                                    cantly increases runtime. Qualitative results are visualized
+                                                                          in Fig. 5 for both of these configurations. Overall, we se-
+                                                                          lected the YOLO26 architecture with the specified config-
+on the selected GPU. This confirms our initial assumption                 uration for further experiments, since Detectron2 performs
+that the hardware requirements of Transformer-based archi-                only marginally better regarding segmentation accuracy, but
+tectures are not readily compatible with systems commonly                 drastically increases inference time.
+used in precision-agriculture applications.
+                                                                          5.2. Cross-dataset experiments
+Model capacity Unsurprisingly, increasing model capac-                    As described in Sec. 4.2, we use the selected YOLO26
+ity generally leads to improved instance-segmentation per-                configuration to train models on the training splits of all
+formance, but also causes significantly higher inference                  datasets and evaluate performance both on the correspond-
+times. For the YOLO26 models, the accuracy gains are                      ing test split and on all samples of each remaining dataset,
+comparatively small, especially when transitioning to larger              to assess in-domain and cross-domain performance. Addi-
+model variants, while runtime increases almost linearly for               tionally, we train a model on a combination of all four train-
+all capacities. For the Detectron2 models, however, it is ev-             ing splits incorporating all available information (ReLeaf )
+ident that larger variants do not achieve consistent improve-             and compare its results on the corresponding test splits to
+ments in accuracy despite increasing runtime.                             those from single-dataset models. Furthermore, we evaluate
+                                                                          all models on our newly annotated CropAndWeedAndLeaf
+                                                                          benchmark to analyze generalization to completely differ-
+Input resolution For each architecture and model size,                    ent plant species. Tab. 2 summarizes the results of these
+the input resolution was varied in four steps between 192^{2}             experiments.
+and 768^{2} pixels. The results show that training on larger
+images initially leads to performance improvements. How-
+                                                                          In-domain evaluation As expected, all models perform
+ever, at high resolutions, starting from 576^{2} pixels, the gains
+                                                                          reasonably well on their own test sets, as shown by the gray
+in accuracy become progressively smaller, while runtime
+                                                                          diagonal values. A comparison of these values with each
+increases almost linearly from the outset.
+                                                                          other, however, additionally provides a hint of the com-
+                                                                          plexity and variability provided by each test dataset and an
+Accuracy-latency trade-off Based on the results of our                    overall measure of the architecture’s suitability for different
+ablation study, we attempt to define configurations pro-                  scenarios. The PhenoBench model achieves an mAP50-95
+viding a suitable trade-off between segmentation accuracy                 of 81.4%, confirming the robustness of the chosen setup
+and inference time for both architectures. In the case of                 for complex, real-world field data. In contrast, the Komat-
+YOLO26, we select the Medium model combined with the                      suna model achieves a peak value of 90.7%, which can be
+largest examined resolution, as a higher model capacity                   largely attributed to the controlled conditions and the com-
+does not significantly improve accuracy. Similarly, Detec-                paratively low visual complexity of the laboratory environ-
+tron2 performs best in combination with ResNet-101 and                    ment and limited variation in plant appearances. The LSC
+an input resolution of 576^{2} pixels. In this case, accuracy             dataset seems to provide higher variation despite its simi-
+
+
+                                                                      6
+Table 2. Leaf-segmentation performance (% mAP50–95 ) of mod-               laboratory settings, as opposed to an average 38.6% be-
+els trained on Lab (KOmatsuna, LSC), Real (PhenoBench,                     tween each other. However, the performance decrease in
+GrowliFlower) and combined ReLeaf datasets. Models are evalu-              the opposite direction is even more drastic, with laboratory
+ated on their own test splits for reference (gray) and cross-dataset
+                                                                           models achieving an average of only 17.7% on real-world
+on all samples of other sets, including our CropAndWeedAndLeaf
+benchmark. Averages of cross-dataset results are provided for Lab
+                                                                           test data (compared to 44.7% between each other). This
+and Real domains.                                                          sharp drop underscores the enormous morphological and
+                                                                           photometric complexity of field environments, which can-
+                                                                           not be adequately modeled by laboratory data alone.
+         LSC       KO      Lab      GF       PB     CWL      Real
+LSC       79.2    49.1             26.8    10.5      17.4
+                          44.7                                17.7         Multi-domain fusion Training a combined ReLeaf
+KO        40.2    90.7             22.7    12.3      16.3
+                                                                           model on all four datasets proved to be the most effective
+GF        30.2    42.5             76.4    38.4      31.5                  approach for overcoming this barrier and stabilizing perfor-
+                          29.8                                38.6
+PB        40.0     6.6             49.1    81.4      35.4                  mance across species and domains. This strategy achieves
+RL        79.4    90.1    84.8     82.2    83.8      40.2     83.3         an average overall mAP50-95 of 83.9% across its four cor-
+                                                                           responding test sets, demonstrating the essential role of in-
+                                                                           tegrating diverse morphological traits during training. As
+larly controlled laboratory setting, as its models generalize              the CropAndWeedAndLeaf dataset, with its novel classes,
+significantly better to Komatsuna data than the other way                  was still completely excluded from training, it continues to
+around. Although both datasets mainly focus on tobacco                     serve as a benchmark for cross-species generalization. Even
+plants, the addition of a second class and more variable con-              in this case, the ReLeaf model achieves significantly higher
+text is apparently beneficial for LSC.                                     accuracy than those trained on individual datasets, further
+                                                                           emphasizing its generalization capability. Overall, the com-
+                                                                           bined approach minimizes performance drops during do-
+Cross-species generalization As opposed to the LSC and                     main switching and provides increased robustness. Fig. 6
+Komatsuna datasets, which provide both similar settings                    further illustrates this by comparing generalization results
+and plant species, PhenoBench and GrowliFlower share                       of all evaluated models on completely unseen plant species
+the domain of real field imagery but focus on different                    from our CropAndWeedAndLeaf benchmark.
+plant species. A model trained on sugar-beet images from
+PhenoBench achieves an mAP50-95 of 49.1% on the en-                        5.3. Discussion
+tire GrowliFlower dataset, which is focused on cauliflower                 Segmentation quality and inference speed vary significantly
+plants. The reverse transfer results in 38.4%, again sug-                  between training resolutions and the different variants of
+gesting that a larger image base as provided by Phe-                       YOLO26 and Detectron2, while RF-DETR proved unsuit-
+noBench, is also beneficial for species generalization. This               able for common real-time precision-agriculture tasks. In
+is confirmed when transferring to the 23 plant species in                  particular Detectron2 demonstrated slightly superior preci-
+the CropAndWeedAndLeaf benchmark, for which the Phe-                       sion, presumably related to its capability of segmenting very
+noBench model shows superior performance, as well. In                      small leaf instances. The architectural adaptation of its net-
+general, while all of these values are naturally below the                 work strides for low input sizes enabled the models to pre-
+respective in-domain accuracy, they demonstrate the archi-                 serve spatial resolution that would otherwise be lost with
+tecture’s ability to abstract fundamental morphological leaf               standard strides of 32. However, Detectron2’s two-stage ar-
+traits across species.                                                     chitecture results in significantly longer training and infer-
+                                                                           ence times compared to the YOLO26 series, which provides
+Cross-domain generalization The limits of generaliz-                       only slightly inferior segmentation quality.
+ability become significantly more apparent when transfer-                     Our cross-domain experiments highlight the perfor-
+ring between structurally different domains. While the real-               mance discrepancy between controlled laboratory envi-
+world PhenoBench model still achieves 40.0% mAP50-95 on                    ronments and unstructured field scenarios specifically for
+the laboratory dataset LSC, its performance decreases dra-                 leaf segmentation. While models trained on the Komat-
+matically to only 6.6% on Komatsuna. This drop can be                      suna and LSC laboratory datasets achieve peak mAP50-95
+explained by the controlled laboratory environment, includ-                scores on their own test splits, performance drops drasti-
+ing backgrounds and sensor characteristics, which represent                cally when they are transferred to real-world test data. This
+a significant domain barrier for models optimized on noisy                 demonstrates a pronounced domain barrier and confirms the
+field data. GrowliFlower achieves better results but still                 greater complexity of field scenarios, which are character-
+fares well below its in-domain performance. On average,                    ized by noisy backgrounds, changing light conditions and
+real-world models achieve only 29.8% when transferred to                   weed pressure, none of which occur in sterile laboratory en-
+
+
+                                                                       7
+                                                                      application scenarios. This limitation prevented the evalu-
+                                                                      ation of larger batch sizes and the more memory-intensive
+                                                                      Transformer models over longer training periods, which un-
+                                                                      derlines that in practical deployment scenarios, the trade-off
+                                                                      between model complexity and the available hardware on
+                                                                      an autonomous system remains a critical constraint.
+
+                                                                      6. Conclusion
+                                                                      This work addresses the data and research gap in leaf-level
+                                                                      instance segmentation, focusing on generalizability under
+                                                                      heterogeneous conditions. We conduct a comprehensive
+                                                                      investigation of modern deep-learning architectures in this
+                                                                      context, showing that YOLO26, particularly its Small and
+                                                                      Medium variants, represents a highly efficient operating
+                                                                      point for time-critical applications with over 80% mAP50-95
+                                                                      on the PhenoBench dataset, while Detectron2, with a modi-
+                                                                      fied network stride, offers superior precision for very small
+                                                                      instances at the cost of significantly higher latency.
+Figure 6. Representative leaf-segmentation results of YOLO26              Based on a YOLO26 architecture providing a suit-
+models (Medium, 768^{2} pixels input resolution) trained on LSC       able trade-off between segmentation accuracy and com-
+[31], KOmatsuna [35], GrowliFlower [18] and PhenoBench [41]           putational efficiency, we evaluate cross-species and cross-
+datasets and their combination (ReLeaf ) on the CropAndWeedAn-        domain generalization of models trained on four publicly
+dLeaf benchmark, along with corresponding ground truth (GT).          available datasets. For this purpose, we created a novel
+                                                                      CropAndWeedAndLeaf benchmark of 23 plant species by
+                                                                      annotating images from the CropAndWeed dataset with
+vironments. A multi-domain ReLeaf model combining all                 leaf-level masks. The results demonstrate that abstract mor-
+training sets successfully overcomes this barrier and estab-          phological leaf traits are successfully learned across species
+lishes a stable performance of 83.9% across all species and           boundaries within the same recording domain, but the shift
+domains in the corresponding test sets and 40.2% on the               between controlled laboratory conditions and unstructured
+unseen species in our CropAndWeedAndLeaf benchmark.                   field scenarios poses a greater challenge. While laboratory
+These results are promising, but may still be insufficient for        models achieve a peak mAP50-95 of 90.7% in their own do-
+practical applications depending on the target species. This          main, they show a drastic performance drop to an average of
+underlines the need for leaf annotations in large-scale, field-       17.7% when transferred to real-world data. Implementing a
+oriented training data such as the CropAndWeed dataset.               mixed-domain strategy substantially improves mAP50-95 to
+                                                                      an average of 83.9% across all test sets and 40.2% on our
+5.4. Limitations
+                                                                      novel benchmark.
+Despite the high overall performance of our pipeline, sev-                As future extensions to this work, we plan to expand our
+eral limiting factors define the current boundaries of vision-        benchmark dataset to a size suitable for training models,
+based leaf segmentation. Although patch extraction im-                since it proved its potential to complement the current data
+proves local pixel density, small juvenile leaves remain a            landscape. Regarding our generalization analysis, exploring
+challenge, as visible in Fig. 6. The PhenoBench dataset,              the potential of unsupervised or semi-supervised domain-
+with an average patch size of 152×141 pixels, reaches                 adaptation techniques for bridging the lab-to-real gap in
+mathematical limits with its smallest instances, especially           this particular domain is a logical next step. Furthermore,
+when leaves are partially obscured by soil, other leaves or           evaluating additional deep-learning architectures might be
+debris. Even the optimized Detectron2 with reduced strides            interesting, especially Transformer-based and foundational
+struggles to detect features in these cases. Annotation qual-         models combined with extended hardware resources, which
+ity and data scarcity are also limiting factors, as even human        were not within the scope of our evaluation.
+experts find it difficult to define exact instance boundaries             Overall, this work contributes to identifying and closing
+for overlapping leaves. Additionally, it should be noted that         key data and domain gaps in leaf segmentation. By combin-
+all experiments were limited by the 11 GB of VRAM avail-              ing comprehensive ablation studies with the introduction of
+able on the NVIDIA RTX 2080 Ti used for training, as we               a new multi-species benchmark dataset, it offers a substan-
+explicitly focus on broad applicability and reproducibility           tial step toward more accessible, robust and generalizable
+of our results within the research community and in realistic         perception models.
+
+
+                                                                  8
+References                                                                     speed, more precise detection and instance segmentation for
+                                                                               yolov3. Neural Computing and Applications, 34(10):8275–
+ [1] Shubhra Aich and Ian Stavness. Leaf counting with deep                    8290, 2022. 2
+     convolutional and deconvolutional networks. In Proceed-
+                                                                          [15] Kenta Itakura and Fumiki Hosoi. Automatic leaf segmenta-
+     ings of the IEEE international conference on computer vision
+                                                                               tion for estimating leaf area and leaf inclination angle in 3d
+     workshops, pages 2080–2089, 2017. 2
+                                                                               plant images. Sensors, 18(10):3576, 2018. 1
+ [2] Jonathan Bell and HM Dee. Aberystwyth leaf evaluation
+                                                                          [16] Glenn Jocher, Ayush Chaurasia, and Jing Qiu. Ultralyt-
+     dataset: a plant growth visible light image dataset of ara-
+                                                                               ics yolo. https://github.com/ultralytics/
+     bidopsis thaliana. Zenodo, 2016. 3, 4
+                                                                               ultralytics, 2024. Accessed: 2025-10-11. 2, 5, 1
+ [3] Enrico Bellocchio, Gabriele Costante, Silvia Cascianelli,
+                                                                          [17] Zohaib Khan, Yue Shen, and Hui Liu. Objectdetection in
+     Mario Luca Fravolini, and Paolo Valigi. Combining domain
+                                                                               agriculture: A comprehensive review of methods, applica-
+     adaptation and spatial consistency for unseen fruits counting:
+                                                                               tions, challenges, and future directions. Agriculture, 15(13):
+     a quasi-unsupervised approach. IEEE Robotics and Automa-
+                                                                               1351, 2025. 3
+     tion Letters, 5(2):1079–1086, 2020. 2
+ [4] Daniel Bolya, Chong Zhou, Fanyi Xiao, and Yong Jae Lee.              [18] Jana Kierdorf, Laura Verena Junker-Frohn, Mike De-
+     Yolact: Real-time instance segmentation. In Proceedings of                laney, Mariele Donoso Olave, Andreas Burkart, Hannah
+     the IEEE/CVF international conference on computer vision,                 Jaenicke, Onno Muller, Uwe Rascher, and Ribana Roscher.
+     pages 9157–9166, 2019. 2                                                  Growliflower: An image time-series dataset for growth anal-
+                                                                               ysis of cauliflower. Journal of Field Robotics, 40(2):173–
+ [5] Ozgul Calicioglu, Alessandro Flammini, Stefania Bracco,
+                                                                               192, 2023. 3, 4, 8, 2
+     Lorenzo Bellù, and Ralph Sims. The future challenges of
+     food and agriculture: An integrated analysis of trends and           [19] Dmitry Kuznichov, Alon Zvirin, Yaron Honen, and Ron
+     solutions. Sustainability, 11(1):222, 2019. 1                             Kimmel. Data augmentation for leaf segmentation and
+ [6] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas                counting tasks in rosette plants. In CVPR Workshops, pages
+     Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-                0–0, 2019. 2
+     end object detection with transformers. In European confer-          [20] Christopher Lehnert, Inkyu Sa, Christopher McCool, Ben
+     ence on computer vision, pages 213–229. Springer, 2020. 2                 Upcroft, and Tristan Perez. Sweet pepper pose detection and
+ [7] Ekin Celikkan, Timo Kunzmann, Yertay Yeskaliyev, Sibylle                  grasping for automated crop harvesting. In 2016 IEEE ICRA,
+     Itzerott, Nadja Klein, and Martin Herold. Weedsgalore: A                  pages 2428–2434. IEEE, 2016. 1
+     multispectral and multitemporal uav-based dataset for crop           [21] Lian Lei, Qiliang Yang, Ling Yang, Tao Shen, Ruoxi Wang,
+     and weed segmentation in agricultural maize fields. In Pro-               and Chengbiao Fu. Deep learning implementation of image
+     ceedings of the Winter Conference on Applications of Com-                 segmentation in agricultural applications: A comprehensive
+     puter Vision (WACV), 2025. 3                                              review. Artificial Intelligence Review, 57(6):149, 2024. 3
+ [8] CVAT.ai Corporation. Computer vision annotation tool                 [22] Rui Li, Shunyi Zheng, Ce Zhang, Chenxi Duan, Libo Wang,
+     (cvat). https://github.com/opencv/cvat, 2026.                             and Peter M Atkinson. Abcnet: Attentive bilateral con-
+     4                                                                         textual network for efficient semantic segmentation of fine-
+ [9] Chad DeChant, Tyr Wiesner-Hanks, Siyuan Chen, Ethan L                     resolution remotely sensed imagery. ISPRS journal of pho-
+     Stewart, Jason Yosinski, Michael A Gore, Rebecca J Nelson,                togrammetry and remote sensing, 181:84–98, 2021. 2
+     and Hod Lipson. Automated identification of northern leaf            [23] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays,
+     blight-infected maize plants from field imagery using deep                Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence
+     learning. Phytopathology, 107(11):1426–1432, 2017. 1                      Zitnick. Microsoft coco: Common objects in context. In
+[10] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li,                    European conference on computer vision, pages 740–755.
+     and Li Fei-Fei. Imagenet: A large-scale hierarchical image                Springer, 2014. 2, 5
+     database. In 2009 IEEE conference on computer vision and             [24] Wenyu Lv, Yian Zhao, Qinyao Chang, Kui Huang,
+     pattern recognition, pages 248–255. IEEE, 2009. 2                         Guanzhong Wang, and Yi Liu. Rt-detrv2: Improved base-
+[11] Hongliang Fang, Frederic Baret, Stephen Plummer, and                      line with bag-of-freebies for real-time detection transformer.
+     Gabriela Schaepman-Strub. An overview of global leaf area                 arXiv preprint arXiv:2407.17140, 2024. 1
+     index (lai): Methods, products, validation, and applications.        [25] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy
+     Reviews of Geophysics, 57(3):739–799, 2019. 1                             Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez,
+[12] Mulham Fawakherji, Ali Youssef, Domenico Bloisi, Alberto                  Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al.
+     Pretto, and Daniele Nardi. Crop and weeds classification for              Dinov2: Learning robust visual features without supervision.
+     precision agriculture using context-independent pixel-wise                arXiv preprint arXiv:2304.07193, 2023. 5
+     segmentation. In 2019 third IEEE international conference            [26] Mengye Ren and Richard S Zemel. End-to-end instance seg-
+     on robotic computing (IRC), pages 146–152. IEEE, 2019. 2                  mentation with recurrent attention. In CVPR, pages 6656–
+[13] Mario Valerio Giuffrida, Massimo Minervini, and Sotirios A                6664, 2017. 2
+     Tsaftaris. Learning to count leaves in rosette plants. XXX,          [27] Isaac Robinson, Peter Robicheaux, Matvei Popov, Deva
+     2016. 1                                                                   Ramanan, and Neehar Peri. Rf-detr: neural architecture
+[14] Petr Hurtik, Vojtech Molek, Jan Hula, Marek Vajgl, Pavel                  search for real-time detection transformers. arXiv preprint
+     Vlasanek, and Tomas Nejezchleba. Poly-yolo: higher                        arXiv:2511.09554, 2025. 2, 5
+
+
+                                                                      9
+[28] Gianmarco Roggiolani,          Matteo Sodano,        Tiziano              analysis and machine intelligence, 46(12):9583–9594, 2024.
+     Guadagnino, Federico Magistri, Jens Behley, and Cyrill                    3, 4, 6, 8, 2
+     Stachniss. Hierarchical approach for joint semantic, plant           [42] Yuxin Wu, Alexander Kirillov, Francisco Massa, Wan-Yen
+     instance, and leaf instance segmentation in the agricultural              Lo, and Ross Girshick. Detectron2. https://github.
+     domain. arXiv preprint arXiv:2210.07879, 2022. 2                          com/facebookresearch/detectron2, 2019. 2, 5, 1
+[29] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net:           [43] Yian Zhao, Wenyu Lv, Shangliang Xu, Jinman Wei,
+     Convolutional networks for biomedical image segmentation.                 Guanzhong Wang, Qingqing Dang, Yi Liu, and Jie Chen.
+     In MICCAI, pages 234–241. Springer, 2015. 2                               Detrs beat yolos on real-time object detection. In Proceed-
+[30] Melike Sardogan, Adem Tuncer, and Yunus Ozen. Plant leaf                  ings of the IEEE/CVF conference on computer vision and
+     disease detection and classification based on cnn with lvq                pattern recognition, pages 16965–16974, 2024. 2
+     algorithm. In 2018 UBMK, pages 382–385. IEEE, 2018. 1                [44] Sixiao Zheng, Jiachen Lu, Hengshuang Zhao, Xiatian Zhu,
+[31] Hanno Scharr, Massimo Minervini, Andreas Fischbach, and                   Zekun Luo, Yabiao Wang, Yanwei Fu, Jianfeng Feng, Tao
+     Sotirios A Tsaftaris. Annotated image datasets of rosette                 Xiang, Philip HS Torr, et al. Rethinking semantic segmen-
+     plants. In European conference on computer vision, pages                  tation from a sequence-to-sequence perspective with trans-
+     6–12. Suisse Zürich, 2014. 3, 4, 8, 2                                    formers. In Proceedings of the IEEE/CVF conference on
+[32] Vijai Singh and Ak K Misra. Detection of plant leaf diseases              computer vision and pattern recognition, pages 6881–6890,
+     using image segmentation and soft computing techniques.                   2021. 2
+     Information Processing in Agriculture, 4(1):41–49, 2017. 1           [45] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang
+[33] Daniel Steininger, Andreas Trondl, Gerardus Croonen, Julia                Wang, and Jifeng Dai. Deformable detr: Deformable trans-
+     Simon, and Verena Widhalm. The cropandweed dataset: A                     formers for end-to-end object detection. arXiv preprint
+     multi-modal learning approach for efficient crop and weed                 arXiv:2010.04159, 2021. 1
+     manipulation. In Proceedings of the IEEE/CVF Winter Con-
+     ference on Applications of Computer Vision, pages 3729–
+     3738, 2023. 1, 2, 3, 4
+[34] Nima Teimouri, Mads Dyrmann, Per Rydahl Nielsen,
+     Solvejg Kopp Mathiassen, Gayle J Somerville, and Ras-
+     mus Nyholm Jørgensen. Weed growth stage estimator using
+     deep convolutional neural networks. Sensors, 18(5):1580,
+     2018. 3, 4
+[35] Hideaki Uchiyama, Shunsuke Sakurai, Masashi Mishima,
+     Daisaku Arita, Takashi Okayasu, Atsushi Shimada, and Rin-
+     ichiro Taniguchi. An easy-to-setup 3d phenotyping platform
+     for komatsuna dataset. In Proceedings of the IEEE inter-
+     national conference on computer vision workshops, pages
+     2038–2045, 2017. 3, 4, 8, 2
+[36] Jehan-Antoine Vayssade, Gawain Jones, Christelle Gée, and
+     Jean-Noël Paoli. Pixelwise instance segmentation of leaves
+     in dense foliage. Computers and Electronics in Agriculture,
+     195:106797, 2022. 3, 4
+[37] Mingjie Wang and Fuzhong Li. Real-time accurate apple
+     detection based on improved yolov8n in complex natural en-
+     vironments. Plants, 14(3):365, 2025. 2
+[38] Peng Wang, Hong Deng, Jiaxu Guo, Siqi Ji, Dan Meng,
+     Jun Bao, and Peng Zuo. Leaf segmentation using modified
+     yolov8-seg models. Life, 14(6):780, 2024. 2
+[39] Yunlong Wang and Zhiyong Zhang. Segment any leaf 3d:
+     A zero-shot 3d leaf instance segmentation method based on
+     multi-view images. Sensors, 25(2):526, 2025. 2
+[40] Jan Weyler, Federico Magistri, Peter Seitz, Jens Behley,
+     and Cyrill Stachniss. In-field phenotyping based on crop
+     leaf and plant instance segmentation. In Proceedings of the
+     IEEE/CVF Winter Conference on Applications of Computer
+     Vision, pages 2725–2734, 2022. 2, 3
+[41] Jan Weyler, Federico Magistri, Elias Marks, Yue Linn
+     Chong, Matteo Sodano, Gianmarco Roggiolani, Nived Che-
+     brolu, Cyrill Stachniss, and Jens Behley. Phenobench: A
+     large dataset and benchmarks for semantic image interpreta-
+     tion in the agricultural domain. IEEE transactions on pattern
+
+
+                                                                     10
+       ReLeaf: Benchmarking Leaf Segmentation across Domains and Species
+                                              Supplementary Material
+   This supplementary document complements the main                  Table 3.        Overview of 23 plant species included in
+paper with additional statistics regarding our benchmark             CropAndWeedAndLeaf with leaf-segmentation annotations for 15
+dataset and more detailed quantitative and qualitative exper-        samples each, along with corresponding instance-segmentation
+                                                                     performance (% mAP50-95 ). Scores are results of the selected
+imental results to facilitate a more thorough understanding
+                                                                     model architecture (YOLO26 Medium, input size of 768^{2} pixels),
+of applied methods and insights.                                     trained on the combined ReLeaf dataset.
+
+A. Benchmark dataset
+                                                                     Species name               Botanical name                Score
+Our CropAndWeedAndLeaf benchmark comprises a rep-                    Black-bindweed             Fallopia convolvulus            41.6
+resentative set of images sampled from 23 classes of the             Broad bean                 Vicia faba                      49.7
+CropAndWeed dataset [33]. Tab. 3 gives a complete list of            Common bean                Phaseolus vulgaris              66.5
+the exact species and the ReLeaf model’s performance on              Common corncockle          Agrostemma githago              20.2
+each of them. It shows strong variations between classes re-         Common sunflower           Helianthus annuus               73.0
+lated to their appearance and leaf structure, highlighting the       Copse bindweed             Fallopia dumetorum              43.9
+overall need for more variable leaf-segmentation data.               Cornflower                 Centaurea cyanus                30.0
+                                                                     Creeping thistle           Cirisium arvense                39.9
+B. Extended results                                                  Field sowthistle           Sonchus arvensis                34.7
+The following sections show detailed results of both our ab-         Maize                      Zea mays                        41.2
+lation and cross-dataset experiments.                                Maple-leaf goosefoot       Chenopodium hybridum            31.7
+                                                                     Pea                        Pisum sativum                   11.2
+B.1. Architecture ablation                                           Poppy                      Papaver                         54.5
+As stated in the main paper, RF-DETR was omitted from                Potato                     Solanum tuberosum               32.5
+the final ablation after initial experiments showed drasti-          Red-root amaranth          Amaranthus retroflexus          57.9
+cally inferior performance compared to other architectures           Redshank                   Persicaria maculosa             26.7
+under the applied hardware constraints. Tab. 4 provides an           Ribwort plantain           Plantago lanceolata             34.8
+overview of these initial results. While inference times of          Soybean                    Glycine max                     27.2
+RF-DETR are comparable to those of YOLO26 and even                   Squash                     Cucurbita                       60.9
+slightly lower than for Detectron2, mAP values are signif-           Sugar beet                 Beta vulgaris s. vulgaris       66.0
+icantly inferior to both. At the same time, training times           Thornapple                 Datura stramonium               57.6
+are higher by a factor of 3.5 compared to Detectron2 at              White goosefoot            Chenopodium album               39.4
+the same image resolution and 6.3 compared to YOLO26                 Zucchini                   Cucurbita pepo var. gir.        68.2
+models trained at even higher resolutions, which are not
+available for RF-DETR due to its substantial VRAM re-
+quirements. Mitigating these discrepancies and making                [16], indicating that it is a superior choice for applications
+transformer-based architectures usable for our hardware and          requiring pure detection in the form of bounding boxes
+data setup could still be achieved by using specialized archi-       without fine-grained object masks. For the purposes investi-
+tecture variants (e.g., RT-DETR [24], Deformable DETR                gated in this work, however, YOLO26 remains a more suit-
+[45]) or dedicated training strategies, such as memory-              able choice due to its lower processing time. Tab. 5 shows
+efficient attention mechanisms or staged training starting           the exact values forming the basis of both charts.
+from plant-level instance-segmentation datasets. These op-               Tab. 6 shows the performance of our selected configu-
+tions may be worth exploring in future extensions of this            rations of YOLO26 and Detectron2 on different leaf sizes.
+work, but were not within the scope of our analysis.                 It confirms our prior assumption that two-stage detectors
+    In addition to the accuracy of leaf-segmentation masks           like Detectron2 excel at retrieving and accurately delineat-
+provided in Fig. 4 of the main paper, we present the corre-          ing small objects at the cost of higher parameter counts and
+sponding bounding-box accuracy in Fig. 7 to allow a dif-             therefore longer inference times than single-stage variants.
+ferentiation between the models’ capabilities of correctly
+localizing individual leaves and accurately delineating their
+contours. As visible in the results, the discrepancy is sig-
+nificantly larger for Detectron2 [42] compared to YOLO26
+
+
+                                                                 1
+Table 4. Initial ablation results for RF-DETR SegPreview with
+multiple input resolutions, including mask accuracy as well as
+training and inference times (training at an input resolution of 7682       Table 5. Comparison of bounding-box (Box) and segmentation-
+pixels was not feasible due to high VRAM requirements). Re-                 mask (Mask) accuracies (% mAP50–95 ) and inference times (t)
+sults of selected YOLO26 and Detectron2 variants (Medium and                (ms) of leaf-segmentation for multiple model-architecture variants
+ResNet-101, respectively) are provided for reference. All models            and input resolutions on the PhenoBench test set. Selected vari-
+are trained for 20 epochs using the PhenoBench training/validation          ants providing a reasonable trade-off for real-time deployment are
+splits and evaluated on the corresponding test set.                         highlighted by bold text.
+
+                 Size    Accuracy        Training       Inference                                           Size       Box     Mask           t
+                 [px]    [% mAP]         [h/epoch]     [ms/image]                                           192   2
+                                                                                                                       72.8     65.0       7.7
+                1922         55.9           0.85           18.0                                             3842       79.8     75.0       7.8
+                                                                                                Small
+RF-DETR         3842         59.2           0.94           19.7                                             5762       82.5     79.1       8.9
+                5762         59.9           1.13           23.4                                             7682       83.4     80.4      10.3
+
+
+
+
+                                                                                 YOLO26
+Detectron2      5762         80.0           0.32           33.1                                             1922       75.9     66.8       8.2
+YOLO26          7682         78.0           0.18           21.0                                             3842       81.7     76.6       9.4
+                                                                                               Medium
+                                                                                                            5762       84.4     80.4      13.2
+                                                                                                            7682       84.2     81.4      21.0
+                                                                                                            1922       77.0     67.5      11.2
+                                                                                                            3842       82.6     76.9      13.1
+                                                                                                Large
+                                                                                                            5762       83.4     79.7      15.5
+                                                                                                            7682       84.2     81.3      24.3
+                                                                                                            1922       80.7     75.9      16.9
+                                                                                                            3842       84.5     79.2      19.9
+                                                                                              ResNet-50
+                                                                                                            5762       87.6     81.5      28.6
+                                                                                                            7682       88.2     81.5      35.3
+                                                                                 Detectron2
+
+
+
+
+                                                                                                            1922       80.6     75.9      21.1
+                                                                                                            3842       86.3     80.4      23.7
+                                                                                              ResNet-101
+                                                                                                            5762       89.1     82.4      33.1
+                                                                                                            7682       88.8     82.1      44.9
+Figure 7. Comparison of bounding-box accuracy (% mAP50–95 )                                                 1922       82.6     77.4      24.9
+and inference time (ms) of leaf-segmentation for multiple model-
+                                                                                                            3842       87.1     80.9      37.0
+architecture variants and input resolutions on the PhenoBench test                             ResNext
+set. Selected variants providing a reasonable trade-off for real-
+                                                                                                            5762       90.1     83.7      54.3
+time deployment are marked by circles.                                                                      7682       90.9     83.9      75.7
+
+
+B.2. Cross-dataset experiments
+Fig. 8 visualizes our multi-domain ReLeaf model’s results
+on a selection of representative test images from LSC [31],                 Table 6. Comparison of bounding-box (Box) and segmentation-
+Komatsuna [35], GrowliFlower [18] and PhenoBench [41],                      mask (Mask) accuracies (mAP50–95 ) for varying objects sizes
+confirming its stable performance across both species and                   (Small < 322 pixels < Medium < 962 pixels < Large) using the
+environmental conditions.                                                   selected configurations of YOLO26 (Medium with an input reso-
+                                                                            lution of 768^{2} pixels) and Detectron2 (ResNet-101 with an input
+    Figs. 9 and 10 show the results of models trained on each
+                                                                            resolution of 576^{2} pixels).
+dataset and evaluated on one representative image for each
+of the 23 plant species in the CropAndWeedAndLeaf bench-
+mark. Models trained on laboratory data (LSC, Komatsuna)                                                   Box                       Mask
+struggle most to generalize to novel plant species in real-                                         S       M          L       S      M           L
+world settings. While the combined ReLeaf model occa-                        YOLO26                69.9    82.2       91.3    69.5     79.3       89.1
+sionally misses small inner leaves, it significantly improves                Detectron2            87.4    88.0       91.7    80.9     80.9       86.3
+adaptation to the strongly varying visual appearances and
+leaf configurations of different crop and weed species.
+
+
+                                                                        2
+Figure 8. Representative leaf-segmentation results of selected
+YOLO26 configuration (Medium with an input resolution of 768^{2}
+pixels) trained on a combination of LSC [31], Komatsuna (KO)
+[35], GrowliFlower (GF) [18] and PhenoBench (PB) [41] datasets
+and evaluated on the respective test sets.
+
+
+
+
+                                                                   3
+Figure 9. Representative leaf-segmentation results of YOLO26 models (Medium, 768^{2} pixels input resolution) trained on LSC [31],
+KOmatsuna [35], GrowliFlower [18] and PhenoBench [41] datasets and their combination (ReLeaf ), evaluated on all 23 species of the
+CropAndWeedAndLeaf benchmark, along with corresponding ground truth (GT) (Part 1).
+
+
+
+
+Figure 10. Representative leaf-segmentation results of YOLO26 models (Medium, 768^{2} pixels input resolution) trained on LSC [31],
+KOmatsuna [35], GrowliFlower [18] and PhenoBench [41] datasets and their combination (ReLeaf ), evaluated on all 23 species of the
+CropAndWeedAndLeaf benchmark, along with corresponding ground truth (GT) (Part 2).
+
+
+
+
+                                                                4
+

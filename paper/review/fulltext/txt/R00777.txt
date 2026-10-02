@@ -1,0 +1,967 @@
+                                                                                                                       TYPE Original Research
+                                                                                                                       PUBLISHED 25 February 2025
+                                                                                                                       DOI 10.3389/frobt.2025.1548143
+
+
+
+
+                                                Unsupervised semantic label
+OPEN ACCESS                                     generation in agricultural fields
+EDITED BY
+Dario Calogero Guastella,
+University of Catania, Italy                    Gianmarco Roggiolani 1*, Julius Rückin 1, Marija Popović 2,
+REVIEWED BY                                     Jens Behley 1 and Cyrill Stachniss 1,3
+Nataliya Strokina,
+                                                1
+Tampere University, Finland                      Center for Robotics, University of Bonn, Bonn, Germany, 2 Micro Air Vehicle Laboratory, Delft
+Vladan Papić,                                   University of Technology, Delft, Netherlands, 3 Lamarr Institute for Machine Learning and Artificial
+University of Split, Croatia                    Intelligence, Dortmund, Germany
+
+*CORRESPONDENCE
+Gianmarco Roggiolani,
+  groggiol@uni-bonn.de
+
+RECEIVED 19 December 2024
+                                                Robust perception systems allow farm robots to recognize weeds and
+ACCEPTED 31 January 2025                        vegetation, enabling the selective application of fertilizers and herbicides to
+PUBLISHED 25 February 2025
+                                                mitigate the environmental impact of traditional agricultural practices. Today’s
+CITATION                                        perception systems typically rely on deep learning to interpret sensor data
+Roggiolani G, Rückin J, Popović M, Behley J     for tasks such as distinguishing soil, crops, and weeds. These approaches
+and Stachniss C (2025) Unsupervised
+semantic label generation in agricultural
+                                                usually require substantial amounts of manually labeled training data, which
+fields.                                         is often time-consuming and requires domain expertise. This paper aims to
+Front. Robot. AI 12:1548143.                    reduce this limitation and propose an automated labeling pipeline for crop-
+doi: 10.3389/frobt.2025.1548143
+                                                weed semantic image segmentation in managed agricultural fields. It allows the
+COPYRIGHT
+                                                training of deep learning models without or with only limited manual labeling
+© 2025 Roggiolani, Rückin, Popović, Behley
+and Stachniss. This is an open-access article   of images. Our system uses RGB images recorded with unmanned aerial or
+distributed under the terms of the Creative     ground robots operating in the field to produce semantic labels exploiting the
+Commons Attribution License (CC BY). The        field row structure for spatially consistent labeling. We use the rows previously
+use, distribution or reproduction in other
+forums is permitted, provided the original      detected to identify multiple crop rows, reducing labeling errors and improving
+author(s) and the copyright owner(s) are        consistency. We further reduce labeling errors by assigning an “unknown”
+credited and that the original publication in   class to challenging-to-segment vegetation. We use evidential deep learning
+this journal is cited, in accordance with
+accepted academic practice. No use,             because it provides predictions uncertainty estimates that we use to refine and
+distribution or reproduction is permitted       improve our predictions. In this way, the evidential deep learning assigns high
+which does not comply with these terms.         uncertainty to the weed class, as it is often less represented in the training
+                                                data, allowing us to use the uncertainty to correct the semantic predictions.
+                                                Experimental results suggest that our approach outperforms general-purpose
+                                                labeling methods applied to crop fields by a large margin and domain-specific
+                                                approaches on multiple fields and crop species. Using our generated labels to
+                                                train deep learning models boosts our prediction performance on previously
+                                                unseen fields with respect to unseen crop species, growth stages, or different
+                                                lighting conditions. We obtain an IoU of 88.6% on crops, and 22.7% on
+                                                weeds for a managed field of sugarbeets, where fully supervised methods
+                                                have 83.4% on crops and 33.5% on weeds and other unsupervised domain-
+                                                specific methods get 54.6% on crops and 11.2% on weeds. Finally, our method
+                                                allows fine-tuning models trained in a fully supervised fashion to improve their
+                                                performance in unseen field conditions up to +17.6% in mean IoU without
+                                                additional manual labeling.
+
+                                                KEYWORDS
+
+                                                agricultural automation, robotic crop monitoring, deep learning for agricultural robots,
+                                                semantic scene understanding, automatic labeling, unsupervised learning
+
+
+
+
+Frontiers in Robotics and AI                                           01                                                                 frontiersin.org
+Roggiolani et al.                                                                                                        10.3389/frobt.2025.1548143
+
+
+
+
+1 Introduction                                                                map of the field. As a key novelty, we use the semantic map to
+                                                                              enforce the spatial consistency of labels. To this end, we propagate
+     The demand for food is constantly increasing due to the                  the information about the crop rows in the map, leading to better
+growing world population, requiring new methods to optimize                   crop segmentation across different growth stages. Additionally,
+crop production (Horrigan et al., 2002; Ewert et al., 2023;                   we do not assign labels to vegetation components that are close
+Storm et al., 2024; Walter et al., 2017). The use of robotic                  to the crop rows but are not classified as crops. This reduces
+systems in agriculture has the promise to make processes, such as             possible labeling errors and thus improves model predictions after
+monitoring fields (Ahmadi et al., 2020; Boatswain Jacques et al.,             training on our generated labels. We use the generated image-
+2021), phenotyping (Weyler et al., 2022b), and weed spraying                  label pairs to train an uncertainty-aware evidential semantic
+(Wu et al., 2020), more efficient and sustainable (Cheng et al.,              segmentation network (Sensoy et al., 2018). At inference, as a post-
+2023). Commonly, robotic platforms perceive their environment                 processing step, we exploit the predicted uncertainties to refine the
+using deep learning methods to semantically interpret complex data            final semantic predictions.
+collected with onboard sensors (Dainelli et al., 2024). However,                  In sum, we make three key claims: our approach (i) generates
+these approaches usually require large amounts of human-labeled               more accurate semantic labels than previous unsupervised label
+data to achieve satisfactory performance for real-world deployment            generation approaches on multiple crop species, growth stages,
+and often fall short in unseen field conditions (Wang et al., 2022;           and lighting conditions; (ii) we outperform previous unsupervised
+Magistri et al., 2023).                                                       semantic segmentation approaches by combining our spatially
+     In this paper, we examine the problem of automated semantic              consistent generated labels and uncertainty-aware semantic neural
+crop-weed segmentation in RGB images, enabling robots to perform              networks; and (iii) improve performance of fully supervised models
+tasks, such as automated weeding (Balabantaray et al., 2024;                  on previously unseen crops, growth stages, or soil conditions after
+Saqib et al., 2023), controlled usage of pesticide (Murugan et al.,           fine-tuning using our automatically generated labels. These claims
+2020), harvesting (Pan et al., 2023), or phenotyping (Weyler et al.,          are backed up by our experimental evaluation. We open-source our
+2022a). We aim to maximize a semantic segmentation neural                     code upon paper acceptance.
+network’s performance in various field deployment conditions, e.g.,
+different growth stages, crop species, or lighting conditions, without
+human-labeled training data. This is crucial to ensure a robust crop-         2 Related work
+weed segmentation in new unseen fields to enable robots to perform
+weeding and harvesting. Our approach automatically labels onboard                 Our work uses heuristic-based computer vision techniques
+RGB images based on the robot’s pose and the current map of the               for semantic segmentation of RGB images to automatically
+field semantically segmented into crops and weeds. In this way,               generate weed-crop segmentation labels of agricultural fields
+semantic labels are generated using the robot’s spatial information           for training a semantic segmentation network. We train the
+and the field arrangement’s crop row structure.                               network in an uncertainty-aware fashion using evidential
+     Previous heuristic-based methods for unsupervised semantic               deep learning (Sensoy et al., 2018) to post-process predictions at
+segmentation in agriculture proposed by Lottes et al. (2017) and              inference time based on their uncertainty.
+Winterhalter et al. (2018) rely on poorly generalizing assumptions
+about field arrangements, e.g., absence of weeds in the crop
+row (Lottes et al., 2017), constant distance between plants’ rows             2.1 Heuristic-based semantic segmentation
+(Lottes and Stachniss, 2017; Winterhalter et al., 2018), or non-
+overlapping vegetation components (Lottes et al., 2017). Although                  Otsu (1979) proposed using gray-level histograms for binary
+fully supervised deep learning-based approaches do not rely on                image segmentation based on an automatic threshold assuming a
+geometric assumptions, they rely on in-domain human-labeled                   bimodal distribution for fore- and background pixels. Pong et al.
+training data. The performance of such approaches is satisfactory             (1984) propose the region-growing algorithm segmenting images
+when being deployed in conditions similar to those they were                  in multiple regions after providing initial seeds for each region.
+trained on. However, their performance usually rapidly deteriorates           Similarly, the Watershed algorithm (Najman and Schmitt, 1996)
+in novel deployment conditions, e.g., different crop species, weeds           requires user-defined markers to segment objects using a distance
+pressure, lighting conditions, or growth stage, requiring new                 function. To overcome the need for initial seeds, Canny (1986)
+human-labeled training data. This is costly and makes these                   used edge detectors to distinguish regions. To incorporate statistical
+approaches impractical for application when there is not enough               image features for segmentation, Loyd (1982) adopted the K-
+time, money, or data to re-train the approach on new field                    means algorithm. To allow automatic robotic intervention in the
+conditions.                                                                   fields, Riehle et al. (2020) and Gao et al. (2020) applied semantic
+     The main contribution of this paper is a novel heuristic                 segmentation techniques to the agricultural domain. Lottes et al.
+approach for unsupervised soil-weed-crop segmentation in                      (2017) further advance these general-purpose approaches by
+managed agricultural fields addressing these limitations. Our                 exploiting the field arrangement and deploying their method on
+method automatically generates labels used to train deep semantic             a ground field robot. Similarly, our approach also exploits the
+segmentation networks. The overview of our pipeline is shown                  field arrangement to automatically segment images. In contrast,
+in Figure 1. Our pipeline takes the current RGB image and the                 we additionally enhance spatial label consistency using robotic
+camera pose of the robotic platform as input to compute a semantic            semantic mapping. Further, we do not assign labels to image parts
+
+
+
+
+Frontiers in Robotics and AI                                             02                                                           frontiersin.org
+Roggiolani et al.                                                                                                          10.3389/frobt.2025.1548143
+
+
+
+
+   FIGURE 1
+   The overview of our pipeline to generate semantic labels for images of crop fields. We use a robotic platform equipped with an RGB camera to collect
+   posed images of the field. Each image gets processed by our automatic labeling method, generating a semantic segmentation of the image to fuse into
+   the semantic map. At each time step, we use the current semantic map to generate the image’s semantic label and update the map accordingly.
+
+
+
+
+likely to include labeling errors. In this way, we reduce the number           labels exploiting domain knowledge of the field arrangement. Our
+of erroneous crop and weed instances, which is essential to achieve            semantic labels can be directly used for network training without
+high prediction performance and consistent uncertainty estimation              the need for human labels or for fine-tuning pre-trained networks
+of the trained deep neural network.                                            on unseen fields.
+
+
+
+2.2 Learning-based semantic segmentation                                       2.3 Uncertainty-aware deep learning
+    Recent approaches mainly use neural networks to extract latent                 Classical neural networks are known to often provide
+image features for semantic segmentation. Various convolutional                overconfident wrong point estimate predictions (Abdar et al., 2021).
+neural network architectures (Romera et al., 2018; He et al.,                  Several works, including the one by Lakshminarayanan et al. (2017),
+2017), and more recently, Vision transformers (Strudel et al., 2021;           use ensembles of multiple independently initialized and trained
+Cao et al., 2023) have been applied to semantic segmentation.                  neural networks to quantify predictive uncertainty. Although
+A large portion of these approaches have also been evaluated                   ensembles improve prediction performance and model calibration,
+or adapted to the agricultural domain. Cui et al. (2024) propose               they induce high computational costs during training. Gal and
+an improvement to the U-net architecture by Ronneberger et al.                 Ghahramani (2016) propose Monte Carlo dropout to approximate
+(2015) to segment corns and weeds while Zenkl et al. (2022) use                predictive uncertainty with a single network trained with dropout.
+the DeepLabV3 architecture by Chen et al. (2017) to segment                    At inference, multiple forward passes with independently sampled
+wheat. These approaches usually require vast amounts of per-                   dropout masks are performed to compute predictive uncertainty.
+pixel human-labeled training data, covering all the desired crop               Although more compute-efficient at train time, Monte Carlo
+species, growth stages, lighting conditions, and other deployment              dropout produces overconfident predictions compared to ensembles
+conditions to ensure promising test-time performance. Hence, many              (Beluch et al., 2018b). More recently, Sensoy et al. (2018)
+works have investigated how to reduce the labeling effort of deep              proposed evidential deep learning for image classification to
+learning-based approaches. One popular method is pre-training the              predict uncertainty using a single forward pass. As evidential
+network on different easy-to-label tasks, e.g., image classification           deep learning performs on par with ensembles while drastically
+(Deng et al., 2009) or using self-supervision (Chen et al., 2020),             reducing online compute requirements, we adapt the evidential
+and fine-tuning the pre-trained network using few human-labeled                deep learning framework to our semantic segmentation task using
+per-pixel annotations specific to the target application. Other works          the predictive uncertainties for label post-processing, facilitating
+propose to train networks on sparse labels instead of dense per-               deployment on compute-constrained robots. We use the network’s
+pixel labels (Lee et al., 2022), so called weakly supervised semantic          uncertainty to correct its prediction about the weeds, which is the
+segmentation. In the agricultural domain, Zhao et al. (2023)                   most under-represented class and, thus, the most uncertain for
+reduce the need for per-pixel labels using scrawl annotations, i.e.,           the model.
+manually drawn lines, to weakly supervise a semantic segmentation                  Our approach combines a heuristic-based method to
+model. Chen et al. (2024) remove per-pixel annotations completely,             automatically generate partial but consistent per-pixel semantic
+only exploiting reference images to localize disease symptoms in               labels. In contrast to learning-based approaches, our approach does
+plants, using an innovative class activation mapping method. In                not require human-labeled data and, at the same time, improves
+contrast to Chen et al. (2024), we propose a new unsupervised                  label consistency and, thus, the network’s prediction performance
+approach to automatically generate per-pixel semantic segmentation             over previous heuristic-based approaches.
+
+
+
+Frontiers in Robotics and AI                                              03                                                              frontiersin.org
+Roggiolani et al.                                                                                                                   10.3389/frobt.2025.1548143
+
+
+
+
+3 Materials and methods
+    We propose a heuristic-based approach to automatically
+semantically segment RGB images of agricultural fields collected
+using unmanned ground vehicles (UGVs) or unmanned aerial
+vehicles (UAVs) in three classes: soil, crop, and weed. Based on
+the robot’s pose, we fuse each generated semantic image label
+in an online-built global semantic field map. A key aspect of
+our approach is that we enforce spatial label consistency based
+on the global semantic field map. To reduce the possibility of
+labeling errors, we only label the detected rows as crops and
+the vegetation components that are far away from the rows as
+weeds. In this way, we trade off label quality with quantity to
+improve prediction performance after training our uncertainty-
+aware semantic segmentation network (Sensoy et al., 2018) on labels
+extracted from the global semantic field map. At inference time,
+we post-process the network’s predictions using their associated                       FIGURE 2
+                                                                                       Example of a typical UAV mission. The coverage path along which we
+uncertainty to refine uncertain vegetation predictions.                                fuse semantic image labels is depicted in white, the square is the initial
+                                                                                       pose, and the arrows indicate the direction of movement. The images
+                                                                                       can overlap, but it is not required. This path maximizes the crop field
+                                                                                       coverage and is typically used in aerial data collection missions.
+3.1 Semantic field mapping
+      We perform semantic mapping to enforce spatial consistency
+across automatically generated semantic labels. Furthermore, the
+semantic map allows us to extract image-label pairs from the map                    3.2.1 Hough transform
+with different rotations, positions, and scales. We assume that our                       We compute a binary vegetation mask It,vm ∈ {0, 1}H×W
+robotic system is equipped with a downwards-facing RGB camera.                      using graph-based segmentation proposed by Felzenszwalb and
+At each time step t, it collects an image It ∈ ℝH×W×3 , where H and                 Huttenlocher (2004), where a pixel is 1 if it contains vegetation,
+W are the height and width of the image, respectively. Let pt =                     i.e., crop or weed, and 0 if it contains soil. We apply the Hough
+(xt , yt , zt , ϕt )⊤ be the robot pose, where we consider the 3D position          transform introduced by Hough (1959) to the vegetation mask It,vm
+(xt , yt , zt ) and the yaw angle ϕt ∈ (−π, π] with respect to the origin of        to detect crop rows in image It . This gives us a set of supporting lines
+the mapping mission. Any path is defined by a sequence of poses                     in It . Each line i is parameterized by the distance rt,i from the image
+that we use to fuse our predicted labels in the global semantic field               origin to the closest point on the line, and the angle θt,i between
+                           ̂ ̂
+map St :G → ℕK×H×W , where G is a grid discretizing the environment                 the image’s x-axis and the line connecting the origin to the closest
+into Ĥ × Ŵ cells with K possible semantic classes. Each image It                  point on the line. The origin is the lower-left pixel of It . The best-
+along the path is segmented by our approach based on the previous                   fitting line is the one that maximizes the overlap with the vegetation
+map St−1 and then fused into the semantic map to compute St                         mask It,vm . In Figure 4, we show an example of a fitted crop row line
+accumulating predictions. We use majority voting to assign the                      (white). We discretize the Hough line radius search space using a
+most likely class. In practice, we follow a common lawnmower-like                   pixel resolution of lw = 5px to robustly fit lines in presence of noisy
+coverage path to efficiently cover agricultural fields (Höffmann et al.,            vegetation masks. We define the minimum number of overlapping
+2023), as shown in Figure 2.                                                        pixels τpx = H to fit the line along the whole image height. We keep
+                                                                                    only the best-fitting line of parameters (rt , θt ) returned from the
+                                                                                    Hough Transform and add it to the set of the crop rows detected in
+3.2 Automatic labeling                                                              the map Rt = Rt−1 ∪ (rt , θt ) to use them in the following step. Based
+                                                                                    on the best-fitting line parameters (rt , θt ), we create a binary mask
+    At each time step t, our automatic labeling approach takes as                   It,line , which is 1 for all pixels on the line and 0 otherwise. We save
+input the image It and the semantic field map St−1 to produce a                     the line mask to facilitate the computation of the following steps.
+semantic label for image It . We use the map St−1 to estimate potential             The mask obtained from our example image is shown on top of the
+weeds and crops in image It to enforce spatial consistency and reduce               vegetation mask in Figure 3. We transform the line parameters for
+labeling errors. Our automatic labeling procedure is exemplarily                    this time step t into the coordinate system of the mapping mission’s
+visualized in Figure 3 and consists of the following steps: first, we               origin p0 .
+extract the vegetation mask and apply the Hough transform to detect
+the main crop row in the current image It . Second, we propagate                    3.2.2 Propagating predictions
+all previously detected lines Rt−1 to the current pose to segment                       We use our semantic map St−1 to retrieve the predicted lines
+multiple crop rows. Third, we label the vegetation components with                  Rt−1 and propagate them into our current image It . This allows
+a minimal distance to all rows as weeds.                                            us to predict multiple crop rows consistent with the rows detected
+
+
+
+
+Frontiers in Robotics and AI                                                   04                                                                  frontiersin.org
+Roggiolani et al.                                                                                                                     10.3389/frobt.2025.1548143
+
+
+
+
+                                                                                    FIGURE 4
+                                                                                    Given the vegetation mask, we visualize the line detected by the
+                                                                                    Hough transform (in white). Considering the origin as the bottom left
+                                                                                    corner, we show the parameters ri and θi defining the detected lines.
+                                                                                    The vegetation components intersecting the line are thus labeled as
+                                                                                    crop (green). We can see a weed (red) on the left of the image, since
+                                                                                    the vegetation component is far away from the detected line.
+
+
+
+
+                                                                                     For each line i in Rt−1 , we compute the parameters rt,i and θt,i in
+                                                                                 the coordinate system of p0 as.
+
+                                                                                                                    rt−1,i cos (θt−1,i )
+                                                                                                         || 0 −1 [                       ]||
+                                                                                                         | |      [
+                                                                                                 rt,i = ||||(Tt ) [                      ]|||| 2,
+                                                                                                                  [ rt−1,i sin (θt−1,i ) ]
+                                                                                                                                         ]||
+                                                                                                       ||          [          0           ]||
+                                                                                                               θt,i = θt−1,i − ϕt ,
+
+                                                                                 Where rt−1,i cos (θt−1,i ) and rt−1,i sin (θt−1,i ) represent the (x, y)
+                                                                                 coordinates of the closest pixel to the origin for line i, assuming
+                                                                                 flat terrain. We include these lines in It,line , i.e., we set the pixels
+                                                                                 covered by these lines to 1. To reduce the computation time, we reject
+   FIGURE 3
+   Flowchart of our automatic labeling approach with an example image.           lines that are too close to those already present in the mask It,line .
+   At time step t, we take as input the RGB image It recorded from pose          In particular, we reject line i if its distance to any other line in Rt
+   pt and the set of previously detected lines Rt−1 , depicted in blue           is smaller than 2lw . In Figure 3, we showcase line propagation from
+   boxes. First, we extract the vegetation mask It,vm using a
+   graph-segmentation approach (Felzenszwalb and Huttenlocher,                   a previous image, enabling us to detect a second crop row on the
+   2004). Based on It,vm , we compute the connected components to                image’s right side.
+   extract plant instances and compute the most prominent crop row via                As we propagate our line predictions from previously recorded
+   the Hough transform. We propagate the set of previously detected
+   crop rows Rt into the current image It to track multiple crop rows.           images into the current image, we use an eroded version of the
+   The newly detected crop row in It is added to Rt . Then, we label all         vegetation mask It,vm to extract single vegetation components. We
+   connected components in It,vm that intersect one of the crop rows in          use a square kernel of size 3 for the erosion to remove noise from It,vm
+   Rt as crops. Furthermore, we check the distance of all other
+   vegetation components to their closest crop row in Rt and assign              and reduce the mislabeling of weeds touching the crops in the crop
+   them to the weed class if their distance is above a certain threshold.        row. Then, all vegetation components intersecting lines in It,line are
+   Vegetation components which are too close to detected crop rows               assigned to the crop class, yielding a new binary mask Mt ∈ {0, 1}H×W
+   are assigned an “unknown” class that is ignored during network
+   training to minimise labeling errors and thus maximise prediction             where a pixel is 1 if it is labeled as crop, and 0 otherwise. We show
+   performance.                                                                  the result in Figure 3, where soil is depicted in black and crop is
+                                                                                 depicted in green. Next, we describe which remaining vegetation
+                                                                                 components are assigned the weed class.
+
+in previously explored areas of the crop field. At the first time                3.2.3 Weed labeling
+step t = 0, the semantic map and R0 are both empty, thus we                          Naively classifying any vegetation component in It,vm not
+skip this step. At each time step t ≥ 1, we compute the position                 yet labeled as crop in Mt usually results in poor weed label
+of the newly acquired image in the coordinate system of the                      quality. Although these remaining vegetation components might be
+initial pose p0 , given by the transformation matrix T0t ∈ ℝ3×3 .                crop, the row detection could have failed because of low sensor
+Then, we check which lines in Rt−1 intersect It and should be                    resolution, wrong odometry or pose information, or bad lighting
+propagated into its semantic prediction.                                         conditions (Lottes et al., 2016), such that these crop instances are not
+
+
+
+
+Frontiers in Robotics and AI                                                05                                                                      frontiersin.org
+Roggiolani et al.                                                                                                                            10.3389/frobt.2025.1548143
+
+
+
+
+included in Mt . To avoid labeling these potential crops as weeds, we                       We train the network to minimize the Bayes risk cross-entropy
+do not label the vegetation components, which are likely to introduce                   for a pixel (x, y) of image I,
+labeling errors and ignore them during network training. To this
+                                                                                                                 K−1
+end, we compute the distance from each of the N crop pixels of Mt                                   LCE,(x,y) = ∑ y(x,y),k (ψ (Q(x,y) ) − ψ (α(x,y),k )) ,
+with value 1 to their respective closest line as follows                                                         k=1
+
+
+       d (x, y) = arg min(rt,i,θt,i)∈Rt |x cos (θt,i ) + y sin (θt,i ) − rt,i |.        where ψ is the digamma function, y(x,y),k = 1 if the pixel (x, y)
+                                                                                        of I belongs to ground truth class k, Q(x,y) = ∑Kk=1 α(x,y),k , and
+    We aim to estimate crop sizes along the detected rows using                         α(x,y),k is the evidence predicted by the network in support of
+these distances d(x, y). Hence, we use an indicator function 𝟙(x, y)                    class k. We do not compute this loss for the pixels assigned to
+that returns 1 if the pixel (x, y) is 𝟙 in Mt and zero otherwise                        the “unknown” class, so we sum only over the remaining K − 1
+                            ∑ 𝟙(x,y) d(x,y)
+to extract the mean μd = (x,y) N            and standard deviation                      classes, i.e., soil, crop, and weed. We additionally minimize the
+        ∑    𝟙(x,y)   (d(x,y)−μ )2
+                                                                                        Kullback-Leibler (KL) divergence between the uniform D(1K−1 )
+σd = √ (x,y)  N
+                     d
+                       . We define the minimum distance dmin                            and predicted Dirichlet distribution D(α̃ (x,y) ) for all non-ground-
+required for any unlabeled vegetation instance to be labeled                            truth classes (Sensoy et al., 2018),
+as a weed as
+                                                                                                  L(x,y) = LCE,(x,y) + λepoch KL [D (α̃ (x,y) ) ‖D (1K−1 )] ,            (1)
+                                dmin = μd + δ      σd ,
+                                                                                                         α̃ (x,y),k = y(x,y),k + (1 − y(x,y),k ) α(x,y),k ,
+where δ = 3 in our setting, such that only vegetation instances with
+a large distance from all rows are considered weeds. All vegetation                                                                            epoch
+                                                                                        for all K − 1 classes, and λepoch = min (1.0, T ) with epoch being
+components that were not labeled as crops and whose distance to the
+                                                                                        the current training epoch and T the maximum annealing epoch.
+lines is smaller than dmin are left unlabeled. Note that large values of
+                                                                                        We minimize the overall training loss
+δ reduce the number of components labeled as weeds, while small
+values of δ are prone to weed labeling errors. The key idea behind                                                        1
+                                                                                                                                 H W
+
+this step is that μd and σd represent the area around the detected                                                L=        ∑ ∑L ,
+                                                                                                                         HW x=1 y=1 (x,y)
+crop row where we assume there may be other crops that were not
+touched by the line and that we leave unlabeled. Outside of this area,                  which is the average over all image pixels, iterating over all training
+we are fairly confident that the vegetation component is a weed as                      images. At inference time, the network predicts the semantic class
+it is far from the detected crop row with plants of estimated size                      and an uncertainty for each pixel, that we use for our label
+μd . The resulting label for the example image is shown in Figure 3,                    refinement.
+where components close to the crop row on the right are not
+labeled while the component on the upper-left corner is labeled
+as a weed.                                                                              3.4 Uncertainty-based label refinement
+                                                                                             We use the network’s predicted Dirichlet distribution D(α(x,y) )
+3.3 Learning with uncertainty                                                           over all K − 1 classes to quantify the prediction uncertainty for post-
+                                                                                        processing and refining the predicted semantic labels. The network’s
+    Once we finish our mapping mission as described in Section 3.2,                     prediction uncertainty (Sensoy et al., 2018) for a pixel (x, y) of image
+we can extract any number of image-label pairs with any size,                           I is given by
+rotation, and aspect ratio. We use the extracted labels to train
+                                                                                                                                   K−1
+a semantic segmentation network. We follow the evidential deep                                                    ut,(x,y) =                    ,
+                                                                                                                                K−1
+learning framework by Sensoy et al. (2018) to predict semantic                                                                 ∑k=1 α(x,y),k
+segmentation and the network’s prediction uncertainty at the same
+                                                                                        where K − 1 is the number of classes without the “unknown” class.
+time. Estimating the prediction uncertainty allows us to account for
+                                                                                        In our crop-weed segmentation case, the most under-represented
+the “unknown” class by refining the network’s semantic predictions
+                                                                                        class is weed. Thus, the network will be more uncertain about areas
+in a post-processing step described in Section 3.4.
+                                                                                        representing weeds than the other classes. We define an adaptive
+    The key idea behind evidential deep learning is to predict
+                                                                                        threshold to select the most uncertain pixels (x, y) in any image I as
+a Dirichlet distribution over all possible class probabilities
+instead of a single point estimate as in deterministic deep neural                                       max (u(x,y) ) − min (u(x,y) )
+networks. In this way, the evidential network minimizes the                                         τ=                                       + min (u(x,y) ) .
+                                                                                                                         2
+prediction error while maximizing the prediction uncertainty for
+ambiguous image parts. We use evidential deep learning instead                              We compute a binary mask Ut ∈ {0, 1}H×W where a pixel (x, y)
+of Bayesian deep learning approaches (Gal and Ghahramani,                               is 1, if u(x,y) > τ, and 0 otherwise. We compute the connected
+2016; Beluch et al., 2018a) as it is empirically shown to produce                       components of our semantic prediction, aiming to use the ratio
+similarly or better-calibrated prediction uncertainties (Sensoy et al.,                 between the size of the object and its number of uncertain pixels
+2018) while being computationally more efficient during training                        to refine the component’s label. Most of the vegetation components
+than ensemble methods and during inference than Monte                                   have high uncertainty at their instance boundaries. Instead, we
+Carlo dropout.                                                                          are interested in those components for which also large amounts
+
+
+
+Frontiers in Robotics and AI                                                       06                                                                         frontiersin.org
+Roggiolani et al.                                                                                                          10.3389/frobt.2025.1548143
+
+
+
+
+   FIGURE 5
+   For the RGB input image on the left, we show the semantic ground truth labels, where crops are represented in green, weeds in red, and the soil in
+   black. Then, we show our network’s prediction and we highlights some mistakes using white dotted circles, where weeds are mislabeled as crops. The
+   fourth image shows our network’s uncertainty. As expected, the network is mostly uncertain about the boundaries of the plants and about the weeds,
+   we see that even the weeds labeled as crops in our prediction have high uncertainty. The last image shows our post-processed prediction, after we
+   label as weeds the highly uncertain vegetation components. We can see that this corrects many of the network’s errors.
+
+
+
+
+of interior pixels are uncertain. We iterate over all c ∈ {1, …, C}             generation approaches on multiple datasets; (ii) we outperform
+crop components in our network’s prediction and compute for                     previous unsupervised semantic segmentation approaches by
+each one a binary mask Cc ∈ {0, 1}H×W , which is 1 for all pixels               combing our spatially consistent generated labels and uncertainty-
+belonging to the component. We also compute their bounding                      aware semantic neural networks; and (iii) we improve the
+                 y height width                 y
+box bc = (bxc , bc , bc  , bc ), where bxc and bc are the coordinates           performance of fully supervised models on previously unseen crops,
+                                                            height
+of the upper left corner of the bounding box, while bc             and          growth stages, and soil conditions after fine-tuning the network
+ width                                                                          using our automatically generated labels.
+bc     are the height and width of the bounding box. We define an
+adaptive threshold
+
+                            1      bwidth
+                                     c      b
+                                                   height
+                                                                                4.1 Experimental setup
+                     τc =     min ( height , cwidth ) .
+                            4      b        bc
+                                      c
+                                                                                4.1.1 Datasets
+    This threshold helps us avoid detecting as weeds a lot of small                  We use four datasets, three of which are publicly available:
+spikes of uncertainty that could arise because of shadows, reflections,         PhenoBench (Weyler et al., 2024), as well as the Carrots and Onions
+or insects. In this way, we only act upon vegetation components                 from Lincoln University (Bosilj et al., 2020), and a Sugar Beets
+where there is a large uncertain area. If the network is uncertain              dataset introduced by Weyler et al. (2022b). The Carrots dataset
+about the prediction of crop component c, it holds that                         was recorded in Lincolnshire, United Kingdom, in June. The field is
+                                                                                under substantial weed pressure and contains weeds with a similar
+                         ∑(x,y) U(x,y) Cc,(x,y)
+                                                                                appearance to the crop. Furthermore, several regions of vegetation
+                                          height
+                                                   > τc .            (2)
+                            bwidth     bc                                       contain crops and weeds in close proximity. The Onions dataset
+                             c
+                                                                                was also recorded in Lincolnshire, United Kingdom, but in April.
+If crop component c fullfills Equation 2, we assign the component’s             The weed pressure is lower compared to the Carrots dataset. The
+uncertain pixels (x, y) with U(x,y) = 1 to the weed class. We do                PhenoBench dataset was recorded in Meckenheim, Germany, on
+not re-assign the whole vegetation component as a weed because                  different dates between May and June to capture different growth
+our network does not provide instances. Hence, there may be                     stages. The field contains two varieties of sugar beets and six
+components that contain both weeds and crops. These components                  different weed varieties. The weed pressure varies as the dataset
+likely have higher uncertainty since they are labeled as “unknown”              contains images from fields that were fully, partially, or not treated
+and thus being ignored during training. We show in Figure 5 the                 at all with herbicides. The Sugar Beets dataset was also recorded
+result of our post-processing operation for an example image,                   in Meckenheim, Germany, over five different weekly sessions. The
+highlighting the correspondence between the network’s wrong                     field is arranged with small spacing between plants and shows high
+predictions, the estimated uncertainty and the post-processed                   weed pressure, inducing challenging conditions. We refer to Table 1
+semantic prediction.                                                            for information about the camera, image resolution, and ground
+                                                                                sampling distance of the datasets.
+
+4 Results                                                                       4.1.2 Training details and hyperparameters
+                                                                                    We use ERFNet (Romera et al., 2018) as our network trained
+    The main focus of this work is an automatic labeling pipeline for           using the Adam (Kingma and Ba, 2015) optimizer, a learning rate
+semantic soil-weed-crop segmentation of RGB images. The results of              of 0.01, and a batch size of 32. We set T = 25 in Equation 1 to
+our experiments support our key claims: our approach (i) generates              linearly increase λepoch over the first 25 epochs. We report all the
+more accurate semantic labels than previous unsupervised label                  hyperparameters of our method with their values in Table 2. To
+
+
+
+Frontiers in Robotics and AI                                               07                                                           frontiersin.org
+Roggiolani et al.                                                                                                                       10.3389/frobt.2025.1548143
+
+
+
+
+TABLE 1 Details for the datasets used in the paper: name, reference paper, camera sensor, image resolution and GSD.
+
+  Dataset             Reference                Camera                                                                  Image resolution [px]                     GSD [ mm
+                                                                                                                                                                       px
+                                                                                                                                                                          ]
+
+  PhenoBench        Weyler et al. (2024)       PhaseOne iXM-100 with a 80 mm RSM prime lens on a gimbal (UAV)               11 664 × 8 750                            1
+
+    Carrots          Bosilj et al. (2020)      Teledyne DALSA Genie Nano deployed on a manually pulled cart (UGV)            2 428 × 1 985                           0.4
+
+    Onions           Bosilj et al. (2020)      Teledyne DALSA Genie Nano deployed on a manually pulled cart (UGV)            2 149 × 1 986                           0.4
+
+  Sugar Beets       Weyler et al. (2022b)      PhaseOne iXM-100 (UAV)                                                        4 320 × 4 100                           1.5
+
+
+
+
+TABLE 2 List of the hyperparameters of our method, where they are used, and their chosen values.
+
+                                Hyperparameter                                                       Method                                        Value
+
+                    Minimum number of pixels for detection (τpx )                               Hough line detection                         H (i.e., image height)
+
+                               Width of the line to fit (lw )                                   Hough line detection                                5       px
+
+                         Confidence interval for crop rows (δ)                                      Weed labeling                                       3
+
+                      Maximum number of annealing epochs (T)                                   Evidential deep learning                                 25
+
+
+
+
+evaluate the quality of the labels, we generate labels for the validation                at inference time for which they recover class and instance labels.
+sets of PhenoBench and Sugar Beets, as well as for the whole Carrots                     We use the model trained on Imagenet (Deng et al., 2009) and MS
+and Onions dataset. Second, we automatically generate labels for the                     COCO with 800 clusters. Lottes et al. (2016) propose a domain-
+images in their training sets to train our network and evaluate the                      specific method for generating per-pixel crop and weed labels. They
+results on the manually annotated validation sets. We do not split                       use a vegetation mask to detect the main crop row and then label
+Carrots and Onions to train on them since they consist of only 20                        all other vegetation components as weeds. We use their official
+images each. Thus, we do not use them for model training. Instead,                       implementation, removing the NIR image channels. We evaluate
+we evaluate our label generation and the generalization capabilities                     their automatically generated labels (base) and the performance of
+of fine-tuned models on these datasets.                                                  ERFNet trained on their labels (learned). We train the same network
+                                                                                         with the same training hyperparameters on their and our generated
+4.1.3 Metrics                                                                            label to ensure a fair comparison. We report the results of ERFNet
+     We use the intersection over union (IoU) (Everingham et al.,                        trained on the manually annotated training set of PhenoBench and
+2010) as a metric for all of our experiments. For the automatic                          evaluated on the validation set as an upper performance bound.
+labeling pipeline, we also report the boundary IoU (Cheng et al.,
+2021) to have a better understanding of the approaches’ limitations.
+The reported mean IoU (mIoU) values are the macro-averages over                          4.2 Automatic labeling
+all classes.
+                                                                                             In the first experiment, we show that our automatic labeling
+4.1.4 Baselines                                                                          pipeline generates more accurate semantic soil-weed-crop labels
+    We use three baselines: two are general-purpose unsupervised                         than other methods on multiple datasets. We compare against two
+semantic segmentation networks not specifically developed for the                        general-purpose unsupervised semantic segmentation networks and
+agricultural domain, while one is an automatic labeling method                           the domain-specific approach by Lottes et al. (2016).
+specifically developed for the agricultural domain. The first baseline                       We show the results on all four datasets in Table 3. The
+is STEGO by Hamilton et al. (2022), which provides an official                           general-purpose approaches perform worse than the domain-
+implementation for the evaluation alongside their models. We use                         specific methods across all datasets, except for U2Seg on the Onions
+the model trained on MS COCO (Lin et al., 2014) with the vision                          dataset. As Onions have thin leaves, they are hard to detect with
+transformer architecture (Dosovitskiy et al., 2021). STEGO predicts                      common color histogram thresholding methods, such as the one
+different per-pixel features and then clusters them using self and                       by Lottes et al. (2016). Furthermore, the weeds in this dataset are
+cross attention mechanisms (Vaswani et al., 2017). Our second                            the same size as the crops, leading to bias in crop row detection
+baseline is U2Seg by Niu et al. (2024), which builds on top of STEGO                     and introducing a higher risk of confusing weeds and crops. Our
+and uses instance information to overcome some of the limitations                        approach for label generation, referred to as Ours (base), shows
+of the previous work; they also open-source their code and provide                       higher crop label quality than Lottes (base) while performing
+their models. U2Seg proposes a universal segmentation, coupling                          on par or better in terms of weed label quality. Particularly,
+instances and semantic classes at training time, to predict clusters                     Lottes (base) confuses substantially more weeds with crops, while
+
+
+
+Frontiers in Robotics and AI                                                        08                                                                           frontiersin.org
+Roggiolani et al.                                                                                                                                       10.3389/frobt.2025.1548143
+
+
+
+
+TABLE 3 Performance of all the baselines on the PhenoBench dataset, Carrots dataset, Onion dataset, and Sugar Beets dataset.
+
+        Dataset                     Approach                                     IoU [%]                               mIoU                        Boundary IoU [%]
+
+                                                                Soil            Crop               Weed                                   Soil           Crop               Weed
+
+                                        STEGO                    21.4            11.9                 0.4                11.2              0.0              1.5                0.0
+
+                                        U2Seg                    84.6            40.0                 2.4                42.3             45.8             11.7                3.4
+       PhenoBench
+                                     Lottes (base)               99.6            44.1                7.6                 50.5              0.0              0.0                0.9
+
+                                      Ours (base)                98.8            80.7                 7.2                62.2             86.3             79.1               13.2
+
+                                        STEGO                    28.4             5.1                15.8                16.4              0.0              0.9                0.0
+
+                                        U2Seg                    80.1            20.4                 2.3                34.3             36.2              0.0               19.3
+          Carrots
+                                     Lottes (base)               89.1            15.9                34.0                46.3              0.0              0.0                6.8
+
+                                      Ours (base)                90.4            12.6                42.7                48.6             84.4             23.6                9.4
+
+                                        STEGO                    26.5             5.1                 3.0                11.5              0.0              2.4                0.0
+
+                                        U2Seg                    92.8             0.0                 4.3                32.4             24.2              0.0                8.2
+          Onion
+                                     Lottes (base)               89.7             1.4                 1.1                30.7              0.0              0.0                1.6
+
+                                      Ours (base)                95.4            10.7                16.6                40.9             74.2             10.7               16.7
+
+                                        STEGO                    24.9             4.7                 1.3                10.3              0.0              1.9                0.0
+
+                                        U2Seg                    77.9             9.9                 6.7                31.5              1.8              2.8                0.0
+        Sugar Beets
+                                     Lottes (base)               98.0            23.6                18.8                46.8              0.0              0.0                1.5
+
+                                      Ours (base)                97.7            50.6                24.7                57.7             88.7              0.0                1.8
+
+The top rows are the general purpose approaches, while the bottom rows are the domain-specific ones. We report the mean IoU, plus the IoU and boundary IoU per class. In bold the best
+results per column.
+
+
+
+
+our approach, by design, does not assign labels to hard-to-label                                 crops. On the Carrots dataset U2Seg outperforms the other methods
+vegetation components, as described in Section 3.2. The Carrots                                  on the weeds boundary IoU. The weed IoU suggests that U2Seg
+dataset is the only one where U2Seg outperforms the domain-                                      overestimates weeds, thus obtaining a boost as the total number of
+specific approaches, which suffer from the weed pressure when                                    pixels in the IoU computation is low. On the Onions dataset, our
+estimating the crop rows. Our method consistently outperforms all                                method’s IoU and boundary IoU are almost the same irrespective
+other baselines across all datasets with different crop species, weed                            of the semantic class since the crops and weeds are thin. Thus,
+pressure, growth stages and lighting conditions. Most approaches                                 the boundary area covers the whole vegetation instance. The other
+fail on the Onions dataset due to brighter illumination and thin                                 approaches fail to correctly assign weed and crop boundaries on
+crops. In contrast, our approach improves by approx. 9% mIoU                                     the Onion dataset, which follows from the low weed and crop
+over the second-best baseline, U2Seg, importantly showing highest                                IoU. On the Sugar Beets dataset, all approaches fail to predict
+improvements in both vegetation classes.                                                         boundaries, most likely due to unusually high weed pressure. Our
+     The boundary IoU confirms the result of the standard IoU                                    method accurately segments soil boundaries, suggesting that it at
+metric. As shown in Table 3, the approach by Lottes et al. (2016)                                least successfully differentiates between soil and vegetation. Overall,
+poorly segments boundaries on most of the datasets. This might                                   the results suggest that most approaches underestimate the size of
+be due to wrongly segmented vegetation masks. Aiming to include                                  vegetation, both crops and weeds. Instead, our automatic labeling
+the boundary of weeds more accurately may worsen the overall                                     method shows the strongest boundary segmentation performance
+performance since soil could be wrongly considered as vegetation.                                across all methods and classes on most datasets, often by a large
+We hypothesise that our approach might suffer from the same                                      margin compared to the second-best method. This further verifies
+problem on the Carrots dataset. The difference between IoU and                                   our claim that our automatic labeling pipeline generates more
+boundary IoU per class suggests that we underestimate the size                                   accurate semantic soil-weed-crop labels than previous methods.
+of weeds, i.e., high IoU but low boundary IoU for weeds, and                                     We show qualitative results of Lottes et al. (2016) and our
+overestimate crop size, i.e., low IoU but high boundary IoU for                                  approach in Figure 6.
+
+
+
+Frontiers in Robotics and AI                                                                09                                                                            frontiersin.org
+Roggiolani et al.                                                                                                                          10.3389/frobt.2025.1548143
+
+
+
+
+   FIGURE 6
+   Qualitative results of our and Lottes et al. methods on PhenoBench (top row) and Onions (bottom row). Soil is black, crops are green, weeds are red,
+   vegetation that we leave unlabeled is white. In the dashed blue circles, we highlight segmentation errors.
+
+
+
+
+4.3 Unsupervised semantic segmentation                                          TABLE 4 Performance of ERFNet trained on the labels generated by ours
+                                                                                and the approach by Lottes et al.
+
+    The second experiment evaluates the performance of our                               Approach                                 IoU [%]                      mIoU
+automatic label generation combined with network training and
+uncertainty post-processing on the PhenoBench dataset. We                                                             Soil        Crop          Weed
+show that training the evidential ERFNet using our automatically
+                                                                                      Lottes et al. (learned)         99.1          54.6          11.2           55.0
+generated labels outperforms other unsupervised semantic
+segmentation models. The general-purpose learning-based                            Lottes et al. (+uncertainty)       99.1          27.2           8.1           44.8
+approaches have not been fine-tuned on human-labeled field images
+to ensure a fair comparison. Our approach and Lottes et al. (2016)                       Ours (learned)               99.1         88.8           21.0           69.6
+
+generate labels on the PhenoBench training set. We use the public
+                                                                                      Ours (+uncertainty)             99.1          88.6          22.7           70.1
+training set of images to have a fair comparison with the fully
+suprvised ERFNet model, trained on the manual labels. Trained                       Ours (PhenoBench test)             99.5         87.9          24.6           70.7
+models are evaluated on the official PhenoBench validation set.
+    Table 4 summarizes the results. We use (learned) to refer to                   ERFNet (fully supervised)           98.0         83.4          33.5           71.6
+
+the results obtained by ERFNet after being trained on the labels                We also report the results when we use the uncertainty to post process the semantic
+generated by the approach, and we use (+uncertainty) to refer to the            predictions. The bottom line shows a fully supervised approach trained on manual labels as
+                                                                                upper bound of the performance. Best results per column in bold.
+previous results once we post-process them using the uncertainty
+estimated by the model. The approach by Lottes et al. (2016)
+confuses more crops with weeds since it naively assigns all vegetation          more weeds, it also confuses weeds with crops more often. Hence,
+components that are not on the main crop row to the weed                        our approach performs better on both the crop and soil classes.
+class. Hence, Lottes et al. (2016) introduce inconsistent labels in the         This experiment confirms that our method’s conservative approach
+model’s training data. Thus, training the ERFNet on Lottes’ labels              to labeling, ignoring vegetation components likely to introduce
+does not yield uncertainty estimations that are useful for improving            labeling errors combined with evidential deep learning, is a viable
+the predictions during post-processing. Additionally, this leads to             solution to largely reduce the need for manually annotated images.
+smaller performance improvements after training on their labels
+than after training on our labels. Using our generated labels to train
+the ERFNet substantially improves the weed and crop predictions                 4.4 Generalization capability
+over directly using our generated labels. We further improve mIoU
+and weed predictions by exploiting the estimated uncertainties in                   In the third experiment, we show that our approach enhances
+Ours (uncertainty) for post-processing. Most importantly, Ours                  the performance of networks trained in a fully supervised fashion
+(uncertainty) noticeably closes the performance gap between fully               by fine-tuning on unseen fields using our automatically generated
+supervised and state-of-the-art unsupervised approaches. However,               labels. We do not use our evidential network but train an ERFNet
+the ERFNet trained on human-labeled training images still predicts              using the standard cross-entropy loss to seamlessly fine-tune
+weeds more accurately. As the fully supervised model predicts                   existing networks pre-trained in a fully supervised fashion. We train
+
+
+
+Frontiers in Robotics and AI                                               10                                                                             frontiersin.org
+Roggiolani et al.                                                                                                                                           10.3389/frobt.2025.1548143
+
+
+
+
+TABLE 5 Performance of fully supervised models trained on manually annotated data, and in brackets the difference with respect to the model after
+fine-tuning.
+
+                                Train                                                 Test                                           IoU [%]                               mIoU
+
+                                                                                                                   Soil                  Crop           Weed
+
+                                                                                  PhenoBench                98.0     (−0.4)      83.4      (−11.0)   33.5     (−11.7)   71.6    (−7.7)
+
+                                                                                   Sugar Beets              93.5     (+0.2)       7.3      (+44.4)   16.8      (+8.2)   39.2   (+17.6)
+         PhenoBench                         (+ Sugar Beets)
+                                                                                     Carrots                89.0     (−2.5)      11.1      (+14.9)   47.1     (−11.7)   49.1    (+0.2)
+
+                                                                                     Onions                 82.4     (+5.3)       0.5       (+5.0)   11.3      (−4.4)   31.4    (+2.0)
+
+                                                                                  PhenoBench                97.6     (−0.1)      67.0       (+9.8)   11.7      (+4.7)   60.2    (+3.4)
+
+                                                                                   Sugar Beets              98.3     (−4.2)      72.4      (−10.9)   59.2     (−20.5)   76.6   (−11.8)
+          Sugar Beets                       (+PhenoBench)
+                                                                                     Carrots                87.6     (+1.0)      36.1       (+2.1)   24.3     (+10.0)   49.0    (+4.7)
+
+                                                                                     Onions                 86.3     (+1.0)       0.2      (+12.1)   13.2      (+0.7)   33.2    (+4.6)
+
+In red if the fine-tuned model performs worse, in blue if it performs better. The gray cells show the performance on the same dataset.
+
+
+two ERFNets, one on each of the human-labeled training sets of                                      vision models that automatically interpret the data collected with
+PhenoBench and Sugar Beets. We deploy the two models on all four                                    onboard sensors, such as RGB cameras. Thus, reliable and accurate
+datasets without fine-tuning. Then, we fine-tune the two models                                     learning-based perception systems are crucial to providing valuable
+leveraging our automatically generated labels for the Sugar Beets and                               information to farmers or autonomous robots. Most learning-based
+PhenoBench datasets. Each model is fine-tuned on the dataset that                                   semantic segmentation approaches assume access to large amounts
+it was not trained on.                                                                              of human-labeled data required to train the vision model. However,
+    In Table 5, we show the performance of the two models.                                          their performance rapidly decreases in field conditions they were not
+In brackets, we provide the performance difference after fine-                                      trained on, i.e., different crop species, growth stages, weed pressure,
+tuning, where blue and red indicate performance improvements                                        and lighting conditions.
+or degradations, respectively. The gray rows show the models’                                           To address this issue, we proposed an automatic labeling
+performances on the dataset they were trained on. Due to the                                        approach to obtain semantic information from RGB images of
+domain gap between datasets, the models that were not fine-                                         agricultural fields. Our method shows semantic segmentation
+tuned have a lower performance when evaluated on unseen                                             performance close to the performance of a model trained on large
+data. Fine-tuning the models makes the performance over the                                         amounts of human-labeled data in a fully supervised fashion. This
+original training data worse as they aim to learn features that                                     significantly reduces the need for manually annotated data, reducing
+are common to both datasets. Our results suggest that using our                                     costs and relaxing the need for domain experts. The arable field
+automatically generated labels helps to close the performance gap on                                dataset works considered in our experimental evaluation report an
+previously unseen datasets with different crops, soil types, lighting                               average of 2 h per image for labeling the Onions dataset, 3–4 h
+conditions, and sensor setups. Generally, our fine-tuned models                                     per image for the Carrots dataset, and 1–3.5 h per image for the
+perform better on all classes and datasets, even on the Onions                                      PhenoBench dataset. All of the datasets went through at least two
+and Carrots datasets, the model was not pre-trained nor fine-                                       labeling rounds, doubling the costs. This highlights the need for new
+tuned on. Only the model that is fine-tuned on the Sugar Beets                                      labeling paradigms beyond fully supervised model training while
+dataset does not improve performance on the Carrots dataset.                                        maintaining strong prediction performance. Our method is a crucial
+We hypothesize this is because the PhenoBench dataset is approx.                                    step towards closing the performance gap between models trained
+10 × larger than Sugar Beets introducing data imbalance while                                       in an unsupervised fashion and fully supervised models without
+automatically generated Sugar Beets labels are of lower quality than                                adding additional labeling costs.
+labels generated on PhenoBench. In sum, using our automatically                                         In our experiments, we show that the fully supervised approach
+generated labels helps to fine-tune fully supervised models, enabling                               has a lower performance in segmenting crops compared to our
+better adaptation to unseen field conditions without any additional                                 unsupervised method, as it is trained on more weed instances.
+human labeling costs.                                                                               Nevertheless, the fully supervised method still shows the highest
+                                                                                                    mIoU. The unsupervised methods are not exposed to enough weed
+                                                                                                    labels, making them assign the crop class more often. Since the
+5 Discussion                                                                                        number of crop pixels is generally higher, these errors have a
+                                                                                                    smaller impact on the crop than on the weed segmentation. We
+    A robust perception system is crucial for the successful                                        also investigate how to use our automatic labeling in combination
+deployment of robotic platforms in arable fields. Most perception                                   with supervised methods to improve the overall performance in
+systems rely on data-driven machine learning approaches to train                                    challenging scenarios, i.e., in unseen fields with new crop species
+
+
+
+Frontiers in Robotics and AI                                                                   11                                                                        frontiersin.org
+Roggiolani et al.                                                                                                                                   10.3389/frobt.2025.1548143
+
+
+
+
+and different weed pressure. Fine-tuning comes at the cost of                                 Author contributions
+performing worse on the pre-training dataset, as shown in Table 5.
+The degradation largely depends on the size and similarity of the                                 GR: Conceptualization, Formal Analysis, Investigation,
+pre-training and automatically labeled dataset used for fine-tuning.                          Methodology, Software, Validation, Visualization, Writing–original
+Future work could investigate continuous learning methods to train                            draft, Writing–review and editing. JR: Conceptualization,
+on the newly automatically labeled images without catastrophically                            Investigation, Methodology, Writing–original draft, Writing–review
+forgetting what has already been learned.                                                     and editing. MP: Conceptualization, Supervision, Validation,
+     The need for posed images can be a limitation of our method                              Writing–original draft, Writing–review and editing. JB:
+as it cannot be applied to a dataset of unposed images. However,                              Conceptualization, Formal Analysis, Supervision, Validation,
+most of the agricultural datasets are recorded using aerial or                                Writing–original draft, Writing–review and editing. CS:
+ground vehicles that, by default, provide spatial information while                           Conceptualization, Funding acquisition, Project administration,
+recording images in the field, often using GNSS systems such as GPS.                          Resources, Supervision, Validation, Writing–original draft,
+Furthermore, we assume deployment in a managed agricultural                                   Writing–review and editing.
+field. If this assumption does not hold and the weeds are larger
+than the crops, our crop row detection fails and leads to degraded
+results. Our results, as well as those by Lottes et al. (2016), show
+that we could make use of a better vegetation mask to improve                                 Funding
+unsupervised methods. One possible solution would be to use
+NIR images, which are less dependent on the lighting conditions                                   The author(s) declare that financial support was received for
+compared to RGB images. NIR images are already commonly                                       the research, authorship, and/or publication of this article. This
+used for crop segmentation in agriculture (Sahin et al., 2023;                                work has been funded by the Deutsche Forschungsgemeinschaft
+Colorado et al., 2020). Moreover, our approach leverages uncertainty                          (DFG, German Research Foundation) under Germany’s Excellence
+estimates to post-process semantic predictions. Current state-of-                             Strategy, EXC2070-390732324-PhenoRob.
+the-art methods are known to produce partially miscalibrated
+uncertainty estimates (Beluch et al., 2018a). Thus, our post-
+processing could benefit from improvements in uncertainty-aware
+deep learning. Finally, we plan to deploy our approach on a real robot                        Conflict of interest
+to perform field trials.
+                                                                                                  The authors declare that the research was conducted in
+                                                                                              the absence of any commercial or financial relationships
+6 Conclusion                                                                                  that could be construed as a potential conflict of
+                                                                                              interest.
+     In this paper, we presented a novel approach to automatically
+generate semantic soil-crop-weed labels of images from agricultural
+fields. We evaluated our approach on four datasets recorded
+with different robotic platforms and in various fields. Our                                   Generative AI statement
+approach outperforms previous domain-agnostic and domain-
+specific unsupervised labeling approaches. Furthermore, we showed                                 The author(s) declare that no Generative AI was used in the
+that our generated labels allow fine-tuning networks trained in a                             creation of this manuscript.
+fully supervised fashion on one dataset to other agricultural fields,
+e.g., different species, growth stages, and field conditions. In this way,
+our approach increases the semantic segmentation generalization
+capabilities of existing networks for soil-weed-crop segmentation                             Publisher’s note
+without additional human labeling effort.
+                                                                                                  All claims expressed in this article are solely those
+                                                                                              of the authors and do not necessarily represent those of
+Data availability statement                                                                   their affiliated organizations, or those of the publisher,
+                                                                                              the editors and the reviewers. Any product that may be
+    The original contributions presented in the study are included in                         evaluated in this article, or claim that may be made by
+the article/supplementary material, further inquiries can be directed                         its manufacturer, is not guaranteed or endorsed by the
+to the corresponding author.                                                                  publisher.
+
+
+
+References
+   Abdar, M., Pourpanah, F., Hussain, S., Rezazadegan, D., Liu, L., Ghavamzadeh, M.,            Ahmadi, A., Nardi, L., Chebrolu, N., and Stachniss, C. (2020). “Visual servoing-based
+et al. (2021). A review of uncertainty quantification in deep learning: techniques,           navigation for monitoring row-crop fields,” in Proc. Of the IEEE intl. Conf. On robotics
+applications and challenges. Inf. fusion 76, 243–297. doi:10.1016/j.inffus.2021.05.008        and automation (ICRA).
+
+
+
+
+Frontiers in Robotics and AI                                                             12                                                                          frontiersin.org
+Roggiolani et al.                                                                                                                                              10.3389/frobt.2025.1548143
+
+
+
+
+  Balabantaray, A., Behera, S., Liew, C., Chamara, N., Singh, M., Jhala, A. J., et al. (2024).          Horrigan, L., Lawrence, R. S., and Walker, P. (2002). How sustainable agriculture can
+Targeted weed management of palmer amaranth using robotics and deep learning                          address the environmental and human health harms of industrial agriculture. Environ.
+(yolov7). Front. Robotics AI 11, 1441371. doi:10.3389/frobt.2024.1441371                              health Perspect. 110, 445–456. doi:10.1289/ehp.02110445
+   Beluch, W. H., Genewein, T., Nurnberger, A., and Kohler, J. M. (2018a). “The power                   Hough, P. V. C. (1959). “Machine analysis of bubble chamber pictures,” in Proc. Of
+of ensembles for active learning in image classification,” in Proc. Of the IEEE/CVF conf.             the intl. Conf. On high-energy accelerators and instrumentation.
+On computer vision and pattern recognition (CVPR), 9368–9377.
+                                                                                                        Kingma, D., and Ba, J. (2015). “Adam: a method for stochastic optimization,” in Proc.
+   Beluch, W. H., Genewein, T., Nürnberger, A., and Köhler, J. M. (2018b). “The power                 Of the intl. Conf. On learning representations (ICLR).
+of ensembles for active learning in image classification,” in Proc. Of the IEEE/CVF conf.
+                                                                                                         Lakshminarayanan, B., Pritzel, A., and Blundell, C. (2017). “Simple and scalable
+On computer vision and pattern recognition (CVPR).
+                                                                                                      predictive uncertainty estimation using deep ensembles,” in Proc. Of the conf. Neural
+  Boatswain Jacques, A. A., Adamchuk, V. I., Park, J., Cloutier, G., Clark, J. J., and Miller,        information processing systems (NIPS).
+C. (2021). Towards a machine vision-based yield monitor for the counting and quality
+                                                                                                        Lee, J., Oh, S. J., Yun, S., Choe, J., Kim, E., and Yoon, S. (2022). “Weakly supervised
+mapping of shallots. Front. Robotics AI 8, 627067. doi:10.3389/frobt.2021.627067
+                                                                                                      semantic segmentation using out-of-distribution data,” in Proc. Of the IEEE/CVF conf.
+   Bosilj, P., Aptoula, E., Duckett, T., and Cielniak, G. (2020). Transfer learning between           On computer vision and pattern recognition (CVPR).
+crop types for semantic segmentation of crops versus weeds in precision agriculture. J.
+                                                                                                        Lin, T., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., et al. (2014).
+Field Robotics (JFR) 37, 7–19. doi:10.1002/rob.21869
+                                                                                                      “Microsoft COCO: common objects in context,” in Proc. Of the europ. Conf. On
+  Canny, J. F. (1986). A computational approach to edge detection. IEEE Trans. Pattern                computer vision (ECCV).
+Analysis Mach. Intell. (TPAMI) 8, 679–698. doi:10.1109/TPAMI.1986.4767851
+                                                                                                         Lottes, P., Höferlin, M., Sander, S., Müter, M., Schulze-Lammers, P., and Stachniss,
+  Cao, H., Wang, Y., Chen, J., Jiang, D., Zhang, X., Tian, Q., et al.(2023). “Swin-unet:              C. (2016). “An effective classification system for separating sugar beets and weeds
+unet-like pure transformer for medical image segmentation,” in Proc. Of the europ. Conf.              for precision farming applications,” in Proc. Of the IEEE intl. Conf. On robotics and
+On computer vision (ECCV).                                                                            automation (ICRA).
+   Chen, J., Guo, J., Zhang, H., Liang, Z., and Wang, S. (2024). Weakly supervised                       Lottes, P., Höferlin, M., Sander, S., and Stachniss, C. (2017). Effective vision-based
+localization model for plant disease based on siamese networks. Front. Plant Sci. 15,                 classification for separating sugar beets and weeds for precision farming. J. Field Robotics
+1418201. doi:10.3389/fpls.2024.1418201                                                                (JFR) 34, 1160–1178. doi:10.1002/rob.21675
+  Chen, L., Papandreou, G., Schroff, F., and Adam, H. (2017). Rethinking atrous                          Lottes, P., and Stachniss, C. (2017). “Semi-supervised online visual crop and weed
+convolution for semantic image segmentation. arXiv preprint arXiv:1706.05587.                         classification in precision farming exploiting plant arrangement,” in Proc. Of the
+                                                                                                      IEEE/RSJ intl. Conf. On intelligent robots and systems (IROS).
+   Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. (2020). “A simple framework
+for contrastive learning of visual representations,” in Proc. Of the intl. Conf. On machine             Loyd, S. P. (1982). Least squares quantization in pcm. IEEE Trans. Inf. Theory 28,
+learning (ICML).                                                                                      129–137. doi:10.1109/TIT.1982.1056489
+  Cheng, B., Girshick, R., Dollár, P., Berg, A. C., and Kirillov, A. (2021). “Boundary iou:             Magistri, F., Weyler, J., Gogoll, D., Lottes, P., Behley, J., Petrinic, N., et al.
+improving object-centric image segmentation evaluation,” in Proc. Of the IEEE/CVF                     (2023). From one field to another – unsupervised domain adaptation for semantic
+conf. On computer vision and pattern recognition (CVPR), 15334–15342.                                 segmentation in agricultural robotics. Comput. Electron. Agric. 212, 108114.
+                                                                                                      doi:10.1016/j.compag.2023.108114
+  Cheng, C., Fu, J., Su, H., and Ren, L. (2023). Recent advancements in agriculture
+robots: benefits and challenges. Machines 11, 48. doi:10.3390/machines11010048                          Murugan, K., Shankar, B. J., Sumanth, A., Sudharshan, C. V., and Reddy, G. V. (2020).
+                                                                                                      “Smart automated pesticide spraying bot,” in Proc. Of the intl. Conf. On intelligent
+   Colorado, J. D., Calderon, F. C., Mendez, D., Petro, E., Rojas, J. P., Correa,
+                                                                                                      sustainable systems (ICISS).
+E. S., et al. (2020). A novel nir-image segmentation method for the precise
+estimation of above-ground biomass in rice crops. PLOS ONE 15, e0239591.                                Najman, L., and Schmitt, M. (1996). Geodesic saliency of watershed contours and
+doi:10.1371/journal.pone.0239591                                                                      hierarchical segmentation. IEEE Trans. Pattern Analysis Mach. Intell. (TPAMI) 18,
+                                                                                                      1163–1173. doi:10.1109/34.546254
+  Cui, J., Tan, F., Bai, N., and Fu, Y. (2024). Improving u-net network for semantic
+segmentation of corns and weeds during corn seedling stage in field. Front. Plant Sci.                  Niu, D., Wang, X., Han, X., Lian, L., Herzig, R., and Darrell, T. (2024). “Unsupervised
+15, 1344958. doi:10.3389/fpls.2024.1344958                                                            universal image segmentation,” in Proc. Of the IEEE/CVF conf. On computer vision and
+                                                                                                      pattern recognition (CVPR).
+  Dainelli, R., Bruno, A., Martinelli, M., Moroni, D., Rocchi, L., Morelli, S.,
+et al. (2024). Granoscan: an ai-powered mobile app for in-field identification                          Otsu, N. (1979). A threshold selection method from gray-level histograms. IEEE
+of biotic threats of wheat. Front. Plant Sci. 15, 1298791. doi:10.3389/fpls.2024.                     Trans. Syst. Man, Cybern. 9, 62–66. doi:10.1109/tsmc.1979.4310076
+1298791
+                                                                                                        Pan, Y., Magistri, F., Läbe, T., Marks, E., Smitt, C., McCool, C., et al. (2023). “Panoptic
+  Deng, J., Dong, W., Socher, R., Li, L., Li, K., and Fei-Fei, L. (2009). “Imagenet: a large-         mapping with fruit completion and pose estimation for horticultural robots,” in Proc.
+scale hierarchical image database,” in Proc. Of the IEEE conf. On computer vision and                 Of the IEEE/RSJ intl. Conf. On intelligent robots and systems (IROS).
+pattern recognition (CVPR).
+                                                                                                         Pong, T.-C., Shapiro, L. G., Watson, L. T., and Haralick, R. M. (1984). Experiments
+   Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T.,            in segmentation using a facet model region grower. Comput. Vis. Graph. Image Process.
+et al. (2021). “An image is worth 16x16 words: transformers for image recognition at                  25, 1–23. doi:10.1016/0734-189x(84)90046-x
+scale,” in Proc. Of the intl. Conf. On learning representations (ICLR).
+                                                                                                        Riehle, D., Reiser, D., and Griepentrog, H. W. (2020). Robust index-based
+  Everingham, M., Van Gool, L., Williams, C., Winn, J., and Zisserman, A. (2010). The                 semantic plant/background segmentation for rgb-images. Comput. Electron. Agric. 169,
+pascal visual object classes (VOC) challenge. Intl. J. Comput. Vis. (IJCV) 88, 303–338.               105201–201. doi:10.1016/j.compag.2019.105201
+doi:10.1007/s11263-009-0275-4
+                                                                                                         Romera, E., Alvarez, J. M., Bergasa, L. M., and Arroyo, R. (2018). ERFNet:
+  Ewert, F., Baatz, R., and Finger, R. (2023). Agroecology for a sustainable agriculture              efficient residual factorized ConvNet for real-time semantic segmentation. IEEE Trans.
+and food system: from local solutions to large-scale adoption. Annu. Rev. Resour. Econ.               Intelligent Transp. Syst. (TITS) 19, 263–272. doi:10.1109/tits.2017.2750080
+15, 351–381. doi:10.1146/annurev-resource-102422-090105
+                                                                                                         Ronneberger, O., Fischer, P., and Brox, T. (2015). “U-net: convolutional networks
+  Felzenszwalb, P. F., and Huttenlocher, D. P. (2004). Efficient graph-                               for biomedical image segmentation,” in Proc. Of the medical image computing and
+based image segmentation. Intl. J. Comput. Vis. (IJCV) 59, 167–181.                                   computer-assisted intervention (MICCAI).
+doi:10.1023/b:visi.0000022288.19776.77
+                                                                                                        Sahin, H. M., Miftahushudur, T., Grieve, B., and Yin, H. (2023). Segmentation
+   Gal, Y., and Ghahramani, Z. (2016). “Dropout as a bayesian approximation:                          of weeds and crops using multispectral imaging and crf-enhanced u-net. Comput.
+representing model uncertainty in deep learning,” in Proc. Of the intl. Conf. On machine              Electron. Agric. 211, 107956. doi:10.1016/j.compag.2023.107956
+learning (ICML).
+                                                                                                        Saqib, M. A., Aqib, M., Tahir, M. N., and Hafeez, Y. (2023). Towards deep learning
+   Gao, J., Wang, B., Wang, Z., Wang, Y., and Kong, F. (2020). A wavelet                              based smart farming for intelligent weeds management in crops. Front. Plant Sci. 14,
+transform-based image segmentation method. Intl. J. Light Electron Opt. 208, 164123.                  1211235. doi:10.3389/fpls.2023.1211235
+doi:10.1016/j.ijleo.2019.164123
+                                                                                                         Sensoy, M., Kaplan, L., and Kandemir, M. (2018). “Evidential deep learning to
+  Hamilton, M., Zhang, Z., Hariharan, B., Snavely, N., and Freeman, W. T. (2022).                     quantify classification uncertainty,” in Proc. Of the conf. On neural information processing
+“Unsupervised semantic segmentation by distilling feature correspondences,” in Proc.                  systems (NeurIPS).
+Of the intl. Conf. On learning representations (ICLR).
+                                                                                                        Storm, H., Seidel, S., Klingbeil, L., Ewert, F., Vereecken, H., Amelung, W., et al.
+  He, K., Gkioxari, G., Dollár, P., and Girshick, R. (2017). “Mask R-CNN,” in Proc. Of                (2024). Research priorities to leverage smart digital technologies for sustainable crop
+the IEEE intl. Conf. On computer vision (ICCV).                                                       production. Eur. J. Agron. 156, 127178. doi:10.1016/j.eja.2024.127178
+   Höffmann, M., Patel, S., and Büskens, C. (2023). Optimal coverage path                                Strudel, R., Garcia, R., Laptev, I., and Schmid, C. (2021). “Segmenter: transformer
+planning for agricultural vehicles with curvature constraints. Agriculture 13, 2112.                  for semantic segmentation,” in Proc. Of the IEEE/CVF intl. Conf. On computer vision
+doi:10.3390/agriculture13112112                                                                       (ICCV).
+
+
+
+
+Frontiers in Robotics and AI                                                                     13                                                                              frontiersin.org
+Roggiolani et al.                                                                                                                                          10.3389/frobt.2025.1548143
+
+
+
+
+   Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., et al.              Weyler, J., Quakernack, J., Lottes, P., Behley, J., and Stachniss, C. (2022b). Joint plant
+(2017). “Attention is all you need,” in Proc. Of the conf. On neural information processing        and leaf instance segmentation on field-scale uav imagery. IEEE Robotics Automation
+systems (NeurIPS).                                                                                 Lett. (RA-L) 7, 3787–3794. doi:10.1109/lra.2022.3147462
+  Walter, A., Finger, R., Huber, R., and Buchmann, N. (2017). Smart farming is                       Winterhalter, W., Fleckenstein, F. V., Dornhege, C., and Burgard, W. (2018). Crop row
+key to developing sustainable agriculture. Proc. Natl. Acad. Sci. 114, 6148–6150.                  detection on tiny plants with the pattern Hough transform. IEEE Robotics Automation
+doi:10.1073/pnas.1707462114                                                                        Lett. (RA-L) 3, 3394–3401. doi:10.1109/lra.2018.2852841
+  Wang, J., Lan, C., Liu, C., Ouyang, Y., Qin, T., Lu, W., et al. (2022). Generalizing to            Wu, X., Aravecchia, S., Lottes, P., Stachniss, C., and Pradalier, C. (2020). Robotic
+unseen domains: a survey on domain generalization. IEEE Trans. Knowl. Data Eng. 35,                weed control using automated weed and crop classification. J. Field Robotics (JFR) 37,
+1–8072. doi:10.1109/TKDE.2022.3178128                                                              322–340. doi:10.1002/rob.21938
+  Weyler, J., Magistri, F., Marks, E., Chong, Y. L., Sodano, M., Roggiolani, G., et al.              Zenkl, R., Timofte, R., Kirchgessner, N., Roth, L., Hund, A., Van Gool, L., et al. (2022).
+(2024). Phenobench: a large dataset and benchmarks for semantic image interpretation               Outdoor plant segmentation with deep learning for high-throughput field phenotyping
+in the agricultural domain. IEEE Trans. Pattern Analysis Mach. Intell. (TPAMI) 46,                 on a diverse wheat dataset. Front. Plant Sci. 12, 774068. doi:10.3389/fpls.2021.
+9583–9594. doi:10.1109/TPAMI.2024.3419548                                                          774068
+  Weyler, J., Magistri, F., Seitz, P., Behley, J., and Stachniss, C. (2022a). “In-field              Zhao, L., Zhao, Y., Liu, T., and Deng, H. (2023). A weakly supervised semantic
+phenotyping based on crop leaf and plant instance segmentation,” in Proc. Of the IEEE              segmentation model of maize seedlings and weed images based on scrawl labels. Sensors
+winter conf. On applications of computer vision (WACV).                                            23, 9846. doi:10.3390/s23249846
+
+
+
+
+Frontiers in Robotics and AI                                                                  14                                                                             frontiersin.org
+

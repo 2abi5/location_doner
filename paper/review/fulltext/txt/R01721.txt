@@ -1,0 +1,1133 @@
+                                              E VALUATING THE ROLE OF T RAINING DATA O RIGIN FOR
+                                              C OUNTRY-S CALE C ROPLAND M APPING IN DATA -S CARCE
+                                                      R EGIONS : A C ASE S TUDY OF N IGERIA
+
+
+                                                          Joaquin Gajardo1,4,* , Michele Volpi2 , Daniel Onwude1 , and Thijs Defraeye1,3
+arXiv:2312.10872v2 [cs.CV] 13 Jul 2025
+
+
+
+
+                                         1
+                                          Empa, Swiss Federal Laboratories for Material Science and Technology. Laboratory for Biomimetic Membranes and
+                                                                      Textiles. Lerchenfeldstrasse 5, CH-9014 St. Gallen, Switzerland
+                                                                 2
+                                                                   SDSC, Swiss Data Science Center, ETH Zurich and EPFL, Switzerland
+                                         3
+                                           Food Quality and Design, Wageningen University & Research, P.O. Box 17, 6700 AA Wageningen, the Netherlands
+                                                   4
+                                                     Institute of Agricultural Sciences, ETH Zurich, Universitätstrasse 2, Zurich, 8092, Switzerland
+                                                                  *
+                                                                    Corresponding author. Now at ETH Zurich. Email: jgajardo@ethz.ch
+
+
+
+                                                                                            A BSTRACT
+                                                 Cropland maps are essential for remote sensing-based agricultural monitoring, providing timely
+                                                 insights about agricultural development without requiring extensive field surveys. While machine
+                                                 learning enables large-scale mapping, it relies on geo-referenced ground-truth data, which is time-
+                                                 consuming to collect, motivating efforts to integrate global datasets for mapping in data-scarce
+                                                 regions. A key challenge is understanding how the quantity, quality, and proximity of the training
+                                                 data to the target region influences model performance in regions with limited local ground truth. To
+                                                 address this, we evaluate the impact of combining global and local datasets for cropland mapping
+                                                 in Nigeria at 10 m resolution. We manually labelled 1,827 data points evenly distributed across
+                                                 Nigeria and leveraged the crowd-sourced Geowiki dataset, evaluating three subsets of it: Nigeria,
+                                                 Nigeria + neighbouring countries, and worldwide. Using Google Earth Engine (GEE), we extracted
+                                                 multi-source time series data from Sentinel-1, Sentinel-2, ERA5 climate, and a digital elevation
+                                                 model (DEM) and compared Random Forest (RF) classifiers with Long Short-Term Memory (LSTM)
+                                                 networks, including a lightweight multi-task learning variant (multi-headed LSTM), previously
+                                                 applied to cropland mapping in other regions. Our findings highlight the importance of local training
+                                                 data, which consistently improved performance, with accuracy gains up to 0.246 (RF) and 0.178
+                                                 (LSTM). Models trained on Nigeria-only or regional datasets outperformed those trained on global
+                                                 data, except for the multi-headed LSTM, which uniquely benefited from global samples when local
+                                                 data was unavailable. A sensitivity analysis revealed that Sentinel-1, climate, and topographic data
+                                                 were particularly important, as their removal reduced accuracy by up to 0.154 and F1-score by 0.593.
+                                                 Handling class imbalance was also critical, with weighted loss functions improving accuracy by up to
+                                                 0.071 for the single-headed LSTM. Our best-performing model, a single-headed LSTM trained on
+                                                 Nigeria-only data, achieved an F1-score of 0.814 and accuracy of 0.842, performing competitively
+                                                 with the best global land cover product and showing strong recall performance, a metric highly-
+                                                 relevant for food security applications. These results underscore the value of regionally focused
+                                                 training data, proper class imbalance handling, and multi-modal feature integration for improving
+                                                 cropland mapping in data-scarce regions. We release our data, source code, output maps, and an
+                                                 interactive GEE web application to facilitate further research.
+
+
+
+
+                                         Keywords Deep Learning, Agriculture, Satellite Images, Time Series, Land Cover, Large-scale mapping, Sentinel
+Figure 1: Schematic diagram of our methodology for cropland mapping in Nigeria. Input data combines remote sensing
+observations (Sentinel-1, Sentinel-2, ERA5 Climate data, and topographic data) with labels from various geographical
+extents—local (Nigeria-only), regional (Nigeria and neighbouring countries), and global (Geowiki World)—processed
+into monthly pixel time series arrays of a full year. Three different models are utilized: RF and two LSTM variants
+(single-headed and multi-headed). Model performance is evaluated using standard metrics and compared to existing
+land cover products, using a held-out Nigeria test set. The pipeline outputs binary and probability cropland maps for
+Nigeria.
+
+
+1   Introduction
+Agricultural maps are relevant for a variety of downstream applications ranging from policy making, early-warning
+systems for food security, and agricultural extension services [1]. The availability of free, granular and high-cadence
+data from remote sensing sources like Sentinel-1 and 2 satellites has enabled the creation of detailed land cover and
+crop maps on a global scale [2]. Machine learning (ML) is a widely employed methodology for generating these maps,
+given its capacity to process and extract useful information from large and diverse amounts of data, thereby aiding
+decision-making in agriculture [3].
+
+Deep learning (DL) has significantly advanced crop mapping by overcoming the limitations of traditional ML approaches,
+which often rely on handcrafted features and struggle with temporal complexity [3, 4]. Convolutional Neural Networks
+(CNNs) were among the first DL models applied to crop classification, demonstrating superior performance over
+traditional Random Forest (RF) and Support Vector Machine (SVM) models [5]. Recurrent Neural Networks (RNNs),
+particularly Long Short-Term Memory (LSTM) networks, were then introduced to capture crop phenology dynamics
+[6], later evolving into hybrid CNN-RNN architectures that leverage both spatial and temporal information [7]. Other
+recent approaches include 3D CNNs and related 3D U-Nets, which process multi-temporal image cubes [8, 9], self-
+attention mechanisms for long-range temporal dependencies [10, 11], and transformer-based models for improved
+spatio-temporal feature extraction from satellite time-series data [12]. Neural Differential Equations (NDEs) have
+also been explored to handle irregular sampling due to cloud cover in satellite imagery by implicitly modelling the
+continuous phenological development of crops [13, 14]. Additionally, the integration of Sentinel-1 Synthetic Aperture
+Radar (SAR) data and Sentinel-2 optical imagery can significantly enhance classification accuracy and robustness to
+cloud cover with different ML and DL models [9, 15]. More recently, new augmentations have been explored, such
+as temporal random masking to hybrid LSTM-attention networks, which improved crop classification robustness to
+missing satellite observations [16].
+
+Using these models to generate crop maps in regions with limited ground-truth data remains a major challenge, as
+collecting sufficient high-quality training data requires significant time and resources. To mitigate this, researchers
+have explored leveraging geo-referenced cropland data from other regions, but severe data distribution shifts due to
+
+
+                                                          2
+differences in climate, agricultural practices, and crop types complicate this approach. Transfer learning has emerged as
+a promising solution, using a variety of approaches such as multi-task learning [17, 18], meta-learning [19, 20] and
+representation learning [21], aiming to improve model generalization across diverse agricultural landscapes. Despite
+these advances, applying these methods in new regions remains challenging, particularly where labelled datasets are
+scarce and local agricultural conditions differ from those in HICs (High-Income Countries), which concentrate most of
+the publicly available ground-truth data. A key open question is how globally distributed training data, considering its
+quantity, quality, and proximity to the target region, affects model performance in areas with limited local ground-truth.
+In this study, we address this question by focusing on cropland mapping in Nigeria, framing it as a crop versus non-crop
+binary classification problem. Nigeria is one of Africa’s leading food producers, accounting for nearly half of West
+Africa’s population [22], however, it currently lacks a recent high-resolution cropland map. Thus, our goal was to
+produce a 10 m resolution cropland map for Nigeria using Sentinel data from the year 2020. To this end, we investigated
+two main research questions:
+
+       • What are the key technical components for effective cropland mapping in Nigeria, particularly in terms of
+         model architecture, input features, and training strategies?
+
+       • How does the geographical origin of training data (local, neighbouring countries, global) impact cropland
+         mapping performance in Nigeria, and what is the best strategy to combine these sources?
+
+To address these specific questions, we generated a small hand-labelled cropland dataset for Nigeria through expert
+photo-interpretation of high-resolution satellite and airborne imagery, and combined it with the global crowd-sourced
+Geowiki cropland dataset [23]. We compared an LSTM model to a RF baseline using multi-temporal inputs from
+Sentinel-1 and Sentinel-2 imagery, complemented by climate and topographic data (see Section 2.1). For the LSTM,
+we explored both standard and multi-task learning approaches [17, 18]. Additionally, we tested different dataset
+configurations, including restricting the Geowiki dataset to Nigeria and neighbouring countries, analyzing the impact of
+input data modalities and class imbalance handling, and comparing our results to three existing global 10 m land cover
+maps from the same year (Section 2.3). A schematic summary of our study is presented in Figure 1.
+
+2   Data
+2.1 Remote sensing data
+Sentinel-1 and Sentinel-2 satellites from ESA’s Copernicus program provide data at ground sample distance (GSD)
+ranging from 10 to 60 m with frequent revisit time of 5 days world-wide, which is the best resolution freely available.
+On the one hand, Sentinel-2 captures multispectral data in bands ranging from visible and near-infrared (GSD of 10
+m) to short-wave infrared (20 m to 60 m GSD), which are useful for vegetation monitoring and crop detection, by
+measuring how plants reflect different wavelengths [24]. On the other hand, Sentinel-1 contains a SAR sensor operating
+in C-band (5.405 GHz), which measures actively emitted radio wave signals in two polarization modes, as reflected by
+the surface. SAR data is useful for detecting traits related to surface roughness such as crop height, growth stage and
+soil moisture content [25]. In addition, we included pixel-wise data of monthly total precipitation, monthly average
+temperature at 2 metres above the ground from ERA5 Climate Reanalysis Meteorological data [26], as well as elevation
+and slope derived from the Shuttle Radar Topography Mission’s (SRTM) Digital Elevation Model (DEM) [27].
+
+We collected the data using the CropHarvest Python package (version 0.6.0) [28] and Google Earth Engine (GEE) [29],
+and produced a monthly per-pixel data array (i.e. a time series of 12 values for each pixel’s features) for a requested
+year. We used all Sentinel-2 bands and up-sampled them to 10 m resolution using nearest neighbour interpolation
+(default in GEE), with exception to the 60 m resolution bands B1 and B10, which are predominantly meant for coastal
+aerosols and cirrus detection. We obtained least-cloudy monthly composites of Sentinel-2 Level-1C images using an
+algorithm from [30]. For Sentinel-1, we collected both VV and VH polarization bands from Ground Range Detected
+(GRD) products in Interferometric Wide (IW) swath mode, using images from a single orbit direction (ascending or
+descending) for each location to ensure consistency. Additionally, the we added the Normalized Difference Vegetation
+Index (NDVI = N   IR−R
+                N IR+R ), derived from Sentinel-2 red (B4) and near-infrared (B8) bands, given its value for assessing
+vegetation health and growth [31]. Thus, the output datasets contain modified Copernicus Sentinel data, ERA5, and
+SRTM data as processed by [28], yielding samples that are 18-dimensional arrays of features at 12 different monthly
+time steps, counting backwards from the respective label collection date. We summarise the 18 considered features on
+Table 1.
+2.2 Cropland labels
+Ground-truth data consists of manually annotated spatial coordinates that indicate the presence (or absence) of visible
+cropland at a specific time. Each data point includes latitude and longitude coordinates, a reference date, and a label
+
+
+                                                            3
+      Table 1: Data features used in this study. We collected all features using the CropHarvest Python package [28].
+
+               Feature group   Feature descriptions                     Feature count   Data type   Source
+               SAR             VV polarization mode                          1          Dynamic     Sentinel-1
+                               VH polarization mode                          1          Dynamic     Sentinel-1
+               Multispectral   Visible bands (RGB)                           3          Dynamic     Sentinel-2
+                               Visible and Near Infrared bands (VNIR)        5          Dynamic     Sentinel-2
+                               Short Wave Infrared bands (SWIR)              3          Dynamic     Sentinel-2
+                               NDVI                                          1          Dynamic     Sentinel-2
+               Climate         Monthly average precipitation                 1          Dynamic     ERA5 [26]
+                               Monthly average temperature                   1          Dynamic     ERA5 [26]
+               Topological     Elevation                                     1          Static      SRTM [27]
+                               Slope                                         1          Static      SRTM [27]
+
+
+
+indicating whether it represents cropland (1) or non-cropland (0). We used these coordinates and reference dates to
+retrieve corresponding remote sensing data.
+
+2.2.1     Geowiki dataset
+The Geowiki dataset consists of crowd-sourced points of cropland and non-cropland samples collected worldwide
+[23]. The dataset includes approximately 36,000 points, each associated with a cropland probability score derived from
+multiple human annotators. The data is readily available through the CropHarvest package [28], with arrays covering
+September 2016 to September 2017, matching the labels’ collection date to avoid mismatches due to possible land
+cover changes. We note that only 24,761 data arrays from the Geowiki labels are available within the CropHarvest
+package, reportedly due to missing satellite data at the different label locations (mainly Sentinel-1 time series) [28]. For
+this study, we used three configurations of the Geowiki data: the full global dataset (Geowiki World), samples from
+within Nigeria’s boundaries (Geowiki Nigeria), and samples from Nigeria and its neighbouring countries (Geowiki
+Neighbours). We describe the detailed composition of these datasets and their processing for our experiments in
+Section 3.1.
+
+2.2.2     Nigeria dataset
+We generated a dataset of evenly distributed points within Nigeria and labelled them as cropland or non-cropland through
+photo-interpretation. We randomly sampled spatial coordinates within the country until we obtained 2,000 points spaced
+by at least 15 km. An expert examined each point using very high-resolution Google Satellite Imagery Basemap (based
+on Maxar 30 cm GSD mosaics) from 2020 in Google Earth Pro and assigned them labels of cropland (1) or non-cropland
+(0) using QGIS [32]. We consider cropland as arable land (cultivated or fallow) and areas where permanent (perennial)
+crops are grown, including orchards [33, 34]. This yielded 1,827 labelled points and the remaining were discarded as the
+class could not be confidently determined from the available reference imagery. We then used these point coordinates to
+query the respective pixel-wise data arrays from March 2019 - March 2020 using the CropHarvest package. Figure 2
+shows the geographical distribution of the Nigeria dataset.
+
+2.2.3     Togo evaluation dataset
+We additionally used cropland labels from Togo, as provided in the CropHarvest evaluation dataset [17, 28], to assess
+the performance of three global land cover maps (introduced in the following section 2.3) in comparison to published
+results from other country-specific cropland models. The test dataset from Togo comprises 306 labels covering the
+whole country, with 200 non-crop and 106 crop examples [17].
+
+2.3     Reference land cover maps
+We used three global land cover maps from 2020 at 10 m resolution as reference maps for comparison: Google’s
+Dynamic World [36], ESRI’s 2020 Land Cover [37] and ESA’s WorldCover 2020 [38]. Dynamic World and ESRI Land
+Cover were produced with DL models trained on a large dataset of 5 billion densely annotated patches of Sentinel-2
+imagery distributed all over the world [2, 39]. WorldCover was produced with a Catboost model [40] trained on pixels
+from 100 m2 patches of 141,000 locations around the world, using 131 features derived from Sentinel-1, Sentinel-2,
+and DEM data, as well as spatial features from biome data [2, 38]. WorldCover uses a smaller Minimum Mapping Unit
+(MMU) of 100 m2 compared to 250 m2 for Dynamic World and ESRI Land Cover.
+
+
+                                                               4
+                                      14
+                                               N
+
+                                      12
+
+
+
+
+                       Latitude (°)   10
+
+
+
+
+                                       8
+
+
+
+
+                                       6
+
+                                                                                          train
+                                                                                          validation
+                                       4       200 km                                     test
+                                           2            4   6     8             10   12      14
+                                                                Longitude (°)
+
+Figure 2: Geographical distribution of the 1,827 points of the generated Nigeria dataset and its assigned splits for model
+training and evaluation. Nigeria boundaries are taken from [35].
+
+
+3   Methods
+3.1 Data preprocessing
+We first transformed the average Geowiki dataset labels into hard binary classifications (0 for non-cropland or 1
+for cropland) using a crop probability threshold of 0.5. For our experiments, we then organized the data into three
+configurations, which are illustrated in Figure 3:
+
+       • Geowiki Nigeria: contains all Geowiki samples within Nigeria’s boundaries.
+
+       • Geowiki Neighbours: extends the Geowiki Nigeria dataset by including samples from neighbouring countries
+         that share agro-ecological zones: Ghana, Togo, Benin, and Cameroon.
+
+       • Geowiki World: includes all Geowiki dataset samples available in the CropHarvest package.
+
+We randomly split the Geowiki dataset configurations into 80 % training and 20 % validation data. In contrast, we split
+the Nigeria dataset into 50 % train, 25 % validation, and 25 % test sets using a stratified random sampling strategy,
+ensuring that points in the validation and test sets are at least 30 km apart to avoid any possible data leakeage due to
+spatial autocorrelation [41]. We chose this larger proportion of validation and test data to ensure a sizeable test set for a
+robust evaluation across Nigeria’s diverse landscapes. The stratified random splits covering the whole country guarantee
+both the quality of the output map at identifying cropland across the different climate and vegetation types found in the
+country and representative test data. Table 2 summarises the final datasets and their class distributions across splits.
+
+We experimented with various combinations of the Geowiki dataset configurations for training, both including and
+excluding the Nigeria dataset. For data normalization, we first calculated per-channel means and standard deviations
+independently using their respective training and validation samples, and aggregating over the time dimension. When
+merging datasets, following the approach in [17], we combined all samples of the respective splits and calculated
+weighted per-channel means and standard deviations based on the relative number of samples from each dataset. We
+then applied per-channel z-score normalization to all samples across all data splits, i.e., each sample was normalized by
+subtracting the mean and then dividing by the standard deviation for each respective channel.
+3.2 Models
+We followed [17, 18] and experimented with two LSTM neural network architectures: a standard one [42] and a
+multi-task (multi-head) implementation [17]. LSTM networks are a type of RNN that excel in processing sequential
+
+
+                                                                   5
+Figure 3: Distribution of crowd-sourced cropland labels from the Geowiki dataset [23], and the different subsets used
+in this study: worldwide, Nigeria, and neighbouring countries. The neighbouring countries subset includes points in
+Nigeria, Ghana, Togo, Benin, and Cameroon.
+
+
+Table 2: Class distribution across datasets and their splits. For the Geowiki datasets, only training and validation splits
+were created, while the Nigeria dataset also includes a test split which is used to compare our models. The cropland
+ratio refers to the proportion of points labelled as cropland.
+
+                    Dataset                Split        Total points   Cropland points   Cropland ratio
+                                           Train            361             244              0.676
+                    Geowiki Nigeria        Validation        91              68              0.747
+                                           Total            452             312              0.690
+                                           Train            632             364              0.576
+                    Geowiki Neighbours     Validation       158              96              0.608
+                                           Total            790             460              0.582
+                                           Train          19,808           11,131            0.562
+                    Geowiki World          Validation     4,953            2,849             0.575
+                                           Total          24,761           13,980            0.565
+                                           Train            913             381              0.417
+                                           Validation       454             181              0.399
+                    Nigeria
+                                           Test             455             183              0.402
+                                           Total           1,822            745              0.409
+
+
+
+                                                             6
+data such as text or time series data and capturing long-term relationships. They have been shown to effectively capture
+complex temporal patterns in remote sensing data for crop classification [6, 7], and they are parameter-efficient, which
+makes them well-suited for small-data regimes settings such as this work. We trained the models for binary classification
+of individual pixels. Each pixel in the input data represents a regularly sampled time series X = [x1 , x2 , ..., x12 ]
+of 12 time steps of 18 dimensions each, i.e. xt ∈ R1×18 . The model can have either one (single-headed) or two
+(multi-headed) identical classification heads consisting of a Multilayer Perceptron (MLP) and a sigmoid activation
+function to normalize the last activation between 0 and 1. This output value can be interpreted as a posterior probability
+of cropland presence. When using the multi-head architecture, both classification heads share the same LSTM backbone,
+but the local head is trained only with the samples that fall within Nigeria and the global head with all other samples.
+This architecture follows a multi-task learning approach [19], in which classifying global and local samples are treated
+as separate tasks handled by a dedicated head, but where relevant shared patterns are learned by the LSTM backbone.
+Once trained, the local head serves as a specialised classifier for the region of interest. A representation of the multi-head
+LSTM architecture is shown in Figure 4.
+
+
+
+
+Figure 4: Illustration of the multi-head LSTM architecture for cropland classification introduced by [17]. A batch
+of input pixel time series arrays, X ∈ RT ×C (T = 12 and C = 18 in our study), is fed into a recurrent LSTM cell,
+which sequentially processes the time series and produces a final hidden state hT . The batch of hidden states is then
+passed to two separate MLPs (heads) and a final sigmoid activation function, yielding predictions bounded between 0
+and 1. These predictions are then filtered based on the geographical location of the respective input points, with each
+head supervised exclusively on data from either inside or outside Nigeria using a Binary Cross Entropy loss (BCE).
+This multi-task learning design ensures that the local MLP specialises in classifying points within Nigeria while still
+benefiting from patterns learned by the LSTM through the global head supervision.
+
+We train the multi-head architecture by minimizing the loss function in Eq. (1) [17], where Llocal and Lglobal are Binary
+Cross-Entropy (BCE) loss functions for the local and global classification heads respectively. W  α is a weighting term,
+where W is the proportion of global to local labels in each batch and α is a weighting hyper-parameter. This weighting
+term reduces the impact of the global head in the overall loss function and thus its influence over the parameters
+updates of the shared LSTM backbone, effectively giving more relevance to the local classification task in the overall
+architecture. The single-head model uses one classifier for all samples regardless of their origin, treating them equally
+as "local" samples, i.e. with W = 0 in the loss function.
+
+
+                                                       W
+                                                 L=      Lglobal + Llocal                                                 (1)
+                                                       α
+
+
+                            Lglobal|local = −(w(1) · y · log(ŷ) + w(0) · (1 − y) · log(1 − ŷ))                          (2)
+
+For this work, both Llocal and Lglobal BCE loss terms were additionally weighted according to the class distributions,
+as in Eq. (2), to better account for class imbalance. In here, w(1) and w(0) respectively represent the inverse of the
+
+
+                                                              7
+cropland and non-cropland instances proportion from the total amount of local or global labels, y is the label and ŷ is
+the model prediction.
+
+We kept all hyper-parameters to default values from [17]. These include one hidden layer size of 64 units for the LSTM
+backbone, two classification layers on the MLPs, dropout of 0.2 between LSTM state updates and an α of 10. We
+trained all models using the Adam optimizer [43], with a learning rate of 0.001, and a batch size of 64, for a maximum
+of 100 epochs and early stopping with patience of 10 epochs on the validation set loss. A grid-search of {32, 64, 128}
+hidden units and {1, 2} LSTM hidden layers on the validation set confirmed that these are robust hyper-parameters for
+our datasets. We implemented the DL models in PyTorch (version 1.13.1 with CUDA 11.7) [44] and also included a RF
+baseline model from scikit-learn [45] (version 1.0.2) default implementation, due to its robustness and widespread use
+for crop and land cover classification [4]. The model uses 100 trees with bootstrapping, where each tree is trained on
+random samples drawn with replacement from the full dataset. The complete source code was implemented in Python
+and is publicly available (see Data and code availability section).
+3.3 Evaluation metrics
+We calculated different performance metrics on the Nigeria test set to evaluate both our models and the land cover
+maps quantitatively. For the land cover maps, we considered the "crops" class as positive and any other prediction as
+negative. Our evaluation used precision (proportion of correct predictions), recall (proportion of correctly identified
+samples or "probability of detection"), F1-score (harmonic mean between precision and recall), total accuracy (global
+proportion of correctly classified samples), and the Area Under the Receiver Operating Characteristic curve (AUC ROC).
+These metrics are typically used in classification settings and AUC ROC is exclusively used in binary classification for
+evaluating the ability of a classifier to correctly distinguish between the positive and negative classes [46, 47]. For all
+metrics a higher value is better, however high precision often comes at the cost of lower recall and vice versa. The
+F1-score captures this trade-off by providing a balanced single metric. Eqs. (3) presents the equations for precision,
+recall, F1-score, total accuracy, and False Positive Rate (FPR), where TP, FP, FN, and TN are true positives, false
+positives, false negatives, and true negatives predictions, respectively [46].
+
+To calculate precision, recall, F1-score and total accuracy, we needed to convert model prediction probabilities into hard
+binary predictions (0 for non-cropland or 1 for cropland). We used a threshold of 0.5, as in [17], which is a sensible
+choice given there is no clear preference for a higher True Positive Rate (TPR) or FPR in our cropland mapping use
+case. This threshold is only required for model performance evaluation and is not used during model training. For
+the AUC ROC score, the TPR (computed the same as recall) and the FPR (or "probability of false alarm") at different
+thresholds values are calculated to build a ROC curve and the area under the curve is computed [47]. The scikit-learn
+Python package [45] was used for calculating all metrics.
+
+
+                                                           TP
+                                             Precision =
+                                                        TP + FP
+                                                           TP
+                                               Recall =
+                                                        TP + FN
+                                                        2 × Precision × Recall
+                                             F1-score =                                                                (3)
+                                                          Precision + Recall
+                                                             TP + TN
+                                       Total Accuracy =
+                                                        TP + FP + FN + TN
+                                                           FP
+                                                 FPR =
+                                                        FP + TN
+
+4   Results
+4.1 Main experiments
+In this section we present the experimental results of the different models on the Nigeria test set, considering the
+different dataset configurations discussed in Section 3.1. The results are summarised in Table 3.
+
+Among the implemented models, the single-headed LSTM model achieved the best performance when trained with the
+Nigeria dataset combined with either the Geowiki Nigeria or Geowiki Neighbours subset, both reaching an accuracy of
+0.842. The Geowiki Nigeria configuration slightly outperformed the Neighbours configuration with an F1-score of
+0.814 compared to 0.809, primarily due to its higher recall (0.863 vs 0.831).
+
+
+                                                            8
+Table 3: Performance comparison of different models and land cover maps on the Nigeria test set. In the dataset columns,
+✓indicates the model was trained using that dataset, × indicates training without that dataset, and ‘-’ indicates not
+applicable for map products (AUC ROC due to hard predictions). As described in Section 3.1, the Geowiki Neighbours
+subset of the Geowiki dataset [23], includes points from Nigeria, Ghana, Togo, Benin, and Cameroon. We computed
+the metrics by applying a 0.5 threshold on model predictions. Best results per metric are in bold, and second best are
+underlined.
+
+                       Model Configuration                                       Performance Metrics
+        Map / Model       Geowiki dataset    Nigeria dataset       AUC ROC   Precision   Recall   F1-score   Accuracy
+   ESA WorldCover 2020           -                  -                 -       0.903      0.760     0.825      0.870
+        ESRI 2020                -                  -                 -       0.867      0.213     0.342      0.670
+    Dynamic World 2020           -                  -                 -       0.491      0.448     0.469      0.591
+                                ×                  ✓                0.911     0.774      0.787     0.780      0.822
+                             Nigeria               ✓                0.915     0.782      0.825     0.803      0.837
+                            Neighbours             ✓                0.916     0.791      0.765     0.778      0.824
+       Random Forest          World                ✓                0.796     0.569      0.858     0.684      0.681
+                             Nigeria               ×                0.755     0.495      0.891     0.637      0.591
+                            Neighbours             ×                0.842     0.695      0.798     0.743      0.778
+                              World                ×                0.755     0.522      0.836     0.643      0.626
+                                ×                  ✓                0.908     0.772      0.776     0.774      0.818
+                             Nigeria               ✓                0.907     0.771      0.863     0.814      0.842
+                            Neighbours             ✓                0.906     0.788      0.831     0.809      0.842
+    Single-headed LSTM        World                ✓                0.884     0.671      0.847     0.749      0.771
+                             Nigeria               ×                0.756     0.561      0.749     0.642      0.664
+                            Neighbours             ×                0.874     0.688      0.831     0.752      0.780
+                              World                ×                0.854     0.575      0.902     0.702      0.692
+                            Neighbours             ✓                0.889     0.737      0.874     0.800      0.824
+                              World                ✓                0.893     0.917      0.541     0.680      0.796
+    Multi-headed LSTM       Neighbours             ×                0.772     0.638      0.694     0.665      0.719
+                              World                ×                0.819     0.721      0.650     0.684      0.758
+
+
+
+
+The addition of the Nigeria dataset consistently improved model performance across all model architectures. For
+example, when using the Geowiki Nigeria dataset, the single-headed LSTM’s accuracy improved from 0.664 to 0.842
+with the addition of the Nigeria dataset, and similarly, the RF model showed a dramatic improvement from 0.591
+to 0.837. When trained without the Nigeria dataset, using the Geowiki Neighbours subset improved performance
+compared to using only the Geowiki Nigeria subset, as seen in terms of accuracy and F1-score in the RF (0.778 vs
+0.591, and 0.743 vs 0.637, respectively) and in the single-headed LSTM models (0.780 vs 0.664, and 0.752 vs 0.642,
+respectively). However, using the full Geowiki World dataset generally led to decreased performance, except for the
+multi-headed LSTM which showed improvements in accuracy (0.719 vs 0.758), F1-score (0.665 vs 0.684) and AUC
+ROC (0.772 vs 0.819). Additionally, when using only the Nigeria dataset without any Geowiki data, the RF model
+slightly outperformed the single-headed LSTM, achieving higher accuracy (0.822 vs 0.818) and F1-score (0.780 vs
+0.774).
+
+Despite these variations across dataset configurations, the multi-headed LSTM model showed comparable or better
+performance than the RF model under similar configurations. When trained with the Nigeria dataset and Geowiki
+Neighbours subset, both models achieved the same accuracy (0.824), but the multi-headed LSTM achieved a higher
+F1-score (0.800 vs 0.778). Similarly, when using Geowiki World without the Nigeria dataset, the multi-headed LSTM
+outperformed the RF in accuracy (0.758 vs 0.626), F1-score (0.684 vs 0.643), and AUC ROC score (0.819 vs 0.755).
+
+Furthermore, the AUC ROC metric offers insights into model performance under different threshold values, and
+in Figure 5 we present the ROC curves for all models using the Nigeria dataset and Geowiki data. Most models
+showed similar ROC curves, with the RF model achieving higher TPR for FPR between 0.2 and 0.6, corresponding
+to increasingly lower thresholds. Conversely, models using the Geowiki World dataset showed consistently lower
+performance across thresholds, with the RF model experiencing the most substantial decrease.
+
+When comparing our models to existing global land cover maps as benchmarks, we found that the ESA WorldCover
+2020 map achieved the highest F1-score (0.825) and total accuracy (0.870). However, its recall of 0.760 was lower
+
+
+                                                               9
+                                           1.0
+
+
+
+                                           0.8
+
+                      True Positive Rate
+                                           0.6
+
+
+
+                                           0.4
+
+                                                                          Single-headed LSTM (Geowiki Nigeria)
+                                                                          Single-headed LSTM (Geowiki neighbours)
+                                           0.2                            Single-headed LSTM (Geowiki world)
+                                                                          Multi-headed LSTM (Geowiki neighbours)
+                                                                          Multi-headed LSTM (Geowiki world)
+                                                                          Random Forest (Geowiki Nigeria)
+                                                                          Random Forest (Geowiki neighbours)
+                                                                          Random Forest (Geowiki world)
+                                           0.0                            random
+                                                 0.0   0.2     0.4              0.6            0.8           1.0
+                                                             False Positive Rate
+Figure 5: Receiver Operating Characteristic (ROC) curves on the Nigeria test set. All models represented here are
+trained with the Nigeria dataset and the Geowiki subset specified in the legend. The 45° line is equivalent to a random
+prediction (0.5 in expectation) at different thresholds. The closer the curve is to the upper left corner, the better the
+classifier.
+
+
+than our best models, such as the single-headed LSTM with Nigeria datasets (0.863) and the multi-headed LSTM
+with the Geowiki Neighbours and the Nigeria dataset (0.874), while maintaining higher precision (0.903 vs 0.771 and
+0.737). The other global maps, ESRI 2020 and Dynamic World 2020, achieved substantially lower performance metrics
+compared to our implemented models.
+
+4.2   Sensitivity analysis
+We conducted additional experiments to evaluate model sensitivity to input features and the weighted BCE loss function.
+Using only Sentinel-2 bands and NDVI (Table S1) led to consistent performance degradation across all models compared
+to using the full feature set (Table 1). For example, when using the Nigeria and Geowiki Neighbours datasets, the RF
+model’s accuracy decreased from 0.824 to 0.804 and F1-score from 0.778 to 0.753. Meanwhile, the single-headed
+LSTM experienced the largest decrease in this configuration, with accuracy dropping from 0.842 to 0.774 and F1-score
+from 0.809 to 0.710. However, the most substantial performance reduction overall occurred in the multi-headed LSTM
+model under the Geowiki World without the Nigeria dataset configuration, with accuracy dropping from 0.758 to 0.604
+and F1-score from 0.684 to a mere 0.091. In contrast, when additionally trained with the Nigeria dataset, the same
+model only dropped its performance from 0.796 to 0.771 in accuracy, and from 0.680 to 0.679 in F1-score.
+
+For the LSTM models, we additionally evaluated the impact of using a regular BCE loss instead of the weighted
+version (Table S2). With the Nigeria and Geowiki Neighbours datasets, the single-headed LSTM showed minimal
+changes in accuracy (0.842 vs 0.837) and F1-score (0.809 vs 0.800). The multi-headed LSTM exhibited similarly stable
+performance, with accuracy increasing slightly from 0.824 to 0.826 and F1-score from 0.800 to 0.801. However, larger
+differences emerged when using only Geowiki data. The single-headed LSTM’s accuracy dropped from 0.780 to 0.752,
+and its F1-score decreased from 0.752 to 0.748 in the Geowiki Neighbours configuration. Additionally, when using
+only the Geowiki Nigeria dataset, the single-headed LSTM’s accuracy fell from 0.664 to 0.593, and its F1-score from
+0.642 to 0.633. Instead, when using only the Nigeria dataset, the same model maintained its performance, showing a
+minor improvement in accuracy (+0.02), with a slight decrease in F1-score (-0.02) and AUC ROC (-0.01).
+
+
+                                                                     10
+Additionally, we computed performance metrics for all three land cover maps on the Togo dataset (Section 2.2.3) and
+included other published results for comparison (Table S3). The multi-headed LSTM model from [17] achieved the
+highest metrics (F1-score: 0.74, accuracy: 0.83), while among the land cover maps, Dynamic World achieved the
+highest F1-score (0.678) and WorldCover the highest accuracy (0.810) and precision (0.875), but with a recall of only
+0.528.
+4.3 Nigeria cropland maps
+We used our best model, the single-headed LSTM trained with the Geowiki Nigeria subset and the Nigeria dataset, to
+generate both binary and probabilistic cropland maps covering the entire extent of Nigeria for the year 2020. The maps
+are presented in Figure 6, with a few small white patches in the southwest region indicating areas where input satellite
+data was unavailable. We refer the reader to our supplementary GEE web app for an interactive visualization of the map
+(link in Data and code availability section). In addition, we present the results of the single-headed LSTM model and
+the WorldCover map aggregated by agroecological zone [48] in Table 4 and Figure 7. Excluding the agroecological
+zones represented with just a few points, the Tropic - warm / subhumid zone accounts for the largest performance
+difference between the model and the land cover map (0.806 vs 0.853 accuracy).
+
+Table 4: Results of the best model, the single-headed LSTM, and the ESA WorldCover 2020 land cover map on the
+Nigeria test set by agroecological zone.
+
+           Agroecological Zone        Total points   Total area (km2 )   LSTM accuracy   WorldCover accuracy
+           Tropic - warm / subhumid       232            462,634             0.806               0.853
+           Tropic - warm / semiarid       191            420,257             0.864               0.880
+           Tropic - warm / humid           19             39,901               1.0                1.0
+           Tropic - warm / arid            5              8,398               1.0                 0.8
+           Tropic - cool / subhumid         4             18,712              0.75                1.0
+
+
+5   Discussion
+5.1 Analysis
+The impact of dataset composition on model performance revealed interesting patterns across architectures. The
+addition of the Nigeria dataset consistently improved performance across all models, demonstrating the importance
+of region-specific training data. However, when local data was unavailable (experiments without the Nigeria dataset),
+using the Geowiki Neighbours subset proved more effective than the complete Geowiki World dataset for most models.
+This suggests that geographical proximity of training samples may be more valuable than larger but more geographically
+diverse datasets, possibly due to more similar agricultural practices and environmental conditions in neighbouring
+regions. The multi-headed LSTM was a notable exception to this pattern, showing improved performance with the
+full Geowiki World dataset, indicating that certain architectural choices may better facilitate knowledge transfer
+from diverse geographical contexts [20, 21]. These findings align with recent work by [49], who found that models
+optimized for regional performance regularly outperformed globally trained models. Similarly, [50] demonstrated that
+supplementing sparse but targeted local annotations with weak labels—even when derived from the same region—can
+degrade classification performance. [51] further highlighted that including locally relevant training data substantially
+improved the accuracy of irrigated agriculture mapping in Mozambique, especially in heterogeneous smallholder
+systems.
+
+Comparing the DL approaches with the RF baseline revealed complementary strengths. While RF models performed
+well with locally focused training data, they were more sensitive to geographically diverse inputs, showing greater
+performance degradation on the full Geowiki dataset. In contrast, DL models demonstrated greater robustness to
+data variability, likely due to their ability to capture complex spatio-temporal patterns. This supports a broader trend
+in the field towards large-scale, self-supervised DL architectures trained on global remote sensing datasets, which
+can have shown strong generalization across regions and tasks [21, 52, 53, 54]. While these foundation models offer
+strong generalization potential, our study focused on evaluating performance in fully supervised settings using models
+trained specifically on regionally tailored data. A methodical evaluation of foundation models using different probing or
+fine-tuning strategies in Nigeria was therefore beyond the scope of this study and is left for future work.
+
+Our sensitivity analysis highlighted the importance of additional features beyond Sentinel-2 bands and NDVI. The
+removal of supplementary features (SAR, climate and topological features from Table 1) led to consistent performance
+degradation across almost all models, with the LSTM models showing greater sensitivity to feature reduction compared
+to RF models. Most notably, when training the multi-headed LSTM only with Geowiki World data, removing the
+additional features caused a dramatic drop in F1-score from 0.684 to 0.091, while the same model maintained relatively
+
+
+                                                           11
+                                                                 Nigeria 2020 cropland binary map
+                              14       A                                                                                    N
+
+                              12
+
+
+
+
+                              10
+               Latitude (°)
+
+
+
+
+                               8
+
+
+
+
+                               6
+
+
+                                                                                                               cropland
+                               4           200 km                                                              non-cropland
+                                   2                    4            6          8              10        12            14
+                                                                               Longitude (°)
+
+
+                                                            Nigeria 2020 cropland probability map
+                             14        B                                                                           N
+                             12
+                                                                                                                                0.8
+                                                                                                                                 Cropland probability
+                             10                                                                                                 0.6
+              Latitude (°)
+
+
+
+
+                              8                                                                                                 0.4
+
+
+
+                                                                                                                                0.2
+                              6
+
+
+                                                                                                                                0.0
+                              4        200 km
+                                  2                 4            6         8             10         12        14
+                                                                         Longitude (°)
+
+
+Figure 6: Binary (with a threshold of 0.5) and probability cropland maps for Nigeria in 2020 (A and B, respectively),
+generated with our best model: a single-headed LSTM model trained with the Geowiki Nigeria and the Nigeria datasets.
+The few small white patches in the southwest region are regions where input satellite data was unavailable.
+
+
+                                                                                    12
+                                                                         Model predictions per agroecological zone
+                                                            LSTM                                                                                      WorldCover
+                 14   A                                 Tropic - cool/semiarid                           N    14      B                                  Tropic - cool/semiarid                           N
+                 12                                                                                           12
+
+
+
+
+                 10                                                                                           10
+  Latitude (°)
+
+
+
+
+                  8                                                                                               8
+
+
+
+
+                  6                                                                                               6
+
+                                                                             Tropic - cool/humid                                                                              Tropic - cool/humid
+
+
+                  4   200 km                                                                                      4   200 km
+                               4           6            8                  10                  12   14                         4          6             8                   10                  12   14
+                                                        Longitude (°)                                                                                   Longitude (°)
+                                   Correct prediction           Tropic - warm / subhumid             Tropic - warm / humid         Tropic - cool / subhumid           Tropic - cool / humid
+                                   Incorrect prediction         Tropic - warm / semiarid             Tropic - warm / arid          Tropic - cool / semiarid
+
+
+Figure 7: Predictions of the best model (A) and WorldCover (B) on the Nigeria test set by agroecological zone [48].
+
+
+stable performance when the Nigeria dataset was included in training. An exception was the single-headed LSTM
+model trained only with the Geowiki World data, where its accuracy increased from 0.692 to 0.721 and its F1-score
+from 0.702 to 0.713, but its AUC ROC decreased from 0.854 to 0.804. This suggests that these additional features are
+important for distinguishing cropland patterns, particularly when learning from geographically diverse data and when
+using more complex architectures [9]. Sentinel-1 time series and environmental data, have also been found by other
+studies to be particularly useful for crop type mapping in large regions [55, 56]. Our results also align with a growing
+body of work on multimodal learning in remote sensing, which shows that integrating complementary data types—such
+as SAR, optical, and climate information—substantially improves model robustness and generalization [57]. Across
+both supervised models and recent foundation models, the question of how to most effectively fuse these modalities
+remains an active area of research [52, 58].
+
+Furthermore, our analysis on the weighted loss function revealed insightful patterns regarding the handling of class
+imbalance in cropland detection. When the training and test datasets had similar cropland ratios, such as when using
+the Nigeria dataset (train: 0.417, test: 0.402), the choice between weighted and regular BCE loss had minimal impact
+on model performance. Likewise, when combining the Nigeria dataset with Geowiki Neighbours data (combined
+cropland ratio of 0.482), both LSTM architectures exhibited stable performance regardless of the loss function. However,
+the importance of loss weighting became more pronounced when training exclusively with Geowiki data, where the
+cropland ratios differ significantly from the Nigeria test set. This discrepancy was particularly evident when using
+the Geowiki Nigeria dataset, where the cropland ratio of the train set (0.690) was substantially higher than that of the
+Nigeria test set (0.402). In this scenario, the accuracy and F1-score of the single-headed LSTM dropped from 0.664 to
+0.593 and 0.642 to 0.633 respectively, when switching to a regular BCE loss. These findings suggest that appropriate
+handling of class imbalance becomes crucial when there are significant differences in class distributions between the
+training and test datasets. Alternatively, this challenge can be mitigated by increasing the representation of minority
+classes, for example by mining weak labels from coarse-resolution global products [50], or by generating synthetic
+samples [59].
+
+Finally, the performance of our best model (accuracy: 0.842, F1-score: 0.814, recall: 0.863) is comparable to similar
+approaches in other African countries, such as cropland mapping in Kenya (accuracy: 0.86, F1-score: 0.84) [18] and
+Togo (accuracy: 0.83, F1-score: 0.74) [17], as well as a study in the Jos region of Nigeria (accuracy: 0.84) [60]. When
+compared to global land cover products, the ESA WorldCover map performed well on the Nigeria test set (accuracy:
+0.87, F1-score, 0.825, recall: 0.760), particularly in the Tropic-warm/subhumid region. This may be due to its design
+features, as previous studies have highlighted WorldCover’s lower minimum mapping unit (100 m²) compared to ESRI
+Land Cover and Dynamic World as a key factor for its high accuracy and spatial detail, which makes it well-suited
+for heterogeneous regions such as smallholder farming landscapes [2, 61]. Another contributing factor may be its
+inclusion of Sentinel-1 data, which we have found to be a valuable input for cropland mapping in Nigeria. Nevertheless,
+
+
+                                                                                                             13
+WorldCover’s limitations remain evident, including its lower performance in Togo (Table S3) and a tendency towards
+lower recall overall [49], making it prone to underestimating cropland areas, which is particularly concerning in regions
+facing food security risks exacerbated by climate change. This is consistent with findings by [62], who observed poor
+performance of WorldCover in Kenya and found that a locally trained model substantially outperformed the global
+product, underscoring the importance of localized models for accurate cropland monitoring in smallholder-dominated
+systems
+
+High spatial accuracy and reliability in these maps is critical not only for land cover monitoring but also for downstream
+applications such as crop yield modeling and forecasting [58], or estimating irrigation demand and water use in
+agricultural systems [51]. As such, the development of localized, robust cropland maps can directly support decision-
+making in agricultural policy, food security planning, and climate adaptation, especially in predominantly agrarian
+economies such as those accross sub-Saharian Africa [60, 62].
+
+5.2   Limitations
+While this study provides a comprehensive analysis of model architectures, dataset configurations, and feature rele-
+vance for country-scale cropland mapping, there are important limitations that should be acknowledged. First, the
+harmonization of class definitions across datasets remains an open challenge [28]. Our Nigeria dataset considers
+permanent crops as orchards and fruit trees as cropland, as defined by the Food and Agriculture Organization (FAO),
+given their importance for food security, while the Geowiki dataset does not consider perennial crops or fallow land
+as cropland [23]. Similarly, global land cover maps regard orchards and fruit trees within their tree cover class [2].
+These inconsistencies in class definitions could affect both model training and performance evaluation. Second, the new
+Nigeria dataset was created by photo-interpretation by a single annotator. While this approach allowed for consistent
+labelling criteria, it may introduce systematic biases, particularly in complex smallholder farming landscapes where land
+use interpretation can be challenging. Finally, we did not evaluate recent foundation models or advanced multimodal
+fusion strategies, which are becoming increasingly important in remote sensing. Exploring how such models perform in
+data-scarce African contexts is an important area for future research.
+
+6     Conclusion
+Accurate and timely cropland maps are essential for agricultural monitoring, policy making, and assessing climate
+change impacts on food security, particularly in regions where agricultural data is scarce. In this study, we systematically
+evaluated how the geographical composition of training data, across different machine and deep learning architectures,
+affects cropland mapping performance in Nigeria, a data-scarce and agriculturally important region. While the impact of
+input data modalities has been previously explored, the role of training data origin—and how global, regional, and local
+sources interact to influence model performance—has received less attention, particularly in smallholder-dominated
+landscapes. Our results demonstrate that incorporating locally labeled data significantly improves model performance,
+with our best-performing model, a single-headed LSTM, achieving an F1-score of 0.814 when trained on a combination
+of our Nigeria dataset and the Nigeria subset of the global Geowiki dataset. Our analysis revealed three key insights: (1)
+regionally specific training data substantially improves model performance, likely due to better alignment with local
+cropping systems and environmental conditions. Conversely, we found that supplementing local data with globally
+distributed training samples (e.g., the full Geowiki World dataset) often degraded performance, while proximity-based
+regional subsets (e.g., Geowiki Neighbours) offered a more effective compromise. (2) Multi-modal data integration
+is critical, as Sentinel-1, climate, and topographic data significantly enhanced model robustness, with their removal
+causing accuracy and F1-score drops of up to 0.154 and 0.593, respectively. (3) Proper class imbalance handling
+is essential when the class distribution of the training and test sets significantly differ, with weighted loss functions
+improving accuracy by up to 0.071 for the single-headed LSTM. Comparison with existing global land cover products
+showed that our models, particularly the single-headed LSTM, performed competitively with ESA WorldCover despite
+the modest dataset size, demonstrating superior recall, a key metric for food security applications. The open-source
+nature of our models and methodology enables their immediate application for food security monitoring, climate
+adaptation planning, and evidence-based agricultural policy-making, particularly in data-scarce regions. Future research
+should build on these findings by evaluating the generalization capacity of foundation models, exploring scalable fusion
+strategies, and addressing class harmonization challenges. Further validation in real-world applications—such as yield
+estimation or irrigation monitoring—will help ensure that cropland mapping models contribute effectively to food
+security and climate resilience.
+
+Data and code availability
+The source code, as well as the links to download the data and output maps, are publicly available in the following repos-
+itory: https://github.com/Joaquin-Gajardo/nigeria-crop-mask. The maps can be visualized interactively
+
+
+                                                            14
+in the following Google Earth Engine web application: https://joaquingajardocastillo.users.earthengine.
+app/view/nigeria-cropland-maps
+
+Author contributions
+Joaquin Gajardo: Conceptualization, Investigation, Methodology, Software, Formal analysis, Data curation, Validation,
+Visualization, Writing- Original draft preparation, Writing- Reviewing and Editing. Michele Volpi: Supervision,
+Writing- Reviewing and Editing. Daniel Onwude: Project administration, Funding acquisition, Writing- Reviewing and
+Editing. Thijs Defraeye: Supervision, Project administration, Funding acquisition, Writing- Reviewing and Editing.
+
+Acknowledgments
+This work was partially funded by the data.org Inclusive Growth and Recovery Challenge grant “Your Virtual Cold
+Chain Assistant”, supported by The Rockefeller Foundation and the Mastercard Center for Inclusive Growth, as well
+as by the project “Scaling up Your Virtual Cold Chain Assistant” commissioned by the German Federal Ministry
+for Economic Cooperation and Development and being implemented by BASE and Empa on behalf of the German
+Agency for International Cooperation (GIZ). The funders were not involved in the study design, collection, analysis,
+interpretation of data, the writing of this article, or the decision to submit it for publication.
+
+References
+ [1] Inbal Becker-Reshef, Brian Barker, Alyssa Whitcraft, Patricia Oliva, Kara Mobley, Christina Justice, and Ritvik
+     Sahajpal. Crop type maps for operational global agricultural monitoring. Scientific Data, 10(1):172, March 2023.
+
+ [2] Zander S. Venter, David N. Barton, Tirthankar Chakraborty, Trond Simensen, and Geethen Singh. Global 10
+     m land use land cover datasets: A comparison of Dynamic World, World Cover and ESRI land cover. Remote
+     Sensing, 14(16), 2022.
+
+ [3] Dashuai Wang, Wujing Cao, Fan Zhang, Zhuolin Li, Sheng Xu, and Xinyu Wu. A review of deep learning in
+     multiscale agricultural sensing. Remote Sensing, 14(3):559, January 2022.
+
+ [4] Charlotte Pelletier, Silvia Valero, Jordi Inglada, Nicolas Champion, and Gérard Dedieu. Assessing the robustness
+     of Random Forests to map land cover with high resolution satellite image time series over large areas. Remote
+     Sensing of Environment, 187:156–168, 2016.
+
+ [5] Nataliia Kussul, Mykola Lavreniuk, Sergii Skakun, and Andrii Shelestov. Deep learning classification of land
+     cover and crop types using remote sensing data. IEEE Geoscience and Remote Sensing Letters, 14(5):778–782,
+     2017.
+
+ [6] Marc RuBwurm and Marco Korner. Temporal vegetation modelling using Long Short-Term Memory networks
+     for crop identification from medium-resolution multi-spectral satellite images. In 2017 IEEE Conference on
+     Computer Vision and Pattern Recognition Workshops (CVPRW), pages 1496–1504, Honolulu, HI, USA, July 2017.
+     IEEE.
+
+ [7] Mehmet Ozgur Turkoglu, Stefano D’Aronco, Gregor Perich, Frank Liebisch, Constantin Streit, Konrad Schindler,
+     and Jan Dirk Wegner. Crop mapping from image time series: Deep learning with multi-scale label hierarchies.
+     Remote Sensing of Environment, 264:112603, October 2021.
+
+ [8] Shunping Ji, Chi Zhang, Anjian Xu, Yun Shi, and Yulin Duan. 3D Convolutional Neural Networks for crop
+     classification with multi-temporal remote sensing images. Remote Sensing, 10(1), 2018.
+
+ [9] Jarrett Adrian, Vasit Sagan, and Maitiniyazi Maimaitijiang. Sentinel SAR-optical fusion for crop type mapping
+     using deep learning and Google Earth Engine. ISPRS Journal of Photogrammetry and Remote Sensing, 175:215–
+     235, 2021.
+
+[10] Vivien Sainte Fare Garnot, Loic Landrieu, Sébastien Giordano, and Nesrine Chehata. Satellite image time series
+     classification with pixel-set encoders and temporal self-attention. 2020 IEEE/CVF Conference on Computer
+     Vision and Pattern Recognition (CVPR), pages 12322–12331, 2019.
+
+
+                                                         15
+[11] Marc Rußwurm and Marco Körner. Self-attention for raw optical satellite time series classification. ISPRS Journal
+     of Photogrammetry and Remote Sensing, 169:421–435, 2020.
+
+[12] Kaiyuan Li, Wenzhi Zhao, Rui Peng, and Tao Ye. Multi-branch self-learning Vision Transformer (MSViT) for
+     crop type mapping with Optical-SAR time-series. Computers and Electronics in Agriculture, 203:107497, 2022.
+
+[13] Nando Metzger, Mehmet Ozgur Turkoglu, Stefano D’Aronco, Jan Dirk Wegner, and Konrad Schindler. Crop
+     classification under varying cloud cover with neural ordinary differential equations. IEEE Transactions on
+     Geoscience and Remote Sensing, pages 1–12, 2021.
+
+[14] Joaquín Gajardo Castillo. Neural controlled differential equations for crop classification. Master’s thesis,
+     École Polytechnique Fédérale de Lausanne, 2021. Available at: https://infoscience.epfl.ch/entities/
+     publication/2e5bf585-98e6-4cc7-9c0a-342e86c283e5.
+
+[15] Vivien Sainte Fare Garnot, Loic Landrieu, and Nesrine Chehata. Multi-modal temporal attention models for crop
+     mapping from satellite time series. ISPRS Journal of Photogrammetry and Remote Sensing, 187:294–305, 2022.
+
+[16] Xinyu Zhang, Zhiwen Cai, Qiong Hu, Jingya Yang, Haodong Wei, Liangzhi You, and Baodong Xu. Improving
+     crop type mapping by integrating LSTM with temporal random masking and pixel-set spatial information. ISPRS
+     Journal of Photogrammetry and Remote Sensing, 218:87–101, December 2024.
+
+[17] Hannah Kerner, Gabriel Tseng, Inbal Becker-Reshef, Catherine Nakalembe, Brian Barker, Blake Munshell,
+     Madhava Paliyam, and Mehdi Hosseini. Rapid response crop maps in data sparse regions. In Proceedings of the
+     26th ACM SIGKDD Conference on Knowledge Discovery and Data Mining Workshops, KDD ’20, San Diego, CA,
+     August 2020. Association foXr Computing Machinery. doi: 10.48550/arXiv.2006.16866.
+
+[18] Gabriel Tseng, Hannah Kerner, Catherine Nakalembe, and Inbal Becker-Reshef. Annual and in-season mapping
+     of cropland at field scale with sparse labels. In Tackling Climate Change with Machine Learning Workshop at
+     NeurIPS ’20. Conference on Neural Information Processing Systems, December 2020.
+
+[19] Gabriel Tseng, Hannah Kerner, Catherine Nakalembe, and Inbal Becker-Reshef. Learning to predict crop type
+     from heterogeneous sparse labels using meta-learning. In 2021 IEEE/CVF Conference on Computer Vision and
+     Pattern Recognition Workshops (CVPRW), pages 1111–1120, Nashville, TN, USA, June 2021. IEEE.
+
+[20] Gabriel Tseng, Hannah Kerner, and David Rolnick. TIML: Task-informed meta-learning for crop type mapping.
+     In 36th AAAI Conference on Artificial Intelligence, AI for Agriculture and Food Systems (AIAFS) Workshop.
+     Association for the Advancement of Artificial Intelligence, 2022.
+
+[21] Gabriel Tseng, Ruben Cartuyvels, Ivan Zvonkov, Mirali Purohit, David Rolnick, and Hannah Kerner. Lightweight,
+     pre-trained transformers for remote sensing timeseries. arXiv: 2304.14065v4 [cs], February 2024. doi:
+     10.48550/arXiv.2304.14065.
+
+[22] Daniel Onwude, Thomas Motmans, Kanaha Shoji, Roberta Evangelista, Joaquin Gajardo, Divinefavor Odion,
+     Nnaemeka Ikegwuonu, Olubayo Adekanmbi, Soufiane Hourri, and Thijs Defraeye. Bottlenecks in Nigeria’s fresh
+     food supply chain: What is the way forward? Trends in Food Science & Technology, 137:55–62, 2023.
+
+[23] Juan Carlos Laso Bayas, Myroslava Lesiv, François Waldner, Anne Schucknecht, Martina Duerauer, Linda See,
+     Steffen Fritz, Dilek Fraisl, Inian Moorthy, Ian McCallum, Christoph Perger, Olha Danylo, Pierre Defourny, Javier
+     Gallego, Sven Gilliams, Ibrar ul Hassan Akhtar, Swarup Jyoti Baishya, Mrinal Baruah, Khangsembou Bungnamei,
+     Alfredo Campos, Trishna Changkakati, Anna Cipriani, Krishna Das, Keemee Das, Inamani Das, Kyle Frankel
+     Davis, Purabi Hazarika, Brian Alan Johnson, Ziga Malek, Monia Elisa Molinari, Kripal Panging, Chandra Kant
+     Pawe, Ana Pérez-Hoyos, Parag Kumar Sahariah, Dhrubajyoti Sahariah, Anup Saikia, Meghna Saikia, Peter
+     Schlesinger, Elena Seidacaru, Kuleswar Singha, and John W Wilson. A global reference database of crowdsourced
+     cropland data collected using the Geo-Wiki platform. Scientific Data, 4(1):170136, September 2017.
+
+[24] Francesco Vuolo, Martin Neuwirth, Markus Immitzer, Clement Atzberger, and Wai-Tim Ng. How much does multi-
+     temporal Sentinel-2 data improve crop type classification? International Journal of Applied Earth Observation
+     and Geoinformation, 72:122–130, 2018.
+
+
+
+                                                         16
+[25] Zheng Sun, Di Wang, and Geji Zhong. A review of crop classification using satellite-based polarimetric SAR
+     imagery. In 2018 7th International Conference on Agro-geoinformatics (Agro-geoinformatics), pages 1–5, 2018.
+
+[26] Hans Hersbach, Bill Bell, Paul Berrisford, Shoji Hirahara, András Horányi, Joaquín Muñoz-Sabater, Julien Nicolas,
+     Carole Peubey, Raluca Radu, Dinand Schepers, Adrian Simmons, Cornel Soci, Saleh Abdalla, Xavier Abellan,
+     Gianpaolo Balsamo, Peter Bechtold, Gionata Biavati, Jean Bidlot, Massimo Bonavita, Giovanna De Chiara,
+     Per Dahlgren, Dick Dee, Michail Diamantakis, Rossana Dragani, Johannes Flemming, Richard Forbes, Manuel
+     Fuentes, Alan Geer, Leo Haimberger, Sean Healy, Robin J. Hogan, Elías Hólm, Marta Janisková, Sarah Keeley,
+     Patrick Laloyaux, Philippe Lopez, Cristina Lupu, Gabor Radnoti, Patricia de Rosnay, Iryna Rozum, Freja
+     Vamborg, Sebastien Villaume, and Jean-Noël Thépaut. The ERA5 global reanalysis. Quarterly Journal of the
+     Royal Meteorological Society, 146(730):1999–2049, 2020.
+
+[27] Tom G. Farr, Paul A. Rosen, Edward Caro, Robert Crippen, Riley Duren, Scott Hensley, Michael Kobrick, Mimi
+     Paller, Ernesto Rodriguez, Ladislav Roth, David Seal, Scott Shaffer, Joanne Shimada, Jeffrey Umland, Marian
+     Werner, Michael Oskin, Douglas Burbank, and Douglas Alsdorf. The Shuttle Radar Topography Mission. Reviews
+     of Geophysics, 45(2), 2007.
+
+[28] Gabriel Tseng, Ivan Zvonkov, Catherine Lilian Nakalembe, and Hannah Kerner. Cropharvest: A global dataset
+     for crop-type classification. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and
+     Benchmarks Track (Round 2). Conference on Neural Information Processing Systems, 2021.
+
+[29] Noel Gorelick, Matt Hancher, Mike Dixon, Simon Ilyushchenko, David Thau, and Rebecca Moore. Google Earth
+     Engine: Planetary-scale geospatial analysis for everyone. Remote Sensing of Environment, 202:18–27, 2017. Big
+     Remotely Sensed Data: tools, applications and experiences.
+
+[30] M. Schmitt, L. H. Hughes, C. Qiu, and X. X. Zhu. Aggregating cloud-free Sentinel-2 images with Google Earth
+     Engine. ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, IV-2/W7:145–
+     152, September 2019.
+
+[31] Rei Sonobe, Yuki Yamaya, Hiroshi Tani, Xiufeng Wang, Nobuyuki Kobayashi, and Kan ichiro Mochizuki. Crop
+     classification from Sentinel-2-derived vegetation indices using ensemble learning. Journal of Applied Remote
+     Sensing, 12(2):026019, 2018.
+
+[32] QGIS Development Team. QGIS Geographic Information System. Open Source Geospatial Foundation, 2009.
+     http://qgis.org.
+
+[33] Jean-Marc Faurès and Guido Santini. Water and the Rural Poor: Interventions for Improving Livelihoods in
+     Sub-Saharan Africa. Food and Agriculture Organization of the United Nations (FAO), Rome, Italy, 2008. ISBN:
+     978-92-5-105982-1.
+
+[34] Ana Pérez-Hoyos, Felix Rembold, Hervé Kerdiles, and Javier Gallego. Comparison of global land cover datasets
+     for cropland monitoring. Remote Sensing, 9(11):1118, November 2017.
+
+[35] The Humanitarian Data Exchange (HDX). Nigeria - administrative boundaries. https://datacatalog.
+     worldbank.org/search/dataset/0039368, 2017. Accessed: 2023-10-01.
+
+[36] Christopher F. Brown, Steven P. Brumby, Brookie Guzder-Williams, Tanya Birch, Samantha Brooks Hyde, Joseph
+     Mazzariello, Wanda Czerwinski, Valerie J. Pasquarella, Robert Haertel, Simon Ilyushchenko, Kurt Schwehr,
+     Mikaela Weisse, Fred Stolle, Craig Hanson, Oliver Guinan, Rebecca Moore, and Alexander M. Tait. Dynamic
+     World, Near real-time global 10 m land use land cover mapping. Scientific Data, 9(1):251, June 2022.
+
+[37] Krishna Karra, Caitlin Kontgis, Zoe Statman-Weil, Joseph C. Mazzariello, Mark Mathis, and Steven P. Brumby.
+     Global land use / land cover with Sentinel 2 and deep learning. In 2021 IEEE International Geoscience and
+     Remote Sensing Symposium IGARSS, pages 4704–4707, Brussels, Belgium, July 2021. IEEE.
+
+[38] Daniele Zanaga, Ruben Van De Kerchove, Wanda De Keersmaecker, Niels Souverijns, Carsten Brockmann, Ralf
+     Quast, Jan Wevers, Alex Grosu, Audrey Paccini, Sylvain Vergnaud, Oliver Cartus, Maurizio Santoro, Steffen Fritz,
+     Ivelina Georgieva, Myroslava Lesiv, Sarah Carter, Martin Herold, Linlin Li, Nandin-Erdene Tsendbazar, Fabrizio
+     Ramoino, and Olivier Arino. ESA WorldCover 10 m 2020 v100, October 2021. doi: 10.5281/zenodo.5571936.
+
+
+                                                         17
+[39] Alexander M. Tait, Steven P. Brumby, Samantha Brooks Hyde, Joseph Mazzariello, and Melanie Corcoran.
+     Dynamic World training dataset for global land use and land cover categorization of satellite imagery, July 2021.
+     doi: 10.1594/PANGAEA.933475.
+
+[40] Liudmila Prokhorenkova, Gleb Gusev, Aleksandr Vorobev, Anna Veronika Dorogush, and Andrey Gulin. Catboost:
+     unbiased boosting with categorical features. In Proceedings of the 32nd International Conference on Neural
+     Information Processing Systems, NIPS’18, page 6639–6649, Red Hook, NY, USA, 2018. Curran Associates Inc.
+
+[41] Danya Li, Joaquin Gajardo, Michele Volpi, and Thijs Defraeye. Using machine learning to generate an open-access
+     cropland map from satellite images time series in the indian himalayan region. Remote Sensing Applications:
+     Society and Environment, 32:101057, 2023.
+
+[42] Sepp Hochreiter and Jürgen Schmidhuber. Long Short-Term Memory. Neural Computation, 9(8):1735–1780,
+     1997.
+
+[43] Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In 3rd International Conference
+     on Learning Representations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Conference Track Proceedings,
+     2015.
+
+[44] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen,
+     Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas Kopf, Edward Yang, Zachary DeVito,
+     Martin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala.
+     Pytorch: An imperative style, high-performance deep learning library. In Advances in Neural Information
+     Processing Systems 32, pages 8024–8035. Curran Associates, Inc., 2019.
+
+[45] F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss,
+     V. Dubourg, J. Vanderplas, A. Passos, D. Cournapeau, M. Brucher, M. Perrot, and E. Duchesnay. Scikit-learn:
+     Machine learning in Python. Journal of Machine Learning Research, 12:2825–2830, 2011.
+
+[46] Marina Sokolova and Guy Lapalme. A systematic analysis of performance measures for classification tasks.
+     Information Processing & Management, 45(4):427–437, 2009.
+
+[47] Tom Fawcett. An introduction to ROC analysis. Pattern Recognition Letters, 27(8):861–874, 2006.
+
+[48] Sambus Open Data Hub. Nigeria agroecological zone shapefile. https://opendata.sambusgeospatial.
+     com/datasets/bc9291e2bf22440790da414d89fbaebf_0/about, 2023. Accessed: 2024-07-07.
+
+[49] Hannah Kerner, Catherine Nakalembe, Adam Yang, Ivan Zvonkov, Ryan McWeeny, Gabriel Tseng, and Inbal
+     Becker-Reshef. How accurate are existing land cover maps for agriculture in Sub-Saharan Africa? Scientific Data,
+     11(1):486, May 2024.
+
+[50] Gilles Quentin Hacheme, Akram Zaytar, Girmaw Abebe Tadesse, Caleb Robinson, Rahul Dodhia, Juan M. Lavista
+     Ferres, and Stephen Wood. Weak labeling for cropland mapping in Africa, 2024.
+
+[51] Timon Weitkamp and Poolad Karimi. Evaluating the effect of training data size and composition on the accuracy of
+     smallholder irrigated agriculture mapping in Mozambique using remote sensing and machine learning algorithms.
+     Remote Sensing, 15(12), 2023.
+
+[52] Gabriel Tseng, Anthony Fuller, Marlena Reil, Henry Herzog, Patrick Beukema, Favyen Bastani, James R. Green,
+     Evan Shelhamer, Hannah Kerner, and David Rolnick. Galileo: Learning global and local features in pretrained
+     remote sensing models. arXiv preprint arXiv:2502.09356v1, Feb 2025.
+
+[53] Guillaume Astruc, Nicolas Gonthier, Clement Mallet, and Loic Landrieu. AnySat: An Earth observation model
+     for any resolutions, scales, and modalities. arXiv preprint arXiv:2412.14123v2, Dec 2024.
+
+[54] Vishal Nedungadi, Ankit Kariryaa, Stefan Oehmcke, Serge Belongie, Christian Igel, and Nico Lang. MMEarth:
+     Exploring multi-modal pretext tasks for geospatial representation learning. In Aleš Leonardis, Elisa Ricci, Stefan
+     Roth, Olga Russakovsky, Torsten Sattler, and Gül Varol, editors, Computer Vision – ECCV 2024, pages 164–182,
+     Cham, 2025. Springer Nature Switzerland.
+
+
+                                                         18
+[55] Felix Reuß, Isabella Greimeister-Pfeil, Mariette Vreugdenhil, and Wolfgang Wagner. Comparison of Long
+     Short-Term Memory networks and Random Forest for Sentinel-1 time series based large scale crop classification.
+     Remote Sensing, 13(24):5000, December 2021.
+
+[56] Lukas Blickensdörfer, Marcel Schwieder, Dirk Pflugmacher, Claas Nendel, Stefan Erasmi, and Patrick Hostert.
+     Mapping of crop types and crop sequences with combined time series of Sentinel-1, Sentinel-2 and Landsat 8 data
+     for Germany. Remote Sensing of Environment, 269:112831, February 2022.
+
+[57] Danfeng Hong, Lianru Gao, Naoto Yokoya, Jing Yao, Jocelyn Chanussot, Qian Du, and Bing Zhang. More diverse
+     means better: Multimodal deep learning meets remote-sensing imagery classification. IEEE Transactions on
+     Geoscience and Remote Sensing, 59(5):4340–4354, 2021.
+
+[58] Francisco Mena, Deepak Pathak, Hiba Najjar, Cristhian Sanchez, Patrick Helber, Benjamin Bischke, Peter
+     Habelitz, Miro Miranda, Jayanth Siddamsetty, Marlon Nuske, Marcela Charfuelan, Diego Arenas, Michaela
+     Vollmer, and Andreas Dengel. Adaptive fusion of multi-modal remote sensing data for optimal sub-field crop
+     yield prediction. Remote Sensing of Environment, 318:114547, 2025.
+
+[59] Ali Mirzaei, Hossein Bagheri, and Iman Khosravi. Enhancing crop classification accuracy through synthetic
+     SAR-Optical data generation using deep learning. ISPRS International Journal of Geo-Information, 12(11), 2023.
+
+[60] Esther Shupel Ibrahim, Philippe Rufin, Leon Nill, Bahareh Kamali, Claas Nendel, and Patrick Hostert. Mapping
+     crop types and cropping systems in Nigeria with Sentinel-2 imagery. Remote Sensing, 13(17), 2021.
+
+[61] Panpan Xu, Nandin-Erdene Tsendbazar, Martin Herold, Sytze de Bruin, Myke Koopmans, Tanya Birch, Sarah
+     Carter, Steffen Fritz, Myroslava Lesiv, Elise Mazur, Amy Pickens, Peter Potapov, Fred Stolle, Alexandra Tyukavina,
+     Ruben Van De Kerchove, and Daniele Zanaga. Comparative validation of recent 10 m-resolution global land
+     cover maps. Remote Sensing of Environment, 311:114316, September 2024.
+
+[62] Girmaw Abebe Tadesse, Caleb Robinson, Charles Mwangi, Esther Maina, Joshua Nyakundi, Luana Marotti,
+     Gilles Quentin Hacheme, Hamed Alemohammad, Rahul Dodhia, and Juan M. Lavista Ferres. Local vs. global:
+     Local land-use and land-cover models deliver higher quality maps. arXiv preprint arXiv:2412.00777, Dec 2024.
+
+
+
+
+                                                         19
+7   Supplementary Material
+Table S1: Results comparison on the Nigeria test set with only using Sentinel-2 bands and NDVI for training. Metrics
+were computed by applying a 0.5 threshold on model predictions. Best results per metric are in bold and second best
+are underlined.
+
+           Model          Geowiki dataset   Nigeria dataset    AUC ROC   Precision   Recall   F1-score   Accuracy
+                                ×                 ✓             0.880     0.749      0.765     0.757      0.802
+                             Nigeria              ✓             0.887     0.755      0.809     0.781      0.818
+                            Neighbours            ✓             0.887     0.764      0.743     0.753      0.804
+       Random Forest          World               ✓             0.722     0.587      0.667     0.624      0.677
+                             Nigeria              ×             0.606     0.471      0.574     0.517      0.569
+                            Neighbours            ×             0.778     0.723      0.470     0.570      0.714
+                              World               ×             0.691     0.530      0.732     0.615      0.631
+                                ×                 ✓             0.886     0.730      0.814     0.770      0.804
+                             Nigeria              ✓             0.869     0.781      0.645     0.707      0.785
+                            Neighbours            ✓             0.870     0.733      0.689     0.710      0.774
+    Single-headed LSTM        World               ✓             0.750     0.584      0.683     0.630      0.677
+                             Nigeria              ×             0.658     0.667      0.284     0.398      0.655
+                            Neighbours            ×             0.810     0.681      0.607     0.642      0.727
+                              World               ×             0.804     0.608      0.863     0.713      0.721
+                            Neighbours            ✓             0.884     0.810      0.650     0.721      0.798
+    Multi-headed LSTM         World               ✓             0.847     0.780      0.601     0.679      0.771
+                            Neighbours            ×             0.808     0.702      0.475     0.567      0.708
+                              World               ×             0.600     0.600      0.050     0.091      0.604
+
+Table S2: Results of LSTM model on the Nigeria test set without using a weighted BCE loss. Metrics were computed
+by applying a 0.5 threshold on model predictions. Best results per metric are in bold and second best are underlined.
+
+           Model          Geowiki dataset   Nigeria dataset    AUC ROC   Precision   Recall   F1-score   Accuracy
+                                ×                 ✓             0.907     0.797      0.749     0.772      0.822
+                             Nigeria              ✓             0.907     0.764      0.847     0.803      0.833
+                            Neighbours            ✓             0.905     0.791      0.809     0.800      0.837
+    Single-headed LSTM        World               ✓             0.868     0.704      0.792     0.746      0.782
+                             Nigeria              ×             0.785     0.497      0.874     0.633      0.593
+                            Neighbours            ×             0.872     0.632      0.918     0.748      0.752
+                              World               ×             0.846     0.538      0.929     0.681      0.651
+                            Neighbours            ✓             0.890     0.743      0.869     0.801      0.826
+    Multi-headed LSTM         World               ✓             0.892     0.920      0.437     0.593      0.758
+                            Neighbours            ×             0.827     0.591      0.831     0.691      0.701
+                              World               ×             0.814     0.723      0.628     0.673      0.754
+
+
+
+
+                                                          20
+Table S3: Performance comparison of three global land cover maps against country-specific models for Togo based
+on the CropHarvest evaluation dataset [17, 28]. The multi-headed LSTM and TIML models metrics are taken from
+published results. The best results per metric are in bold and second best are underlined.
+
+                             Map / Model         Precision   Recall   F1-score   Accuracy
+                         ESA WorldCover 2020      0.875      0.528     0.659      0.810
+                              ESRI 2020           0.636      0.066     0.120      0.663
+                          Dynamic World 2020      0.609      0.764     0.678      0.748
+                        multi-headed LSTM [17]     0.81      0.68       0.74       0.83
+                               TIML [20]             -         -       0.720         -
+
+
+
+
+                                                       21
+

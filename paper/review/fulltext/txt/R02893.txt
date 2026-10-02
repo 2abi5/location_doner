@@ -1,0 +1,894 @@
+Impact of target domain integration on
+unsupervised anomaly detection in hydroponic
+agriculture
+Matthis Lessing
+Maximilian Stryczek
+Jan Philipp Weiß
+Fabian Gerz
+ TH Köln - University of Applied Sciences
+Mohieddine Jelali
+
+
+
+ TH Köln - University of Applied Sciences
+
+
+
+Article
+
+Keywords: Hydroponic Farming, Machine Vision, Visual Anomaly Detection, Transfer Learning, Domain
+Mixing
+
+Posted Date: November 3rd, 2025
+
+DOI: https://doi.org/10.21203/rs.3.rs-7900963/v1
+
+License:   This work is licensed under a Creative Commons Attribution 4.0 International License.
+Read Full License
+
+Additional Declarations: No competing interests reported.
+       Impact of target domain integration on
+    unsupervised anomaly detection in hydroponic
+                     agriculture
+
+Matthis Lessing2† , Maximilian Stryczek2† , Jan Philipp Weiß2† ,
+              Fabian Gerz1*, Mohieddine Jelali1*
+1
+ Cologne Laboratory of Artificial Intelligence and Smart Automation
+(CAISA), Institute of Product Development and Engineering Design
+(IPK), Technische Hochschule Köln—University of Applied Sciences,
+           Betzdorfer Str. 2, Cologne, 50679, Germany.
+                        2
+                          Master’s students.
+
+
+      *Corresponding author(s). E-mail(s): fabian.gerz@th-koeln.de;
+                     mohieddine.jelali@th-koeln.de;
+            †
+              These authors contributed equally to this work.
+
+
+                                       Abstract
+    In modern hydroponic agriculture systems, precise monitoring of environmental
+    and growth parameters is essential. Unsupervised machine learning, particularly
+    anomaly detection (AD), offers a promising tool for automation and quality con-
+    trol. This study investigates the behavior of patch distribution modeling (PaDiM)
+    under domain shift using strawberry images from two datasets. As the source
+    domain, the Riseholme-2021 dataset is employed, which contains high-resolution
+    images of outdoor-grown strawberry fruits. The target domain is a novel dataset
+    comprising lower-resolution images of hydroponically grown strawberry plants
+    in an indoor environment. Experiments were conducted across thirteen domain-
+    mixing ratios, with performance evaluated using the area under the receiver
+    operating characteristic curve (AUROC) and F1-score. The results show that the
+    F1-score increases with a higher proportion of target-domain data, while AUROC
+    peaks at intermediate mixtures, indicating that combining source and target data
+    enhances generalization. Qualitative analysis confirms complementary strengths:
+    source data improves robustness under low-light and blurred conditions, whereas
+    target data performs better under high exposure but tends to misclassify foreign
+    objects as anomalous.
+
+
+
+
+                                           1
+     Keywords: Hydroponic Farming, Machine Vision, Visual Anomaly Detection,
+     Transfer Learning, Domain Mixing
+
+
+
+
+1 Introduction
+To address the mounting global demand for food, agricultural practices must evolve
+to adapt to increasingly limited resources. The 2024 Global Hunger Index (GHI) as-
+signs a world hunger score of 18.3 (moderate), indicating that hunger remains a serious
+issue till 2030 [1]. At the same time, the world’s population, currently about 8.2 bil-
+lion, is projected to grow to roughly 9.7 billion by 2050, increasing the demand for
+food [2]. Hydroponics offers a promising approach to these challenges by enabling crop
+production independent of soil and local climate. Modern hydroponic systems, typi-
+cally implemented in greenhouses or indoor vertical farms, circulate precisely balanced
+nutrient solutions to plant roots, supported by environmental sensors that optimize
+growth conditions. Because plants are grown in inert media or suspended, they avoid
+soil-borne constraints (such as nutrient leaching, climate changes or pathogens) and
+can be cultivated year-round.
+    Hydroponic setups thus allow tight control of water, nutrients, and other environ-
+mental factors to maximize plant growth. Nutrients in hydroponic systems are
+recirculated and matched precisely to plant needs, virtually eliminating runoff losses.
+The controlled conditions also lower pest pressure, often minimizing pesticide use. As
+these systems scale in complexity and economic importance, precise and automated
+monitoring becomes crucial for ensuring high-quality, efficient production [3]. This
+includes not only the continuous tracking of sensor-based metrics but also the visual
+inspection of plant health. Tasks that can be enhanced through intelligent computer
+vision systems.
+    As promising as hydroponic cultivation is, its application in computer vision
+remains challenged by the limited availability of training data. In particular, hydro-
+ponic strawberry datasets contain relatively few images, and anomalous cases are even
+scarcer [4]. This scarcity constrains the applicability of conventional supervised learn-
+ing methods, which require large, annotated datasets. Unsupervised anomaly detection
+(AD) therefore represents a compelling alternative, as it relies solely on normal data
+to learn a baseline representation and does not depend on explicit anomaly labels.
+    Since no publicly available datasets of hydroponically grown strawberries exist,
+datasets of field-grown plants represent one possible complementary resource [5].
+However, differences in lighting, background structures, and growth environments dis-
+tinguish field from hydroponic imagery and may affect model transferability. In this
+context, it can be advantageous to combine the breadth of field data with even small
+amounts of hydroponic samples, as this allows models to incorporate domain-specific
+characteristics while still leveraging the diversity of field-grown datasets. Investigating
+this is central to understanding how robust computer vision systems for automated
+monitoring in agriculture can be designed under conditions of limited data availability.
+    The present study investigates the impact of including both target domain data to
+achieve a domain shift and using a state-of-the-art unsupervised AD method. To this
+
+
+                                            2
+end, multiple datasets combining different proportions of field-grown strawberry data
+and a novel hydroponic dataset, consisting of images captured from an indoor farming
+system, were constructed. By examining the impact of gradually increasing the amount
+of hydroponic data, the study aims to identify the effects which occur as the model
+learns increasing amounts of the new domain data. The underlying hypothesis is that
+exposure to even modest amounts of target domain data can substantially improve
+the model robustness, thus enabling reliable AD in hydroponic systems.
+
+2 Related work
+2.1 Anomaly detection (AD)
+AD refers to the identification of data points or events that deviate from established
+“normal” behavior, effectively indicating the presence of anomalies. Commonly used
+in this context are unsupervised learning techniques, including one-class models, which
+rely solely on normal (non-anomalous) data for training. These methods are prevalent
+because, in many real-world applications, labeled examples of anomalies are rare,
+costly to obtain, or difficult to define comprehensively. This allows models to detect
+deviations without prior knowledge of specific anomaly types [4, 6, 7].
+    Unsupervised visual AD methods can be broadly categorized by how they model
+“normality.” Reconstruction-based methods learn to recreate normal inputs and detect
+anomalies via reconstruction error. For example, Autoencoders, Generative Adversar-
+ial Networks (GAN), or Diffusion Models are trained on normal samples so that inputs
+containing defects yield large residuals when reconstructed [5].
+    In contrast to reconstruction-based approaches, embedding-based methods rely on
+the extraction of meaningful feature representations from deep neural networks to
+characterize normality. The selected patch distribution model (PaDiM) [8] serves as
+an example and will be discussed in detail in a subsequent section.
+    Finally, hybrid or plug-in approaches aim to combine these paradigms. For
+instance, the recent CostFilter-AD module is designed as a post-processing plug-in
+that refines anomaly scores and can be integrated with either reconstruction-based
+or embedding-based detectors [5]. Such hybrid designs strive to improve detection by
+leveraging both precise reconstruction and discriminative feature matching.
+
+2.2 Domain adaptation and mixed-domain training
+Obtaining large quantities of labeled data for every new environment or application
+domain is often costly, time-consuming, and impractical. This limitation poses a sig-
+nificant challenge to model generalization and motivates the application of DA, a form
+of transductive transfer learning in which the task remains the same while the data
+distributions differ between a source and a target domain [9]. Such distribution shifts
+can result from variations in lighting, resolution, texture, or view-point. To alleviate
+the need for repeated data annotation, several DA techniques have been proposed,
+including domain-invariant feature learning, domain mapping, and normalization
+statistic alignment [9]. These methods have demonstrated notable improvements in
+cross-domain performance across various applications [10–12].
+
+
+                                           3
+    In addition to conventional DA techniques, mixed-domain training has emerged as
+a related but distinct strategy. The term lacks a standardized definition in current liter-
+ature, yet it typically refers to approaches that integrate data from multiple domains,
+rather than aligning them explicitly. Unlike DA, which often aims to minimize feature
+distribution discrepancies between domains, mixed-domain training involves blending
+source and target domains to construct a shared training space. The degree and depth
+of mixing can vary significantly.
+    For instance, Ma et al. [13] propose a method in the context of medical image seg-
+mentation, where intermediate domain samples are generated by interpolating both
+pixel- and feature-level representations between a labeled source domain and multi-
+ple unlabeled domains. These intermediates serve as transitional samples, allowing
+smoother knowledge transfer. In contrast, Vincent et al. [14] construct a mixed-domain
+training set by combining labeled samples from different domains and introduce a
+semi-supervised approach for multimission semantic segmentation of Martian surfaces,
+aiming to enhance robustness and cross-domain generalization.
+    The domain-mixing method presented in this work adapts the approach of Vincent
+et al. [14] and applies it to an unsupervised AD task.
+
+3 Proposed method
+To investigate the research question, a structured experimental framework was con-
+structed. This framework was designed to assess the performance and generalization
+capacity of a chosen AD model across domains with varying levels of target domain
+representation in the training data.
+
+3.1 Overview of experimental design
+Figure 1 visualizes the experimental design of this work. It begins with the evaluation
+and selection of an AD model by testing various models on the target dataset. The
+chosen model is finetuned and then trained on constructed mixed-domain datasets
+and its performance is assessed. Afterwards, additional datasets with finer granularity
+are constructed. The final step is to thoroughly evaluate all the configurations to see
+how performance on the target dataset is affected by different domain-mixing ratios.
+
+3.2 Data preparation
+To conduct the experiments, two image datasets capturing strawberry plants in various
+growth stages and conditions are used.
+
+3.2.1 Source domain: modified Riseholme-2021 dataset
+As the source domain, the publicly available Riseholme-2021 dataset was used. It
+comprises 3,520 images of strawberries captured in various growth stages taken from
+an open-field polytunnel farm [15]. The samples are categorized into four classes: ripe,
+unripe, occluded, and anomalous, where ”anomalous” refers to strawberries showing
+signs of illness, mold, or other deformities.
+
+
+
+                                            4
+Fig. 1 Experimental design pipeline
+
+
+    Within the present AD framework, the anomaly criterion was redefined to increase
+the number of anomalous samples and to presumably simplify the classification task by
+equating ripe (red) strawberries with anomalies. Thus, in the modified source domain
+dataset “Anomalous” refers to ripe and healthy strawberries. With this redefinition the
+“Anomalous” class contains only ripe and occluded (if ripe) samples and the “Normal”
+class unripe, mid-ripe and occluded (if unripe or mid-ripe) samples from the original
+dataset. Thus, the source domain dataset includes 462 anomalous and 2,033 normal
+samples. Figure 2 illustrates representative samples.
+
+
+
+
+Fig. 2 Representative samples of the source domain dataset: a) unripe and occluded, b) unripe
+(whole), c) ripe and occluded, d) ripe (whole) [15]
+
+
+    The images are high quality, with minimal noise, and were captured from the side
+or an angled perspective. Table 3 provides an overview of the resolution statistics
+for the source domain dataset, categorized according to the designated classes. On
+average, normal samples measure 60.03 × 62.76 pixels, while anomalous samples tend
+to be larger measuring 75.52 × 81.72 pixels in width and height.
+
+
+
+
+                                             5
+               Table 1 Resolution statistics of source domain dataset
+
+               Metric                               Normal          Anomalous
+               Number of Images                     2,033           462
+               Percentage of Total Images / %       81.48           18.52
+               Min / Max Pixel Width                22 / 126        30 / 125
+               Min / Max Pixel Height               9 / 181         34 / 148
+               Avg. Width × Height                  60.03 × 62.76   75.52 × 81.72
+               Std. Dev. σ (Width | Height)         17.42 | 22.13   18.58 | 22.8
+
+
+
+
+3.2.2 Target domain: hydroponic strawberry dataset
+As the target domain data, a novel dataset collected from an indoor hydroponic farm-
+ing system is selected. It originally comprises 253 top-down images of strawberry plants
+at various growth stages (shown in Figure 3), captured under environmental con-
+ditions that differ significantly from those in the Riseholme-2021 dataset [15], thereby
+introducing a realistic domain shift. The dataset also contains augmented samples
+with image adjustments to contrast, brightness and rotation to extend the dataset.
+
+
+
+
+Fig. 3 Sample from the hydroponic dataset
+
+
+    To raise comparability between domains, the hydroponic dataset was preprocessed
+by cropping image frames and scaling objects to match the framing and size dis-
+tributions of the Riseholme-2021 dataset as much as possible. Table 2 presents the
+resolution statistics for the resulting target domain dataset, categorized according to
+the designated classes. On average, normal samples measure approximately 30.02 ×
+36.42 pixels, while anomalous samples are larger, averaging 40.97 × 49.82 pixels. How-
+ever, despite the preprocessing, the hydroponic images remain lower in resolution and
+
+
+                                                6
+generally contain less visual detail, particularly in the normal class, creating a realistic
+domain shift.
+
+                Table 2 Resolution statistics of target domain dataset
+
+                Metric                               Normal          Anomalous
+                Number of Images                     3,829           841
+                Percentage of Total Images / %       81.99           18.01
+                Min / Max Pixel Width                10 / 74         12 / 72
+                Min / Max Pixel Height               12 / 85         14 / 85
+                Avg. Width × Height                  30.02 × 36.42   40.97 × 49.82
+                Std. Dev. σ (Width | Height)         9.92 | 11.06    9.38 | 10.7
+
+
+
+
+    The same binary classification scheme used in the source domain was applied to
+the target domain, resulting in a dataset comprising 841 anomalous and 3,829 normal
+samples. Though the composition of the normal class in the target domain introduces
+additional ambiguity with samples either displaying a) flowering plants with no visible
+fruit or b) unripe fruits mostly obscured by foliage due to the general top-down capture
+angle, as illustrated in Figure 4. No sample displays a clear full view of an unripe
+strawberry, due to image capturing angle and foliage covering the fruit. In contrast,
+the anomalous class tends to be relatively consistent, albeit still limited by lower
+resolution and a higher degree of occlusion, particularly from support strings used to
+guide plant growth, as shown in Figure 4c and Figure 4d.
+
+
+
+
+Fig. 4 Representative samples of the target domain dataset: a) flowering plants, b) unripe and
+occluded by foliage, c) ripe and strongly occluded, d) ripe and little occluded
+
+
+    These domain discrepancies, while challenging, also underline the practical impor-
+tance of this work. In real-world applications, such as transitioning from open field to
+controlled indoor agriculture, visual characteristics can vary drastically. Furthermore,
+it is valuable to learn from open field agriculture, since indoor (hydroponic) farming
+is still an emerging technology for growing plants.
+
+3.2.3 Model evaluation and selection
+A preliminary selection of unsupervised models available in the Anomalib library [16]
+was carried out prior to the domain-mixing experiments. In a first step, all candi-
+date models were evaluated to determine whether they were fundamentally capable of
+
+
+
+                                                 7
+detecting anomalies in the given dataset. For this initial screening, the default hyper-
+parameter configurations recommended by the respective developers were consistently
+applied to ensure a fair baseline comparison.
+    Based on these results, a reduced set of models was shortlisted, as presented in
+Table 3. Two practical aspects were emphasized: the availability of a visualization com-
+ponent that allows for qualitative interpretation of anomaly localization, and the train-
+ing time per epoch of the models. The latter criterion was essential, as many configu-
+rations had to be trained and validated within a limited timeframe and restricted
+computational resources. The PaDiM model was selected for its efficient training speed,
+and its capability for both pattern recognition and anomaly map visualization.
+
+ Table 3 Resolution statistics of source domain dataset
+
+ Category                     Model                       Visualization   Training time/
+                                                                          Epoch
+                              DFKDE                       No              < 1min
+ Feature Embedding-Based/     DFM - Distribution Map      No              < 1min
+ Density Estimation           Patchcore - Memory Bank     Yes             < 1min
+                              PaDiM - Memory Bank         Yes             < 1min
+                              Dream - Autoencoder         Yes             > 1min
+ Reconstruction
+                              Ganomaly - GAN              No              > 1min
+
+
+
+
+3.2.4 Patch distribution model (PaDiM)
+The model used in this paper, PaDiM, leverages the distribution of patch-level embed-
+dings across normal training images, to detect outlier samples. As illustrated in
+Figure 5, a pretrained convolutional neural network (CNN) is employed to extract fea-
+ture maps from multiple semantic levels. Specifically, activation vectors are sampled at
+corresponding spatial positions from three different layers of the CNN, each capturing
+information at a different scale and level of abstraction. These vectors are then concate-
+nated to form a unified patch embedding vector xij , representing the local region at
+position (i, j ) in the image. For each such spatial location, the set of embedding vec-
+tors obtained from all training images, Xij = {xij |k ∈ [1, N ]}, is assumed to follow a
+multivariate Gaussian distribution N (µij , Σij ), where µij and Σij denote the sample
+mean and covariance matrix respectively. This probabilistic modeling, which includes
+correlations between feature dimensions and between semantic levels, allows PaDiM to
+capture the variability of normal patterns at each patch position in a principled way.
+Unlike methods which rely on non-parametric nearest-neighbor comparisons during
+inference, PaDiM encodes the normal class compactly via parametric distributions,
+enabling faster and more scalable anomaly localization. [8]
+
+3.2.5 Finetuning
+The base PaDiM model is adjusted to achieve optimal performance on the hydroponic
+test dataset. The following adjustments were made:
+
+
+                                              8
+• Utilizing larger backbone architecture WideResNet50, due to its higher feature
+  representation capacity compared to smaller alternatives such as ResNet18
+• Limiting feature extraction to the third convolutional layer, as this configuration
+  has been shown to provide a favorable balance between semantic abstraction and
+  spatial detail for anomaly localization.
+• The number of features retained after dimensionality reduction was set to 550, in
+  alignment with recommendations from [8] and to accommodate the increased feature
+  dimensionality of the WideResNet50 backbone.
+• Furthermore, the backbone was not pretrained, in contrast to standard practice, to
+  allow the model to better adapt to the specific complexity and variability of the
+  domain-specific datasets used in this study.
+
+
+
+
+Fig. 5 Learning method of PaDiM [8]
+
+
+   To ensure experimental consistency and reproducibility, the same configuration
+was consistently applied across all domain-mixing ratios.
+
+3.2.6 Mixed-domain training experiments
+To evaluate the effects of incorporating target domain data, five initial training config-
+urations were defined, varying the ratio of source and target data in 25% increments, as
+shown in Figure 6. This initial series aims to provide a general overview of performance
+trends across the full range of domain compositions.
+    Based on the outcomes of these experiments, additional configurations were intro-
+duced in the intermediate range between 55% and 85% target domain data, together
+with supporting points to ensure stability of the observed trends, as shown in Figure 7.
+    To maintain a consistent dataset size across all configurations, the number of sam-
+ples was limited to 462 anomalous and 2,033 normal instances per training set (accord-
+ing to the max data samples from the source data). For each configuration, samples
+were randomly selected from the respective domains based on the defined ratio and
+then shuffled to generate the final training dataset. To ensure statistical robustness and
+mitigate variability caused by random initialization or sampling effects, each mixed-
+domain configuration was generated three times using independent random draws.
+
+
+                                            9
+Fig. 6 Overview of mixed datasets in 25% increments
+
+
+
+
+Fig. 7 Additional mixed datasets with finer granularity
+
+
+The RH100 Hydro0 configuration was deterministic and thus not subject to random
+sampling. As a result, 37 unique datasets were used for training with PaDiM.
+   All trained models were evaluated on the same fixed test set from the hydroponic
+domain to ensure consistency and comparability. Performance metrics, specifically
+image-level AUROC and F1-Score, were averaged across the repetitions for each
+configuration.
+
+
+
+
+                                               10
+3.2.7 Quantitative metrics
+In the following section, the metrics used for the quantitative evaluation of the domain-
+mixing experiments are introduced. The AD task is formulated as a binary image-level
+classification problem, where each image is classified as either normal or anomalous.
+Four possible outcomes are considered. A true positive (TP) refers to a normal image
+that is correctly identified as normal, while a true negative (TN) denotes an anomalous
+image that is correctly detected as anomalous. A false positive (FP) occurs when an
+anomalous image is incorrectly classified as normal, and a false negative (FN) refers
+to a normal image that is mistakenly identified as anomalous.
+    From these basic outcomes, several key performance metrics are derived. Recall,
+also known as the true positive rate, is defined as
+
+                                           TP
+                                    R=                                               (1)
+                                         TP + FN
+
+and defines the proportion of actual normal images that are correctly identified.
+Precision is defined as
+                                           TP
+                                   P =                                            (2)
+                                        TP + FP
+and refers to the proportion of images predicted as normal that are normal. The false
+positive rate (FPR) is given by
+
+                                             FP
+                                  FPR =                                              (3)
+                                           FP + TN
+
+and refers to the proportion of anomalous images that are incorrectly classified as
+normal.
+     Based on the recall and false positive rate, the Area Under the Receiver Operat-
+ing Characteristic Curve (AUROC) is computed. The AUROC quantifies the model’s
+ability to distinguish between normal and anomalous images across all possible clas-
+sification thresholds. A value of 1.0 indicates perfect discrimination, while a value of
+0.5 corresponds to random guessing.
+     In addition, the F1-Score is used as a threshold-based evaluation metric. It is
+calculated as the harmonic mean of precision and recall, providing a single measure
+that balances both quantities:
+                                             P ·R
+                                     F1 = 2         .                                (4)
+                                             P +R
+     Together, AUROC and F1-Score offer complementary perspectives: while AUROC
+evaluates the ranking quality of anomaly scores, the F1-Score assesses classification
+quality at a chosen threshold, making them suitable for assessing performance trends
+across varying training data compositions.
+
+4 Results
+This section evaluates the image-level AUROC and F1-Score results and and compares
+them to the visualization of the anomaly heat map.
+
+
+                                           11
+4.1 Quantitative comparison – image-level AUROC and
+    F1-score
+In Figure 8, the image-level AUROC is plotted as a function of the domain-mixing
+ratios. The x-axis represents the proportion of training data originating from the
+target domain dataset (hydroponic), ranging from 0% on the left—corresponding to
+training exclusively on source-domain data (Riseholme-2021) to 100% on the right,
+representing training solely on target-domain data.
+    The black markers indicate the experiments conducted at coarse mixing ratios of
+0%, 25%, 50%, 75%, and 100%, each averaged over three independent runs with corre-
+sponding 95% confidence intervals. To obtain finer granularity, eight additional mixing
+ratios were introduced between these coarse steps, resulting in a total of thirteen
+domain compositions being investigated.
+
+
+
+
+Fig. 8 Image AUROC of all domain-mixing ratios
+
+
+    The dashed black and red curve in Figure 8 represent a fourth-degree polynomial
+regression, which serves as a trend line to highlight the progression of performance
+across the domain-mixing spectrum. It is important to note that this curve is not
+intended to precisely follow the raw AUROC values but rather to visualize the general
+tendency in performance variation. A thorough evaluation of the models reveals a
+consistent pattern of strong performance across all models. It is noteworthy that the
+
+
+                                           12
+lowest AUROC value of 0.931, as presented in Table 4, is attained when the model is
+trained exclusively on the source domain data.
+
+       Table 4 Quantitative metrics of all domain-mixing ratios
+
+       Target                   AUROC                             F1-Score
+       domain /%      Exp. 1    Exp. 2       Exp. 3    Exp. 1     Exp. 2     Exp. 3
+       0              0.9391    0.9391       0.9391    0.8993     0.8993     0.8993
+       12.5           0.9638    0.9658       0.9629    0.8956     0.8993     0.8949
+       25             0.9641    0.9664       0.9667    0.8942     0.9010     0.8973
+       37.5           0.9677    0.9683       0.9660    0.8850     0.8935     0.8874
+       50             0.9701    0.9704       0.9696    0.8850     0.8850     0.8850
+       55             0.9744    0.9720       0.9690    0.8951     0.8935     0.8819
+       60             0.9724    0.9716       0.9696    0.8836     0.8873     0.8811
+       65             0.9723    0.9694       0.9723    0.8881     0.8763     0.8780
+       70             0.9737    0.9696       0.9703    0.8897     0.8920     0.8794
+       75             0.9718    0.9736       0.9734    0.8803     0.8951     0.8826
+       80             0.9714    0.9691       0.9676    0.8794     0.8683     0.8633
+       85             0.9675    0.9678       0.9668    0.8602     0.8714     0.8602
+       100            0.9537    0.9549       0.9541    0.8571     0.8622     0.8592
+
+
+
+
+    Analogous to the AUROC progression, Figure 9 presents the image-level F1-Score
+across the various domain-mixing ratios. In contrast to the AUROC behavior, the
+F1-Score exhibits another trend: the lowest performance is observed at 100% target
+domain data, while the highest F1-Score is achieved when the model is trained solely
+on source domain data.
+    However, the absolute differences in performance are minimal. Across all domain
+compositions, the AUROC and F1-Score vary by only 0.04 points, indicating a very
+narrow performance band. Given this small range, variability between individual runs
+at each data ratio introduces a degree of uncertainty. Consequently, the metrics appear
+relatively stable across configurations, and small differences should be interpreted with
+caution.
+
+4.2 Qualitative comparison: image heatmap and prediction
+    mask
+In this section, the qualitative outputs of the AD model are compared across the
+training configurations. The visualizations illustrate how training on different domain
+data influences the model’s ability to localize anomalies. For example, the top row
+displays the results from the model trained with 100% target domain data, while the
+bottom row shows the outputs from the model trained with 100% source domain data,
+in 25% increments. From left to right, the following representations are provided: The
+original input image (left), the corresponding anomaly heatmap (center) the predicted
+segmentation mask overlaid on the original image (right).
+    In the heatmap visualization, areas with deeper red coloration indicate regions
+where the model assigns a higher probability of anomaly presence. The prediction
+mask highlights regions (red) that are classified as anomalous based on a predefined
+threshold.
+
+                                            13
+Fig. 9 Image F1-Score of all domain-mixing ratios
+
+
+    Figure 10 illustrates a representative example highlighting the strength of training
+configurations with a higher proportion of target domain data. As the proportion of
+target domain samples in the training set increases, the model can identify a larger
+portion of the anomalous region, in this case the red (ripe) strawberry, as reflected
+by the increased coverage in the anomaly heatmap. Most images in the dataset follow
+this consistent and recognizable pattern, which enables stable classification by most
+models across different training configurations.
+    Nevertheless, a limited number of outlier samples show significant degradation in
+image quality, potentially compromising detection accuracy. Aside from these excep-
+tions, several recurring visual patterns can be identified across the dataset. These
+characteristic patterns are described in detail in the following section and later
+interpreted within the broader context of model performance in the subsequent section.
+    In cases involving darker or blurrier images (Figure 11, on the left), the model
+trained exclusively on the source domain data demonstrates superior performance.
+A consistent observation across all domain-mixing ratios is that the flower (blossom)
+structures are correctly identified as non-anomalous, even though no such features are
+present in the source training data. In cases involving very bright images (Figure 11, on
+the right), models trained on hydroponic data tend to perform slightly better in terms
+of general anomaly scoring. However, none of the models were able to successfully
+detect the actual anomaly in these cases.
+
+
+                                              14
+Fig. 10 Image analysis of all training configurations
+
+
+    The model trained on the source domain data also exhibits a tendency to respond
+more aggressively to normal images, as demonstrated by this example in Figure 12 on
+the left, where a normal image was incorrectly classified as anomalous.
+    Another distinct pattern is observed in models that were trained exclusively on
+the target domain. Around the blossom area of the strawberry, these models tend to
+assign elevated anomaly scores, suggesting that an anomaly is expected but does not
+cross the threshold to be classified as anomalous.
+    A notable characteristic within the test dataset is the presence of strings (shown in
+Figure 13) to manipulate plant and fruit growth, which consistently appear in several
+images. These white lines are frequently misclassified as anomalies by models that were
+trained predominantly on the target domain data. In contrast, models trained with a
+higher proportion of source domain data appear to be less sensitive to these features
+and are more likely to classify them correctly as part of the normal background.
+
+
+
+
+                                                15
+Fig. 11 Images with a high difference in brightness
+
+
+5 Discussion
+The following points interpret and summarize the core findings of the domain-mix-
+ing experiments with PaDiM. Each observation provides insight into the behavior of
+the algorithm under different training data configurations, contributing to a better
+understanding of domain transfer effects.
+
+5.1 Robustness to lighting conditions
+The improved performance of models trained with more source domain data on dark
+or blurry images is likely attributable to the higher resolution and visual clarity of the
+source dataset in this specific case and may not be observed in domains with different
+image characteristics. This outcome appears counterintuitive at first, as the hydro-
+ponic dataset includes augmented samples such as brightness variation and defocus.
+Nonetheless, the Riseholme-2021 dataset may provide more structurally consistent
+and noise-free features, which proves beneficial for low-contrast scenarios. In contrast,
+target domain-trained models show higher resilience under bright and overexposed
+conditions, where source domain-based models are more likely to fail. This suggests
+that washed-out features and reduced contrast remain challenging for all configura-
+tions, but hydroponic models offer slightly better adaptability to such conditions,
+presumably due to their broader exposure to different conditions classified as normal.
+
+
+
+                                               16
+Fig. 12 Example of potential False Positives
+
+
+5.2 Differences in anomaly detection sensitivity
+Models trained with more source domain data demonstrate a more aggressive detec-
+tion behavior, frequently misclassifying normal image regions as anomalous. Target
+domain models tend to overfit, especially to uncommon patterns. This suggests that
+decision thresholds are often tuned to maximize sensitivity, which can come at the
+cost of precision. This behavior may be explained by a model’s increased sensitivity to
+structurally uncommon yet semantically normal features particularly those underrep-
+resented in the training data. Overall, these findings indicate that both models tend
+to react cautiously to ambiguous regions, which affects the interpretation of anomaly
+maps and contributes to false positive variation.
+
+5.3 Misclassification of foreign objects
+Strings, although present in both datasets, are more frequently misclassified as anoma-
+lies by hydroponic-trained models. Source domain-trained models handle such features
+more robustly, likely due to more consistent or contextually embedded representation
+in the training data. The reason for this discrepancy remains unclear and warrants
+further investigation.
+
+
+
+
+                                               17
+Fig. 13 Example of an image obscured with a string
+
+
+5.4 Generalization
+Despite not being present in the source domain training data, flowers in the test images
+were not classified as anomalies by any configuration. This indicates a level of semantic
+abstraction in the learned normality concept, suggesting that the models can distin-
+guish structurally novel yet contextually normal elements from true anomalies. This
+result highlights the generalization potential of AD models in unsupervised settings.
+    The highest AUROC values occur at intermediate domain-mixing ratios, partic-
+ularly those favoring a higher proportion of hydroponic data. This suggests that
+inclusion of target domain data improves generalization, though the optimal com-
+position remains unclear. Despite this, the source domain model still shows a slight
+performance advantage in some metrics. This may be due to subtle statistical or struc-
+tural properties in the source domain images that facilitate sharper decision boundaries
+under fixed thresholds.
+    Each dataset provides distinct strengths but also introduces domain-specific biases
+when used in isolation. A combined training dataset allows the model to learn from
+a broader distribution of visual patterns, thereby reducing overfitting to localized
+characteristics of either domain. This synergy results in more balanced generalization,
+with improved robustness to variation and fewer domain-specific misclassifications.
+These effects explain why models trained on intermediate domain mixtures yield the
+highest AUROC scores, reflecting an effective trade-off between specificity (domain
+fit) and generalization (transferability). The progressive decrease in F1-score with
+
+
+                                             18
+increasing target domain proportion indicates a trend that is not yet fully understood.
+Presumably, the low quality of the images contributes to this decrease in F1-score;
+however, the absolute deviation remains minor.
+
+5.5 Limitations and scope of this study
+The present analysis is limited to the PaDiM model trained on a domain-specific
+dataset of strawberry images. All conclusions and interpretations are thus model-
+and dataset-specific. While they offer valuable insights, they should be regarded as
+indicative rather than universally generalizable. Broader conclusions regarding domain
+transferability, anomaly sensitivity, or data composition strategies require further
+validation across different models and use cases.
+    A key challenge lies in the comparability between the source and target domains.
+Despite preprocessing efforts, the hydroponic dataset exhibits lower image resolution
+than the source data, which reduces the visual detail available for anomaly infer-
+ence. Rather than merely being a limitation, this difference represents a realistic and
+meaningful domain shift, providing a challenging setting for evaluating the model’s
+transferability. The model must adapt to lower-quality input while maintaining detec-
+tion performance, which more closely reflects practical conditions in cross-domain
+scenarios.
+
+6 Future work
+While this study offers foundational insights into domain transition effects in unsuper-
+vised AD, it also provides an in-depth investigation of the PaDiM model within the
+specific context of detecting ripe strawberries. Together, these perspectives highlight
+both general patterns in domain-mixing and model-specific behavior under real-world
+agricultural conditions, pointing to several promising directions for future research.
+
+6.1 Other models
+The findings presented in this work are based on a single AD framework. To draw
+more general and statistically reliable conclusions about unsupervised AD, future work
+should involve a systematic evaluation of additional models from Anomalib, including
+both classical feature-based methods (e.g., Patch-Core, SPADE), reconstruction-
+based methods (Autoencoder or GANs) and recent deep generative approaches
+(e.g., DRAEM, FastFlow) [16]. Such comparisons could reveal whether the pat-
+terns observed, such as optimal domain-mixing ratios and model sensitivities, are
+architecture-dependent or generalizable across different paradigms.
+
+6.2 Anomaly definition and possible technical embedding
+The current AD setup defines ripe strawberries as anomalous without distinguishing
+between healthy and defective ripe fruit. This binary classification, while effective
+for evaluating domain transfer, lacks the granularity needed for practical applications
+such as automated quality control. A possible extension would involve integrating
+a second-stage AD model or classifier capable of distinguishing between consumable
+
+
+                                          19
+and non-consumable ripe strawberries to detect signs of mold, deformation, disease or
+other relevant occurrences.
+    The outcomes of this study can also serve as a basis for developing adaptive AD sys-
+tems in industrial and agricultural inspection pipelines. The models can be deployed on
+edge devices with camera systems, where domain-specific fine-tuning is either imprac-
+tical or too resource-intensive. In this context, a generalist model trained on a carefully
+selected mixed dataset may offer a more robust and cost-effective solution for AD
+under real-world conditions.
+    Another possible technical embedding could involve prescreening strawberry
+images with a fast and lightweight anomaly detector (such as PaDiM) to detect
+whether fruits are likely to be ripe based on visual anomalies. If ripeness is detected,
+a more complex object detection or instance segmentation model can then be selec-
+tively triggered to analyze growth stages, fruit count, or harvest readiness with higher
+precision. This cascade approach offers several advantages: Efficiency, as computation-
+ally expensive models are only run when necessary; Scalability, particularly for edge
+deployment in smart farming scenarios; and robustness, as initial filtering through AD
+can handle variability in lighting, occlusion, or camera positioning.
+
+6.3 Further research fields
+Finally, the quantitative and qualitative evaluation frameworks developed in this
+study, especially those involving domain composition and visual error analysis, can
+be extended to other applications such as manufacturing quality control, medical
+imaging, or environmental monitoring. These future directions will help close the gap
+between academic AD research and its practical deployment in dynamic, data-diverse
+environments.
+
+7 Conclusion
+This study combines fundamental insights into domain transition behavior with a
+focused analysis of the PaDiM model applied to the task of detecting ripe strawberries
+under real-world conditions. This work addresses a particularly relevant challenge:
+achieving robust AD performance when only limited or mismatched training data are
+available.
+    The results show that a balanced mixture of source- and target-domain data
+improves model robustness, with the best AUROC observed at intermediate mixing
+ratios. Source domain training data proved beneficial under low-light or degraded
+image conditions, while target domain data alone led to more conservative, but less
+precise, AD. These findings suggest that careful control over training data composition
+can compensate for domain gaps and limited annotations.
+    Despite working with sparse, unlabeled datasets, the model was able to generalize
+to unseen yet semantically normal features, highlighting the potential of unsuper-
+vised AD in resource-constrained settings. Qualitatively, the study demonstrated clear
+trends in model behavior across different domain compositions. However, the precise
+effect size cannot be accurately quantified based on the current results. Consequently,
+these conclusions should be interpreted as indicative rather than definitive.
+
+
+                                            20
+   This study thus provides valuable guidance for the development of AD systems in
+industrial and agricultural applications, where annotated data are scarce and domain
+variability is high. Future work should extend this analysis to other model architectures
+and adaptation techniques to validate the generality of these findings.
+
+Supplementary Information
+The online version contains supplementary material available at t.b.d (in preparation)
+Author contributions. M.L., M.S., J.P.W., and F.G. conceptualized the study and
+designed the methodology. M.L., M.S., and J.P.W. conducted the investigation, per-
+formed data analysis, validated the results, managed the data, and wrote the original
+draft during their student research seminar. F.G. and M.J. provided resources, super-
+vised the research, managed the project, and continously gave ideas and hints. M.J.
+reviewed, significantly revised the manuscript’s structure, figures, and text, and final-
+ized the journal manuscript. F.G. conceptualized and organized the supplementary
+material. All authors read and approved the final manuscript.
+Funding. This work received no external funding.
+Data availability. The datasets used and/or analyzed during the current study are
+published in the supplementary material.
+
+Declarations
+Ethics approval and consent to participate. Not applicable.
+Consent for publication. Not applicable.
+Competing interests. The authors declare no conflict of interest.
+
+References
+ [1] Deutsche Welthungerhilfe e.V.: Global Hunger Index 2024: How Gender
+     Justice Can Advance Climate Resilience and Zero Hunger. https://www.
+     globalhungerindex.org/. Accessed: 2025-06-07 (2024)
+
+ [2] United Nations: World Population Prospects 2024. https://population.un.org/
+     wpp/. Accessed: 2025-06-10 (2024)
+
+ [3] Britannica: Hydroponics - horticulture. https://www.britannica.com/topic/
+     hydroponics. Accessed: 2025-06-10
+
+ [4] Motoi, I.M., Belli, V., Carpineto, A., Nardi, D., Ciarfuglia, T.A.: Synthetic data
+     generation for anomaly detection on table grapes. Smart Agricultural Technology
+     10, 100787 (2025) https://doi.org/10.1016/j.atech.2025.100787
+
+
+
+
+                                           21
+ [5] Zhang, Z., Cai, M., Wang, H., Wu, G., Chai, T., Zhu, X.: CostFilter-AD: Enhanc-
+     ing Anomaly Detection through Matching Cost Filtering. arXiv:2505.01476
+     (2025). https://doi.org/10.48550/arXiv.2505.01476
+
+ [6] Morselli, F., Bedogni, L., Mirani, U., Fantoni, M., Galasso, S.: Anomaly detection
+     and classification in predictive maintenance tasks with zero initial training. IoT
+     2(4), 590–609 (2021) https://doi.org/10.3390/iot2040030
+
+ [7] Hamdan, A., Tahboush, M., Adawy, M., Alwada’n, T., Ghwanmeh, S.: Feature
+     reduction and anomaly detection in iot using machine learning algorithms. Inter-
+     national Journal of Advanced Computer Science and Applications 16(1) (2025)
+     https://doi.org/10.14569/IJACSA.2025.0160146
+
+ [8] Defard, T., Setkov, A., Loesch, A., Audigier, R.: PaDiM: a Patch Distribution
+     Modeling Framework for Anomaly Detection and Localization. arXiv:2011.08785
+     (2020). https://doi.org/10.48550/arXiv.2011.08785
+
+ [9] Wilson, G., Cook, D.J.: A survey of unsupervised deep domain adaptation. ACM
+     Transactions on Intelligent Systems and Technology 11(5), 1–46 (2020) https:
+     //doi.org/10.1145/3400066
+
+[10] Hu, X., Chen, S., Huang, X., Duan, Q., Shang, H., Zhang, D.: A Comprehensive
+     Review of Domain Adaptation Techniques for Agricultural Image Analysis in
+     Precision Agriculture. arXiv:2506.05972 (2025). https://doi.org/10.48550/arXiv.
+     2506.05972
+
+[11] Tranheden, W., Olsson, V., Pinto, J., Svensson, L.: Dacs: Domain adaptation via
+     cross-domain mixed sampling. In: 2021 IEEE Winter Conference on Applications
+     of Computer Vision (WACV), pp. 1378–1388. IEEE, Waikoloa, HI, USA (2021).
+     https://doi.org/10.1109/WACV48630.2021.00142
+
+[12] Fan, Z., Xu, Q., Jiang, C., Ding, S.X.: Deep mixed domain generalization network
+     for intelligent fault diagnosis under unseen conditions. IEEE Transactions on
+     Industrial Electronics 71(1), 965–974 (2024) https://doi.org/10.1109/TIE.2023.
+     3243293
+
+[13] Ma, Q., Zhang, J., Qi, L., Yu, Q., Shi, Y., Gao, Y.: Constructing and exploring
+     intermediate domains in mixed domain semi-supervised medical image seg-
+     mentation. In: 2024 IEEE/CVF Conference on Computer Vision and Pattern
+     Recognition (CVPR), pp. 11642–11651. IEEE, Seattle, WA, USA (2024). https:
+     //doi.org/10.1109/CVPR52733.2024.01106
+
+[14] Vincent, G., Yepremyan, A., Chen, J., Goh, E.: Mixed-domain Training Improves
+     Multi-Mission Terrain Segmentation. arXiv:2209.13674 (2022). https://doi.org/
+     10.48550/arXiv.2209.13674
+
+
+
+
+                                          22
+[15] Choi, T., Would, O., Salazar-Gomez, A., Cielniak, G.: Self-supervised repre-
+     sentation learning for reliable robotic monitoring of fruit anomalies. In: 2022
+     International Conference on Robotics and Automation (ICRA), pp. 2266–2272.
+     IEEE, Philadelphia, PA, USA (2022). https://doi.org/10.1109/ICRA46639.2022.
+     9811954
+
+[16] Akcay, S., Ameln, D., Vaidya, A., Lakshmanan, B., Ahuja, N., Genc, U.: Anoma-
+     lib: A Deep Learning Library for Anomaly Detection. arXiv:2202.08341 (2022).
+     https://doi.org/10.48550/arXiv.2202.08341
+
+
+
+
+                                        23
+

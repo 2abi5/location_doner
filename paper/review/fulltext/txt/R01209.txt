@@ -1,0 +1,1341 @@
+                                                                                                                TYPE Original Research
+                                                                                                                PUBLISHED 22 May 2026
+                                                                                                                DOI 10.3389/fpls.2026.1826962
+
+
+
+
+                                            Quantifying the reliability gap in
+OPEN ACCESS
+                                            cross-domain plant disease
+EDITED BY
+Fan Yang,                                   classiﬁcation: benchmarking the
+Jiangsu Normal University, China
+
+REVIEWED BY
+Artzai Picon,
+                                            limited efﬁcacy of standard
+Tecnalia Research & Innovation, Spain
+Arfat Ahmad Khan,                           mitigation techniques under
+Khon Kaen University, Thailand
+P. Bavithra Matharasi,
+Mount Carmel College, Bengaluru, India
+                                            controlled-to-ﬁeld shift
+*CORRESPONDENCE
+Xiangbo Zhu
+                                            Kun Xiang 1, Danxi Shi 1 and Xiangbo Zhu 2*
+   zxb@szpu.edu.cn
+                                            1
+                                              Research Center of Machine Learning and Environment Science, China Three Gorges University,
+RECEIVED 10 March 2026
+REVISED 24 April 2026                       Yichang, China, 2 Plant Protection Research Center, Shenzhen Polytechnic University, Shenzhen, China
+ACCEPTED 28 April 2026
+PUBLISHED 22 May 2026
+
+CITATION                                    Introduction: Conﬁdence calibration, selective prediction, out-of-distribution
+Xiang K, Shi D and Zhu X (2026)             scoring, and deep ensembles are mature techniques in machine learning, yet
+Quantifying the reliability gap in cross-
+domain plant disease classiﬁcation:
+                                            their efﬁcacy under the severe domain shift encountered when plant disease
+benchmarking the limited efﬁcacy of         classiﬁers move from controlled laboratory imagery to heterogeneous ﬁeld
+standard mitigation techniques under        photographs has not been systematically benchmarked.
+controlled-to-ﬁeld shift.
+Front. Plant Sci. 17:1826962.               Methods: Models trained on PlantVillage were evaluated on PlantDoc leaf-level
+doi: 10.3389/fpls.2026.1826962              crop images under a parent-image-aware split protocol, and a suite of standard
+COPYRIGHT                                   mitigation techniques was applied to characterize the reliability gap. Analyses
+© 2026 Xiang, Shi and Zhu. This is an       included temperature scaling and selective prediction for a ﬁne-tuned ResNet-
+open-access article distributed under the
+terms of the Creative Commons
+                                            50, quantitative image-level shift analysis, Grad-CAM visualization, simple target-
+Attribution License (CC BY). The use,       aware adaptation baselines, frozen-feature backbone comparisons, and
+distribution or reproduction in other       ensemble baselines.
+forums is permitted, provided the
+original author(s) and the copyright        Results: In the primary case study, a ﬁne-tuned ResNet-50 suffered a 67.7-
+owner(s) are credited and that the          percentage-point accuracy collapse upon cross-domain transfer, while mean
+original publication in this journal is
+cited, in accordance with accepted
+                                            predicted conﬁdence remained at 79.76%. Post-hoc temperature scaling reduced
+academic practice. No use, distribution     calibrated ECE to 0.3645 but left selective risk at 80% coverage at 64.30%.
+or reproduction is permitted which does     Quantitative image-level shift analysis conﬁrmed large-effect-size differences in
+not comply with these terms.
+                                            saturation (d = 3.90), border edge density (d = 3.33), and foreground-occupancy
+                                            proxy (d = 2.48) between the two domains, while Grad-CAM visualizations
+                                            showed that the model shifts attention from lesion-centered regions in
+                                            PlantVillage to background-dominated areas in PlantDoc. Simple target-aware
+                                            mitigations, including adaptive batch normalization and feature moment
+                                            matching, improved accuracy from 0.321 to 0.343 and 0.366, respectively,
+                                            whereas DANN-style adversarial adaptation degraded performance to 0.252. A
+                                            frozen-feature backbone comparison across ﬁve backbones showed that, within
+                                            the energy-scoring frozen-backbone comparison, DINOv2-S/14 achieved the
+                                            highest unknown-detection AUROC (0.764) and the lowest selective risk at 80%
+                                            coverage (0.520), with paired Wilcoxon tests conﬁrming statistically signiﬁcant
+                                            accuracy and macro-F1 differences across backbones. Two ensemble baselines
+                                            were evaluated: a warm-start end-to-end ResNet-50 ensemble reduced
+                                            calibrated ECE to 0.063 but achieved only 0.666 AUROC, while a lightweight
+                                            DINOv2 linear-probe ensemble achieved 0.779 AUROC after calibration but
+                                            under limited epistemic diversity.
+
+
+
+Frontiers in Plant Science                                        01                                                              frontiersin.org
+Xiang et al.                                                                                                                10.3389/fpls.2026.1826962
+
+
+
+
+                                                 Discussion: Neither ensemble established deployment-grade reliability: the best
+                                                 selective risk at 80% coverage across all conﬁgurations remained above 0.51. The
+                                                 principal contribution is a reproducible, deployment-oriented reliability
+                                                 characterization showing that standard post-hoc and lightweight adaptation
+                                                 techniques reduce but do not eliminate the severe reliability gap under
+                                                 controlled-to-ﬁeld transfer in agricultural computer vision.
+
+                                                 KEYWORDS
+
+                                                 backbone comparison, conﬁdence calibration, cross-domain reliability, domain shift,
+                                                 ensemble uncertainty, plant disease diagnosis, selective prediction
+
+
+
+
+1 Introduction                                                                et al., 2019), conﬁrming that high in-domain accuracy is necessary
+                                                                              but far from sufﬁcient for practical utility.
+     Crop diseases inﬂict global yield losses estimated at 20–40%                  What has received considerably less attention is a subtler and
+annually (Savary et al., 2019), threatening food security for billions        arguably more dangerous facet of this shift: the behavior of a
+and imposing acute economic hardship on smallholder farmers                   model’s conﬁdence scores when it is wrong. Modern deep neural
+who lack timely access to expert diagnosis. Over the past decade,             networks are known to produce poorly calibrated probability
+deep convolutional neural networks have attracted intense interest            estimates even within their training domain (Niculescu-Mizil and
+as potential tools for automated disease recognition (Boulent et al.,         Caruana, 2005; Guo et al., 2017), and the problem intensiﬁes under
+2019; Saleem et al., 2019), with headline accuracies frequently               distribution shift (Ovadia et al., 2019). A classiﬁer may assign a
+exceeding 95% on benchmark datasets such as PlantVillage                      probability of 0.92 to an incorrect diagnosis, giving the end user—
+(Mohanty et al., 2016; Sladojevic et al., 2016; Brahimi et al., 2017;         farmer, agronomist, or downstream decision support system—no
+Ferentinos, 2018; Too et al., 2019). These results have fueled                reliable signal that the output should be questioned. In medical
+expectations that smartphone-based diagnostic applications could              diagnostics the consequences of such overconﬁdence have been
+democratize plant pathology expertise (Johannes et al., 2017),                extensively discussed (Jiang et al., 2012; Rac̨ zkowska et al., 2019); in
+delivering real-time guidance to farmers regardless of their prox-            agriculture the stakes are analogous. Misidentifying a fungal infec-
+imity to extension services. More broadly, the convergence of deep            tion as a nutrient deﬁciency could lead to inappropriate chemical
+learning with Internet of Things (IoT) platforms and precision                application, delayed treatment, unnecessary cost, and environmen-
+agriculture workﬂows—including context-aware fertilizer recom-                tal harm. If automated tools are to earn the trust of agricultural
+mendation systems (Khan et al., 2022a), intelligent evapotranspi-             practitioners, they must not only classify correctly when they can
+ration optimization for precision irrigation and saline-soil                  but also communicate honestly when they cannot.
+reclamation (Khan et al., 2022b; Bashir et al., 2023), and lightweight             Meeting this dual requirement calls for two complementary
+crop monitoring frameworks based on modern optimization (Ramu                 mechanisms. The ﬁrst is conﬁdence calibration: adjusting output
+et al., 2026)—has intensiﬁed the demand for models whose outputs              probabilities so that they faithfully reﬂect empirical correctness
+can be trusted not only by human interpreters but also by auto-               likelihood. Temperature scaling—a single-parameter post-hoc
+mated decision pipelines that act on predictions without expert               transformation of the logit vector— has emerged as a simple yet
+review. Convolutional neural network approaches have further                  effective baseline (Guo et al., 2017) that preserves classiﬁcation
+advanced automated disease detection from leaf images (Vishnoi                accuracy while substantially improving the alignment between
+et al., 2023), yet the reliability of such models under realistic             predicted conﬁdence and observed accuracy. Its simplicity is a
+deployment conditions remains largely unexamined.                             practical asset: it requires no architectural modiﬁcation, minimal
+     A growing body of evidence, however, suggests that the gap               additional data, and negligible computational overhead, making it
+between benchmark performance and ﬁeld-level reliability is far               readily applicable to already-deployed models. The second mech-
+wider than accuracy ﬁgures alone convey. PlantVillage images are              anism is selective prediction, or abstention. Rather than forcing the
+captured under tightly controlled conditions—uniform back-                    classiﬁer to commit to one of its known categories for every input,
+grounds, consistent illumination, single centered leaves—whereas              selective prediction introduces a policy under which the model may
+photographs taken in working ﬁelds contain cluttered canopies,                decline to answer when its conﬁdence is insufﬁcient, ﬂagging the
+variable sun angles, overlapping foliage, motion blur, and insects or         sample for human review (Geifman and El-Yaniv, 2017). The
+soil particles that occlude symptoms. This discrepancy constitutes a          resulting trade-off is transparent: higher abstention rates reduce
+well-documented instance of domain shift (Shimodaira, 2000; Ben-              coverage but may also reduce the error rate among the samples that
+David et al., 2010): the statistical distribution on which the model          are answered.
+was trained diverges substantially from the distribution it encoun-                A related but distinct risk arises when a model encounters a
+ters at deployment. Prior studies have reported accuracy drops of 20          disease or crop species entirely absent from its training set. In ﬁeld
+to 50 percentage points when models trained exclusively on                    conditions the closed-world assumption—that every input belongs
+PlantVillage are evaluated on ﬁeld-sourced datasets such as                   to one of the known categories—is routinely violated. A tomato
+PlantDoc (Ramcharan et al., 2017; Barbedo, 2018; Arsenovic                    early-blight classiﬁer, for instance, may encounter cassava mosaic
+
+
+Frontiers in Plant Science                                               02                                                              frontiersin.org
+Xiang et al.                                                                                                                 10.3389/fpls.2026.1826962
+
+
+
+
+disease and, lacking any representation of that category, conﬁdently            areas in target images. Third, we benchmark the limited efﬁcacy of
+assign it to whichever known class produces the highest activation.             standard mitigation techniques—adaptive batch normalization (Li
+Evaluating a model’s ability to reject such unknown-class inputs—               et al., 2017), feature moment matching, and DANN-style adversar-
+studied under the framework of open-set recognition (Bendale and                ial adaptation (Ganin et al., 2016)—showing that simple target-
+Boult, 2016)—is therefore essential for credible deployment assess-             aware methods yield modest improvements but do not establish
+ment, yet it is rarely reported alongside standard accuracy bench-              deployment-grade reliability. Fourth, we extend the analysis across
+marks in the plant science literature.                                          ﬁve backbone architectures—ResNet-50 (He et al., 2016), ViT-S/16
+     Importantly, the individual techniques employed in this study—             (Dosovitskiy et al., 2021), DINOv2-S/14 (Oquab et al., 2024), CLIP
+conﬁdence calibration via temperature scaling (Guo et al., 2017), post-         ViT-B/16 (Radford et al., 2021), and CLIP ResNet-50—under a
+hoc score functions for out-of-distribution detection (Hendrycks and            standardized frozen-representation protocol, demonstrating that
+Gimpel, 2017; Liu et al., 2020), selective prediction (Geifman and El-          representation quality matters materially but does not close the
+Yaniv, 2017), and deep ensembles for uncertainty decomposition                  gap. Fifth, we evaluate two ensemble baselines—a warm-start end-
+(Lakshminarayanan et al., 2017)—are well-established methods in the             to-end ResNet-50 ensemble and a lightweight DINOv2 linear-probe
+broader machine learning literature. Domain adaptation strategies               ensemble—showing that ensemble averaging substantially improves
+including batch normalization adaptation (Li et al., 2017), feature             calibration but does not yield the strongest operational performance
+moment matching, and adversarial domain alignment (Ganin et al.,                overall, and that the resulting uncertainty decomposition provides
+2016) have likewise been extensively studied. Gradient-weighted class           diagnostically useful but limited evidence under the constrained
+activation mapping (Grad-CAM) (Selvaraju et al., 2017) is a mature              diversity of both ensemble designs.
+interpretability tool, and vision–language pre-training (Radford et al.,             The remainder of this paper is organized as follows. Section 2
+2021) has substantially expanded the space of available representa-             describes the datasets, category alignment, primary model, calibra-
+tions. This paper does not introduce new calibration, scoring, or               tion and selective prediction methods, quantitative shift character-
+adaptation algorithms. Its contribution is instead evidentiary: to              ization, Grad-CAM analysis, simple adaptation baselines, backbone
+provide a rigorous, deployment oriented characterization of the                 comparison protocol, ensemble construction, and evaluation met-
+severe reliability gap that emerges when plant disease classiﬁers are           rics. Section 3 presents empirical results organized around six
+transferred from controlled to ﬁeld conditions, and to benchmark the            modules: the severity of the reliability gap in the primary case
+limited efﬁcacy of these standard mitigation techniques in narrowing            study, quantitative and visual evidence explaining why the gap is
+that gap.                                                                       severe, the limited efﬁcacy of simple target-aware mitigations, the
+     Despite the maturity of the underlying methods, their empirical            effect of stronger representations, ensemble baseline evidence, and a
+behavior under the particular domain shift encountered in agricul-              concise cross-method synthesis. Section 4 discusses implications,
+tural computer vision—from tightly controlled PlantVillage imag-                distinguishes statistical from practical signiﬁcance, acknowledges
+ery to heterogeneous PlantDoc ﬁeld photographs—has not been                     limitations, and outlines future directions.
+systematically characterized. Existing studies in plant disease rec-
+ognition tend to focus either on maximizing cross-domain accuracy
+through domain adaptation or data augmentation, or on uncer-
+tainty quantiﬁcation within a single domain and a single architec-              2 Materials and methods
+ture. The intersection of cross-domain transfer, calibration
+assessment, selective prediction, and open-set rejection, evaluated             2.1 Datasets, category alignment, and data
+through the lens of deployment risk rather than benchmark                       partitioning
+ranking, remains largely unexplored. Moreover, the questions of
+whether reliability conclusions depend on backbone architecture,                    This study employs two publicly available leaf disease image
+whether quantiﬁable visual distribution differences explain the                 corpora representing opposite ends of the visual complexity spec-
+severity of the gap, and whether standard adaptation or ensemble                trum. PlantVillage, originally assembled by Hughes and Salathé
+baselines can close it have not been addressed together in                      (Hughes and Salathé , 2015) and later expanded by Mohanty et al.
+this context.                                                                   (2016), contains over 54,000 photographs of individual leaves
+     The present study addresses these gaps through ﬁve contribu-               captured against uniform backgrounds under controlled, diffuse
+tions. First, we provide a quantitative characterization of a severe            illumination. The dataset spans 14 crop species and 38 disease or
+reliability gap under controlled-to-ﬁeld transfer, documenting the              healthy-state categories. Because each image is tightly framed on a
+simultaneous failure of accuracy, conﬁdence calibration, selective              single leaf with minimal background clutter, intra-class variability is
+prediction, and unknown-class rejection in a ﬁne-tuned ResNet-50                low and classiﬁcation accuracy on held-out splits routinely exceeds
+case study evaluated with a parent-image-aware split protocol that              95% in published work. In the present study, PlantVillage serves
+prevents data leakage. Second, we explain why the gap is severe by              exclusively as the source domain: all model training and, under
+quantifying large-effect-size differences in image-level visual statis-         Setting A deﬁned below, all calibration are conﬁned to this corpus.
+tics (saturation, edge density, foreground-occupancy proxy) be-                     PlantDoc, introduced by Singh et al. (2020), was designed to
+tween the two domains and by using Grad-CAM (Selvaraju et al.,                  approximate ﬁeld-based diagnosis more closely. Its images were
+2017) visualizations to show that the model shifts attention from               sourced from internet photographs and real ﬁeld captures, exhib-
+lesion-centered regions in source images to background-dominated                iting heterogeneous backgrounds, variable sunlight and shadow,
+
+
+
+Frontiers in Plant Science                                                 03                                                            frontiersin.org
+Xiang et al.                                                                                                                    10.3389/fpls.2026.1826962
+
+
+
+
+multiple overlapping leaves, partial occlusion, motion blur, and a            This enforces zero parent-image overlap between calibration and
+wide range of disease severities. The working PlantDoc archive used           test subsets while approximately preserving class balance. Because
+here consists of leaf-level crop images organized by disease class.           our parent-image reconstruction conﬁrmed that every retained
+Because the crop ﬁlenames alone did not preserve auditable parent-            PlantDoc crop corresponds to a unique source image, the grouped
+image identiﬁers, we reconstructed source-image links within each             split yielded the same partition sizes as a simple stratiﬁed split; the
+class by indexing the companion source-image archive, resizing                grouping protocol was retained as a methodological safeguard that
+every source image and crop to a 32 × 32 RGB thumbnail, ﬂattening             would become operative if future dataset versions contained mul-
+these thumbnails into feature vectors, and solving a one-to-one               tiple crops per source image, rather than because it altered the
+Hungarian assignment on pairwise Euclidean distances. The                     allocation in practice. In the representative Setting B split, this
+matched source relative path then served as the parent-image                  procedure yielded 199 calibration crops and 1882 known-class test
+identiﬁer. This procedure recovered source-image identiﬁers for               crops from disjoint source-image groups; Setting A used all 2081
+2571 of 2572 crops; the single unmatched crop was removed before              matched known-class crops as the test set. Under both settings the
+any split generation. In the retained target set each crop mapped to          PlantDoc unknown pool remains entirely untouched until ﬁnal
+a unique source image, making parent-image isolation explicit                 evaluation. All manifests are recorded in a master CSV ﬁle that
+rather than assumed. The resulting collection serves as the target            maps every retained crop to its role together with its reconstructed
+domain for all cross-domain evaluation. This design should be                 parent-image identiﬁer. Because threshold-based conclusions in
+interpreted as a controlled source/ﬁeld-target leaf-level classiﬁca-          Setting B depend directly on the calibration subset, we additionally
+tion study, not as an end-to-end benchmark of raw-image mobile                repeated the grouped 10% calibration split 10 times with seeds 42–
+diagnosis: the localization stage is assumed away, and some full-             51, re-estimated temperature and thresholds on each repeat, and
+scene clutter present in original ﬁeld photographs is reduced                 summarize split-sensitive metrics by their mean, standard devia-
+by cropping.                                                                  tion, and 95% conﬁdence interval.
+     Meaningful cross-domain comparison requires a uniﬁed cate-
+                                                                              2.2 Primary model, calibration, and
+gory vocabulary. PlantVillage and PlantDoc employ different
+                                                                              selective prediction
+naming conventions and do not cover identical crop–disease
+combinations. A category alignment table (Supplementary
+                                                                                   The primary case study employed a ResNet-50 (He et al., 2016)
+Table 1) was therefore constructed by normalizing all labels to a             pre-trained on ImageNet (Deng et al., 2009) and ﬁne-tuned end-to-
+canonical Crop_Disease format and retaining only those categories
+                                                                              end on the PlantVillage training split. The original 1,000-way
+for which an unambiguous semantic match existed in both datasets.             classiﬁcation head was replaced by a single fully connected layer
+This intersection yielded K = 21 shared categories, hereafter referred
+                                                                              mapping the 2,048-dimensional feature representation to 21 logits.
+to as the known classes. PlantVillage categories absent from                  This architecture was chosen not for novelty but for its maturity,
+PlantDoc were excluded from training so that the classiﬁer’s
+                                                                              reproducibility, and well-characterized behavior, consistent with
+output space matched the known classes exactly. Conversely,                   the study’s focus on deployment-oriented reliability assessment
+PlantDoc categories with no PlantVillage counterpart were aggre-
+                                                                              rather than incremental accuracy gains.
+gated into an unknown class pool comprising 490 samples across 7                   All input images were resized to 224 × 224 pixels with bilinear
+categories. These unknown samples were withheld from all training
+                                                                              interpolation. During training, standard augmentations were ap-
+and calibration procedures and used solely to evaluate the model’s            plied: random resized cropping with a scale range of [0.8, 1.0],
+capacity to reject inputs from categories it has never encountered.
+                                                                              random horizontal and vertical ﬂipping, and color jittering (bright-
+     Rigorous subset separation is critical for preventing information        ness, contrast, saturation, and hue). During inference, a determin-
+leakage. The 21-class subset of PlantVillage was split at the image
+                                                                              istic resize-plus-center-crop pipeline followed by channel-wise
+level with stratiﬁed random sampling into a training set (70%), a             normalization to ImageNet statistics was used. The network was
+validation set (15%), and a held-out test set (15%). The training set
+                                                                              trained by minimizing the cross-entropy loss over the 21 known
+was used exclusively for weight optimization; the validation set              classes:
+served for early stopping, hyperparameter selection, and—under
+Setting A—for temperature scaling calibration; the test set was                                                  1 N K
+                                                                                                                 No    oyik log p^ ik
+                                                                                                    LCE = −                                           (1)
+reserved for ﬁnal in-domain reporting and was never consulted                                                      i=1 k=1
+during model selection or threshold tuning.
+                                                                                  where N denotes the number of training samples, yik is the one-
+     Two experimental settings govern how PlantDoc known sam-
+                                                                              hot ground-truth indicator, and p^ ik is the predicted probability
+ples are allocated. Under Setting A, which simulates the scenario in
+                                                                              obtained by applying the softmax function to the logit vector zi :
+which no labeled ﬁeld data are available, the entire matched
+PlantDoc known set constitutes the cross-domain test set, and                                                     exp (zik )
+temperature scaling as well as threshold selection rely exclusively                                    p^ ik =                                        (2)
+                                                                                                                 oj=1 exp (zij )
+                                                                                                                  K
+
+on the PlantVillage validation split. Under Setting B, 10% of
+PlantDoc known samples are allocated to a dedicated ﬁeld calibra-                Optimization was conducted with AdamW (Loshchilov and
+tion set and the remaining 90% to the cross-domain test set, but the          Hutter, 2019) at an initial learning rate of 0.0001, using a cosine
+split is performed with grouped stratiﬁed sampling over recon-                annealing schedule over 20 epochs. Weight decay was set to 0.01
+structed parent-image identiﬁers rather than over individual crops.           and the mini-batch size to 32. Training employed early stopping
+
+
+
+Frontiers in Plant Science                                               04                                                                frontiersin.org
+Xiang et al.                                                                                                                      10.3389/fpls.2026.1826962
+
+
+
+
+with patience 5 based on validation accuracy, and the checkpoint                  where p^ (T)         ^ (T)
+                                                                                           (1) (x) and p (2) (x) denote the largest and second-largest
+with the highest validation accuracy was retained for all down-               calibrated probabilities. For the energy-based baseline (Liu et al.,
+stream evaluation. Experiments were implemented in PyTorch 2.x.               2020):
+    Modern deep networks tend to produce overconﬁdent predic-
+                                                                                                                      K
+tions, and the problem intensiﬁes under domain shift as the model                                  sEng (x) = log o exp (zk =T)                          (8)
+encounters unfamiliar visual patterns yet still generates high logit                                                 k=1
+
+magnitudes through familiar low-level feature activations. To                     which equals negative energy; larger values indicate more in-
+mitigate miscalibration without altering the trained weights, we              distribution-like samples. Across all four methods, larger scores
+applied temperature scaling, a single-parameter post-hoc transfor-            indicate greater conﬁdence.
+mation that divides the logit vector by a learned scalar T before the             For any score function s(x), the selection rule is
+softmax operation:
+                                                                                                                (
+                                                                                                                    1 if s(x) ≥ t
+                                    exp (zik =T)                                                     gs (x) =                                            (9)
+                         p^ (T)
+                            ik =                                  (3)                                               0 otherwise
+                                   oj=1 exp (zij =T)
+                                    K
+
+                                                                                  where t is the abstention threshold. Samples for which gs (x) = 0
+    When T > 1 the distribution is softened, reducing the peak
+                                                                              are routed to human review. Coverage f(t) is the fraction of test
+probability and spreading mass more uniformly across classes;
+                                                                              samples that receive an answer:
+when T = 1 the original softmax is recovered. For the single-
+model results, scaling preserves the relative ordering of logits and                                              1 Ntest
+                                                                                                                 Ntest o
+therefore leaves classiﬁcation accuracy unchanged. The temperature                                    f(t) =               gs (xi )                     (10)
+                                                                                                                       i=1
+used for each calibration split was learned by minimizing the
+negative log-likelihood on that split:                                            Selective risk rs (t) is the error rate among answered samples:
+
+
+                                                                                                 rs (t) = oi=1
+                                                                                                            Ntest
+                                        Ncal K                                                                      ⊮½^
+                                                                                                                      y i ≠ yi  · gs (xi )
+                    T * = arg min − o oyik log p^ (T)             (4)                                                                                   (11)
+                                                                                                                    oi=1 gs (xi )
+                                                  ik                                                                   Ntest
+                                   T    i=1 k=1
+
+     In practice, this scalar temperature was optimized with L-BFGS               Plotting rs (t) against f(t) as t varies produces the coverage–
+initialized at T = 1. Under Setting A the calibration set is the              risk curve. Two threshold selection strategies, both calibrated
+PlantVillage validation split (TA = 1:18); under the representative           exclusively on the calibration set, are reported: a ﬁxed-coverage
+Setting B split it is the PlantDoc 10% grouped ﬁeld split (TB = 1:54).        strategy in which t is set to achieve target coverage levels (90%,
+Across the 10 grouped Setting B repeats, the mean temperature was             80%, 70%, 60%, 50%), and a ﬁxed-risk strategy in which t is set so
+1.5398 (95% CI [1.5346, 1.5450]). The same post-hoc calibration               that calibration-set selective risk does not exceed a target level (5%,
+logic was applied independently to each backbone. This post-hoc               10%, 15%). Thresholds are then applied to the test set without
+calibration setting is part of a broader score-to-probability calibra-        modiﬁcation. The same threshold is additionally applied to the
+tion literature, including multiclass probability calibration and             unknown-class pool to compute the unknown rejection rate—the
+Dirichlet calibration (Zadrozny and Elkan, 2002; Kull et al.,                 proportion of unknown-class samples whose score falls below t—
+2019). For the DINOv2 ensemble, calibrated classiﬁcation, calibra-            which quantiﬁes the model’s ability to avoid issuing conﬁdent yet
+tion, and predictive-conﬁdence results were obtained by applying              necessarily incorrect diagnoses for categories absent from training.
+temperature scaling to the ensemble predictive logits, whereas the            The complementary known-class rejection rate captures the cost of
+aleatoric–epistemic decomposition was retained on the raw                     excessive conservatism.
+member outputs.
+     Selective prediction augments the classiﬁer with a decision rule         2.3 Domain shift quantiﬁcation and
+that determines, for each input, whether the prediction should be             attention analysis
+emitted or withheld. We compared four post-hoc score functions
+derived from the calibrated classiﬁer. For maximum softmax                        To move beyond aggregate accuracy comparisons and under-
+probability (MSP):                                                            stand the structural basis of the domain gap, we computed a suite of
+                                                                              image-level visual statistics on PlantVillage and PlantDoc images
+                             sMSP (x) = maxp^ (T)
+                                              k (x)               (5)         from the shared known classes. For each image, 17 low-level
+                                         k
+                                                                              descriptors were extracted, covering color distribution (mean and
+    For normalized entropy conﬁdence:                                         variance in HSV saturation and value channels), spatial frequency
+                                                                              content (Laplacian variance, Sobel edge density, border-region edge
+                                 −oKk=1 p^ (T)      ^ (T)
+                                           k (x)log p k (x)                   density), texture (grayscale entropy and local binary pattern en-
+                sEnt (x) = 1 −                                    (6)
+                                            log K                             tropy), and a foreground-occupancy proxy based on saturation and
+    For prediction margin:                                                    edge activity. For each descriptor, image-level values were ﬁrst
+                                                                              averaged within each class and domain, and the paired two-
+                       sMar (x) = p^ (T)       ^ (T)
+                                     (1) (x) − p (2) (x)          (7)         domain difference across classes was quantiﬁed using a Wilcoxon
+
+
+
+
+Frontiers in Plant Science                                               05                                                                   frontiersin.org
+Xiang et al.                                                                                                                 10.3389/fpls.2026.1826962
+
+
+
+
+signed-rank test and Cohen’s d effect size. Bonferroni correction                supervision on PlantVillage features, while a gradient reversal
+was then used when interpreting the family of descriptor tests. This             branch fed a binary domain discriminator trained to distinguish
+analysis provides an interpretable, model-free characterization of               PlantVillage from unlabeled PlantDoc calibration features. This
+how the two corpora differ at the pixel level, complementing the                 adversarial alignment strategy is included as a negative-result
+model-dependent reliability metrics reported elsewhere.                          control: it represents a stronger adaptation method that, in princi-
+    To examine whether the ﬁne-tuned ResNet-50 attends to                        ple, should encourage domain-invariant features but may also
+diagnostically relevant regions or to spurious background cues,                  disrupt task-relevant discriminative structure under severe shift.
+we applied Gradient-weighted Class Activation Mapping                                All three baselines were evaluated under the same repeated
+(GradCAM) (Selvaraju et al., 2017) to matched source–target                      grouped Setting B protocol described in Section 2.1, with 10 repeats.
+image pairs. For each pair, a PlantVillage image and a PlantDoc
+image belonging to the same disease category were selected and                   2.5 Backbone and ensemble baselines
+passed through the trained model. Grad-CAM heatmaps were
+generated from the ﬁnal convolutional layer and overlaid on the                       To test whether the reliability conclusions drawn from the ﬁne-
+input images. The analysis focused on cases where the model                      tuned ResNet-50 generalize across representation families, we
+produced a high-conﬁdence prediction on both images—correct                      conducted a standardized comparison using ﬁve backbones span-
+on the source image but incorrect on the target image—to illustrate              ning three pre-training paradigms and multiple architecture fam-
+how attention shifts between domains. To quantify the spatial                    ilies: (i) ResNet-50 with ImageNet-supervised pre-training (CNN
+distribution of attention, the fraction of Grad-CAM activation                   family), (ii) ViT-S/16 with ImageNet-supervised pre-training
+mass falling within a border strip (the outer 20% of image width                 (Dosovitskiy et al., 2021) (supervised transformer family), (iii)
+and height) was computed as a border activation ratio. Higher                    DINOv2-S/14 with self-supervised pre-training (Oquab et al.,
+border ratios on target images indicate that the model’s attention               2024) (self-supervised transformer family), (iv) CLIP ViT-B/16
+has drifted from central lesion regions toward peripheral back-                  (Radford et al., 2021) (vision–language pre-training, transformer),
+ground cues.                                                                     and (v) CLIP ResNet-50 (Radford et al., 2021) (vision–language
+                                                                                 pre-training, CNN). To ensure that performance differences reﬂect
+2.4 Target-aware mitigation baselines                                            representation quality rather than optimization or capacity con-
+                                                                                 founds, all ﬁve backbones were evaluated under a uniﬁed frozen-
+     Three lightweight adaptation strategies were evaluated as target-           encoder protocol. Each encoder was loaded with its publicly
+aware mitigation baselines, all applied to the ﬁne-tuned ResNet-50               available pre-trained weights and kept entirely frozen; images
+representation. Each strategy uses the Setting B target calibration              were resized to the encoder’s native resolution and passed through
+subset only for unlabeled target statistics or domain alignment                  the frozen encoder to extract a ﬁxed-dimensional feature vector. A
+during adaptation; target labels are used only later for the standard            single linear classiﬁcation head was then trained on the PlantVillage
+temperature and threshold estimation steps deﬁned by the evalu-                  training split using the same loss, optimizer, and early stopping
+ation protocol.                                                                  criteria described in Section 2.2. The same PlantDoc grouped-split
+     For adaptive batch normalization (AdaBN), following Li et al.               protocol, calibration procedure, and uncertainty evaluation logic
+(2017), the batch normalization running statistics (mean and                     were applied identically to all backbones. This design isolates the
+variance) of the ﬁne-tuned ResNet-50 were replaced with statistics               effect of the pre-trained representation while holding the down-
+computed from a forward pass over the Setting B calibration subset               stream pipeline constant. Because the frozen-representation proto-
+of PlantDoc images. All other model parameters, including the                    col is deliberately more constrained than full end-to-end ﬁne-
+classiﬁcation head, remained unchanged. This procedure adapts the                tuning, the comparison characterizes how much of the reliability
+model’s internal feature normalization to target-domain activation               gap can be attributed to representation quality alone, without
+scales at negligible computational cost.                                         confounding it with differences in ﬁne-tuning depth or optimiza-
+     For feature moment matching, penultimate-layer ResNet-50                    tion landscape. This asymmetry between the primary ﬁne-tuned
+features were used to construct a diagonal moment-matching                       case study and the frozen-feature backbone comparison is inten-
+baseline. The PlantVillage training features were afﬁne-transformed              tional: the former measures deployment risk under a realistic
+so that their channel-wise mean and variance matched the corre-                  training protocol, while the latter isolates representation quality as
+sponding statistics estimated from the Setting B PlantDoc calibra-               a single variable.
+tion subset. Speciﬁcally, given source features h, the aligned features               Two ensemble baselines were constructed to assess whether
+were computed as h   ~ = st (h − ms )=ss + mt , where ms , ss are source-        model-level aggregation provides additional calibration or uncer-
+domain channel statistics and mt , st are target-domain channel                  tainty beneﬁts beyond single-model scoring.
+statistics estimated from the calibration subset. A linear classiﬁer                  For the warm-start end-to-end ResNet-50 ensemble, we con-
+was then trained on the aligned source features and evaluated on                 structed a ﬁve-member baseline from the ﬁne-tuned ResNet-50 to
+PlantDoc features.                                                               provide a more credible end-to-end ensemble than a shared-feature
+     For the domain-adversarial neural network (DANN) compar-                    linear probe ensemble can offer. The root ﬁne-tuned checkpoint
+ison, following Ganin et al. (2016), we implemented a feature-space              (Section 2.2) was retained as ensemble member 1. Four additional
+DANN-style baseline on top of ﬁxed penultimate ResNet-50 fea-                    members were created by warm-starting from this root checkpoint
+tures. A small bottleneck classiﬁer was trained with source-label                and continuing end-to-end ﬁne-tuning on bootstrap subsamples
+
+
+
+Frontiers in Plant Science                                                  06                                                           frontiersin.org
+Xiang et al.                                                                                                                     10.3389/fpls.2026.1826962
+
+
+
+
+(sampling with replacement) of the PlantVillage training set, each               because this bin count provides an interpretable, standard calibration
+with a different random seed. This design introduces diversity                   summary that remains stable across the repeated grouped splits used
+through both data resampling and optimization trajectory diver-                  in this study; the Brier score is reported alongside ECE as a strictly
+gence, while remaining computationally practical. It should be noted             proper scoring rule that does not depend on bin discretization. ECE
+that this is not a fully independent cold-start deep ensemble in the             summarizes the reliability diagram into a single scalar:
+sense of Lakshminarayanan et al. (2017), because all members share
+                                                                                                         M    jB m j
+the same pre-trained initialization; the resulting diversity is therefore                       ECE = o              jacc(Bm ) − conf (Bm )j             (16)
+a lower bound on what a true deep ensemble would provide.                                               m=1    N
+     As a supplementary limited-diversity baseline, a lightweight                    where jBm j is the number of samples in bin m, acc(Bm ) is the
+DINOv2 linear-probe ensemble was constructed on top of the                       empirical accuracy within the bin, and conf (Bm ) is the mean
+frozen DINOv2-S/14 backbone, which achieved the strongest single-                predicted conﬁdence. The Brier score offers a strictly proper assess-
+model cross-domain performance. Five linear classiﬁcation heads                  ment that jointly penalizes miscalibration and lack of discrimination:
+were trained independently on the same frozen features, differing
+only in random initialization seed. Because all members share                                                   1 N K
+                                                                                                                No    o(yik − p^ ik )
+                                                                                                                                     2
+                                                                                                      Brier =                                            (17)
+identical visual representations and differ only in the linear classiﬁer,                                         i=1 k=1
+this ensemble captures sensitivity to classiﬁer initialization—a narrow
+                                                                                      Together, Equations 1–17 deﬁne the training objective, calibra-
+form of uncertainty that does not reﬂect disagreement about visual
+                                                                                 tion transform, conﬁdence scores, selective-prediction rules, en-
+features. Its epistemic uncertainty estimates should therefore be
+                                                                                 semble uncertainty quantities, and calibration metrics used
+interpreted as a practical disagreement diagnostic rather than a
+                                                                                 throughout the evaluation. For selective prediction, we report
+comprehensive model-uncertainty measure.
+                                                                                 selective risk at ﬁxed target coverage levels and achieved coverage
+     For the ensemble uncertainty decomposition, the predictive
+                                                                                 under ﬁxed target-risk constraints, where thresholds are selected on
+distribution was obtained by averaging the softmax outputs of the
+                                                                                 calibration data and transferred to the test set. To supplement
+M = 5 members:
+                                                                                 operating-point results with threshold-independent open-set met-
+                                         1 M (m)                                 rics, we additionally compute AUROC, average precision with
+                             pk (x) =     o pk (x)
+                                         M m=1
+                                                                    (12)         unknown samples as the positive class (AUPR-Unknown), and
+                                                                                 the false positive rate at 95% true positive rate (FPR95). AUROC is
+    Three uncertainty measures were derived from this averaged                   retained as a widely used threshold-independent ranking summary,
+distribution. Predictive entropy captures total uncertainty:                     but because AUROC can be insensitive to class-imbalance effects—
+                                          K
+                                                                                 the unknown pool (490 samples) is smaller than the known test set
+                              H½p = − opk log pk                   (13)         —AUPR-Unknown is included in the synthesis table and FPR95 is
+                                          k=1
+                                                                                 reported in the score-comparison tables to provide complementary
+    Mean member entropy serves as an aleatoric proxy:                            perspectives on separation quality and worst-case false-alarm rates.
+                                                            !                    All metrics are computed on both the PlantVillage test set (in-
+                                  1 M     K
+                                                                                 domain reference) and the PlantDoc test set (cross-domain evalu-
+                                    o   − o p(m) log p(m)
+                       (m)
+                E½H½p         =                                   (14)
+                                  M m=1 k=1 k         k
+                                                                                 ation), reported separately for Settings A and B. Setting A and the
+                                                                                 representative grouped Setting B split are reported as point esti-
+    Mutual information between the prediction and the model
+                                                                                 mates, while Setting B split-sensitive quantities are additionally
+index provides an epistemic proxy:
+                                                                                 summarized over 10 grouped repeats using mean values, standard
+                         MI = H½p − E½H½p(m)                     (15)         deviations, and 95% conﬁdence intervals.
+                                                                                      For the backbone comparison and ensemble analyses, between-
+   Both ensembles were evaluated under the same repeated                         backbone differences in accuracy, macro-F1, calibrated ECE, and
+grouped Setting B protocol with 10 repeats.                                      calibrated Brier score were evaluated using paired Wilcoxon signed-
+                                                                                 rank tests across the 10 repeated splits, with each split serving as a
+2.6 Evaluation metrics and statistical                                           paired observation. This non-parametric test was chosen because
+analysis                                                                         the number of repeats is modest and normality of the difference
+                                                                                 distribution cannot be assumed. The same pairing structure was
+    The evaluation framework spans three complementary dimen-                    used to compare uncertainty-score performance across back-
+sions. Classiﬁcation performance is measured by top-1 accuracy and               bone families.
+macro-averaged F1 score. Calibration quality is assessed through
+reliability diagrams (DeGroot and Fienberg, 1983),
+expected calibration error (ECE) (Naeini et al., 2015), and the Brier
+score (Brier, 1950). The reliability diagram partitions the predicted            3 Results
+conﬁdence range into M = 15 equal-width bins and plots mean
+predicted conﬁdence against empirical accuracy. Fifteen bins were                    The empirical ﬁndings are organized into six modules that
+retained for consistency with the original reliability diagrams and              collectively characterize the deployment risk of controlled-domain
+
+
+
+
+Frontiers in Plant Science                                                  07                                                                 frontiersin.org
+Xiang et al.                                                                                                                        10.3389/fpls.2026.1826962
+
+
+
+
+classiﬁers applied to ﬁeld conditions. Module 1 documents the                      transferred to PlantDoc, accuracy fell to 32.05% under Setting A— a
+severity of the reliability gap in the primary ﬁne-tuned ResNet-50                 67.7-percentage-point drop—while mean predicted conﬁdence re-
+case study, covering accuracy collapse, miscalibration, selective                  mained at 79.76%. Across the 10 grouped Setting B repeats, raw
+prediction failure, and open-set rejection. Module 2 explains why                  accuracy averaged 32.10% (95% CI [31.88%, 32.32%]) and macro-
+the gap is severe through quantitative shift statistics and Grad-CAM               F1 averaged 0.2859 (95% CI [0.2836, 0.2881]), conﬁrming the result
+attention analysis. Module 3 benchmarks simple target-aware                        is robust to split variation. The simultaneous occurrence of near-
+mitigations. Module 4 examines whether stronger representations                    random accuracy and high conﬁdence is the deﬁning feature of the
+narrow the gap. Module 5 evaluates ensemble baselines. Module 6                    reliability gap.
+provides a concise cross-method synthesis.                                              Table 2, Figure 1 present calibration results. Post-hoc temper-
+                                                                                   ature scaling provided measurable but insufﬁcient improvements.
+3.1 Severity of the reliability gap                                                Under Setting A (source-only calibration), ECE decreased from
+                                                                                   0.4771 to 0.4400 (7.8% relative). Under Setting B (small grouped
+    This subsection documents the simultaneous failure of accu-                    ﬁeld calibration set), the reduction was larger: ECE dropped from
+racy, calibration, selective prediction, and open-set rejection in the             0.4761 to 0.3651 (23.3% relative), and Brier score fell from 1.1124 to
+primary ﬁne-tuned ResNet-50 case study.                                            1.0083. The repeated grouped-split analysis conﬁrms stability: mean
+    Table 1 reports classiﬁcation performance. On PlantVillage the                 calibrated ECE was 0.3645 (95% CI [0.3611, 0.3679]) and calibrated
+model achieved 99.73% accuracy, consistent with prior work. When                   Brier 1.0051 (95% CI [1.0014, 1.0089]) across 10 repeats (Table 3).
+                                                                                   Improved calibration, however, should not be mistaken for sufﬁ-
+TABLE 1 Classiﬁcation performance of the ﬁne-tuned ResNet-50 on in-
+                                                                                   cient reliability: a residual ECE above 0.36 indicates that predicted
+domain (PlantVillage) and cross-domain (PlantDoc) test sets.                       conﬁdence still substantially exceeds empirical accuracy.
+                                                                                        Figure 2 shows the coverage–risk trade-off. Under Setting A,
+ Dataset                        Accuracy             Macro       Mean              source-domain thresholds collapsed effective coverage: at nominal
+                                   (%)                F1         pmax              80%, only 5.1% of samples were answered. Under Setting B,
+ PlantVillage Test                  99.73              0.9959     0.9982           threshold transfer was more stable but risk remained extremely
+ (In-Domain)                                                                       high. Across 10 grouped repeats, calibrated selective risk averaged
+ PlantDoc Known Test -              32.05              0.2853     0.7976           0.6430 (95% CI [0.6399, 0.6461]) at nominal 80% coverage and
+ Setting A
+                                                                                   0.5939 (95% CI [0.5841, 0.6037]) at nominal 50% coverage
+ PlantDoc Known Test -              32.04              0.2836     0.7965           (Table 3). Fixed-risk thresholding was not practically usable:
+ Setting B
+                                                                                   targeting 5–15% maximum risk produced mean coverage of only
+
+
+TABLE 2   Calibration metrics before and after temperature scaling (ﬁne-tuned ResNet-50).
+
+
+ Dataset                                Calibration                          ECE                        Brier Score                      Mean pmax
+ PlantVillage Test                          Before (T = 1)                   0.0018                          0.0051                          0.9982
+
+ PlantDoc Known (Setting A)                 Before (T = 1)                   0.4771                          1.1104                          0.7976
+
+ PlantDoc Known (Setting A)             After (T = 1.18)                     0.4400                          1.0728                          0.7605
+
+ PlantDoc Known (Setting B)                 Before (T = 1)                   0.4761                          1.1124                          0.7965
+
+ PlantDoc Known (Setting B)             After (T = 1.54)                     0.3651                          1.0083                          0.6855
+
+
+
+
+   FIGURE 1
+   Reliability diagrams showing predicted conﬁdence versus empirical accuracy before and after temperature scaling. (a) PlantDoc known-class
+   evaluation under Setting A, where temperature scaling is calibrated on the PlantVillage validation split (source-only calibration; T = 1.18). (b) PlantDoc
+   known-class evaluation under Setting B, where temperature scaling is calibrated on the 10% grouped PlantDoc ﬁeld calibration subset (T = 1.54). In
+   each panel, the left plot shows the uncalibrated model (T = 1) and the right plot shows the temperature-scaled model.
+
+
+
+
+Frontiers in Plant Science                                                    08                                                                 frontiersin.org
+Xiang et al.                                                                                                                      10.3389/fpls.2026.1826962
+
+
+
+
+TABLE 3 Robustness of setting B across 10 parent-image-aware
+                                                                                     3.2 Why the gap is severe: shift
+calibration/test splits (ﬁne-tuned ResNet-50).
+                                                                                     quantiﬁcation and attention analysis
+ Quantity                                           Mean       95% CI
+                                                                                          The severity of the cross-domain reliability gap documented
+ Temperature TB                                     1.5398   [1.5346, 1.5450]
+                                                                                     above is not merely a calibration artifact; it has a structural basis in
+ Accuracy (raw)                                     0.3210   [0.3188, 0.3232]        measurable visual distribution differences between the two corpora.
+ ECE (raw)                                          0.4766   [0.4741, 0.4790]        Table 5 summarizes the image-level shift analysis. The six most
+ ECE (calibrated)                                   0.3645   [0.3611, 0.3679]        discriminative metrics, all with large effect sizes, were: mean HSV
+ Brier score (calibrated)                           1.0051   [1.0014, 1.0089]
+                                                                                     saturation (d = 3.90), border edge density (d = 3.33), overall edge
+                                                                                     density (d = 2.60), foreground-occupancy proxy (d = 2.48), color
+ Coverage at nominal 80% (calibrated)               0.8088   [0.7906, 0.8270]
+                                                                                     variance (d = 2.30), and Laplacian variance (d = 1.63). All six
+ Selective risk at nominal 80% (calibrated)         0.6430   [0.6399, 0.6461]
+                                                                                     differences remained statistically signiﬁcant under Bonferroni cor-
+ Coverage under 5–15% target risk (calibrated)      0.0029   [0.0006, 0.0052]        rection at a = 0.05 (raw paired Wilcoxon p ≤ 1.81 × 10−5). PlantDoc
+ Actual risk under 5–15% target risk (calibrated)   0.2661   [0.0910, 0.4412]        images exhibit substantially higher saturation variability, denser
+                                                                                     edge structure (especially near image borders), higher foreground-
+                                                                                     occupancy proxy values, and higher textural roughness than
+0.0029 with mean actual risk of 0.2661. Threshold transfer should                    PlantVillage images. These differences are consistent with the
+therefore be interpreted as a property of the evaluation procedure,                  shift from uniform single-leaf photographs to heterogeneous
+not as evidence of deployment-grade reliability.                                     ﬁeld-sourced images containing cluttered backgrounds, variable
+    Softmax conﬁdence provides limited discriminative power for                      illumination, and multiple overlapping leaves. These cross-
+open-set detection. At a practical MSP threshold of = 0.70, the                      domain distributional shifts are visualized in Figure 3.
+model rejected 45.71% of unknown-class samples while simulta-                             Grad-CAM visualizations on matched source–target pairs pro-
+neously rejecting 37.77% of known-class samples—a gap of only                        vide complementary evidence at the model level. Figure 4 shows
+7.94 percentage points. At the permissive threshold t = 0.30, only                   four matched pairs from disease categories in which the model
+4.29% of unknown-class samples were rejected, demonstrating that                     produces high-conﬁdence predictions on both source and target
+the model frequently assigns high conﬁdence to inputs from                           images but is correct only on the source. In three of the four cases—
+categories it has never seen.                                                        Corn Gray Leaf Spot misclassiﬁed as Northern Leaf Blight (conﬁ-
+    Replacing MSP with entropy, margin, or energy scoring yielded                    dence 0.9999998), Tomato Leaf Mold misclassiﬁed as Late Blight
+modest improvements (Table 4). Entropy achieved the highest                          (conﬁdence 0.9999987), and Potato Late Blight misclassiﬁed as
+mean unknown-detection AUROC (0.6101; 95% CI [0.6088,                                Tomato Late Blight (conﬁdence 0.9999975)—the model’s attention
+0.6113]), while energy achieved the lowest mean FPR95 (0.8282;                       shifted from central lesion regions in the source image to back-
+95% CI [0.8267, 0.8297]) and the lowest mean selective risk at                       ground-dominated or border-adjacent areas in the target image. In
+nominal 50% coverage (0.5851; 95% CI [0.5782, 0.5919]). At                           the fourth case, Tomato Yellow Leaf Curl Virus, the model
+nominal 80% coverage, however, all four scoring methods remained                     predicted correctly on both images but the border activation ratio
+clustered between 0.6430 and 0.6545 mean risk. The broader                           increased from 0.15 (source) to 0.55 (target), indicating that even
+conclusion therefore does not depend on MSP alone: the deploy-                       correct predictions relied more heavily on peripheral cues in the
+ment-grade reliability gap persists across all standard post-hoc                     ﬁeld image. Together, the shift quantiﬁcation and Grad-CAM
+scoring functions within the ResNet-50 case study.                                   evidence establish that the reliability gap is driven by identiﬁable
+
+
+
+
+   FIGURE 2
+   Coverage–risk curves showing the trade-off between the fraction of samples answered and the error rate among answered samples. (a) Setting A,
+   with thresholds selected using the PlantVillage validation split and transferred to the PlantDoc known set. (b) Setting B, with thresholds selected
+   using the grouped PlantDoc ﬁeld calibration subset and applied to the held-out PlantDoc known test set. Blue curves denote before calibration and
+   red curves denote after temperature scaling; dashed gray lines mark 5% and 10% risk levels.
+
+
+
+
+Frontiers in Plant Science                                                      09                                                             frontiersin.org
+Xiang et al.                                                                                                                       10.3389/fpls.2026.1826962
+
+
+
+
+TABLE 4   Repeated grouped setting B comparison of score-based uncertainty baselines (ﬁne-tuned ResNet-50).
+
+
+ Score         AUROC                           FPR95               Risk @ nominal 80%           Risk @ nominal 50%          Coverage @ 10% target risk
+ MSP           0.5832 [0.5816, 0.5847]   0.8623 [0.8608, 0.8638]    0.6430 [0.6399, 0.6461]       0.5939 [0.5841, 0.6037]        0.0029 [0.0006, 0.0052]
+
+ Entropy       0.6101 [0.6088, 0.6113]   0.8489 [0.8474, 0.8504]    0.6456 [0.6416, 0.6496]       0.5929 [0.5855, 0.6003]        0.0032 [0.0007, 0.0057]
+
+ Margin        0.5656 [0.5638, 0.5674]   0.8633 [0.8620, 0.8646]    0.6545 [0.6523, 0.6567]       0.5960 [0.5883, 0.6037]        0.0026 [0.0003, 0.0048]
+
+ Energy        0.6070 [0.6055, 0.6085]   0.8282 [0.8267, 0.8297]    0.6442 [0.6401, 0.6483]       0.5851 [0.5782, 0.5919]        0.0040 [0.0019, 0.0060]
+Values are mean [95% CI].
+
+
+
+visual distribution differences that cause the model to attend to                     baseline—and variance across repeats was high (ECE: 0.245, 95% CI
+spurious rather than diagnostically relevant features under                           [0.155, 0.335]). Unknown-detection AUROC was 0.577, and selective
+ﬁeld conditions.                                                                      risk at nominal 80% coverage rose to 0.717. This negative result
+                                                                                      suggests that adversarial feature alignment, while effective in other
+3.3 Simple target-aware mitigations                                                   settings, can disrupt task-relevant discriminative structure under the
+                                                                                      severe and heterogeneous shift present in this benchmark.
+     Three lightweight adaptation baselines were evaluated to test                         The overall pattern is clear: simple target-aware corrections
+whether simple target-aware corrections can substantially narrow the                  help, and moment matching produces the strongest gains among
+reliability gap. All three were applied to the ﬁne-tuned ResNet-50 and                them. But even the best simple adaptation baseline leaves accuracy
+evaluated under the same repeated grouped Setting B protocol.                         below 37%, selective risk at nominal 80% coverage near 0.59, and
+     Replacing the batch normalization running statistics with                        unknown-detection AUROC substantially below the strongest
+target-domain statistics improved accuracy from 0.321 to 0.343                        frozen-backbone baseline (Section 3.4). Standard lightweight adap-
+(95% CI [0.341, 0.346]) and reduced calibrated ECE from 0.365 to                      tation reduces but does not eliminate the reliability gap.
+0.288 (95% CI [0.282, 0.294]). The calibrated Brier score decreased
+from 1.005 to 0.911. Unknown-detection AUROC using energy                             3.4 Effect of stronger representations
+scoring improved marginally from 0.610 to 0.611, and selective risk
+at nominal 80% coverage fell from 0.643 to 0.623. AdaBN thus                              A natural question is whether the reliability failures are peculiar
+provides a modest, low-cost improvement, but leaves all deploy-                       to a single convolutional architecture or whether they persist across
+ment-relevant metrics far from adequate.                                              fundamentally different representation families. To address this, we
+     Aligning source feature statistics to target-domain moments                      evaluated ﬁve backbones under the standardized frozen-represen-
+achieved the strongest simple adaptation results. Accuracy improved                   tation protocol described in Section 2.5.
+to 0.366 (95% CI [0.363, 0.369]), ECE decreased to 0.310 (95% CI                          Table 6 reports classiﬁcation performance under the frozen-
+[0.306, 0.313]), and Brier score fell to 0.925. Notably, unknown-                     representation protocol. All ﬁve backbones achieved near-ceiling
+detection AUROC improved to 0.648, and selective risk at nominal                      in-domain accuracy on PlantVillage (97–99%), conﬁrming that the
+80% coverage dropped to 0.594, the lowest among the adaptation                        frozen-encoder protocol is sufﬁcient for the source domain. Cross-
+baselines. Moment matching thus demonstrates that target-aware                        domain performance, however, differed markedly. Under the re-
+feature alignment can yield meaningful operational gains beyond                       peated grouped Setting B evaluation, DINOv2-S/14 achieved the
+what pure post-hoc calibration offers. Figure 5 summarizes the                        highest mean accuracy (43.19%; 95% CI [43.02%, 43.37%]), fol-
+corresponding raw and temperature-scaled classiﬁcation and cali-                      lowed by ViTS/16 (41.88%), CLIP ViT-B/16 (41.38%), CLIP
+bration metrics for the feature moment-matching baseline.                             ResNet-50 (29.15%), and frozen ResNet-50 (28.02%). The self-
+     In contrast, domain-adversarial training degraded performance.                   supervised and vision–language transformer backbones thus pro-
+Accuracy fell to 0.252 (95% CI [0.227, 0.277])—below the unadapted                    vided a roughly 13–15-percentage-point advantage over the
+                                                                                      CNN baselines.
+                                                                                          Calibration quality also improved with stronger representations
+TABLE 5 Quantitative shift characterization: top six image-level visual
+                                                                                      (Table 7): calibrated ECE was lowest for CLIP ViT-B/16 (0.268; 95%
+statistics distinguishing PlantVillage from PlantDoc (paired Wilcoxon
+signed-rank tests on class means; Bonferroni-corrected interpretation).               CI [0.265, 0.270]), followed by ViT-S/16 (0.303) and DINOv2-S/14
+                                                                                      (0.309), all substantially below the frozen ResNet-50 value (0.331).
+ Metric                     Cohen’s d       D (PDoc − PVil)        p-value            Calibrated Brier score was lowest for DINOv2-S/14 [0.830; 95% CI
+ Mean saturation            3.90            +0.159                 9.54 × 10−7
+                                                                                      (0.827, 0.834)]. Paired Wilcoxon signed-rank tests across the 10
+ (HSV)                                                                                grouped repeats conﬁrmed statistically signiﬁcant pairwise differences
+ Border edge density        3.33            +0.130                 9.54 × 10−7        in accuracy and macro-F1 for all backbone pairs (p <0.005).
+                                                                                      Calibration differences were also signiﬁcant for most pairwise com-
+ Edge density (Sobel)       2.60            +0.113                 9.54 × 10−7
+                                                                                      parisons, with the closest exceptions being calibrated ECE between
+ Foreground                 2.48            +0.276                 9.54 × 10−7
+ occupancy proxy
+                                                                                      ResNet-50 and CLIP ResNet-50 (= 0.027) and calibrated Brier score
+                                                                                      between DINOv2-S/14 and CLIP ViT-B/16 (p = 0.0098). CLIP
+ Color variance             2.30            +0.023                 6.68 × 10−6
+                                                                                      ResNet-50, despite its vision–language pre-training, performed com-
+ Laplacian variance         1.63            +0.010                 1.81 × 10−5
+                                                                                      parably to frozen ImageNet-supervised ResNet-50, indicating that
+
+
+Frontiers in Plant Science                                                       10                                                              frontiersin.org
+Xiang et al.                                                                                                                          10.3389/fpls.2026.1826962
+
+
+
+
+   FIGURE 3
+   Visual shift quantiﬁcation overview. Distributions of key image-level statistics for PlantVillage (source) and PlantDoc (target) corpora, illustrating the
+   large-effect-size differences in saturation, edge density, foreground-occupancy proxy, and textural roughness.
+
+
+
+
+not all modern pre-training paradigms automatically improve cross-                   frozen-representation accuracy remained below 44%, and even the
+domain reliability when combined with a CNN architecture.                            strongest backbone–score combination left high residual risk at
+    Stronger representations also improved uncertainty-based scor-                   operationally relevant coverage levels. The reliability gap narrows
+ing. Table 8 compares all ﬁve backbones using energy scoring,                        with stronger backbones but does not close.
+which yielded the highest unknown-detection AUROC consistently
+across backbones. DINOv2-S/14 achieved the highest AUROC                             3.5 Ensemble baselines
+[0.7637; 95% CI (0.7628, 0.7647)], followed by ViT-S/16 (0.7517).
+CLIP ViT-B/16 achieved 0.6282—competitive but substantially                              Two ensemble baselines were constructed to assess whether
+below the self-supervised baseline—while both CNN architectures                      model averaging can narrow the reliability gap beyond single-model
+(frozen ResNet-50 and CLIP ResNet-50) achieved AUROC near                            results. The primary baseline is a warm-start end-to-end ResNet50
+0.61–0.68. Within this energy-scoring comparison, DINOv2-S/14                        ensemble (one root model plus four bootstrap-resampled warm-
+also achieved the lowest selective risk at nominal 80% coverage                      start members), which provides genuine weight-space diversity
+(0.5197), whereas CLIP ViT-B/16 had the lowest risk at nominal                       through independent gradient trajectories. The supplementary
+50% coverage (0.4595). The corresponding risks for frozen ResNet-                    baseline is a lightweight DINOv2-S/14 linear-probe ensemble (ﬁve
+50 were 0.6911 at 80% coverage and 0.6356 at 50% coverage. The                       linear heads on shared frozen features), which enables uncertainty
+overall pattern is consistent: representation choice materially affects              decomposition but is acknowledged as having limited diversity
+uncertainty-based performance, yet even the most favorable back-                     because all members share the same backbone representation.
+bone–score pairing left selective risk at nominal 80% coverage                           Under repeated grouped Setting B evaluation [mean TB= 4.10;
+above 0.51 and FPR95 above 0.81, indicating heavy overlap between                    95% CI (3.94, 4.26)], the warm-start ensemble achieved a mean
+the known and unknown score distributions.                                           accuracy of 31.1% [95% CI (30.9%, 31.3%)] and macro-F1 of 0.279—
+    Figure 6 consolidates these trends across four deployment-                       comparable to the single ﬁne-tuned ResNet-50 baseline (32.1%), as
+relevant axes. Transformer-based representations improved all                        expected given the warm-start initialization from the same root
+four dimensions relative to ResNet-50, with DINOv2-S/14 provid-                      model. The most consequential effect of ensemble averaging was on
+ing the strongest overall balance: the highest cross-domain accuracy                 calibration: raw ECE of 0.476 fell to 0.063 after temperature scaling,
+and unknown-detection AUROC, together with the lowest selective                      an 87% relative reduction, and calibrated Brier score was 0.845. For
+risk at nominal 80% coverage. CLIP ViT-B/16 achieved the lowest                      unknown-class detection, the best performing score was calibrated
+calibrated ECE. At the same time, the visual summary makes clear                     aleatoric conﬁdence, which achieved a mean AUROC of 0.666 [95%
+that these gains remain incremental rather than decisive. The best                   CI (0.665, 0.667)], FPR95 of 0.845, and selective risk at nominal 80%
+
+
+
+Frontiers in Plant Science                                                      11                                                                  frontiersin.org
+Xiang et al.                                                                                                                    10.3389/fpls.2026.1826962
+
+
+
+
+   FIGURE 4
+   Grad-CAM visualizations on matched source (PlantVillage) and target (PlantDoc) pairs. In three of four cases, the model produces a high-conﬁdence
+   incorrect prediction on the target image while shifting attention from central lesion regions to background-dominated areas. Border activation ratios
+   quantify the fraction of Grad-CAM mass in the outer 20% of the image.
+
+
+
+coverage of 0.662 [95% CI (0.657, 0.666)]. Figure 7 summarizes the               than by inter-member disagreement. The calibrated epistemic
+key deployment metrics for the warm-start end-to-end ResNet-                     conﬁdence score conﬁrmed this inversion, achieving an AUROC
+50 ensemble.                                                                     of only 0.397—below chance, indicating that epistemic MI was anti-
+    The uncertainty decomposition, however, did not follow the                   correlated with unknown status in this ensemble.
+expected epistemic pattern. Table 9 (upper panel) reports the raw                    The lightweight DINOv2 ensemble achieved higher accuracy
+ensemble uncertainty components. The mean epistemic mutual                       [43.8%; 95% CI (43.6%, 44.0%)] and stronger calibration (ECE
+information for unknown-class samples (0.0184) was lower than for                0.053, Brier 0.711) than the warm-start ResNet ensemble, reﬂecting
+known-class samples (0.0205)—the opposite of what would be                       the superior backbone rather than ensemble diversity. After calibra-
+expected if category novelty systematically elevated model disagree-             tion, the predictive entropy conﬁdence score achieved a mean
+ment. Predictive entropy and the aleatoric proxy were both higher                unknown-detection AUROC of 0.779 [95% CI (0.777, 0.782)] and
+for unknown samples (0.238 vs. 0.199 and 0.220 vs. 0.179, respec-                selective risk at nominal 80% coverage of 0.517—the only conﬁgura-
+tively), indicating that the total uncertainty increase on unknown-              tion in this study to surpass the single-model DINOv2 energy baseline
+class inputs was driven entirely by the aleatoric component rather               (AUROC 0.764, risk@80 0.520) on both metrics simultaneously. The
+
+
+Frontiers in Plant Science                                                  12                                                               frontiersin.org
+Xiang et al.                                                                                                                     10.3389/fpls.2026.1826962
+
+
+
+
+   FIGURE 5
+   Key classiﬁcation and calibration metrics for the feature moment-matching baseline applied to the ﬁne-tuned ResNet-50 under repeated grouped
+   Setting B evaluation. Bars compare raw and temperature-scaled outputs; error bars indicate standard deviations across the 10 calibration/test splits.
+   Temperature scaling improves ECE and Brier score, while accuracy and macro-F1 remain unchanged because post-hoc scaling does not change
+   predicted labels.
+
+
+
+
+uncertainty decomposition (Table 9, lower panel) showed the ex-                   diverse weight-space trajectories—does not show elevated epistemic
+pected pattern: epistemic MI was approximately twice as large for                 MI on unknown samples, while the DINOv2 ensemble—which
+unknown-class samples (0.0417) as for known-class samples (0.0210).               shares a frozen backbone—does. One interpretation is that the
+However, because all ﬁve members share the same frozen DINOv2                     DINOv2 result captures category-level ambiguity in the classiﬁca-
+backbone, this decomposition captures only classiﬁcation-head-level               tion heads rather than deep epistemic uncertainty; another is that
+disagreement, not the full model-level epistemic uncertainty that a               the warm-start ensemble’s limited accuracy (31%) produces an
+diverse end-to-end ensemble would provide.                                        uncertainty landscape too noisy for the epistemic component to
+     Both ensembles demonstrate that model averaging dramatically                 cleanly separate known from unknown categories. Neither inter-
+improves post-hoc calibration under domain shift: calibrated ECE                  pretation supports a strong epistemic-based rejection strategy.
+dropped below 0.07 for both conﬁgurations, compared to 0.27–0.37                  Operationally, neither ensemble closes the deployment gap: the
+for the best single-model baselines. This calibration improvement is              best ensemble-derived selective risk at nominal 80% coverage
+the most robust ensemble contribution observed in this study.                     (0.517, DINOv2) still exceeds 50%, and the warm-start ensemble’s
+However, the two ensembles diverge on the epistemic question.                     risk@80 of 0.662 is comparable to the unadapted single-
+The warm-start ResNet ensemble—which provides genuinely                           model baseline.
+
+
+TABLE 6   Classiﬁcation performance across backbone families under the standardized frozen-representation protocol (single split).
+
+
+ Backbone            Pretraining            PV test Acc.         PV test       Doc setting A acc.           Doc setting B acc.           Doc setting B
+                                                (%)                F1                 (%)                          (%)                        F1
+ ResNet-50           ImageNet supervised         98.03            0.9775                 28.06                       27.74                     0.2350
+
+ ViT-S/16            ImageNet supervised         98.65            0.9836                 42.05                       41.39                     0.3819
+
+ DINOv2-S/14         Self-supervised             98.48            0.9815                 43.06                       42.56                     0.3899
+
+ CLIP ViT-B/16       Vision–language             98.28            0.9795                 41.52                       41.18                     0.3763
+
+ CLIP ResNet-50      Vision–language             98.10            0.9781                 29.17                       29.06                     0.2559
+
+
+
+Frontiers in Plant Science                                                   13                                                               frontiersin.org
+Xiang et al.                                                                                                                                     10.3389/fpls.2026.1826962
+
+
+
+
+TABLE 7   Repeated grouped setting B summary across backbone families (frozen-representation protocol).
+
+
+ Backbone                                       Accuracy                          Macro-F1                         Calibrated ECE                 Calibrated brier
+ ResNet-50                                 0.2802 [0.2770, 0.2834]            0.2381 [0.2348, 0.2415]              0.3310 [0.3272, 0.3349]        1.0039 [0.9996, 1.0083]
+
+ ViT-S/16                                  0.4188 [0.4172, 0.4204]            0.3876 [0.3858, 0.3893]              0.3025 [0.2998, 0.3053]        0.8603 [0.8573, 0.8634]
+
+ DINOv2-S/14                               0.4319 [0.4302, 0.4337]            0.3964 [0.3944, 0.3984]              0.3093 [0.3068, 0.3118]        0.8302 [0.8267, 0.8337]
+
+ CLIP ViT-B/16                             0.4138 [0.4127, 0.4149]            0.3786 [0.3774, 0.3797]              0.2679 [0.2654, 0.2705]        0.8357 [0.8330, 0.8383]
+
+ CLIP ResNet-50                            0.2915 [0.2899, 0.2931]            0.2585 [0.2563, 0.2608]              0.3373 [0.3341, 0.3404]        0.9806 [0.9782, 0.9831]
+Mean [95% CI] over 10 repeats.
+
+
+
+TABLE 8   Cross-backbone comparison under energy scoring in repeated grouped setting B.
+
+
+ Backbone                    AUROC unknown                           FPR95                   Risk @ 80%                    Risk @ 50%            Coverage @ 10% risk
+ ResNet-50                       0.6760 [0.6753, 0.6767]     0.7366 [0.7352, 0.7380]     0.6911 [0.6869, 0.6953]       0.6356 [0.6303, 0.6409]     0.0055 [0.0016, 0.0094]
+
+ ViT-S/16                        0.7517 [0.7507, 0.7527]     0.7741 [0.7721, 0.7761]     0.5508 [0.5453, 0.5564]       0.4978 [0.4952, 0.5003]     0.0097 [0.0014, 0.0179]
+
+ DINOv2-S/14                     0.7637 [0.7628, 0.7647]     0.8138 [0.8125, 0.8151]     0.5197 [0.5145, 0.5249]       0.4736 [0.4691, 0.4782]     0.0100 [0.0037, 0.0164]
+
+ CLIP ViT-B/16                   0.6282 [0.6271, 0.6293]     0.8555 [0.8541, 0.8568]     0.5324 [0.5261, 0.5387]       0.4595 [0.4542, 0.4648]     0.0207 [0.0047, 0.0368]
+
+ CLIP ResNet-50                  0.6117 [0.6107, 0.6127]     0.8802 [0.8787, 0.8818]     0.6667 [0.6629, 0.6705]       0.6023 [0.5972, 0.6075]     0.0076 [0.0030, 0.0122]
+Mean [95% CI] over 10 repeats. Energy scoring is shown because it yielded the highest unknown-detection AUROC across all ﬁve backbones.
+
+
+
+3.6 Cross-method synthesis                                                                   Second, representation quality has a larger effect than any post-
+                                                                                             hoc or lightweight adaptation technique: the DINOv2-S/14 frozen
+   Table 10 consolidates deployment-relevant metrics across all                              backbone raises accuracy from 0.32 to 0.43 and unknown-detection
+methods evaluated in this study. Several patterns emerge. First,                             AUROC from 0.61 to 0.76, gains that exceed anything achieved
+accuracy improvements from simple target-aware mitigations                                   through calibration, scoring, or simple adaptation on the ResNet-50
+(AdaBN, moment matching) are genuine but modest, and                                         baseline. Third, ensemble averaging provides the strongest calibra-
+DANN-style adversarial adaptation degrades performance.                                      tion improvement (ECE < 0.07), but this does not translate into
+
+
+
+
+    FIGURE 6
+    Representative summary of backbone sensitivity under repeated grouped Setting B evaluation for the three frozen-feature backbones shown in the
+    ﬁgure: ResNet-50, ViT-S/16, and DINOv2-S/14. Panels report mean values with 95% conﬁdence intervals over 10 repeats for (A) cross-domain
+    accuracy, (B) calibrated expected calibration error, (C) unknown-detection AUROC using energy scoring, and (D) selective risk at nominal 80%
+    coverage using energy scoring. The full ﬁve-backbone numerical comparison and pairwise statistical conclusions, including CLIP ViT-B/16 and CLIP
+    ResNet-50, are reported in Tables 6–8 and the accompanying Results text.
+
+
+
+
+Frontiers in Plant Science                                                              14                                                                     frontiersin.org
+Xiang et al.                                                                                                                               10.3389/fpls.2026.1826962
+
+
+
+
+    FIGURE 7
+    Key deployment metrics for the warm-start end-to-end ResNet-50 ensemble under repeated grouped setting B evaluation. Despite substantial
+    calibration improvement (ECE reduced from 0.476 to 0.063), accuracy and unknown-detection performance remain comparable to the single ﬁne-
+    tuned baseline.
+
+
+
+
+commensurate gains in accuracy or selective risk. Fourth, no                                    4 Discussion
+conﬁguration achieves selective risk below 0.50 at nominal 80%
+coverage, and all conﬁgurations summarized in Table 10 leave                                    4.1 Severity and sources of the
+FPR95 above 0.78, conﬁrming that the reliability gap narrows                                    reliability gap
+incrementally across the full intervention ladder but does not
+close under any method tested.                                                                       The 67.7-percentage-point accuracy drop observed when moving
+                                                                                                from PlantVillage to PlantDoc reﬂects a fundamental mismatch
+                                                                                                between the visual regularities the model has internalized and the
+TABLE 9 Ensemble uncertainty decomposition for both ensemble baselines:
+known vs. unknown class samples in repeated grouped setting B.
+                                                                                                heterogeneous conditions it encounters in the ﬁeld. Controlled-
+                                                                                                environment datasets encourage reliance on background texture
+                               Uncertainty                                                      and illumination cues that correlate spuriously with disease labels
+ Ensemble                                                Known         Unknown
+                               component                                                        but carry no diagnostic meaning, inﬂating in-domain accuracy while
+                               Predictive entropy        0.1991        0.2379                   undermining generalization (Torralba and Efros, 2011; Barbedo,
+                               Aleatoric proxy
+                                                                                                2018). What makes this ﬁnding especially consequential is that the
+                               (mean member              0.1785        0.2196                   accuracy collapse is accompanied by persistent overconﬁdence: mean
+ Warm-start ResNet-50
+                               entropy)                                                         predicted conﬁdence on PlantDoc remained at 79.76% despite an
+                               Epistemic proxy                                                  accuracy of only 32.05%. This combination of poor accuracy and
+                                                         0.0205        0.0184
+                               (mutual information)                                             misplaced certainty is arguably more dangerous than poor accuracy
+                               Predictive entropy        0.1468        0.2339                   alone, because a farmer receiving such a diagnosis would have no
+                               Aleatoric proxy                                                  reliable signal that the output should be questioned.
+ DINOv2-S/14 linear-           (mean member              0.1258        0.1922                        The shift quantiﬁcation and Grad-CAM analyses reported in
+ probe                         entropy)
+                                                                                                Section 3.2 provide concrete evidence for why this gap is so severe.
+                               Epistemic proxy                                                  Large-effect-size differences in image-level statistics—saturation (d
+                                                         0.0210        0.0417
+                               (mutual information)
+                                                                                                = 3.90), border edge density (d = 3.33), and foreground-occupancy
+Values are computed from raw (uncalibrated) ensemble outputs. The warm-start ResNet-50
+ensemble shows an inverted epistemic pattern (unknown MI < known MI), while the DINOv2
+                                                                                                proxy (d = 2.48)—establish that PlantVillage and PlantDoc occupy
+linear-probe ensemble shows the expected elevation—but its shared frozen backbone limits        substantially different regions of visual feature space. Grad-CAM
+the interpretive scope of the decomposition.
+Bold values indicate the unknown-class epistemic proxy (mutual information) for each
+                                                                                                visualizations on matched source–target pairs reveal the operational
+ensemble, highlighted to show the epistemic response to unknown-class samples.                  consequence: the model’s attention shifts from central lesion
+
+
+Frontiers in Plant Science                                                                 15                                                          frontiersin.org
+Xiang et al.                                                                                                                                         10.3389/fpls.2026.1826962
+
+
+
+
+TABLE 10   Cross-method synthesis of deployment-relevant metrics in repeated grouped setting B.
+
+
+ Method                                                 Accuracy          ECEcal       Briercal      AUROCunk            AUPRunk         Risk@80%                Risk@50%
+ Fine-tuned ResNet-50 (MSP)                             0.321             0.365        1.005         0.583               0.247           0.643                   0.594
+
+    + entropy scoring                                   —                 —            —             0.610               0.261           0.646                   0.593
+
+    + AdaBN                                             0.343             0.288        0.911         0.611               0.260           0.623                   0.553
+
+    + moment matching                                   0.366             0.310        0.925         0.648               0.289           0.594                   0.529
+
+    + DANN                                              0.252             0.245        0.975         0.577               0.251           0.717                   0.645
+
+ DINOv2-S/14 + energy                                   0.432             0.309        0.830         0.764               0.452           0.520                   0.474
+
+ DINOv2-S/14 ensemble (cal.)                            0.438             0.053        0.711         0.779               0.479           0.517                   0.467
+
+ Warm-start ResNet-50 ensemble (cal.)                   0.311             0.063        0.845         0.666               0.287           0.662                   0.616
+Accuracy, ECE, and Brier score reﬂect calibrated model outputs; AUROC, AUPR, and selective risk use the best performing scoring function for each method. All values are means over 10
+repeated grouped splits. Methods are ordered by intervention complexity.
+
+
+
+regions in controlled images to background-dominated or border-                                     Simple target-aware adaptation baselines further reﬁne this
+adjacent areas in ﬁeld images, even when producing high-conﬁ-                                  picture. Feature moment matching improved ResNet-50 accuracy
+dence predictions. These ﬁndings transform the reliability gap from                            from 0.321 to 0.366 and reduced risk@80 from 0.643 to 0.594—the
+an abstract accuracy number into a mechanistically interpretable                               strongest simple-adaptation result. AdaBN provided more modest
+phenomenon: the model has learned to exploit visual regularities                               gains (accuracy 0.343, risk@80 0.623), while DANN-style adversar-
+present in controlled environments but absent—or inverted—under                                ial adaptation degraded performance below the unadapted baseline
+ﬁeld conditions.                                                                               (accuracy 0.252), suggesting that adversarial feature alignment can
+                                                                                               disrupt task-relevant discriminative structure under heterogeneous
+4.2 How much do standard mitigations                                                           domain shift. The overall pattern conﬁrms that simple target-aware
+help?                                                                                          corrections help and should be applied where target-domain data is
+                                                                                               available, but they do not transform the reliability proﬁle into one
+     The backbone comparison directly addresses whether the                                    suitable for autonomous deployment.
+reliability gap is an artifact of a single architecture. Under the                                  Temperature scaling addresses overconﬁdence with minimal
+frozen-representation protocol with ﬁve backbones spanning three                               overhead, and our results reveal an important asymmetry between
+pretraining paradigms—ImageNet-supervised CNN (ResNet-50),                                     calibration settings. Under Setting A, where the temperature is tuned
+ImageNet-supervised transformer (ViT-S/16), self-supervised                                    on source-domain validation data, the ECE improvement is modest
+transformer (DINOv2-S/14), and vision–language models (CLIP                                    (7.8% relative reduction). Under the grouped Setting B protocol, the
+ViTB/16, CLIP ResNet-50)—the qualitative conclusion persists.                                  improvement is substantially larger (mean calibrated ECE 0.365
+DINOv2-S/14 raised cross-domain accuracy from 28% to 43%                                       across 10 repeats). Yet this stronger calibration did not translate into
+and unknown-detection AUROC from 0.68 to 0.76, improvements                                    low selective risk at useful coverage. Small target-domain calibration
+that are both statistically signiﬁcant (paired Wilcoxon p <0.005) and                          sets should therefore be viewed as helpful for conﬁdence alignment,
+practically meaningful. CLIP ViT-B/16 achieved competitive accu-                               not as sufﬁcient remedies for deployment risk.
+racy (41.4%) but lower unknown-detection performance (AUROC                                         Selective prediction complements calibration by offering an
+0.628), while CLIP ResNet-50 performed comparably to frozen                                    explicit mechanism for quantifying residual risk. The coverage–
+ImageNet ResNet-50, suggesting that vision–language pre-training                               risk curves show that the main beneﬁt of abstention in this study is
+does not automatically improve cross-domain reliability when                                   diagnostic rather than operational: it exposes how unstable conﬁ-
+paired with a CNN architecture. Yet even the most favorable                                    dence thresholds become under domain shift and how limited the
+backbone–score combination left selective risk at nominal 80%                                  attainable low-risk operating points remain. The stronger score
+coverage above 0.51 and FPR95 above 0.81.                                                      baseline comparison sharpened this point rather than weakening it:
+     An important distinction must be drawn between statistical                                energy and entropy improved ranking quality modestly, but even
+signiﬁcance and practical adequacy. The paired Wilcoxon tests                                  when extended to the strongest DINOv2 backbone, energy scoring
+conﬁrm that backbone differences are robust and reproducible—                                  reduced risk@80 only to 0.52—a genuine improvement that still
+this is valuable evidence that representation quality matters mate-                            falls well short of the levels required for autonomous operation.
+rially. But statistical signiﬁcance does not imply operational sufﬁ-
+ciency. An accuracy improvement from 0.321 to 0.432 is genuine,                                4.3 Ensemble calibration and epistemic
+yet risk@80 remaining above 0.51 means that the best single-model                              uncertainty
+conﬁguration still misclassiﬁes more than half the samples it
+chooses to answer at operationally relevant coverage levels. These                                The two ensemble baselines demonstrate that model averaging
+improvements narrow the gap; they do not close it.                                             provides the strongest calibration improvement observed in this
+
+
+
+
+Frontiers in Plant Science                                                               16                                                                          frontiersin.org
+Xiang et al.                                                                                                             10.3389/fpls.2026.1826962
+
+
+
+
+study. Both the warm-start ResNet-50 ensemble (ECE 0.063) and               protocol with linear probes rather than full end-to-end ﬁne-
+the DINOv2 linear-probe ensemble (ECE 0.053) achieved calibrated            tuning. While this isolates representation quality from optimization
+ECE values well below any single-model baseline (>0.27), indicating         confounds, it does not characterize the reliability properties of fully
+that ensemble logit averaging produces a geometry far more                  ﬁne-tuned transformers or foundation models, which may exhibit
+amenable to post-hoc temperature correction. This calibration               qualitatively different calibration behavior. The comparison also
+advantage is the most robust and practically relevant ensem-                does not cover compound-scaled CNN families such as EfﬁcientNet
+ble contribution.                                                           (Tan and Le, 2019). The warm-start ResNet-50 ensemble uses end-
+    The epistemic uncertainty decomposition, however, yields a              to-end ﬁne-tuning but starts from a shared root checkpoint,
+mixed picture that must be reported honestly. The DINOv2 linear-            limiting weight-space diversity relative to independently trained
+probe ensemble showed the expected pattern—epistemic MI ap-                 cold-start members; the DINOv2 ensemble shares a frozen back-
+proximately twice as large for unknown-class samples (0.0417) as            bone entirely. More expressive ensemble or Bayesian methods (Gal
+for known-class samples (0.0210)—consistent with category nov-              and Ghahramani, 2016; Lakshminarayanan et al., 2017; Sensoy
+elty elevating model-level disagreement. But the warm-start                 et al., 2018) may capture uncertainty structure that these base-
+ResNet-50 ensemble, which provides genuinely diverse weight-                lines cannot.
+space trajectories through independent gradient paths from a                    At the methodological level, the adaptation baselines (AdaBN,
+shared root, showed the opposite: unknown MI (0.0184) was                   moment matching, DANN) test only lightweight domain-align-
+lower than known MI (0.0205), and the calibrated epistemic                  ment techniques applied to the ResNet-50 case study. More
+conﬁdence score achieved an AUROC of only 0.397—below                       sophisticated adaptation methods—including deeper feature align-
+chance. Two interpretations merit consideration. First, the                 ment, optimal transport, or multisource adaptation—and their
+DINOv2 result may reﬂect classiﬁcation-head-level ambiguity on              interaction with stronger backbones remain unexplored. The results
+a shared frozen representation rather than deep epistemic uncer-            should therefore be interpreted as a strengthened baseline study
+tainty; the 2:1 MI ratio, while real, captures a narrower form of           establishing the severity and persistence of the gap, not as an
+disagreement than a full deep ensemble would provide. Second, the           exhaustive search over possible mitigations.
+warm-start ensemble’s limited accuracy (31%) may produce an                     Regarding the robustness analysis, we repeated the grouped
+overall uncertainty landscape too noisy for the epistemic compo-            10% calibration split 10 times and reported 95% conﬁdence
+nent to cleanly separate known from unknown categories. Neither             intervals for split-sensitive metrics. The parent-image-aware group-
+interpretation supports a strong epistemic-based rejection strategy,        ing constraint was retained as a methodological safeguard against
+and neither ensemble should be presented as providing deﬁnitive             data leakage, even though it did not change the actual data
+evidence about the epistemic structure of the reliability gap.              allocation in the current PlantDoc version. Richer acquisition-
+    Operationally, the calibrated DINOv2 ensemble achieved the              event metadata and broader multi-site target datasets would sup-
+highest unknown-detection AUROC in this study (0.779) and the               port a more comprehensive variance analysis.
+lowest selective risk at nominal 80% coverage (0.517), surpassing               Two broader considerations merit attention. First, real-world
+the single-model DINOv2 energy baseline on both metrics. These              deployment unfolds over time; seasonal variation, emerging disease
+gains are genuine but incremental, and risk@80 above 0.50 rein-             strains, and hardware changes may cause additional drift, requiring
+forces that even the strongest conﬁguration falls short of autono-          continuous calibration monitoring. Second, the evaluation frame-
+mous deployment reliability.                                                work focuses exclusively on technical metrics and does not assess
+                                                                            how end users—farmers, agronomists, extension workers— re-
+4.4 Limitations and future work                                             spond to calibrated conﬁdence scores and abstention signals.
+                                                                            Field trials measuring user trust and decision-making behavior
+     Several limitations should be acknowledged. The evaluation is          would provide the critical human-centered evidence needed to
+conﬁned to two datasets—PlantVillage and PlantDoc—and 21                    translate technical improvements into real-world impact.
+shared disease categories within a single source–target scenario.
+Although representative of a controlled-to-ﬁeld domain shift, this          4.5 Broader context and recommendations
+pair does not capture the full diversity of crops, diseases, and
+imaging conditions in global agriculture. The target task is leaf-               The challenges documented here are symptomatic of a broader
+level classiﬁcation on PlantDoc crop images, not end-to-end diag-           tension in applied machine learning between benchmark perfor-
+nosis from raw ﬁeld photographs; errors from localization, seg-             mance and deployment reliability—extensively discussed in medical
+mentation, or scene-level clutter are not quantiﬁed. Extending the          imaging and autonomous driving, but comparatively under-exam-
+evaluation to additional corpora (e.g., PDDR, PlantCLEF) and end-           ined in agricultural AI. Several recommendations follow.
+to-end pipelines would strengthen external validity.                             At the level of experimental reporting, publications evaluating
+     At the architectural level, the backbone comparison now spans          plant disease classiﬁers should routinely present calibration error,
+ﬁve architectures across three pre-training paradigms, including            Brier scores, and selective risk alongside accuracy and F1, particu-
+two CLIP variants, providing substantially stronger evidence that           larly under domain shift. Deployment claims should be substanti-
+reliability conclusions are not contingent on a single architecture.        ated with evaluation on ﬁeld-photograph corpora rather than
+However, the comparison employed a frozen-representation                    relying exclusively on controlled-environment benchmarks.
+
+
+
+
+Frontiers in Plant Science                                             17                                                            frontiersin.org
+Xiang et al.                                                                                                              10.3389/fpls.2026.1826962
+
+
+
+
+     At the level of system design, abstention should not be assumed          adaptation strategies, full deep ensembles with independently trained
+to confer safe automation merely because it improves selected                 members, additional source–target scenarios, and ﬁeld trials with end
+metrics. Where selective prediction is considered, its achieved cov-          users before stronger deployment claims are warranted.
+erage and residual risk should be reported jointly and interpreted
+conservatively. The ﬁnding that these limitations persist across ﬁve
+backbone architectures, three adaptation baselines, and two ensemble
+conﬁgurations reinforces the generality of this caution.                      Data availability statement
+     At the level of deployment practice, post-hoc calibration and
+simple target-aware adaptation are worth applying because they are                The datasets analyzed in this study are publicly available from
+inexpensive and improve conﬁdence alignment, but the present                  their original sources: PlantVillage (https://github.com/spMohanty/
+results show that such gains alone do not establish operational               PlantVillage-Dataset) and PlantDoc (https://github.com/pratikkayal/
+readiness. Representation quality materially affects all deployment-          PlantDoc-Dataset). The processed ﬁles supporting the ﬁndings of this
+relevant dimensions, and this should inform architecture selection in         study, including the category alignment table and data split manifests
+practice. Any credible deployment assessment must evaluate selective          used for the analyzed snapshot, are available from the corresponding
+risk, threshold-transfer stability, and behavior on categories absent         author upon reasonable request. The code used for data processing,
+from training before autonomous operation is considered.                      model evaluation, calibration, and abstention analysis is available
+                                                                              from the corresponding author upon reasonable request.
+
+
+5 Conclusion
+                                                                              Author contributions
+     This study has characterized the reliability gap in cross-domain
+plant disease classiﬁcation through systematic benchmarking of
+                                                                                  KX: Conceptualization, Data curation, Formal analysis,
+standard mitigation techniques under a controlled-to-ﬁeld shift.
+                                                                              Methodology, Software, Visualization, Writing – original draft.
+Evaluating models trained on PlantVillage against parent-image-
+                                                                              DS: Investigation, Methodology, Validation, Writing – review &
+audited PlantDoc leaf crops, we documented a triad of deployment
+                                                                              editing. XZ: Conceptualization, Project administration, Resources,
+risks: severe accuracy collapse (67.7-percentage-point drop), per-
+                                                                              Supervision, Writing – review & editing.
+sistent overconﬁdence, and limited ability to reject unknown disease
+categories. Quantitative shift analysis and Grad-CAM visualizations
+established that this gap is driven by identiﬁable visual distribution
+differences that cause models to attend to spurious rather than               Funding
+diagnostically relevant features.
+     A comprehensive mitigation ladder was evaluated. Simple target-              The author(s) declared that ﬁnancial support was received for
+aware adaptations (AdaBN, moment matching) provided genuine                   this work and/or its publication. This work was supported by the
+but limited improvements, while DANN-style adversarial adaptation             Shenzhen HSSR Foundation (Grant No. SZ2022C020).
+degraded performance. Extending the analysis across ﬁve backbone
+architectures— including two CLIP variants—under a standardized
+frozen-representation protocol conﬁrmed that stronger representa-
+tions, particularly self-supervised DINOv2-S/14, narrow all dimen-            Conﬂict of interest
+sions of the gap, with all accuracy and macro-F1 pairwise differences
+conﬁrmed as statistically signiﬁcant. Two ensemble baselines dem-                 The author(s) declared that this work was conducted in the
+onstrated that model averaging dramatically improves calibration              absence of any commercial or ﬁnancial relationships that could be
+(ECE reduced to <0.07), but the uncertainty decomposition yielded             construed as a potential conﬂict of interest.
+mixed results: the DINOv2 linear-probe ensemble showed elevated
+epistemic MI on unknown samples, while the warm-start ResNet-50
+ensemble—which provides greater weight-space diversity—did not,
+precluding a strong epistemic-based rejection claim. Even the stron-          Generative AI statement
+gest overall conﬁguration (calibrated DINOv2 ensemble) left selective
+risk at nominal 80% coverage above 0.50.                                          The author(s) declared that generative AI was used in the
+     The central lesson is that benchmark accuracy alone is an                creation of this manuscript. Generative AI was used solely for
+inadequate target for evaluating agricultural diagnostic models. The          language editing to improve the grammar, clarity, and readability of
+present work contributes a reproducible evaluation protocol together          the manuscript. Speciﬁcally, DeepSeek assisted with phrasing and
+with multi-backbone, multi-adaptation, and ensemble-level evidence            copyediting. The tool was not used to generate data, perform
+showing that the reliability gap under controlled-to-ﬁeld shift is            analyses, interpret results, or create references. All content was
+severe, mechanistically interpretable, and only partially reducible by        reviewed and veriﬁed by the authors, who take full responsibility for
+standard techniques. Future work should investigate richer domain             the manuscript.
+
+
+
+
+Frontiers in Plant Science                                               18                                                           frontiersin.org
+Xiang et al.                                                                                                                                                10.3389/fpls.2026.1826962
+
+
+
+
+    Any alternative text (alt text) provided alongside ﬁgures in this                              made by its manufacturer, is not guaranteed or endorsed by
+article has been generated by Frontiers with the support of artiﬁcial                              the publisher.
+intelligence and reasonable efforts have been made to ensure
+accuracy, including review by the authors wherever possible. If
+you identify any issues, please contact us.
+                                                                                                   Supplementary material
+                                                                                                       The Supplementary Material for this article can be found online
+Publisher’s note                                                                                   at: https://www.frontiersin.org/articles/10.3389/fpls.2026.1826962/
+                                                                                                   full#supplementary-material
+    All claims expressed in this article are solely those of the authors
+                                                                                                   SUPPLEMENTARY TABLE 1
+and do not necessarily represent those of their afﬁliated organiza-
+                                                                                                   Category alignment between PlantVillage and PlantDoc labels, indicating the
+tions, or those of the publisher, the editors and the reviewers. Any                               shared known classes retained for cross-domain evaluation and the PlantDoc
+product that may be evaluated in this article, or claim that may be                                categories treated as unknown classes.
+
+
+
+
+References
+Arsenovic, M., Karanovic, M., Sladojevic, S., Anderla, A., and Stefanovic, D. (2019).              Hendrycks, D., and Gimpel, K. (2017). “A baseline for detecting misclassiﬁed and out-
+Solving current limitations of deep learning based approaches for plant disease                    of-distribution examples in neural networks”, in: International Conference on Learning
+detection. Symmetry 11, 939. doi: 10.3390/sym11070939                                              Representations (ICLR) (OpenReview.net).
+Barbedo, J. G. A. (2018). Impact of dataset size and variety on the effectiveness of deep          Hughes, D., and Salathé , M. (2015). An open access repository of images on plant
+learning and transfer learning for plant disease classiﬁcation. Comput. Electron. Agric.           health to enable the development of mobile disease diagnostics. arXiv preprint
+153, 46–53. doi: 10.1016/j.compag.2018.08.013                                                      arXiv:1511.08060. doi: 10.48550/arXiv.1511.08060
+Bashir, R. N., Khan, F. A., Khan, A. A., Tausif, M., Abbas, M. Z., Shahid, M. M. A., et al.        Jiang, X., Osl, M., Kim, J., and Ohno-MaChado, L. (2012). Calibrating predictive model
+(2023). Intelligent optimization of reference evapotranspiration (ETo) for precision               estimates to support personalized medicine. J. Am. Med. Inf. Assoc. 19, 263–274.
+irrigation. J. Comput. Sci. 69, 102025. doi: 10.1016/j.jocs.2023.102025                            doi: 10.1136/amiajnl-2011-000291
+Bendale, A., and Boult, T. E. (2016). “Towards open set deep networks”, in: Proceedings            Johannes, A., Picon, A., Alvarez-Gila, A., Echazarra, J., Rodriguez-Vaamonde, S.,
+of the IEEE Conference on Computer Vision and Pattern Recognition (Piscataway, NJ:                 Navajas, A. D., et al. (2017). Automatic plant disease diagnosis using mobile capture
+IEEE), 1563–1572. doi: 10.1109/CVPR.2016.173                                                       devices, applied on a wheat use case. Comput. Electron. Agric. 138, 200–209.
+                                                                                                   doi: 10.1016/j.compag.2017.04.013
+Ben-David, S., Blitzer, J., Crammer, K., Kulesza, A., Pereira, F., and Wortman Vaughan,
+J. (2010). A theory of learning from different domains. Mach. Learn. 79, 151–175.                  Khan, A. A., Faheem, M., Bashir, R. N., Wechtaisong, C., and Abbas, M. Z. (2022a).
+doi: 10.1007/s10994-009-5152-4                                                                     Internet of Things (IoT) assisted context aware fertilizer recommendation. IEEE Access
+                                                                                                   10, 129505–129519. doi: 10.1109/access.2022.3228160
+Boulent, J., Foucher, S., Thé au, J., and St-Charles, P. L. (2019). Convolutional neural
+networks for the automatic identiﬁcation of plant diseases. Front. Plant Sci. 10, 941.             Khan, A. A., Nauman, M. A., Bashir, R. N., Jahangir, R., Alroobaea, R., Binmahfoudh,
+doi: 10.3389/fpls.2019.00941                                                                       A., et al. (2022b). Context aware evapotranspiration (ETs) for saline soils reclamation.
+                                                                                                   IEEE Access 10, 110050–110063. doi: 10.1109/access.2022.3206009
+Brahimi, M., Boukhalfa, K., and Moussaoui, A. (2017). Deep learning for tomato
+diseases: classiﬁcation and symptoms visualization. Appl. Artif. Intell. 31, 299–315.              Kull, M., Perello Nieto, M., Kängsepp, M., Silva Filho, T., Song, H., and Flach, P. (2019).
+doi: 10.1080/08839514.2017.1315516                                                                 “Beyond temperature scaling: Obtaining well-calibrated multi-class probabilities with
+                                                                                                   Dirichlet calibration”, in: Advances in Neural Information Processing Systems, vol. 32
+Brier, G. W. (1950). Veriﬁcation of forecasts expressed in terms of probability. Mon.
+                                                                                                   (Red Hook, NY: Curran Associates, Inc.), 12316–12326. doi: 10.48550/
+Weather Rev. 78, 1–3. doi: 10.1175/1520-0493(1950)078<0001:vofeit>2.0.co;2
+                                                                                                   arXiv.1910.12656
+DeGroot, M. H., and Fienberg, S. E. (1983). The comparison and evaluation of
+                                                                                                   Lakshminarayanan, B., Pritzel, A., and Blundell, C. (2017). “Simple and scalable
+forecasters. Statistician 32, 12–22. doi: 10.2307/2987588                                          predictive uncertainty estimation using deep ensembles”, in: Advances in Neural
+Deng, J., Dong, W., Socher, R., Li, L. J., Li, K., and Fei-Fei, L. (2009). “ImageNet: A            Information Processing Systems, vol. 30 (Red Hook, NY: Curran Associates, Inc.),
+large-scale hierarchical image database”, in: 2009 IEEE Conference on Computer Vision              6402–6413. doi: 10.48550/arXiv.1612.01474
+and Pattern Recognition (Piscataway, NJ: IEEE), 248–255. doi: 10.1109/
+                                                                                                   Li, Y., Wang, N., Shi, J., Liu, J., and Hou, X. (2017). Revisiting batch normalization for
+CVPR.2009.5206848
+                                                                                                   practical domain adaptation. Pattern Recognit. 80, 109–117. doi: 10.1016/
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T.,            j.patcog.2018.03.005
+et al (2021). “An image is worth 16x16 words: Transformers for image recognition at
+                                                                                                   Liu, W., Wang, X., Owens, J., and Li, Y. (2020). Energy-based out-of-distribution
+scale”, in: International Conference on Learning Representations (ICLR)
+                                                                                                   detection. Adv. Neural Inf. Process. Syst. 33, 21464–21475. doi: 10.48550/
+(OpenReview.net).
+                                                                                                   arXiv.2010.03759
+Ferentinos, K. P. (2018). Deep learning models for plant disease detection and                     Loshchilov, I., and Hutter, F. (2019). “Decoupled weight decay regularization”, in:
+diagnosis. Comput. Electron. Agric. 145, 311–318. doi: 10.1016/j.compag.2018.01.009
+                                                                                                   International Conference on Learning Representations (ICLR) (OpenReview.net).
+Gal, Y., and Ghahramani, Z. (2016). “Dropout as a Bayesian approximation:                          doi: 10.48550/arXiv.1711.05101
+Representing model uncertainty in deep learning”, in: Proceedings of the 33rd
+                                                                                                   Mohanty, S. P., Hughes, D. P., and Salathé , M. (2016). Using deep learning for image-
+International Conference on Machine Learning (Cambridge, MA: PMLR), 1050–1059.
+                                                                                                   based plant disease detection. Front. Plant Sci. 7, 1419. doi: 10.3389/fpls.2016.01419
+Ganin, Y., Ustinova, E., Ajakan, H., Germain, P., Larochelle, H., Laviolette, F., et al
+                                                                                                   Naeini, M. P., Cooper, G., and Hauskrecht, M. (2015). “Obtaining well calibrated
+(2016). Domain-adversarial training of neural networks. J. Mach. Learn. Res. 17, 1–35.
+                                                                                                   probabilities using Bayesian binning”, in: Proceedings of the Twenty-Ninth AAAI
+Geifman, Y., and El-Yaniv, R. (2017). “Selective classiﬁcation for deep neural net-                Conference on Artiﬁcial Intelligence (Palo Alto, CA: AAAI Press), 2901–2907.
+works”, in: Advances in Neural Information Processing Systems, vol. 30 (Red Hook, NY:              doi: 10.1609/aaai.v29i1.9602
+Curran Associates, Inc.), 4878–4887.
+                                                                                                   Niculescu-Mizil, A., and Caruana, R. (2005). “Predicting good probabilities with
+Guo, C., Pleiss, G., Sun, Y., and Weinberger, K. Q. (2017). “On calibration of modern              supervised learning”, in: Proceedings of the 22nd International Conference on
+neural networks”, in: Proceedings of the 34th International Conference on Machine                  Machine Learning (ICML '05) (New York, NY: ACM Press), 625–632. doi: 10.1145/
+Learning (Cambridge, MA: PMLR), 1321–1330.                                                         1102351.1102430
+He, K., Zhang, X., Ren, S., and Sun, J. (2016). “Deep residual learning for image                  Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., et al
+recognition”, in: 2016 IEEE Conference on Computer Vision and Pattern Recognition                  (2024). DINOv2: Learning robust visual features without supervision. Trans. Mach.
+(CVPR) (Piscataway, NJ: IEEE), 770–778. doi: 10.1109/CVPR.2016.90                                  Learn. Res. doi: 10.48550/arXiv.2304.07193
+
+
+
+
+Frontiers in Plant Science                                                                    19                                                                            frontiersin.org
+Xiang et al.                                                                                                                                               10.3389/fpls.2026.1826962
+
+
+
+
+Ovadia, Y., Fertig, E., Ren, J., Nado, Z., Sculley, D., Nowozin, S., et al (2019). “Can you        31 (Red Hook, NY: Curran Associates, Inc.), 3179–3189. doi: 10.48550/
+trust your model's uncertainty? Evaluating predictive uncertainty under dataset shift”,            arXiv.1806.01768
+in: Advances in Neural Information Processing Systems, vol. 32 (Red Hook, NY: Curran
+                                                                                                   Shimodaira, H. (2000). Improving predictive inference under covariate shift by
+Associates, Inc.), 13991–14002. doi: 10.48550/arXiv.1906.02530
+                                                                                                   weighting the log-likelihood function. J. Stat. Plann. Inference 90, 227–244.
+Rączkowska, A., Możejko, M., Zambonelli, J., and Szczurek, E. (2019). ARA: accurate,               doi: 10.1016/s0378-3758(00)00115-4
+reliable and active histopathological image classiﬁcation framework with Bayesian deep
+                                                                                                   Singh, D., Jain, N., Jain, P., Kayal, P., Kumawat, S., and Batra, N. (2020). “PlantDoc: A
+learning. Sci. Rep. 9, 14347. doi: 10.1038/s41598-019-50587-1
+                                                                                                   dataset for visual plant disease detection”, in: Proceedings of the 7th ACM IKDD CoDS
+Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., et al (2021).              and 25th COMAD (New York, NY: Association for Computing Machinery), 249–253.
+“Learning transferable visual models from natural language supervision”, in:                       doi: 10.1145/3371158.3371196
+Proceedings of the 38th International Conference on Machine Learning, PMLR 139
+                                                                                                   Sladojevic, S., Arsenovic, M., Anderla, A., Culibrk, D., and Stefanovic, D. (2016). Deep
+(Cambridge, MA: PMLR), 8748–8763. doi: 10.48550/arXiv.2103.00020
+                                                                                                   neural networks based recognition of plant diseases by leaf image classiﬁcation.
+Ramcharan, A., Baranowski, K., McCloskey, P., Ahmed, B., Legg, J., and Hughes, D. P.               Comput. Intell. Neurosci. 2016, 3289801. doi: 10.1155/2016/3289801
+(2017). Deep learning for image-based cassava disease detection. Front. Plant Sci. 8,
+                                                                                                   Tan, M., and Le, Q. (2019). “EfﬁcientNet: Rethinking model scaling for convolutional
+1852. doi: 10.3389/fpls.2017.01852
+                                                                                                   neural networks”, in: Proceedings of the 36th International Conference on Machine
+Ramu, S. C., Raman, D., Ramana, K., Krishna, A. V., Khan, A. A., Khan, S., et al. (2026).          Learning, PMLR 97 (Cambridge, MA: PMLR), 6105–6114. doi: 10.48550/
+A lightweight deep learning and whale optimization framework for sustainable                       arXiv.1905.11946
+precision agriculture. Discover Computing 29, 73. doi: 10.1007/s10791-026-09952-8
+                                                                                                   Too, E. C., Yujian, L., Njuki, S., and Yingchun, L. (2019). A comparative study of ﬁne-
+Saleem, M. H., Potgieter, J., and Arif, K. M. (2019). Plant disease detection and                  tuning deep learning models for plant disease identiﬁcation. Comput. Electron. Agric.
+classiﬁcation by deep learning. Plants 8, 468. doi: 10.3390/plants8110468                          161, 272–279. doi: 10.1016/j.compag.2018.03.032
+Savary, S., Willocquet, L., Pethybridge, S. J., Esker, P., McRoberts, N., and Nelson, A.           Torralba, A., and Efros, A. A. (2011). “Unbiased look at dataset bias”, in: CVPR 2011
+(2019). The global burden of pathogens and pests on major food crops. Nat. Ecol. Evol.             (Piscataway, NJ: IEEE), 1521–1528. doi: 10.1109/CVPR.2011.5995347
+3, 430–439. doi: 10.1038/s41559-018-0793-y
+                                                                                                   Vishnoi, V. K., Kumar, K., Kumar, B., Mohan, S., and Khan, A. A. (2023). Detection of
+Selvaraju, R. R., Cogswell, M., Das, A., Vedantam, R., Parikh, D., and Batra, D. (2017).           apple plant diseases using leaf images through convolutional neural network. IEEE
+“Grad-CAM: Visual explanations from deep networks via gradient-based localization”,                Access 11, 6594–6609. doi: 10.1109/access.2022.3232917
+in: 2017 IEEE International Conference on Computer Vision (ICCV) (Piscataway, NJ:
+                                                                                                   Zadrozny, B., and Elkan, C. (2002). “Transforming classiﬁer scores into accurate
+IEEE), 618–626. doi: 10.1109/ICCV.2017.74
+                                                                                                   multiclass probability estimates”, in: Proceedings of the Eighth ACM SIGKDD
+Sensoy, M., Kaplan, L., and Kandemir, M. (2018). “Evidential deep learning to quantify             International Conference on Knowledge Discovery and Data Mining (KDD '02) (New
+classiﬁcation uncertainty”, in: Advances in Neural Information Processing Systems, vol.            York, NY: ACM), 694–699. doi: 10.1145/775047.775151
+
+
+
+
+Frontiers in Plant Science                                                                    20                                                                           frontiersin.org
+

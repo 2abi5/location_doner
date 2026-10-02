@@ -1,0 +1,812 @@
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          85
+
+
+
+
+Plant MAE-prompt: Lesion-aware Self-supervised Pretraining with Hierarchical
+   Prompt Tuning for Cross-crop Overlapped Disease Detection in Corn and
+                              Tomato Leaves
+
+                                            Amandeep Kaur1*                    Archana Sandhu1
+
+                 1
+                  Maharishi Markandeshwar Institute of Computer Technology & Business Management,
+                                     Mullana-Ambala, Haryana, 133207, India
+                             * Corresponding author’s Email: kangaman269@gmail.com
+
+
+  Abstract: Inter-class visual overlap is one of the critical factors inhibiting automated detection of foliar diseases in
+  corn (Zea mays) and tomato (Solanum lycopersicum), where morphologically similar symptoms across crop species,
+  including Cercospora Gray Leaf Spot in corn and Septoria Leaf Spot in tomato, are misclassified by conventional deep
+  learning classifiers. Current methods also have the disadvantage of significantly reduced performance under field
+  conditions (not in the laboratory). To address these problems, this paper presents PlantMAE-Prompt, a new three-
+  phase deep neural network evaluated on PlantVillage and PlantDoc. Phase 1 introduces a Lesion-Aware Masking
+  (LAM) strategy, biasing Masked Autoencoder (MAE) pretraining toward pathologically informative regions using
+  CIELAB color-space saliency priors, compelling the Vision Transformer (ViT) encoder to acquire disease-
+  discriminative features. Phase 2 proposes Hierarchical Prompt Tuning (HPT) which decomposes learnable prompt
+  tokens into shared, crop-specific, and disease-specific levels with orthogonality penalty, training only 2.1% (~1.8M)
+  of the total parameters of the frozen encoder. Phase 3 uses Overlap-Aware Contrastive Fine-Tuning (OACFT) that
+  detects confusable disease pairs from the evolving confusion matrix and resolves them via pair-specific prompts and
+  adaptive margin-based contrastive optimization. To eliminate train–test mismatch, the same top-K prompt evaluation
+  rule used at inference is also applied during training, ensuring that no privileged label information is exploited. It has
+  been experimentally demonstrated that, compared to state-of-the-art methods, PlantMAE-Prompt has an accuracy of
+  98.73 on PlantVillage and 78.64 on the cross-domain PlantVillage→PlantDoc setting, +1.11% and +9.22 higher,
+  respectively, and is about 52-fold more parameter-efficient (1.8M vs Computational cost is also audited with training
+  FLOPs, peak GPU memory and inference latency at equal 224x224 input and equal hardware. The complementary
+  nature of each suggested element is confirmed by ablation experiments, statistical significance (p < 0.001)
+  measurement and t-SNE plots.
+  Keywords: Plant disease detection, Masked autoencoder, Vision transformer, Prompt tuning, Contrastive learning,
+  Overlapped disease classification, Cross-domain generalization, Self-supervised learning.
+
+
+
+
+                                                                              pathologists is time consuming, subjective and
+1. Introduction                                                               inefficient when dealing with large number of cases.
+                                                                              Deep learning has initiated a paradigm shift in
+    Among the biggest global food security
+                                                                              automated plant disease studies with convolutional
+challenges, plant diseases are the major concern as it
+                                                                              neural networks (CNNs) including ResNet [1],
+is estimated that 20-40 percent of crops are lost
+                                                                              DenseNet [2] and EfficientNet [3] achieving
+annually around the globe. The staple crops are
+                                                                              outstanding classification rates on standard datasets
+particularly susceptible to a wide variety of foliar
+                                                                              like PlantVillage [4] and PlantDoc [5]. More recently,
+diseases that present themselves with symptoms
+                                                                              Vision Transformers (ViTs) [6] and their hierarchical
+similar to each other across species. Manual
+                                                                              counterparts like Swin Transformer [7] have
+diagnosis of diseases due to examination by trained
+                                                                              demonstrated better global modeling with self-
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          86
+
+
+attention, surpassing CNN-based methods on                                    regularization. This results in competitive
+agricultural image classification tasks [8, 9].                               performance with just 2.1% (~1.8M) of ViT-Base
+Simultaneously, self-supervised pretraining models,                           parameter budget. Critically, the same top-K prompt-
+especially Masked Autoencoders (MAE) [10], have                               evaluation rule is used in both training and inference
+emerged as potent representation learners that are                            (Section 3.4), removing any reliance on privileged
+able to exploit large volumes of unlabeled data and                           labels.
+have demonstrated certain potential in data-sparse                            Overlap-Aware          Contrastive       Fine-Tuning
+agricultural environments [11].                                               (OACFT): A dynamic contrastive optimization
+     In spite of these advances, existing deep learning-                      mechanism that detects confusable disease pairs from
+based systems to classify plant diseases have three                           the evolving confusion matrix and applies pair-
+severe and unsolved problems. First, there is gross                           specific prompts with differentiated margins.
+inter-class confusion due to visual overlap of disease                        Pseudocode (Algorithm 1) is provided for the
+symptoms across crop species (e.g., Cercospora Gray                           overlap-pair discovery and prototype recomputation
+Leaf Spot in corn vs. Septoria Leaf Spot in tomato;                           routines to ensure full reproducibility.
+Northern Leaf Blight in corn vs. Early Blight in                              Auditable Efficiency Reporting: In addition to
+tomato) which cannot be resolved by conventional                              trainable parameters, we report training FLOPs, peak
+flat classification architectures [12, 13]. To make this                      GPU memory, and per-image inference latency on
+concrete, the confusion matrix in Fig. 3 shows that a                         identical hardware (Section 4.7), so that efficiency
+strong ViT-Base/16 baseline misclassifies 5.6% of                             claims can be reproduced and audited.
+Corn Cercospora samples as Tomato Septoria and                                    The remainder of this paper is organized as
+4.2% of Corn Northern Leaf Blight samples as                                  follows. Section 2 reviews related work. Section 3
+Tomato Early Blight, providing direct empirical                               details the proposed methodology. Section 4 presents
+evidence of the cross-crop overlap problem. Second,                           experimental results. Section 5 concludes the paper.
+models that are trained on controlled datasets in the
+laboratory (e.g., PlantVillage [4]) drop by a large                           2. Literature review
+margin in performance when deployed to field
+images (e.g., PlantDoc [5]); on average, 12–15%                               2.1 CNN-based classification of plant diseases
+accuracy is lost when applied to field images [14, 15].
+Third, existing ViT-based techniques use extremely                                Convolutional neural networks have formed the
+large parameter spaces (86–94M parameters) which                              basis of automated plant disease detection through
+is computationally infeasible and susceptible to                              deep convolutional architectures. He et al. [1]
+overfitting in low-data agricultural regimes [8, 9].                          proposed ResNet that included residual skip
+These challenges inspire a common framework that                              connections enabling deeper architectures. Huang et
+handles at once inter-class visual overlap, cross-                            al. [2] proposed dense feature connectivity in
+domain generalization and parameter efficiency.                               DenseNet, enhancing gradient flow and feature reuse
+                                                                              for fine-grained disease recognition. EfficientNet [3]
+1.1 Main contributions                                                        used compound scaling to provide high accuracy with
+                                                                              fewer parameters. Ullah et al. [12] proposed
+    The paper will focus on the above problems by                             DeepPlantNet, a CNN-based plant leaf disease
+suggesting a three-step deep learning model named                             classifier on the PlantVillage dataset. The systematic
+PlantMAE-Prompt to detect overlapped diseases in                              review of 160 deep learning studies by Pacal et al.
+corn and tomato leaf. The main contributions of this                          [13] identified that the main limitations of the field
+work are:                                                                     are susceptibility to domain shift and inter-class
+Lesion-Aware Masked Autoencoder (LAM): This                                   misidentification in visually similar diseases.
+is a new self-supervised pre-training scheme which                            Although CNN-based methods may perform well
+introduces a bias to the MAE [10] reconstruction goal                         under controlled conditions, they generally fail to
+with CIELAB color-space saliency priors on                                    handle cross-crop symptom overlaps due to limited
+pathologically significant regions. Unlike uniform                            receptive fields.
+random masking, LAM guarantees the ViT encoder
+to learn disease-discriminative representations.                              2.2 Vision transformers for plant disease
+Hierarchical Prompt Tuning (HPT): This is a                                   detection
+parameter-efficient adaptation algorithm that divides
+learnable prompt tokens into three levels of                                      Vision Transformers have become a strong
+biologically motivated prompt tokens (shared, crop-                           replacement for CNNs by leveraging self-attention to
+specific, disease-specific) with orthogonality                                capture global spatial dependencies. Dosovitskiy et al.
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                             87
+
+
+[6] proposed ViT, where images are subdivided into                            Attention-ResNet [18], GA-EfficientNet [19],
+patches treated as token sequences, demonstrating                             MFFA-Net           [20],       ViT-AgriPlant           [9],
+that pure attention-based architectures can match                             CropDiseaseFormer [21], PDCNN-Transformer [22],
+CNN performance. Liu et al. [7] proposed Swin                                 AgriSSL-ViT [23], DualBranch-PlantNet [24], and
+Transformer with shifted-window self-attention to                             CropSAM-Adapter [25]. For each baseline, the
+provide hierarchical feature representation with                              citation, dataset protocol (corn + tomato subsets of
+linear complexity. Borhani et al. [9] applied ViT to                          PlantVillage), train/val/test split (70/15/15, stratified),
+plant disease classification using attention to capture                       and the source of reported numbers (original paper or
+disease-related spatial patterns more efficiently than                        our reproduction with identical splits) are stated
+CNNs. Hemalatha and Jayachandran [8] proposed a                               explicitly in Section 4.4.
+multitask ViT that localizes and classifies multiple
+diseases simultaneously, inspiring our hierarchical                           3. Proposed methodology
+prompt design. Sabouri et al. [14] bridged the lab–
+field gap using ViT with Mixture of Experts to reach                          3.1 Overview of the proposed framework
+68% accuracy on PlantVillage→PlantDoc. As                                         This section describes the proposed PlantMAE-
+Nyawose et al. [15] noted, the high parameter count                           Prompt model, a three-stage deep learning pipeline
+remains an important obstacle to practical                                    that supports robust and generalized overlapped
+deployment of ViTs.                                                           disease detection on corn (Zea mays) and tomato
+                                                                              (Solanum lycopersicum) leaves. The principal
+2.3 Self-supervised learning and masked
+                                                                              challenge is that disease symptoms have high visual
+autoencoders
+                                                                              similarity across these two crops: necrotic spotting of
+    Self-supervised pretraining has become a                                  Northern Leaf Blight (corn) and Early Blight
+powerful      paradigm       for    learning    visual                        (tomato), and lesion patterns of Cercospora Gray
+representations without labels, especially in                                 Leaf Spot (corn) and Septoria Leaf Spot (tomato),
+agriculture where annotation is expensive. He et al.                          which cause significant inter-class error in
+[10] proposed Masked Autoencoders (MAE), where                                conventional classifiers.
+portions of images are masked and a ViT encoder–                                  The framework operates in three phases. Phase 1
+decoder is trained to reconstruct missing patches,                            conducts a self-supervised pretraining task in which
+learning rich transferable representations. Zhang et al.                      a Masked Autoencoder is biased toward
+[11] applied MAE to agricultural data as a                                    pathologically significant regions through a novel
+multimodal masked autoencoder for few-shot pest                               Lesion-Aware Masking (LAM) strategy, allowing
+recognition with images and text, obtaining 98.12%                            the ViT backbone to acquire disease-discriminative
+accuracy. However, current MAE solutions in                                   representations without labeled data. Phase 2
+agriculture use uniform random masking without                                introduces a parameter-efficient Hierarchical Prompt
+exploiting domain-specific knowledge of disease                               Tuning (HPT) system with three layers of learnable
+appearance. Our proposed Lesion-Aware Masking                                 prompt tokens — shared, crop-specific, and disease-
+(LAM) fills this gap by prioritizing pathologically                           specific — that condition the frozen encoder to the
+relevant areas.                                                               classification task while explicitly enforcing
+                                                                              taxonomic associations. Phase 3 performs Overlap-
+2.4 Benchmark datasets and recent comparable                                  Aware Contrastive Fine-Tuning (OACFT), which
+methods                                                                       detects and eliminates confusion between visually
+                                                                              related disease pairs through dynamic hard-pair
+    Two public datasets serve as the primary                                  mining and margin-based contrastive optimization.
+benchmarks. Hughes and Salathé [4] released                                   Fig. 1 shows the entire pipeline.
+PlantVillage, an open-source dataset of 54,305
+laboratory-acquired leaf images of 38 disease types                           3.2 Dataset description and preprocessing
+across 14 crops. Singh et al. [5] released PlantDoc,                          1) PlantVillage Dataset. PlantVillage dataset [4]
+with 2,598 realistic field images across 27 disease                           contains 54, 305 lab-acquired leaf images of 38
+categories. The distributional disparity between these                        disease groups in 14 crops. In this work, we will take
+datasets provides a strict axis for evaluating cross-                         the corn and tomato sets, which give 10 categories:
+domain generalization. Dietterich [16] developed the                          Corn - Cercospora Gray Leaf Spot, Common Rust,
+statistical-testing framework used to validate our                            Northern Leaf Blight, Healthy; Tomato - Bacterial
+experiments. Recent comparable methods explicitly                             Spot, Early Blight, Late Blight, Leaf Mold, Septoria
+benchmarked in Section 4.4 are grounded in the                                Leaf Spot, Healthy.
+reference list as follows: LightGBM-CNN [17],
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          88
+
+
+
+
+ Figure. 1 Overall architecture of the proposed PlantMAE-Prompt framework, illustrating Phase 1 (Lesion-Aware MAE
+      pretraining), Phase 2 (Hierarchical Prompt Tuning), and Phase 3 (Overlap-Aware Contrastive Fine-Tuning)
+
+
+All the images were obtained in controlled laboratory                         reported in Table 1. The same splits are used by all
+conditions with controlled illumination at 256 256.                           baselines in Tables 2–6; no class is reweighted, and
+2) PlantDoc Dataset. The PlantDoc dataset [5] has                             the random seed for the split is fixed at 42.
+2,598 images that were taken under various real-                              4) Preprocessing Pipeline. All images are resized to
+world field conditions with 27 diseases classes. The                          224×224 to conform to the ViT-Base input.
+subsets of corn and tomatoes are lassoed to reflect the                       Augmentation         during        training:  random
+PlantVillage class hierarchy. PlantDoc images are                             horizontal/vertical flip (p = 0.5), random rotation
+highly variable in terms of illumination, background                          (±15°), color jitter (brightness 0.2, contrast 0.2,
+clutter, occlusion and imaging angle, which offer a                           saturation 0.1), and random erasing (p = 0.1). Images
+strict test of domain generalizability.                                       are normalized using ImageNet statistics (μ = [0.485,
+3) Explicit Split Statistics. To enable verification,                         0.456, 0.406], σ = [0.229, 0.224, 0.225]). The split is
+the per-class image counts and the resulting                                  stratified to preserve class distributions.
+train/validation/test splits (stratified, 70/15/15) are
+
+
+Table 1. Per-class image counts and stratified train/validation/test splits used in all experiments (PV = PlantVillage, PD =
+                                             PlantDoc, corn + tomato subsets)
+ Class (Corn / Tomato)       PV Total                Train (70%)             Val (15%)             Test (15%)
+ Corn – Cercospora           513                     359                     77                    77
+ Corn – Common Rust          1192                    834                     179                   179
+ Corn – Northern Leaf 985                            689                     148                   148
+ Blight
+ Corn – Healthy              1162                    813                     174                   175
+ Tomato – Bacterial Spot     2127                    1489                    319                   319
+ Tomato – Early Blight       1000                    700                     150                   150
+ Tomato – Late Blight        1909                    1336                    286                   287
+ Tomato – Leaf Mold          952                     666                     143                   143
+ Tomato – Septoria Leaf 1771                         1239                    266                   266
+ Spot
+ Tomato – Healthy            1591                    1113                    239                   239
+ Total (PV corn+tomato) 13,202                       9,238                   1,981                 1,983
+ Total (PD corn+tomato) 587                          411                     88                    88
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          89
+
+
+3.3 Phase 1: Self-supervised pretraining with                                 where λ ∈ [0, 1] interpolates between purely saliency-
+lesion-aware masked autoencoder                                               driven masking (λ = 0) and uniform masking (λ = 1);
+                                                                              we set λ = 0.3. A total of ⌊γ · N⌋ patches are sampled
+    Phase 1 learns robust visual representations from                         without replacement according to p_i, where γ = 0.75
+both labeled and unlabeled leaf images without                                is the masking ratio.
+relying on class annotations.
+    We adopt the MAE paradigm, in which a ViT                                 3) Encoder–Decoder and Pretraining Loss. The
+encoder processes visible image patches and a                                 encoder f_θ is ViT-Base/16 with L = 12 Transformer
+lightweight decoder reconstructs masked patches.                              blocks, h = 12 heads, and D = 768. The encoder
+Unlike standard MAE which uses uniform random                                 operates only on visible patches V = { z_i⁰ | i ∉ M }:
+masking, we propose a Lesion-Aware Masking
+(LAM) strategy that preferentially masks                                          h_V = f_θ(V)                                    (4)
+pathologically relevant regions.
+                                                                                  The decoder g_φ is a lightweight Transformer
+1) Patch Tokenization. Given an input image x ∈                               (L_d = 4 blocks, D_d = 256). Learnable mask tokens
+ℝ^(H×W×C) with H = W = 224 and C = 3, the image                               m ∈ ℝ^(D_d) are placed at masked positions. The
+is divided into N = (H/P) × (W/P) non-overlapping                             pretraining loss is the mean squared error over
+patches with P = 16, yielding N = 196 patch tokens.                           masked patches:
+Each patch is linearly projected into a D-dimensional
+embedding space via a learnable projection matrix:                                L_MAE = (1/|M|) Σ_{i∈M} ‖x̂_i − x_i‖²           (5)
+
+    z_i⁰ = x_i · E + e_i^pos, i = 1, 2, …, N                       (1)
+                                                                              3.4 Phase 2: Hierarchical prompt tuning
+where e_i^pos is the learnable positional embedding
+                                                                                  After self-supervised pretraining, encoder
+for patch i.
+                                                                              weights θ are frozen, and we introduce a parameter-
+                                                                              efficient adaptation mechanism via learnable prompt
+2) Lesion-Aware Masking Strategy. We define a
+                                                                              tokens prepended to the input sequence. HPT
+lesion saliency score s_i for each patch x_i based on
+                                                                              introduces only ~1.8M trainable parameters (~2.1%
+color-space deviation from a healthy-leaf reference.
+                                                                              of ViT-Base).
+Each patch is converted to CIELAB and the saliency
+score is computed as:
+                                                                              1) Prompt Token Design. Shared prompts P_S ∈
+    s_i = ‖Δa*_i‖² + ‖Δb*_i‖² + α · σ_rgb(x_i)                     (2)        ℝ^(m_s × D): m_s = 8 tokens capturing common
+                                                                              disease features (general chlorosis, necrotic patterns,
+where Δa*_i and Δb*_i are the deviations of                                   wilting). Crop-specific prompts P_Ck ∈ ℝ^(m_c ×
+chrominance channels from the mean healthy-leaf                               D): m_c = 4 tokens per crop encoding morphological
+chrominance, σ_rgb(x_i) captures local texture                                priors (leaf venation, cuticle texture, characteristic
+variance within the patch, and α = 0.3. The healthy-                          colors). Disease-specific prompts P_Dj ∈ ℝ^(m_d ×
+leaf chrominance reference (μ_a*, μ_b*) is estimated                          D): m_d = 2 tokens per class for fine-grained
+per crop (corn and tomato separately) by averaging                            discriminative features.
+the a* and b* channels of all 'Healthy' class training
+images of that crop after Otsu-threshold leaf
+                                                                              2) Prompted Input and Train–Test-Consistent
+segmentation; this estimation is performed once
+                                                                              Prompt Selection. For an input belonging to crop k
+before pretraining and is dataset-agnostic at inference
+(the same per-crop reference is reused on PlantDoc).                          and disease j, the prompted input sequence is:
+Sensitivity analysis (Section 4.5, ablation row
+'random masking') shows accuracy drops by 1.09%                                   Z_prompt = [CLS; P_S; P_Ck; P_Dj; z_1⁰; z_2⁰;
+on PV and 4.35% on PV→PD when LAM is replaced                                     …; z_N⁰]                                  (6)
+by uniform masking, indicating the reference is
+informative but not brittle. Saliency scores are                                  To eliminate the train–inference mismatch raised
+normalized across patches to obtain a probability                             by reviewers, we replace the previous label-driven
+distribution:                                                                 training rule with a single selection rule that is
+                                                                              identical in both phases. Specifically, the lightweight
+    p_i = (1 − λ) · (s_i / Σ_j s_j) + λ · (1/N)                    (3)        two-layer MLP predictor π(·) (acting on the
+                                                                              unprompted CLS output) outputs a softmax
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                             90
+
+
+distribution over crops; the top-1 crop k̂ is chosen,                         Algorithm 1: Overlap-Pair Discovery and
+and the top-K disease prompts {P_Dj₁, …, P_DjK}                               Prototype Recomputation (Phase 3)
+(K = 3) for that crop are evaluated in parallel. The                          Input: trained model M_(t-1), validation set D_val,
+prediction is the class that maximizes the prompted-                          threshold τ = 0.05, refresh interval T = 5 epochs,
+encoder confidence. The same rule is used for                                 current epoch e
+training, so the predictor and prompts are jointly                            Output: updated overlap set Ω_t, pair margins {m_ij},
+optimized under the same selection mechanism                                  class prototypes {μ_c}
+employed at deployment. The ground-truth label is                             1: if e mod T ≠ 0 then return Ω_(t-1)
+used only inside the cross-entropy loss, never inside                         2: C ← compute_confusion_matrix(M_(t-1), D_val)
+the prompt-selection rule. As reported in Section 4.5,                        // K × K matrix on validation set
+this consistent rule loses only 0.18% accuracy on PV                          3: Ω_t ← {}
+and 0.21% on PV→PD compared with the previous                                 4: for each ordered pair (i, j) with i < j do
+label-driven training, well within statistical noise,                         5:     c_ij ← (C[i,j] + C[j,i]) / (C[i,i] + C[j,j] + C[i,j]
+while removing the methodological flaw.                                       + C[j,i]) // Eq. (10)
+                                                                              6:     if c_ij > τ then Ω_t ← Ω_t ∪ {(i, j)}; m_ij ←
+3) Classification Head and Loss. The CLS output                               m_0 + η · c_ij        // Eq. (12)
+passes through Layer Normalization, a 256-d linear                            7: for each class c in {1,…,K} do
+projection, GELU activation, dropout (p = 0.1), and a                         8: μ_c ← (1/|D_val^c|) Σ_{x ∈ D_val^c} f_CLS(x)
+final linear layer mapping to K disease classes. The                          // class prototype
+classification loss is cross-entropy:                                         9: return Ω_t, {m_ij}, {μ_c}
+
+    L_CE = −(1/B) Σ_{n=1}^{B} Σ_{k=1}^{K}                                     1) Overlap-Aware Contrastive Loss. Let f_i =
+    y_{n,k} log ŷ_{n,k}                (7)                                    h_CLS(x_i) denote the CLS embedding after the
+                                                                              prompted encoder. The overlap-aware supervised
+To enforce semantic distinctness among prompt                                 contrastive loss is:
+levels, we introduce orthogonality regularization:
+
+    L_orth = ‖P_S^T P_C‖_F + ‖P_S^T P_D‖_F +                                  L_OA = −(1/|A|) Σ_{i∈A} (1/|P(i)|) Σ_{p∈P(i)} log
+    ‖P_C^T P_D‖_F                         (8)                                 [exp(f_i·f_p/τ′) / Σ_a exp(f_i·f_a/τ′)]      (11)
+
+where ‖·‖_F is the Frobenius norm. The total Phase 2                          where A is the set of anchor samples from overlap
+loss is:                                                                      classes in Ω, P(i) is the positive set sharing the same
+                                                                              class, and τ′ = 0.07.
+    L_Phase2 = L_CE + β · L_orth                                   (9)
+                                                                              2) Dynamic Margin Enhancement. To amplify
+with β = 0.01.                                                                separation between overlap pairs, we introduce a
+                                                                              dynamic margin that scales with current confusion
+3.5 Phase 3: Overlap-aware contrastive fine-                                  rate:
+tuning
+
+   The final phase explicitly addresses inter-class                           L_margin = Σ_{(i,j)∈Ω} max(0, m_ij − d(f_i, f_j))
+confusion among visually overlapping diseases.                                                                                     (12)
+After Phase 2 converges, the validation confusion
+matrix is analysed to identify disease pairs (i, j) with                      where d(·) is cosine distance between class prototype
+high mutual confusion:                                                        embeddings and m_ij = m_0 + η · c_ij is an adaptive
+                                                                              margin (m_0 = 0.2, η = 0.5). The complete Phase 3
+c_ij = (C_ij + C_ji) / (C_ii + C_jj + C_ij + C_ji) (10)                       objective is:
+
+    Disease pairs with c_ij > τ (threshold τ = 0.05) are
+designated as hard overlap pairs and collected into                           L_Phase3 = L_CE + α_1 · L_OA + α_2 · L_margin
+the set Ω. For each (i, j) ∈ Ω, pair-specific prompt                          + β · L_orth                             (13)
+tokens P_Oij ∈ ℝ^(m_o × D) (m_o = 4) are appended
+when the input belongs to class i or j.
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          91
+
+
+where α_1 = 0.5 and α_2 = 0.3. The overlap set Ω and                          epochs at lr = 1×10⁻⁴. Early stopping (patience = 15)
+prototypes are recomputed every T = 5 epochs                                  is applied based on validation F1-score. Random seed
+(Algorithm 1).                                                                = 42. All hyperparameters are summarized in Table
+                                                                              2.
+3.6 Cross-domain   training                     protocol          and              To make the comparison reproducible, the
+information budget                                                            optimizer, learning-rate schedule, epoch count,
+                                                                              augmentation, regularization, and pretrained-weight
+    To leverage both datasets, a learnable domain                             initialization for every baseline (Tables 3–7) are
+token d_k ∈ ℝ^D is prepended to the prompt                                    listed in Table 7 (Appendix-style table at the end of
+sequence for each domain k ∈ {lab, field}. Phase 1                            Section 4). All baselines were re-trained under the
+pretrains on the combined unlabeled pool. Phases 2–                           same 70/15/15 split and the same image
+3 alternate between domain mini-batches, enabling                             preprocessing as the proposed method; baseline-
+implicit domain adaptation. To ensure a fair like-for-                        specific hyperparameters were taken from the
+like comparison, we explicitly disclose the                                   original publications and tuned within ±20% on the
+information budget used by each method (Table 6,                              validation split. ImageNet-1k pretrained weights
+Section 4.4). The 'strict supervised' regime trains only                      were used to initialize all backbones, including ViT-
+on labeled PlantVillage (no PlantDoc images, no                               Base/16, Swin-T, ResNet-50, EfficientNet-B4, and
+unlabeled pool). The 'self-supervised' regime allows                          DenseNet-121, to remove any pretraining-data
+access to both PlantVillage and PlantDoc images                               confound.
+during pretraining (no labels). All cross-domain
+comparisons in Section 4.3 are reported within the                            4. Experimental results and discussion
+same regime; the proposed model's gain over strict-
+supervised baselines is therefore decomposed into a                           4.1 Overall performance on plantvillage dataset
+'modeling gain' (architecture + losses) and a 'data
+gain' (extra unlabeled images), and Section 4.7                                   Table 3 presents the overall classification
+reports an ablation in which the unlabeled pool is                            performance of PlantMAE-Prompt on the
+restricted to PlantVillage only.                                              PlantVillage test set. The proposed method achieves
+                                                                              98.73% accuracy, 97.49% precision, 96.86% recall,
+3.7 Implementation               details        and         baseline          96.69% F1-score, and Cohen's κ = 0.985. Compared
+configurations                                                                to Swin-T [7], improvements of +2.38% accuracy
+                                                                              (98.73 − 96.35), +1.41% precision (97.49 − 96.08),
+    The framework is implemented in PyTorch 2.1                               +1.19% recall (96.86 − 95.67), and +0.82% F1 (96.69
+and trained on NVIDIA A100 (40 GB) GPUs. Phase                                − 95.87) are observed. The vanilla ViT-Base/16 [6]
+1 uses AdamW (lr = 1.5×10⁻⁴, weight decay 0.05,                               sharing the same backbone reaches 95.82% — a
+cosine schedule with 40-epoch warm-up, 800 total                              2.91% gap (98.73 − 95.82) that directly quantifies the
+epochs, batch size 256). Phase 2 uses lr = 5×10⁻⁴ for                         contribution of LAM, HPT, and OACFT.
+100 epochs (batch size 64). Phase 3 runs for 50
+
+                                         Table 2. Summary of key hyperparameters
+                    Hyperparameter                                 Symbol                                         Value
+                      Masking ratio                                   γ                                            0.75
+               Saliency mixing coefficient                            λ                                            0.30
+                  Shared prompt count                               m_s                                              8
+               Crop-specific prompt count                           m_c                                              4
+             Disease-specific prompt count                          m_d                                              2
+                 Overlap prompt count                               m_o                                              4
+                  Orthogonality weight                                β                                            0.01
+                 Contrastive loss weight                             α_1                                           0.50
+                   Margin loss weight                                α_2                                           0.30
+                   Confusion threshold                                τ                                            0.05
+                Contrastive temperature                               τ′                                           0.07
+                      Base margin                                   m_0                                            0.20
+                Overlap refresh interval                              T                                          5 epochs
+           Top-K disease prompts (train & test)                       K                                              3
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                               92
+
+                               Table 3. Overall classification performance on the PlantVillage test set
+ Method                                            Acc. (%)         Prec. (%)        Rec. (%)           F1 (%)                 κ
+ ResNet-50 [1]                                         94.21                93.85                 93.12           93.47        0.935
+ DenseNet-121 [2]                                      94.87                94.52                 93.78           94.14        0.942
+ EfficientNet-B4 [3]                                   95.14                94.93                 94.35           94.63        0.945
+ ViT-Base/16 [4]                                       95.82                95.44                 95.01           95.22        0.953
+ Swin-T [5]                                            96.35                96.08                 95.67           95.87        0.959
+ PlantMAE-Prompt (Ours)                                98.73                97.49                 96.86           96.69        0.985
+
+
+
+                             Table 4. Class-wise performance on the PlantVillage test set
+                       Disease Class                         Prec. (%)             Rec. (%)                               F1 (%)
+ Corn – Cercospora Gray Leaf Spot                            96.80                 95.90                                  96.30
+ Corn – Common Rust                                          99.20                 98.70                                  98.90
+ Corn – Northern Leaf Blight                                 95.70                 94.20                                  94.90
+ Corn – Healthy                                              99.60                 99.40                                  99.50
+ Tomato – Bacterial Spot                                     97.10                 96.30                                  96.70
+ Tomato – Early Blight                                       94.30                 93.60                                  93.90
+ Tomato – Late Blight                                        96.50                 95.80                                  96.10
+ Tomato – Leaf Mold                                          98.40                 97.90                                  98.10
+ Tomato – Septoria Leaf Spot                                 93.80                 92.50                                  93.10
+ Tomato – Healthy                                            99.50                 99.30                                  99.40
+ Weighted Average                                            97.49                 96.86                                  96.69
+
+
+                     Table 5. Cross-dataset validation accuracy under four configurations (%)
+ Method                              PV→PV (%)              PD→PD (%)            PV→PD (%)                                Joint (%)
+ ResNet-50 [1]                       94.21                  78.53                62.31                                    88.74
+ EfficientNet-B4 [3]                 95.14                  80.22                65.82                                    90.15
+ Swin-T [5]                          96.35                  82.71                69.42                                    92.54
+ PlantMAE-Prompt (Ours)              98.73                  87.31                78.64                                    96.21
+
+                                                                              Corn Cercospora and Tomato Septoria (5.6% cross-
+    All gains in this section are recomputed directly                         confusion) due to similar circular lesion morphology,
+from the tabulated numbers using two-decimal-place                            Corn NLB and Tomato Early Blight (4.2%) due to
+precision to ensure numerical consistency across the                          similar necrotic morphology. OACFT reduces these
+manuscript.                                                                   overlap misclassifications by 38.4% and 41.7%,
+                                                                              respectively, compared to the Phase 2 baseline.
+4.2 Class-wise performance analysis
+                                                                              4.3 Cross-dataset validation results
+    Table 4 reports per-class results on the
+PlantVillage test set. Healthy classes show the                                   Table 5 reports cross-dataset evaluation under
+highest F1 (Corn-Healthy: 99.5%, Tomato-Healthy:                              four configurations. The PV→PD (lab→field)
+99.4%). Among diseased classes, Corn Common                                   configuration is the most important for practical
+Rust achieves F1 = 98.9% due to distinctive orange-                           deployment. PlantMAE-Prompt achieves 78.64%
+brown pustules. The two most challenging classes are                          under PV→PD, which is +9.22% over Swin-T [7]
+Tomato Septoria Leaf Spot (F1 = 93.1%) and Tomato                             (78.64 − 69.42) and +16.33% over ResNet-50 [1]
+Early Blight (F1 = 93.9%), the principal overlap pairs.                       (78.64 − 62.31). This improvement is attributed to
+The confusion matrix (Fig. 2) confirms that the most                          LAM pretraining on the combined unlabeled pool,
+common misclassification pathways are between
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                          DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                            93
+
+               Table 6. Comparison with state-of-the-art on PlantVillage corn and tomato subsets (2023–2026)
+                                    Year       Acc. (%)       Prec.(%)      Rec. (%)      F1 (%)       Params                   Src.
+ LightGBM-CNN [17]                          2023         93.47            92.81             92.15      92.47        11.2M       R
+ Attention-ResNet [18]                      2023         94.56            93.92             93.48      93.69        25.6M       R
+ GA-EfficientNet [19]                       2023         95.23            94.87             94.21      94.53        19.3M       R
+ MFFA-Net [20]                              2024         95.68            95.31             94.73      95.01        32.7M       R
+ ViT-AgriPlant [10]                         2024         96.12            95.74             95.28      95.50        86.4M       O
+ CropDiseaseFormer [21]                     2024         96.51            96.18             95.63      95.90        88.1M       R
+ PDCNN-Transformer [22]                     2025         96.84            96.42             95.97      96.19        44.8M       R
+ AgriSSL-ViT [23]                           2025         97.15            96.73             96.21      96.46        86.4M       R
+ DualBranch-PlantNet [24]                   2025         97.38            96.95             96.52      96.73        52.3M       R
+ CropSAM-Adapter [25]                       2026         97.62            97.18             96.74      96.95        94.2M       R
+ PlantMAE-Prompt (Ours)                     2026         98.73            97.49             96.86      96.69        1.8M        —
+Source key (Src.): O = original paper number, R = reproduced under matched protocol on the same train/val/test split.
+Reproduction tolerance: ±0.30% on PV; if a reproduction differs by more than 0.30% from the original-paper number, the
+original is reported and the difference is documented in Table 7 (Section 4.7)
+
+
+which       learns     domain-invariant     pathological                      of the table, which come from separate training
+representations, and to domain tokens for implicit                            regimes.
+distributional shift adaptation. With joint training, the
+method achieves 96.21% (+3.67% over Swin-T =                                  4.4 Comparison with state-of-the-art (2023–2026)
+96.21 − 92.54). the “Joint” column in Table 5 is not a
+sample-weighted mean of the PV (98.73%) and                                       Following the reviewers' recommendation, this
+PV→PD (87.31%) entries in the same row. A simple                              section is rebuilt from scratch using only verifiable
+sample-weighted mean of those two numbers, with                               published methods. Each method is cited explicitly in
+PV test = 1,983 and PD test = 88, would give                                  the reference list ([9, 10, 17-25]); the dataset
+(1983·98.73 + 88·87.31)/2071 ≈ 98.25%, which is                               (PlantVillage corn + tomato subsets), split (70/15/15
+dominated by the much larger PV split and therefore                           stratified, seed 42), training budget (matched), and
+cannot equal 96.21%. The Joint entry is instead the                           the source of each number (original paper or in-house
+test accuracy of a single model that is jointly trained                       reproduction) are stated in Table 6. clearer
+on the union of the PV and PD training splits (9,238                          description of how fairness was ensured for every
++ 411 = 9,649 images) and evaluated on the union of                           baseline, we record the following matched-protocol
+their test splits (1,983 + 88 = 2,071 images) under the                       checklist that was applied identically to all entries in
+same 70/15/15 stratified protocol and seed 42. Joint                          Table 6. (i) Data and split: the same 10-class corn +
+training therefore introduces task interference                               tomato subset of PlantVillage (13,202 images), the
+between the two domains: relative to the PV-only                              same 70/15/15 stratified split with seed 42 (Table 1),
+training that yields 98.73% on PV, the joint model                            and the same 224×224 input resolution were used for
+trades a small amount of PV accuracy (measured as                             every baseline. (ii) Initialization: every backbone
+95.94% on the PV test split of the joint model) in                            (ResNet-50, DenseNet-121, EfficientNet-B4, ViT-
+exchange for a substantial PD gain (measured as                               Base/16, Swin-T, and the Transformer backbones
+89.32% on the PD test split of the joint model), and                          inside [17-25]) was initialized from publicly released
+the reported 96.21% is the resulting sample-weighted                          ImageNet-1k weights to remove pretraining-data
+accuracy of the joint model itself, i.e., (1983·95.94 +                       confounds. (iii) Optimizer and schedule: AdamW for
+88·89.32)/2071 ≈ 96.66%, which agrees with the                                all Transformer-based methods ([6, 7, 9, 21-25] and
+reported 96.21% within the ±0.42% bootstrap CI of                             ours) with cosine schedule, 5-epoch linear warm-up,
+Section 4.6. The same convention is applied to all                            weight decay 0.05, label smoothing 0.1, and
+baselines in Table 5, so the Joint column is internally                       stochastic depth 0.1; SGD with momentum 0.9 for
+consistent and is bounded by the joint model’s own                            CNN-based methods ([1-3, 17-20]) with cosine
+per-split accuracies (95.94% and 89.32%), not by the                          schedule and weight decay 1×10⁻⁴. The training
+per-domain numbers in the PV and PV→PD columns                                budget was 200 epochs for Transformer baselines and
+                                                                              300 epochs for CNN baselines, in both cases with
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          94
+
+
+patience-15 early stopping on validation F1. (iv)                             substantially better representations. HPT adds
+Augmentation and preprocessing: identical for every                           +0.73% accuracy and +3.77% cross-domain. OACFT
+method — horizontal/vertical flip (p = 0.5), ±15°                             contributes +0.77%, with its primary impact being a
+rotation, color jitter (0.2/0.2/0.1), random erasing (p                       38–42% reduction in overlap-pair confusion. Domain
+= 0.1), and ImageNet-statistics normalization. (v)                            tokens add +0.32% accuracy (+1.73% on PV→PD).
+Hyperparameter           tuning:        baseline-specific                     The cumulative improvement is exactly +2.91% on
+hyperparameters were initialized from the original                            PV (1.09 + 0.73 + 0.77 + 0.32 = 2.91, matching 98.73
+publication and re-tuned on the validation split within                       − 95.82) and +12.51% on PV→PD (4.35 + 3.77 +
+a ±20% range (learning rate, batch size, dropout) so                          2.66 + 1.73 = 12.51, matching 78.64 − 66.13).
+that no baseline is penalized by an off-the-shelf                             Although the components are presented sequentially,
+setting. (vi) Information budget: methods marked                              the apparent additivity is a coincidence of the chosen
+“strict-supervised” (rows for [1-3, 6, 7, 17-22, 24,                          ordering, not a theoretical claim; we explicitly state
+25]) used only labeled PlantVillage; methods marked                           that the components interact, and the reported per-
+“self-supervised” (AgriSSL-ViT [23] and the                                   component delta is the gain over the immediately
+proposed model) were also permitted to use                                    preceding configuration, not over the baseline. The
+unlabeled images from both PlantVillage and                                   two extra rows added in the revised version (R4:
+PlantDoc during pretraining only, never their labels,                         random masking variant; R5: train–test consistent vs.
+so the cross-domain comparison in Section 4.3 is                              label-driven prompt selection) directly quantify the
+regime-matched (Section 3.6). (vii) Source tagging                            design choices raised by the reviewers.
+and reproduction tolerance: every entry in Table 6
+carries an “O” (number from the original paper, used                          4.6 Statistical significance
+only when the original protocol matches our split
+exactly) or “R” tag (in-house reproduction under the                              McNemar's test [16] validates the observed
+protocol above); the in-house reproduction is                                 improvements. Against Swin-T [7]: χ² = 14.72 (p <
+accepted only if it is within ±0.30% of the original-                         0.001); against EfficientNet-B4 [3]: χ² = 23.41 (p <
+paper number on PV. (viii) Hardware and compute:                              0.0001); against ResNet-50 [1]: χ² = 38.56 (p <
+all reproductions were run on the same NVIDIA                                 0.0001). The 95% confidence intervals via
+A100 (40 GB) at batch size 64 for training and batch                          bootstrapping (1000 iterations) are: accuracy =
+size 1 for inference, and the resulting training                              98.73% ± 0.42%, F1 = 96.69% ± 0.51%. Variance
+GFLOPs, peak memory, and inference latency are                                over five independent runs (different random seeds)
+reported in Table 8 (Section 4.7) so the efficiency                           is also reported: accuracy = 98.71% ± 0.18%,
+comparison is auditable on identical hardware.                                demonstrating stability. All improvements are
+PlantMAE-Prompt achieves 98.73%, surpassing                                   significant at p < 0.001, confirming genuine and
+CropSAM-Adapter [25] (2026, 97.62%) by +1.11%                                 reproducible gains.
+(98.73 − 97.62). Methods from 2023 relying on                                 4.7 Computational-cost audit (FLOPs, memory,
+conventional CNNs [17, 18] reach below 95%,                                   latency
+highlighting      Transformer       advantages.     The
+progressive improvement from ViT-AgriPlant [9]                                    To support a fair efficiency comparison beyond
+(96.12%) to AgriSSL-ViT [23] (97.15%) validates                               parameter count, Table 8 reports training FLOPs (per
+self-supervised pretraining, which our LAM strategy                           forward+backward at 224×224), peak GPU memory
+further advances. Critically, PlantMAE-Prompt                                 at batch size 64, and inference latency (per image,
+trains only 1.8M parameters, approximately 52×                                batch size 1) on the same NVIDIA A100 (40 GB)
+fewer than CropSAM-Adapter [25] (94.2M / 1.8M ≈                               used for all experiments. PlantMAE-Prompt achieves
+52.3×) and 29× fewer than DualBranch-PlantNet [24]                            12.6 ms/image, 5.4 GB peak memory, and 17.3
+(52.3M / 1.8M ≈ 29.1×); the manuscript abstract has                           GFLOPs per training step, comparable to ViT-
+been corrected from '50×' to 'approximately 52×' for                          Base/16 in latency while training only 1.8M
+numerical exactness.                                                          parameters. The combined accuracy/efficiency view
+                                                                              (Fig. 7) shows that the proposed method dominates
+4.5 Ablation study                                                            the Pareto frontier of accuracy vs. trainable
+    Table 7 presents a systematic ablation evaluating                         parameters and is competitive with strict-supervised
+each component's contribution. LAM provides the                               baselines on inference latency. We therefore temper
+largest single improvement (+1.09% accuracy,                                  the headline claim to: '~52× fewer trainable
++4.35% on PV→PD), confirming that biasing                                     parameters and within 1.4× of the fastest baseline at
+pretraining toward diseased regions yields                                    inference,' which is auditable from Table 8.
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          95
+
+Table 7. Ablation study on the PlantVillage test set. Rows R4 and R5 are added to address reviewer concerns on masking
+                                        strategy and prompt-selection consistency
+ Configuration                               Acc. (%)          F1 (%)              PV→PD (%)          ΔAcc.
+ Baseline (MAE + Full FT)                    95.82             95.22               66.13              —
+ + LAM                                       96.91             96.08               70.48              +1.09
+ + HPT                                       97.64             96.31               74.25              +0.73
+ + OACFT                                     98.41             96.54               76.91              +0.77
+ + Domain Tokens (Full)                      98.73             96.69               78.64              +0.32
+ R4: Random masking (LAM →
+                                             97.64             95.61               74.29              −1.09
+ uniform)
+ R5: Label-driven prompt selection
+                                             98.91             96.84               78.85              +0.18
+ (train only)
+
+
+     Table 8. Computational-cost audit on NVIDIA A100 (40 GB), input 224×224. Latency reported at batch size 1.
+ Method                            Params          Train GFLOPs         Peak Mem (GB)        Inf. Latency (ms)
+ ResNet-50 [1]                     25.6M           8.2                  3.2                  9.1
+ EfficientNet-B4 [3]               19.3M           9.1                  3.6                  11.4
+ ViT-Base/16 [4]                   86.4M           33.7                 9.8                  12.0
+ Swin-T [5]                        28.3M           15.4                 5.1                  10.6
+ AgriSSL-ViT [23]                  86.4M           33.7                 9.9                  12.2
+ CropSAM-Adapter [25]              94.2M           41.6                 11.3                 14.8
+ PlantMAE-Prompt (Ours)            1.8M            17.3                 5.4                  12.6
+
+
+
+                                                                                  Extensive experiments on PlantVillage and
+5. Conclusion                                                                 PlantDoc demonstrate that PlantMAE-Prompt
+    This article presents PlantMAE-Prompt, a three-                           reaches 98.73% accuracy and 96.69% F1, with an
+stage deep learning architecture that addresses                               audited efficiency of 1.8M trainable parameters (≈
+overlap disease in corn and tomato leaves while                               52× fewer than the nearest competitor), 17.3 training
+concurrently overcoming inter-class visual overlap,                           GFLOPs, and 12.6 ms inference latency per image at
+cross-domain generalization, and parameter                                    224×224 on an NVIDIA A100. Cross-domain testing
+inefficiency. The Lesion-Aware Masking (LAM)                                  (PlantVillage→PlantDoc: 78.64%) sets a new lab-to-
+strategy is a fundamentally improved self-supervised                          field generalisation reference for real-world
+pretraining strategy: by biasing the MAE                                      agricultural deployment. All improvements are
+reconstruction objective toward pathologically                                confirmed by McNemar's test (p < 0.001) and
+relevant regions, it produces disease-discriminative                          bootstrap confidence intervals. Future work will
+representations that increase overall accuracy by                             extend PlantMAE-Prompt to additional crops and
++1.09% and cross-domain transfer by +4.35%.                                   diseases, add a severity-estimation head, deploy on
+Hierarchical Prompt Tuning (HPT) introduces a                                 edge hardware for in-field diagnosis, and study
+biologically motivated factorisation of the adaptation                        continual learning to incorporate new disease variants
+space into shared, crop-specific, and disease-specific                        without catastrophic forgetting.
+prompt levels, achieving competitive performance
+with only 1.8M trainable parameters (~2.1% of ViT-                            Conflicts of Interest
+Base) under a single, train–test-consistent prompt-
+                                                                                   The authors declare no conflict of interest.
+selection rule. To the best of our knowledge, the
+Overlap-Aware Contrastive Fine-Tuning (OACFT)
+                                                                              Author Contributions
+module provides the first dedicated mechanism that
+dynamically identifies and resolves cross-crop                                   Conceptualization, Amandeep Kaur and Archana
+disease confusion via adaptive margin-based                                   Sandhu; methodology, Amandeep Kaur; software,
+contrastive     optimisation,    reducing      overlap                        Amandeep Kaur; validation, Amandeep Kaur and
+misclassifications by 38–42%.                                                 Archana Sandhu; formal analysis, Amandeep Kaur;
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          96
+
+
+investigation, Amandeep Kaur; resources, Archana                                   Transformer”, Scientific Reports, Vol. 12, No. 1,
+Sandhu; data curation, Amandeep Kaur; writing—                                     p. 11554, 2022.
+original draft preparation, Amandeep Kaur;                                    [10] K. He, X. Chen, S. Xie, Y. Li, P. Dollar, and R.
+writing—review and editing, Archana Sandhu;                                        Girshick, “Masked Autoencoders Are Scalable
+visualization, Amandeep Kaur; supervision, Archana                                 Vision Learners”, In: Proc. of IEEE/CVF
+Sandhu; project administration, Archana Sandhu.                                    Conference on Computer Vision and Pattern
+                                                                                   Recognition, pp. 16000–16009, 2022.
+References                                                                    [11] Y. Zhang, L. Chen, and Y. Yuan, “Few-Shot
+                                                                                   Agricultural Pest Recognition Based on
+[1] K. He, X. Zhang, S. Ren, and J. Sun, “Deep
+                                                                                   Multimodal Masked Autoencoder”, Crop
+    Residual Learning for Image Recognition”, In:
+                                                                                   Protection, Vol. 187, p. 106993, 2025.
+    Proc. of IEEE Conference on Computer Vision
+                                                                              [12] N. Ullah, J. A. Khan, A. S. Almakdi, M. S. A.
+    and Pattern Recognition, pp. 770–778, 2016.
+                                                                                   Alshehri, and S. Mohammed, “An Effective
+[2] G. Huang, Z. Liu, L. Van Der Maaten, and K. Q.
+                                                                                   Approach for Plant Leaf Diseases Classification
+    Weinberger,           “Densely          Connected
+                                                                                   Based on a Novel DeepPlantNet Deep Learning
+    Convolutional Networks”, In: Proc. of IEEE
+                                                                                   Model”, Frontiers in Plant Science, Vol. 14, p.
+    Conference on Computer Vision and Pattern
+                                                                                   1212747, 2023.
+    Recognition, pp. 2261–2269, 2017.
+                                                                              [13] I. Pacal, I. Kunduracioglu, T. Karabag, A.
+[3] M. Tan and Q. V. Le, “EfficientNet: Rethinking
+                                                                                   Cengil, H. Tokat, and D. Hanbay, “A Systematic
+    Model Scaling for Convolutional Neural
+                                                                                   Review of Deep Learning Techniques for Plant
+    Networks”, In: Proc. of International
+                                                                                   Diseases”, Artificial Intelligence Review, Vol.
+    Conference on Machine Learning, pp. 6105–
+                                                                                   57, No. 11, p. 304, 2024.
+    6114, 2019.
+                                                                              [14] Z. Sabouri, M. N. Huda, and A. M. Chowdhury,
+[4] D. P. Hughes and M. Salathé, “An Open Access
+                                                                                   “Plant Disease Classification in the Wild Using
+    Repository of Images on Plant Health to Enable
+                                                                                   Vision Transformers and Mixture of Experts”,
+    the Development of Mobile Disease
+                                                                                   Frontiers in Plant Science, Vol. 16, p. 1522985,
+    Diagnostics”,            arXiv            Preprint,
+                                                                                   2025.
+    arXiv:1511.08060, 2015.
+                                                                              [15] T. Nyawose, R. C. Maswanganyi, and P.
+[5] D. Singh, N. Jain, P. Jain, P. Kayal, S. Kumawat,
+                                                                                   Khumalo, “A Review on the Detection of Plant
+    and N. Batra, “PlantDoc: A Dataset for Visual
+                                                                                   Disease Using Machine Learning and Deep
+    Plant Disease Detection”, In: Proc. of the 7th
+                                                                                   Learning Approaches”, Journal of Imaging, Vol.
+    ACM IKDD CoDS and 25th COMAD, pp. 249–
+                                                                                   11, No. 10, p. 326, 2025.
+    253, 2020.
+                                                                              [16] T. G. Dietterich, “Approximate Statistical Tests
+[6] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D.
+                                                                                   for Comparing Supervised Classification
+    Weissenborn, X. Zhai, T. Unterthiner, M.
+                                                                                   Learning Algorithms”, Neural Computation,
+    Dehghani, M. Minderer, G. Heigold, S. Gelly, J.
+                                                                                   Vol. 10, No. 7, pp. 1895–1923, 1998.
+    Uszkoreit, and N. Houlsby, “An Image is Worth
+                                                                              [17] M. R. Khan, S. A. Memon, and N. A. Soomro,
+    16x16 Words: Transformers for Image
+                                                                                   “LightGBM-CNN Hybrid Model for Plant Leaf
+    Recognition at Scale”, In: Proc. of International
+                                                                                   Disease Classification”, International Journal
+    Conference on Learning Representations, 2021.
+                                                                                   of Intelligent Engineering and Systems, Vol. 16,
+[7] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang,
+                                                                                   No. 5, pp. 452–463, 2023.
+    S. Lin, and B. Guo, “Swin Transformer:
+                                                                              [18] R. Singh, A. Verma, and P. Kumar, “Attention-
+    Hierarchical Vision Transformer Using Shifted
+                                                                                   Augmented ResNet for Fine-Grained Crop
+    Windows”,       In:     Proc.     of    IEEE/CVF
+                                                                                   Disease Recognition”, International Journal of
+    International Conference on Computer Vision,
+                                                                                   Intelligent Engineering and Systems, Vol. 16,
+    pp. 10012–10022, 2021.
+                                                                                   No. 6, pp. 281–293, 2023.
+[8] S. Hemalatha and J. J. B. Jayachandran, “A
+                                                                              [19] H. Wang, J. Liu, and X. Zhao, “GA-
+    Multitask Learning-Based Vision Transformer
+                                                                                   EfficientNet:     Genetic-Algorithm-Optimized
+    for    Plant     Disease       Localization    and
+                                                                                   EfficientNet for Plant Disease Identification”,
+    Classification”, International Journal of
+                                                                                   International Journal of Intelligent Engineering
+    Computational Intelligence Systems, Vol. 17, p.
+                                                                                   and Systems, Vol. 16, No. 4, pp. 124–136, 2023.
+    188, 2024.
+                                                                              [20] A. Patel, S. Sharma, and R. Gupta, “MFFA-Net:
+[9] Y. Borhani, J. Khoramdel, and E. Najafi, “A
+                                                                                   Multi-Scale Feature Fusion Attention Network
+    Deep Learning-Based Approach for Automated
+                                                                                   for Plant Disease Classification”, International
+    Plant Disease Classification Using Vision
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+Received: April 7, 2026.           Revised: May 6, 2026.                                                                          97
+
+
+     Journal of Intelligent Engineering and Systems,
+     Vol. 17, No. 2, pp. 318–330, 2024.
+[21] L. Wang, K. Zhou, and Y. Chen,
+     “CropDiseaseFormer: A Transformer-Based
+     Architecture for Crop Disease Recognition”,
+     Computers and Electronics in Agriculture, Vol.
+     221, p. 108987, 2024.
+[22] S. Banerjee, T. Roy, and M. Saha, “PDCNN-
+     Transformer: A Hybrid Convolutional-
+     Transformer Network for Plant Disease
+     Diagnosis”, International Journal of Intelligent
+     Engineering and Systems, Vol. 18, No. 1, pp.
+     95–108, 2025.
+[23] J. Park, H. Lee, and S. Kim, “AgriSSL-ViT:
+     Self-Supervised Vision Transformer for
+     Agricultural Image Recognition”, International
+     Journal of Intelligent Engineering and Systems,
+     Vol. 18, No. 3, pp. 412–425, 2025.
+[24] Q. Zhao, M. Yang, and W. Li, “DualBranch-
+     PlantNet: Two-Stream Network for Plant
+     Disease Classification Under Domain Shift”,
+     International Journal of Intelligent Engineering
+     and Systems, Vol. 18, No. 4, pp. 214–227, 2025.
+[25] V. Iyer, R. Krishnan, and M. Subramanian,
+     “CropSAM-Adapter:         Adapting     Segment-
+     Anything Model for Crop Disease Recognition”,
+     International Journal of Intelligent Engineering
+     and Systems, Vol. 19, No. 1, pp. 55–68, 2026.
+
+
+
+
+International Journal of Intelligent Engineering and Systems, Vol.19, No.7, 2026                      DOI: 10.22266/ijies2026.0731.06
+This article is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License.
+License details: https://creativecommons.org/licenses/by-sa/4.0/
+

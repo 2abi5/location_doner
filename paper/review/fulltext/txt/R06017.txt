@@ -1,0 +1,461 @@
+                                             Real-time Semantic Segmentation of Crop and Weed for Precision
+                                             Agriculture Robots Leveraging Background Knowledge in CNNs
+                                                            Andres Milioto                           Philipp Lottes                        Cyrill Stachniss
+
+
+                                           Abstract— Precision farming robots, which target to reduce
+                                        the amount of herbicides that need to be brought out in the
+                                        fields, must have the ability to identify crops and weeds in real
+                                        time to trigger weeding actions. In this paper, we address the
+                                        problem of CNN-based semantic segmentation of crop fields
+arXiv:1709.06764v2 [cs.CV] 2 Mar 2018
+
+
+
+
+                                        separating sugar beet plants, weeds, and background solely
+                                        based on RGB data. We propose a CNN that exploits existing
+                                        vegetation indexes and provides a classification in real time.
+                                        Furthermore, it can be effectively re-trained to so far unseen
+                                        fields with a comparably small amount of training data. We
+                                        implemented and thoroughly evaluated our system on a real
+                                        agricultural robot operating in different fields in Germany and
+                                        Switzerland. The results show that our system generalizes well,
+                                        can operate at around 20 Hz, and is suitable for online operation
+                                        in the fields.
+                                                                                                                Fig. 1: Left: Bonirob system, used for data acquisition and field
+                                                                                                                deployment. Right: RGB image (top) captured during field test and
+                                                               I. I NTRODUCTION                                 our corresponding classification result with crops colored green and
+                                                                                                                weeds colored red (bottom).
+                                           Herbicides and other agrochemicals are frequently used in
+                                        crop production but can have several side-effects on our envi-
+                                        ronment. Thus, one big challenge for sustainable approaches                The main contribution of this work is a new approach
+                                        to agriculture is to reduce the amount of agrochemicals that            to crop-weed classification using RGB data that relies on
+                                        needs to be brought to the fields. Conventional weed control            convolutional neural networks (CNNs). We aim at feeding
+                                        systems treat the whole field uniformly with the same dose              additional, task-relevant background knowledge to the net-
+                                        of herbicide. Novel, perception-controlled weeding systems              work in order to speed up training and to better generalize
+                                        offer the potential to perform a treatment on a per-plant               to new crop fields.
+                                        level, for example by selective spraying or mechanical weed                We achieve that by augmenting the input to the CNN with
+                                        control. This, however, requires a plant classification system          additional channels that have previously been used when de-
+                                        that can analyze image data recorded in the field in real time          signing hand-crafted features for classification [11] and that
+                                        and labels individual plants as crop or weed.                           provide relevant information for the classification process.
+                                           In this paper, we address the problem of classifying                 Our approach yields a pixel-wise semantic segmentation of
+                                        standard RGB images recorded in the crop fields and identify            the image data and can, given the structure of our network,
+                                        the weed plants, roughly at the framerate of the camera.                be computed at near the frame-rate of a typical camera.
+                                        This information can in turn be used to perform automatic                  In sum, we make three key claims, which are the follow-
+                                        and targeted weed control or to monitor fields and provide              ing: Our approach is able to (i) accurately perform pixel-wise
+                                        a status report to the farmer without human interaction.                semantic segmentation of crops, weeds, and soil, properly
+                                        There exists several approaches to vision-based crop-weed               dealing with heavily overlapping objects and targeting a large
+                                        classification. A large number of approaches, especially those          variety of growth stages, without relying on expensive near
+                                        that yield a high classification performance, do not only rely          infra-red information; (ii) act as a robust feature extractor that
+                                        on RGB data but furthermore require additional spectral cues            generalizes well to lighting, soil, and weather conditions not
+                                        such as near infra-red information. Often, these techniques             seen in the training set, requiring little data to adapt to the
+                                        also rely on a pre-segmentation of the vegetation as well as            new environment; (iii) work in real-time on a regular GPU
+                                        on a large set of hand-crafted features. In this paper, we target       such that operation at near the frame-rate of a regular camera
+                                        RGB-only crop-weed classification without pre-segmentation              becomes possible.
+                                        and are especially interested in computational efficiency for                                II. R ELATED W ORK
+                                        real-time operation on a mobile robot, see Fig. 1 for an                   In the context of crop classification, several supervised
+                                        illustration.                                                           learning algorithms have been proposed in the past few
+                                                                                                                years [7], [10], [11], [13], [15], [16], [19]. McCool et al. [13]
+                                          All authors are with the University of Bonn, Germany. This work has
+                                        partly been supported by the EC under the grant number H2020-ICT-       address the crop and weed segmentation problem by using an
+                                        644227-Flourish.                                                        ensemble of small CNNs compressed from a more complex
+
+                                                    Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+pretrained model and report an accuracy of nearly 94%. Haug
+et al. [7] propose a method to distinguish carrot plants and
+weeds in RGB and near infra-red (NIR) images. They obtain
+an average accuracy of 94% on an evaluation dataset of
+70 images. Mortensen et al. [16] apply a deep CNN for
+classifying different types of crops to estimate their amounts
+of biomass. They use RGB images of field plots captured
+at 3 m above ground and report an overall accuracy of 80%
+evaluated on a per-pixel basis. Potena et al. [19] present         Fig. 2: Example image of dataset A (left column) and dataset B
+a multi-step visual system based on RGB+NIR imagery                (right column). Top row: RGB image. Middle row: Vegetation mask
+for crop and weed classification using two different CNN           obtained by applying a global threshold learned by Otsu’s method,
+architectures. A shallow network performs the vegetation           which fails for underrepresented vegetation. Bottom row: Vegetation
+detection and then a deeper network further distinguishes          detected by adaptive thresholding, which oversegments big plants.
+                                                                   Failure cases are depicted in red.
+the detected vegetation into crops and weeds. They perform
+a pixel-wise classification followed by a voting scheme to
+obtain predictions for connected components in the vegeta-         for retraining to adapt to a new field. Some approaches have
+tion mask. They report an average precision of 98% in case         been investigated to address to this problem such as [3],
+the visual appearance has not changed between training and         [20], [22]. Wendel and Underwood [22] address this issue by
+testing phase.                                                     proposing a method for training data generation. They use
+   In our previous works [10], [11], we presented a vision-        a multi-spectral line scanner mounted on a field robot and
+based classification system based on RGB+NIR images for            perform a vegetation segmentation followed by a crop-row
+sugar beets and weeds that relies on NDVI-based pre-               detection. Subsequently, they assign the label crop for the
+segmentation of the vegetation. The approach combines              pixels corresponding to the crop row and the remaining ones
+appearance and geometric properties using a random forest          as weed. Rainville et al. [20] propose a vision-based method
+classifier and obtains classification accuracies of up to 96%      to learn a probability distributions of morphological features
+on pixel level. The works, however, also show that the             based on a previously computed crop row. Di Cicco et al. [3]
+performance decreases to an unsuitable level for weed control      try to minimize the labeling effort by constructing synthetic
+applications when the appearance of the plants changes             datasets using a physical model of a sugar beet leaf. Unlike
+substantially. In a second previous work [15], we presented        most of these approaches, our purely visual approach relies
+a 2-step approach that pre-segments vegetation objects by          solely on RGB images and can be applied to fields where
+using the NDVI index and afterwards uses a CNN classifier          there is no crop row structure.
+on the segmented objects to distinguish them into crops and           In addition to the crop weed classification, several ap-
+weeds. We show that we can obtain state-of-the-art object-         proaches have been developed for vision-based vegetation
+wise results in the order of 97% precision, but only for early     detection by using RGB as well as multispectral images,
+grow stages, since the approach is not able to deal with           e.g., [4], [6], [11], [21]. Often, popular vegetation indices
+overlapping plants due to the pre-segmentation step.               such as the Normalized Difference Vegetation Index (NDVI)
+   Lottes et al. [12] address the generalization problem by        or the Excess Green Index (ExG) are used to separate the
+using the crop arrangement information, for example from           vegetation from the background by applying threshold-based
+seeding, as prior and exploit a semi-supervised random             approaches. We see a major problem with these kind of
+forest-based approach that combines this geometric infor-          approaches in terms of the transferability to other fields,
+mation with a visual classifier to quickly adapt to new            i.e. when the underlying distribution of the indices changes
+fields. Hall et al. [5] also address the issue of changing         due to different soil types, growth stages, illumination, and
+feature distributions. They evaluate different features for leaf   weather conditions. Fig. 2 visually illustrates frequent failure
+classification by simulating real-world conditions using basic     cases: First, a global threshold, here estimated by Otsu’s
+data augmentation techniques. They compare the obtained            method, does not properly separate the vegetation if the
+performance by selectively using different handcrafted and         plants are in a small growth stage, i.e. when the vegetation is
+CNN features and conclude that CNN features can support            underrepresented. This problem can be solved with adaptive
+the robustness and generality of a classifier.                     thresholding, by tuning the kernel size and a local threshold
+   In this paper, we also explore a solution to this problem       for small plants. Second, the adaptive method fails, separat-
+using a CNN-based feature extractor and classifier for RGB         ing components that should be connected, when using the
+images that uses no geometric prior, and generalizes well          tuned hyperparameters in another dataset where the growth
+to different soil, weather, and illumination conditions. To        stage and field condition have changed. Thus, we argue that a
+achieve this, we use a combination of end-to-end efficient         learning approach that eliminates this pre-segmentation and
+semantic segmentation networks and several vegetation in-          solves segmentation and classification jointly is needed. As
+dices and preprocessing mappings to the RGB images.                this paper illustrates, such strategy enables us to learn a
+   A further challenge for these supervised classification         semantic segmentation which generalizes well over several
+approaches is the necessary amount of labeled data required        growth stages as well as field conditions.
+
+           Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+                       III. A PPROACH                                    IRGB                   IExG                    IExR
+   The main goal of our work is to allow agricultural robots
+to accurately distinguish weeds from value crops and soil in
+order to enable intelligent weed control in real time. We
+propose a purely visual pixel-wise classifier based on an
+end-to-end semantic segmentation CNN that we designed
+with accuracy, time and hardware efficiency as well as                   IHUE                  IEDGES                 ∇y IExG
+generalization in mind.
+   Our classification pipeline can be seen as being separated
+in two main steps: First, we compute different vegetation
+indices and alternate representations that are commonly
+used in plant classification and support the CNN with
+that information as additional inputs. This turns out to be       Fig. 3: Illustration of some of the used alternate representations.
+specifically useful as the amount of labeled training data
+for agriculture fields is limited. Second, we employ a self-      TABLE I: Indices and representations used as input by our CNN
+designed semantic segmentation network to provide a per-
+                                                                                      Input channels for our CNN
+pixel semantic labeling of the input data. The following two                I1      IR
+subsections discuss these two steps of the pipeline in detail.              I2      IG
+                                                                            I3      IB
+A. Input Representations                                                    I4      IExG
+                                                                            I5      IExR
+   In general, deep learning approaches make as little as-                  I6      ICIVE
+sumptions as possible about the underlying data distribution                I7      INDI
+                                                                            I8      IHUE (from HSV colorspace)
+and let the optimizer decide how to adjust the parameters of                I9      ISAT (from HSV colorspace)
+the network by feeding it with enormous amounts of training                 I10     IVAL (from HSV colorspace)
+data. Therefore, most approaches using convolutional neural                 I11     ∇x IExG (Sobel in x direction on IExG )
+                                                                            I12     ∇y IExG (Sobel in y direction on IExG )
+networks make no modifications to the input data and feed                   I13     ∇2 IExG (Laplacian on IExG )
+the raw RGB images to the networks.                                         I14     IEDGES (Canny Edge Detector on IExG )
+   This means that if we want a deep network to accurately
+recognize plants and weeds in different fields, we need to        these representations are concatenated to the channel-wise
+train it with a large amount of data from a wide variety of       normalized input RGB image and build the input volume
+fields, lighting and weather conditions, growth stages, and       which is fed into the convolutional network. In sum, we
+soil types. Unfortunately, this comes at a high cost and we       use the 14 channels listed in Tab. I, and Fig. 3 illustrates
+therefore propose to make assumptions about the inputs in         how some of these representations look like. We show in
+order to generalize better given the limited training data.       our experiments that deploying these extra representations
+   To alleviate this problem, we provide additional vegeta-       to the raw inputs helps not only to learn weight parameters
+tion indexes that have been successfully used for the plant       which lead to a better generalization property of the network,
+classification task and that can be derived from RGB data. In     but also obtain a better performance for separating the
+detail, we calculate four different vegetation indices which      vegetation, i.e. crops and weeds, from soil, and speed up
+are often used for the vegetation segmentation, see [14], [18]:   the convergence of the training process.
+Excess Green (ExG), Excess Red (ExR), Color Index of Veg-
+etation Extraction (CIVE), and Normalized Difference Index        B. Network Architecture
+(NDI). These indices share the property that they are less
+                                                                     Semantic segmentation is a memory and computationally
+sensitive to changes in the mentioned field conditions and
+                                                                  expensive task. State-of-the-art algorithms for multi-class
+therefore can aid the classification task. They are computed
+                                                                  pixel-wise classification use CNNs that have tens of millions
+straightforwardly as:
+                                                                  of parameters and therefore need massive amounts of labeled
+                                                                  data for training. Another problem with these networks is
+       IExG = 2 IG − IR − IB                                (1)   the fact that they often cannot be run fast enough for our
+       IExR = 1.4 IR − IG                                   (2)   application. The current state-of-the-art CNN for this task,
+      ICIVE = 0.881 IG − 0.441 IR − 0.385 IB − 18.78745     (3)   Mask R-CNN [8], processes around 2 images per second,
+              IG − IR                                             whereas we target on a classification rate of at least 10 Hz.
+       INDI =                                               (4)
+              IG + IR                                                Since our specific task of crop vs. weed classification
+                                                                  has a much narrower target space compared to the general
+  Along with these four additional cues, we use (i) further       architectures designed for 1000+ classes, we can design an
+representations of the raw input such as the HSV color            architecture which meets the targeted speed and efficiency.
+space and (ii) operators on the indices such as the Sobel         We propose an end-to-end encoder-decoder semantic
+derivatives, the Laplacian, and the Canny edge detector. All      segmentation network, see Fig. 4, that can accurately
+
+           Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+          Fig. 4: Detailed encoder-decoder architecture used for the pixel-wise semantic segmentation. Best viewed in color.
+
+
+perform the pixel-wise prediction task while running at             which adds the input of the convolution to its result. The
+20+ Hz, can be trained end-to-end with a moderate size              addition of this residual connection helps with the degrada-
+training dataset, and has less than 30,000 parameters.              tion problem that appears when training very deep networks
+We design the architecture taking some design cues from             which makes them obtain a higher training error than their
+Segnet [1] and Enet [17] into account and adapt them to             shallower counterparts [9].
+the task at hand. Our network is based on the following                The middle row of Fig. 5 adds [1 × 1] convolutions that
+building blocks:                                                    reduce the depth of the input volume so that the expensive
+                                                                    [5 × 5] operation does not need to run in the whole depth.
+   Input: We use the representation volume described in             For this, we use 8 × [1 × 1] kernels, which halve the depth
+Tab. I as the input to our network. Before it is passed to the      of the input volume, and 16 × [1 × 1] kernels to expand the
+first convolutional layer, we perform a resizing to 512 × 384       result, which needs to match the depth of the input in order
+pixels and a channel-wise contrast normalization.                   to be added to it. This reduces the amount of calculations per
+   Convolutional Layer: We define our convolutional layers          operation of the kernel from 6,400 FLOPs to 1,856 FLOPs.
+as a composite function of a convolution followed by a batch           Finally, the bottom row of Fig. 5 shows the separation of
+normalization and use the rectified linear unit (ReLU) for the      each [5 × 5] convolution into a [5 × 1] convolution followed
+non-linearity. The batch normalization operation prevents an        by a [1 × 5] convolution. This further reduces the operations
+internal covariate shift and allows for higher learning rates       of running the module in a [5×5] window from 1,856 FLOPs
+and better generalization capabilities. The ReLU is compu-          to 896 FLOPs.
+tationally efficient and suitable for training deep networks.          These design choices also decrease the number of param-
+All convolutional layers use zero padding to avoid washing          eters for the equivalent layer to the [5 × 5] convolution with
+out edge information.                                               16 kernels from 6,400 to 896 parameters.
+   Residual Separable Bottleneck: To achieve a faster                  Unpooling with Shared Indexes: The unpooling oper-
+processing time while keeping the receptive field, we propose       ations in the decoder are performed sharing the pooling
+to use the principal building block for our network, which          indexes of the symmetrical pooling operation in the encoder
+is built upon the ideas of (i) residual connections, (ii)           part of the network. This allows the network to maintain the
+bottlenecks, and (iii) separating the convolutional operations.     information about the spatial positions of the maximum ac-
+   Fig. 5 illustrates the evolution from a conventional [5 × 5]     tivations on the encoder part without the need for transposed
+convolutional layer to a residual separable bottleneck. The         convolutions, which are comparably expensive to execute.
+top row of Fig. 5 shows the addition of a residual connection,      Therefore, after each unpooling operation, we obtain a sparse
+                                                                    feature map, which the subsequent convolutional layers learn
+                                                                    how to densify. All pooling layers are [2 × 2] with stride 2.
+                                                                       Output: The last layer is a linear operation followed by
+                                                                    a softmax activation predicting a pseudo-probability vector
+                                                                    of length 3 per pixel, where each element represents the
+                                                                    probability of the pixel belonging to the class background,
+                                                                    weed, or crop.
+                                                                       We use these building blocks to create the network
+                                                                    depicted in Fig. 4, which consists of an encoder-decoder
+                                                                    architecture. The encoder part has 13 × [5 × 5] convolutional
+                                                                    layers containing 16 kernels each and 4 pooling layers that
+                                                                    reduce the input representation into a small code feature
+                                                                    volume. This is followed by a decoder with 12 convolutional
+                                                                    layers containing 16 kernels each and 4 unpooling layers that
+                                                                    upsample this code into a semantic map of the same size
+  Fig. 5: Building the residual block to replace a [5 × 5] layer.   of the input. The design of the architecture is inspired by
+
+           Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+                TABLE II: Dataset Information                              Bonn                 Zurich               Stuttgart
+                         Bonn     Zurich   Stuttgart
+             # images    10,036    2,577     2,584
+               # crops   27,652    3,983    10,045
+           crop pixels    1.7%     0.4%      1.5%
+              # weeds    65,132   14,820     7,026
+           weed pixels    0.7%     0.1%      0.7%
+                                                                   Fig. 6: Example images from each dataset. Every dataset contains
+Segnet’s design simplicity, but in order to make it smaller,       different crops growth stages, weed types, illumination conditions
+                                                                   and soil types. Best viewed in color
+easier to train, and more efficient, we replace 24 of the
+25 convolutional layers by our proposed residual separable
+convolutional bottlenecks. The 5 × 5 receptive fields of the       data by performing random rotations, scalings, shears and
+convolutional layers, along with the pooling layers add up         stretches. We use Stochastic Gradient Descent with a batch
+to an equivalent receptive field in the input image plane of       size of 15 for each step, which is the maximum we can fit in
+200 × 200 pixels. This is sufficient for our application, since    a single GPU. Furthermore, we use a weighted cross-entropy
+it is a bigger window than the biggest plant we expect in our      loss, to handle the imbalanced number of pixels of each class,
+data. The proposed number of layers, kernels per layer, and        due to the soil dominance, and the Adam optimizer for the
+reduction factor for each bottleneck module was chosen by          calculation of the gradient steps. Training for 200 epochs
+training several networks with different configurations, and       takes roughly 48 hours on an NVIDIA GTX1080Ti.
+reducing its size until we reached the smallest configuration         To show the effect in performance obtained by the extra
+that did not result in a considerable performance decrease.        channels, we train three networks using different types of
+                                                                   inputs: one based solely on RGB images, another one based
+             IV. E XPERIMENTAL E VALUATION                         on RGB and extra representations, and finally the reference
+   The experiments are designed to show the accuracy and           baseline network using RGB+NIR image data.
+efficiency of our method and to support the claims made in
+                                                                   B. Performance of the Semantic Segmentation
+the introduction that our classifier is able to perform accurate
+pixel-wise classification of value crops and weeds, generalize        This experiment is designed to support our first claim,
+well, and run in real-time.                                        which states that our approach can accurately perform pixel-
+   We implemented the whole approach presented in this pa-         wise semantic segmentation of crops, weeds, and soil, prop-
+per relying on the Google TensorFlow library, and OpenCV           erly dealing with heavy plant overlap in all growth stages.
+to compute alternate representations of the inputs. We tested         In Tab. III, we show the pixel-wise performance of the
+our results using a Bosch Deepfield Robotics BoniRob UGV.          classifier tested in the 15% held out test set from Bonn, as
+                                                                   well as the whole datasets from Zurich and Stuttgart. These
+A. Training and Testing Data                                       results show that the network trained using the RGB images
+   To evaluate the performance of the network, we use three        in conjunction with the extra computed representations of the
+different datasets captured in Bonn, Germany; Stuttgart,           inputs outperforms the network using solely RGB images
+Germany; and Zurich, Switzerland, see Tab. II. Part of the         significantly in all categories, performing comparably with
+data from Bonn is publicly available [2]. All datasets contain     the network that uses the extra visual cue from the NIR
+plants and weeds in all growth stages, with different soil,        information, which comes with a high additional cost as
+weather, and illumination conditions. Fig. 6 illustrates the       specific sensors have to be employed.
+variance of the mentioned conditions for each dataset. The            Even though the pixel-wise performance of the classifier
+visual data was recorded with the 4-channel RGB+NIR                is important, in order to perform automated weeding it is
+camera JAI AD-130 GE mounted in nadir view. For our                important to have an object-wise metric for the classifier’s
+approach, we use solely the RGB channels because we                performance. We show this metric in Tab. IV, where we
+aim to perform well with an off-the-shelf RGB camera, but          analyze all objects with area bigger than 50 pixels. This
+the additional NIR information allows us to compare the            number is calculated by dividing our desired minimum
+performance with an approach that exploits the additional          object detection size of 1 cm2 by the spatial resolution of
+NIR information.                                                   2 mm2 /px in our 512 × 384 resized images. We can see
+   To show the generalization capabilities of the pipeline, we     that in terms of object-wise performance the network using
+train our network using only images from Bonn, captured            all representations outperforms its RGB counterpart. Most
+over the course of one month, and containing images of             importantly, in the case of generalization to the datasets of
+several growth stages. We separate the dataset in 70%-15%-         Zurich and Stuttgart, this difference becomes critical, since
+15% for training, validation, and testing, and we report our       the RGB network yields a performance so low that it renders
+results only in the latter 15% held out testing portion, as        the classifier unusable for most tasks.
+well as the whole of the two other datasets from Zurich and           Note that the network using RGB and extra representations
+Stuttgart, some even recorded in different years.                  is around 30% faster to converge to 95% of the final accuracy
+   We train the network using the 70% part of the Bonn             than its RGB counterpart, and roughly 15% faster than the
+dataset extracted for that purpose and perturb the input           network using the NIR channel.
+
+           Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+TABLE III: Pixel-wise Test Sets Performance. Trained in 70% Bonn, reporting 15% held-out Bonn, 100% Stuttgart, and 100% Zurich.
+                                                                   IoU[%]                     Precision[%]                   Recall[%]
+              Dataset          Network        mIoU[%]
+                                                            Soil   Weeds    Crops      Soil      Weeds     Crops      Soil    Weeds      Crops
+                               IRGB             59.98      99.08    20.64   60.22     99.92      28.97     66.49     99.15    41.79      82.45
+                Bonn      IRGB +INIR            76.92      99.29    49.42   82.06     99.88      52.90     84.19     99.33    88.24      97.01
+                         I1 ...I14 (ours)       80.8       99.48    59.17   83.72     99.95      65.92     85.71     99.53    85.25      97.29
+                               IRGB             38.25      96.84    14.26    3.62     96.95      14.96      3.78     96.88    35.35      45.86
+               Zurich     IRGB +INIR            41.23      98.44    16.83    8.43     99.68      19.03      9.07     98.46    51.27      54.46
+                         I1 ...I14 (ours)       48.36      99.27    23.40   22.39     99.90      31.43     23.05     99.36    47.79      88.74
+                               IRGB             48.09      99.18    21.40   23.69     99.84      21.90     52.43     99.34    42.95      28.95
+             Stuttgart    IRGB +INIR            55.82      98.54    23.13   45.80     99.85      25.28     68.76     98.69    49.10      57.84
+                         I1 ...I14 (ours)       61.12      99.32    26.36   57.65     99.86      37.58     68.77     99.45    46.90      78.09
+
+TABLE IV: Object-wise Test Performance. Trained in 70% Bonn,                  TABLE V: Object-wise test performance retraining in N images of
+reporting 15% held-out Bonn, 100% Stuttgart, and 100% Zurich.                 Zurich dataset.
+                                            Precision[%]     Recall[%]                                                  Precision[%] Recall[%]
+   Dataset     Network         mAcc[%]                                              Inputs Nr. Images mAcc[%]
+                                            Weeds Crops    Weeds Crops                                                  Weeds Crops Weeds Crops
+                  IRGB           86.34      83.63 81.14    91.99 80.42                              10       60.08      58.75 62.22 73.03 57.99
+     Bonn    IRGB +INIR          93.72      90.51 95.09    94.79 89.46                              20       71.38      61.38 81.42 76.72 64.58
+            I1 ...I14 (ours)     94.74      98.16 91.97    93.35 95.17               IRGB
+                                                                                                    50       74.08      63.00 85.42 74.14 68.34
+                  IRGB           45.51      59.75 19.71    42.52 23.66                             100       82.26      65.50 85.59 74.97 69.91
+    Zurich   IRGB +INIR          68.03      67.41 46.78    65.31 49.32
+                                                                                                    10       83.90      69.23 80.73 71.71 76.18
+            I1 ...I14 (ours)     72.08      67.91 72.55    63.33 64.94
+                  IRGB           46.05      42.32 42.03     46.1 25.01
+                                                                               I1 ...I14            20       85.31      75.85 79.12 67.67 84.01
+  Stuttgart  IRGB +INIR          73.99      74.30 70.23    71.35 53.88          (ours)              50       86.25      76.50 85.24 71.55 84.33
+            I1 ...I14 (ours)     76.54      87.87 65.25    64.66 85.15                             100       89.55      85.89 89.52 89.69 86.76
+
+                                                                              TABLE VI: Object-wise Test performance retraining in N images
+C. Labeling Cost for Adaptation to New Fields                                 of Stuttgart dataset.
+
+   This experiment is designed to support our second claim,                                                            Precision[%] Recall[%]
+                                                                                Inputs Nr. Images mAcc[%]
+                                                                                                                       Weeds Crops Weeds Crops
+which states that our approach can act as a robust feature
+                                                                                                   10       71.76      93.88 52.59 56.57 81.10
+extractor for images in conditions not seen in the training                                        20       72.30      94.40 57.72 51.43 86.35
+set, requiring little data to adapt to the new environment.                         IRGB
+                                                                                                   50       72.97      94.33 59.70 54.11 87.69
+   One way to analyze the generalization performance of                                            100      73.34      95.20 63.26 56.36 87.66
+the approach is to analyze the amount of data that needs                                           10       81.40      89.48 64.42 78.74 79.69
+                                                                               I1 ...I14           20       81.84      87.83 68.18 81.45 74.61
+to be labeled in a new field for the classifier to achieve
+                                                                                (ours)             50       86.75      94.68 71.34 83.22 90.23
+state-of-the-art performance. For this, we separate the Zurich                                     100      91.88      95.45 86.58 89.08 91.43
+and Stuttgart datasets in halves, and we keep 50% of it
+for testing. From each of the remaining 50%, we extract
+sets of 10, 20, 50 and 100 images, and we retrain the last                    D. Runtime
+layer of the network trained in Bonn, using the convolutional                    This experiment is designed to support our third claim,
+layers in the encoder and the decoder as a feature extractor.                 which states that our approach can be run in real-time, and
+We further separate this small sub-samples in 80%-20% for                     therefore it can be used for online operation in the field,
+training and validation and we train until convergence, using                 running in hardware that can be fitted in mobile robots.
+early stopping, which means that we stop training when                           We show in Tab. VII that even though the architecture
+the validation error starts to increase. This is to provide an                using all extra representations of the RGB inputs has a speed
+automated approach to the retraining, so that it can be done                  penalty, due to the efficiency of the network we can run
+without supervision of an expert.                                             the full classifier at more than 20 frames per second on the
+   We show the results of the retraining on the Zurich dataset                hardware in our UGV, which consists of an Intel i7 CPU
+in Tab. V and Fig. 7, where we can see that the performance                   and an NVIDIA GTX1080Ti GPU. Furthermore, we tested
+of the RGB network when relabeling 100 images is roughly                      our approach in the Jetson TX2 platform, which has a very
+the same as the one using all input representations when the                  small footprint and only takes 15 W of peak power, making
+latter is using only 10 images, thus significantly reducing                   it suitable for operation on a flying vehicle, and here we still
+the relabeling effort. We also show that we can get values                    obtain a frame rate of almost 5 Hz.
+of precision and recall in the order of 90% when using 100                                    TABLE VII: Runtime in different devices.
+images for the relabeling in the case of our network, which
+exploits additional channels. In Tab. VI and Fig. 7, we show                    Inputs FLOPS            Hardware   Preproc. Network Total FPS
+                                                                                                     i7+GTX1080Ti     -      31ms   31ms 32.2
+the same for the Stuttgart dataset, but in this case the RGB                        RGB     1.8G
+                                                                                                     Tegra TX2 SoC    -     190ms 190ms 5.2
+network fails to reach an acceptable performance, while the                          All      2G
+                                                                                                     i7+GTX1080Ti    6ms     38ms   44ms 22.7
+accuracy of our approach grows linearly with the number of                                           Tegra TX2 SoC   6ms    204ms 210ms 4.7
+images used.
+
+             Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+                                                                                                     R EFERENCES
+                                                                        [1] V. Badrinarayanan, A. Kendall, and R. Cipolla. Segnet: A deep
+                                                                            convolutional encoder-decoder architecture for image segmentation.
+                                                                            IEEE Trans. on Pattern Analalysis and Machine Intelligence, 2017.
+                                                                        [2] N. Chebrolu, P. Lottes, A. Schaefer, W. Winterhalter, W. Burgard,
+                                                                            and C. Stachniss. Agricultural Robot Dataset for Plant Classification,
+                                                                            Localization and Mapping on Sugar Beet Fields. Intl. Journal of
+                                                                            Robotics Research (IJRR), 2017.
+                                                                        [3] M. Di Cicco, C. Potena, G. Grisetti, and A. Pretto. Automatic
+                                                                            model based dataset generation for fast and accurate crop and weeds
+                                                                            detection. arXiv preprint, 2016.
+                                                                        [4] W. Guo, U.K. Rage, and S. Ninomiya. Illumination invariant segmen-
+                                                                            tation of vegetation for time series wheat images based on decision tree
+                                                                            model. Computers and Electronics in Agriculture, 96:58–66, 2013.
+                                                                        [5] D. Hall, C.S. McCool, F. Dayoub, N. Sunderhauf, and B. Upcroft.
+                                                                            Evaluation of features for leaf classification in challenging conditions.
+                                                                            In Proc. of the IEEE Winter Conf. on Applications of Computer Vision
+                                                                            (WACV), pages 797–804, Jan 2015.
+                                                                        [6] E. Hamuda, M. Glavin, and E. Jones. A survey of image processing
+                                                                            techniques for plant extraction and segmentation in the field. Com-
+                                                                            puters and Electronics in Agriculture, 125:184–199, 2016.
+                                                                        [7] S. Haug, A. Michaels, P. Biber, and J. Ostermann. Plant classification
+                                                                            system for crop / weed discrimination without segmentation. In
+                                                                            Proc. of the IEEE Winter Conf. on Applications of Computer Vision
+                                                                            (WACV), pages 1142–1149, 2014.
+                                                                        [8] K. He, G. Gkioxari, P. Dollár, and R. Girshick. Mask R-CNN. arXiv
+                                                                            preprint, 2017.
+                                                                        [9] K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for
+                                                                            image recognition. In Proc. of the IEEE Conf. on Computer Vision
+                                                                            and Pattern Recognition (CVPR), 2016.
+                                                                       [10] P. Lottes, M. Hoeferlin, S. Sanders, and C. Stachniss. Effective
+                                                                            Vision-Based Classification for Separating Sugar Beets and Weeds for
+                                                                            Precision Farming. Journal of Field Robotics (JFR), 2016.
+                                                                       [11] P. Lottes, H. Markus, S. Sander, M. Matthias, S.L. Peter, and C. Stach-
+                                                                            niss. An Effective Classification System for Separating Sugar Beets
+                                                                            and Weeds for Precision Farming Applications. In Proc. of the IEEE
+Fig. 7: Object-wise mean accuracy vs. relabeling effort. Zero images        Intl. Conf. on Robotics & Automation (ICRA), 2016.
+                                                                       [12] P. Lottes and C. Stachniss. Semi-supervised online visual crop and
+means no retraining.
+                                                                            weed classification in precision farming exploiting plant arrangement.
+                                                                            In Proc. of the IEEE/RSJ Intl. Conf. on Intelligent Robots and Systems
+                                                                            (IROS), 2017.
+                        V. C ONCLUSION                                 [13] C.S. McCool, T. Perez, and B. Upcroft. Mixtures of Lightweight Deep
+                                                                            Convolutional Neural Networks: Applied to Agricultural Robotics.
+   In this paper, we presented an approach to pixel-wise                    IEEE Robotics and Automation Letters (RA-L), 2017.
+semantic segmentation of crop fields identifying crops,                [14] G.E. Meyer and J. Camargo Neto. Verification of color vegetation
+weeds, and background in real-time solely from RGB data.                    indices for automated crop imaging applications. Computers and
+                                                                            Electronics in Agriculture, 63(2):282 – 293, 2008.
+We proposed a deep encoder-decoder CNN for semantic                    [15] A. Milioto, P. Lottes, and C. Stachniss. Real-time blob-wise sugar
+segmentation that is fed with a 14-channel image storing                    beets vs weeds classification for monitoring fields using convolutional
+vegetation indexes and other information that in the past                   neural networks. In Proc. of the Intl. Conf. on Unmanned Aerial
+                                                                            Vehicles in Geomatics, 2017.
+has been used to solve crop-weed classification tasks. By              [16] A.K. Mortensen, M. Dyrmann, H. Karstoft, R. N. Jörgensen, and
+feeding this additional, task-relevant background knowledge                 R. Gislum. Semantic segmentation of mixed crops using deep
+to the network, we can speed up training and improve the                    convolutional neural network. In Proc. of the International Conf. of
+                                                                            Agricultural Engineering (CIGR), 2017.
+generalization capabilities on new crop fields, especially if          [17] A. Paszke, A. Chaurasia, S. Kim, and E. Culurciello. Enet: Deep
+the amount of training data is limited. We implemented and                  neural network architecture for real-time semantic segmentation. arXiv
+thoroughly evaluated our system on a real agricultural robot                preprint, abs/1606.02147, 2016.
+                                                                       [18] M.P. Ponti. Segmentation of low-cost remote sensing images combin-
+operating using data from three different cities in Germany                 ing vegetation indices and mean shift. IEEE Geoscience and Remote
+and Switzerland. Our results suggest that our system gener-                 Sensing Letters, 10(1):67–70, Jan 2013.
+alizes well, can operate at around 20 Hz, and is suitable for          [19] C. Potena, D. Nardi, and A. Pretto. Fast and accurate crop and weed
+                                                                            identification with summarized train sets for precision agriculture. In
+online operation in the fields.                                             Proc. of Int. Conf. on Intelligent Autonomous Systems (IAS), 2016.
+                                                                       [20] F.M. De Rainville, A. Durand, F.A. Fortin, K. Tanguy, X. Maldague,
+                     ACKNOWLEDGMENTS                                        B. Panneton, and M.J. Simard. Bayesian classification and unsuper-
+                                                                            vised learning for isolating weeds in row crops. Pattern Analysis and
+  We thank the teams from the Campus Klein Altendorf in                     Applications, 17(2):401–414, 2014.
+                                                                       [21] J. Torres-Sanchez, F. López-Granados, and J.M. Peña. An automatic
+Bonn and ETH Zurich Lindau-Eschikon for supporting us                       object-based method for optimal thresholding in uav images: Appli-
+and maintaining the fields. We furthermore thank BOSCH                      cation for vegetation detection in herbaceous crops. Computers and
+Corporate Research and DeepField Robotics for their support                 Electronics in Agriculture, 114:43 – 52, 2015.
+                                                                       [22] A. Wendel and J.P. Underwood. Self-Supervised Weed Detection
+during joint experiments. Further thanks to N. Chebrolu for                 in Vegetable Crops Using Ground Based Hyperspectral Imaging. In
+collecting and sharing datasets [2].                                        Proc. of the IEEE Intl. Conf. on Robotics & Automation (ICRA), 2016.
+
+
+            Copyright c IEEE 2018 All rights reserved. IEEE International Conference on Robotics and Automation 2018.
+

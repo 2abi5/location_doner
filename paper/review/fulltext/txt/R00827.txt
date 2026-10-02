@@ -1,0 +1,622 @@
+           ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+     ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+   Cross Domain Early Crop Mapping with Label Spaces Discrepancies using MultiCropGAN
+
+                                             Yiqun WANG1, Hui HUANG1, Radu STATE1
+   1 Services and Data Management Research Group (SEDAN), Interdisciplinary Centre for Security, Reliability and Trust
+
+                  (SnT), University of Luxembourg, Luxembourg - (yiqun.wang, hui.huang, radu.state)@uni.lu
+
+
+Keywords: Remote Sensing, Early Crop Mapping, Cross Domain, Domain Adaptation, MultiCropGAN, Label Spaces Discrepan-
+cies.
+
+
+Abstract
+
+Mapping target crops before the harvest season for regions lacking crop-specific ground truth is critical for global food security.
+Utilizing multispectral remote sensing and domain adaptation methods, prior studies strive to produce precise crop maps in these
+regions (target domain) with the help of the crop-specific labelled remote sensing data from the source regions (source domain).
+However, existing approaches assume identical label spaces across those domains, a challenge often unmet in reality, necessitating
+a more adaptable solution. This paper introduces the Multiple Crop Mapping Generative Adversarial Neural Network (MultiCrop-
+GAN) model, comprising a generator, discriminator, and classifier. The generator transforms target domain data into the source
+domain, employing identity losses to retain the characteristics of the target data. The discriminator aims to distinguish them and
+shares the structure and weights with the classifier, which locates crops in the target domain using the generator’s output. This
+model’s novel capability lies in locating target crops within the target domain, overcoming differences in crop type label spaces
+between the target and source domains. In experiments, MultiCropGAN is benchmarked against various baseline methods. Not-
+ably, when facing differing label spaces, MultiCropGAN significantly outperforms other baseline methods. The Overall Accuracy
+is improved by about 10%.
+
+
+                        1. Introduction                               commonly known as cross-domain or domain shift issue (Kon-
+                                                                      duri et al., 2020).
+Mapping target crops in the early stages before the harvest sea-
+                                                                      To address domain shift, Domain Adversarial Neural Networks
+son is crucial for a variety of agricultural applications such as
+                                                                      (DANN) (Ajakan et al., 2014) and its variants, such as Self-
+agricultural planning, resource allocation, crop insurance, and
+                                                                      Training with Domain Adversarial Network (STDAN) (Kwak
+risk management (Waldner et al., 2015, Singha and Swain, 2016).
+                                                                      and Park, 2022), Phenology Alignment Network (PAN) (Wang
+To locate the target crops, the primary method involves analyz-
+                                                                      et al., 2021b), and Deep Adaptation Crop Classification Net-
+ing time-series multispectral images (MSI), while MSI provides
+                                                                      work (DACCN) (Wang et al., 2023a), are employed. These
+detailed spectral information, essential for understanding veget-
+                                                                      models aim to extract invariant features from both target and
+ation’s spectral characteristics, influenced by its structural com-
+                                                                      source domain data, subsequently using these invariant features
+position, leaf biochemistry, and phenological stages. To gener-
+                                                                      for crop mapping classification. Alternatively, Generative Ad-
+ate precise crop cultivation maps from these images, various
+                                                                      versarial Neural Networks (GAN) (Creswell et al., 2018), such
+supervised Deep Learning (DL) methods, including Convolu-
+                                                                      as the Crop Generative Adversarial Network (CropGAN) (Wang
+tional Neural Networks (CNN) (Wang et al., 2021a, Hamidi
+                                                                      et al., 2024), are utilized. CropGAN transforms time-series
+et al., 2021), Temporal Convolutional Neural Network (Tem-
+                                                                      MSI data from the target domain to the source domain while
+pCNN) (Pelletier et al., 2019), and Long Short-Term Memory
+                                                                      preserving local structures. This transformation enables a pre-
+(LSTM) (He et al., 2019, Crisóstomo de Castro Filho et al.,
+                                                                      trained crop mapper classifier, using labelled data from the source
+2020), have been explored. Notably, the findings indicate that
+                                                                      domain, to accurately locate the target crop using the trans-
+DL approaches outperform conventional techniques like Sup-
+                                                                      formed target domain data.
+port Vector Machine (SVM) (Mathur and Foody, 2008), De-
+cision Trees (DTs) (Pittman et al., 2010, Tariq et al., 2023), and    However, these methodologies are predicated on the assump-
+Random Forest (RF) (Duro et al., 2012, Wang et al., 2023b).           tion that the crop-type label spaces between the target and source
+These methods leverage publicly available datasets such as the        domains are similar. While effective in addressing missing la-
+United States Department of Agriculture (USDA)’s Cropland             bels and mitigating the adverse effects of domain shifts, these
+Data Layer (CDL) (Boryan et al., 2011) as the ground truth            strategies are limited by the disparities in label spaces between
+(GT).                                                                 the domains. When discrepancies in label spaces occur between
+                                                                      these domains, the extractor or generator still endeavors to align
+Unfortunately, the collection of GT for crop types is expensive.      the data distributions of both domains. Consequently, some data
+In instances where GT data is absent, prevailing approaches ad-       from one domain must correspond to the other domain data as-
+opt the ”direct transfer strategy”. This strategy involves train-     sociated with the labels absent in the first domain, leading to
+ing a classifier using labelled data from different regions (source   misclassification by the crop classifier. To address this label
+domain) and then applying this trained model to regions lacking       space discrepancies issue, the Multiple Crop Mapping Generat-
+GT (target domain) (Hao et al., 2020, Ge et al., 2021). However,      ive Adversarial Neural Network (MultiCropGAN) is presented
+the trained model performs badly due to differences in soil com-      in this paper. Our contributions can be summarized as follows:
+position, climate conditions, and crop progress, leading to dis-
+crepancies between the distributions of source and target data,         • Introduce the MultiCropGAN, comprising a generator, a
+
+
+         This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                    https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                  241
+           ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+     ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+     discriminator, and a classifier, as a solution to mitigate      is achieved through the utilization of a GAN model combined
+     the domain shift issue with label space discrepancies en-       with specially designed identity losses.
+     countered in early crop mapping tasks.
+
+  • Propose to incorporate identity losses into the generator’s                           3. Problem Statement
+    loss function to ensure that the generator refrains from
+    making unnecessary alterations to the data, thereby pre-         Let X denote the time series remote sensing input data and Y
+    serving its essential characteristics.                           denote the GT. Each sample x can be expressed as a temporal
+                                                                     form [x1 , x2 , ..., xt ], where xi represents input at time i. xi
+  • Conduct the experiments based on study areas encompassing        can be further expanded as [xi1 , xi2 , ..., xib ], containing multi-
+    the USA and Canada. A comparative analysis was un-               spectral bands information from band 1 to band b. Each GT
+    dertaken, pitting MultiCropGAN against various baseline          label, denoted as y, is represented as a one-hot vector compris-
+    methods, including the CropGAN, STDAN, DACCN, Tem-               ing four elements, which correspond to the categories of corn,
+    pCNN, and RF. MultiCropGAN demonstrates the highest              soybean, spring wheat, and other crops. Let Xt denote the time
+    classification metrics when handling divergent label spaces      series input target data, Xs denote the time series input source
+    in the target and source domains.                                data, and Ys denote the GT for Xs . Each sample xs has a
+                                                                     corresponding ys .
+
+                      2. Related Work                                Our objective is to identify target crops to get target labels Yt
+                                                                     in the target domain during their early growth stages, utilizing
+Within a confined area, specific crop types often exhibit min-       labelled source domain data (Xs , Ys ) and unlabelled target do-
+imal variability in the growth period, offering reliable priors      main data (Xt ). This approach addresses challenges related to
+for accurate sample inference. However, outside these labelled       the cross-domain issue and the label space discrepancies issue.
+regions or domains, significant phenological disparities arise       The source and target domains correspond to the study areas
+within the same crop type due to variations in environmental         detailed in Section 3.1, while the specific challenges are elabor-
+conditions. This presents a considerable challenge for cross-        ated upon in Sections 3.2 and 3.3.
+domain classification. Existing approaches address this chal-
+lenge through two distinct perspectives:                             3.1    Study Areas
+
+From a feature perspective, previous works introduced DANN
+variant methods to map samples from diverse regions into a
+shared feature subspace, thereby reducing differences in deep
+features. For instance, (Kwak and Park, 2022) presents the
+STDAN, a novel unsupervised domain adaptation framework
+for crop type classification. Moreover, the DACCN (Wang et
+al., 2021b) and the PAN (Wang et al., 2023a), extended the
+loss function using the Maximum Mean Discrepancy (MMD)
+and the Multiple Kernel variant of Maximum Mean Discrep-
+ancy (MK-MMD), achieving improved accuracy compared to
+CNN and LSTM methods without domain adaptation. From
+a sample perspective, two distinct methods emerge. The first
+method involves fine-tuning pre-trained models by utilizing a
+few high-quality samples from the target domain. This process
+enables the adaptation of the original model to the new distribu-          Figure 1. The Study Areas in the USA and Canada. The
+tion. For instance, in (Tong et al., 2020), deep models were re-             locations of our study areas are denoted by red dots.
+fined for nationwide land cover classification by incorporating
+pseudo-labels with high confidence. Similarly, in (Hamrouni et       The study areas are located in two countries: the USA and
+al., 2021), new samples from the target domains were annotated       Canada. As depicted in Figure 1, Study Areas A (Traill County)
+to adjust RF classifiers through active learning. However, this      and B (Cavalier County) are located in North Dakota, the USA,
+approach often requires labelling additional samples, making         whereas Study Areas C and D are in Manitoba and Alberta,
+it impractical for extensive area research. On the other hand,       Canada, respectively. The geographic coordinates for Study
+the second method, exemplified by the CropGAN (Wang et al.,          Area C range from longitudes −97.97 to −96.59 and latitudes
+2024), involves employing a GAN model to learn a mapping             49.22 to 49.59. Study Area D is defined by longitudes −112.96
+function. This function transforms time-series MSI sample data       to −112.53 and latitudes 49.79 to 50.06.
+from the target domain to the source domain while preserving
+local structures. This transformation allows a pre-trained crop      3.2    Cross Domain Issue
+mapper classifier, utilizing source domain labelled data, to ac-
+                                                                     The Normalized Difference Vegetation Index (NDVI) calcu-
+curately process the transformed data, thereby enabling high-
+                                                                     lated as a ratio between the red (Red) and near-infrared (NIR)
+accuracy crop mapping without labelled data in the target do-
+                                                                     values by
+main.                                                                                               NIR − Red
+                                                                                          NDVI =                                 (1)
+However, the approaches discussed earlier, regardless of their                                      NIR + Red
+perspective, face limitations arising from differences in label      , is usually used to quantify vegetation greenness. Figure 2
+spaces between the target and source domains. As far as our          displays the average NDVI value curves for the target crops
+knowledge extends, we are the pioneering contributors to tack-       and other crop types throughout their growth stages in differ-
+ling label space discrepancies from a sample perspective. This       ent study areas. It is important to recognize that variations in
+
+
+         This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                    https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                     242
+                      ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+                ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+
+                                 Temporal Curves for Different Crops                                 Temporal Curves for Different Crops                                  Temporal Curves for Different Crops
+                                  Corn                                                                Corn                                                                 Corn
+                        0.8       Soybean                                                   0.8       Soybean                                                    0.8       Spring Wheat
+                                  Spring Wheat                                                        Spring Wheat                                                         Other Crops
+      Mean NDVI Value
+
+
+
+
+                                                                          Mean NDVI Value
+
+
+
+
+                                                                                                                                               Mean NDVI Value
+                                  Other Crops                                                         Other Crops
+                        0.6                                                                 0.6                                                                  0.6
+
+                        0.4                                                                 0.4                                                                  0.4
+
+                        0.2                                                                 0.2                                                                  0.2
+                              160 170 180 190 200 210 220 230 240                                 160 170 180 190 200 210 220 230 240                                  160 170 180 190 200 210 220 230 240
+                                            Day of Year                                                         Day of Year                                                          Day of Year
+                                                 (a)                                                                 (b)                                                                  (c)
+
+ Figure 2. The Temporal NDVI Curves of Different Crops during Their Growing Period in Study Areas. (a) Study Area A and B. (b)
+                                               Study Area C. (c) Study Area D.
+
+ S                      T(K)           P(mm/h)          E(mm/h)        R(kJ/m2 )                     El (m)                            Crops                                      A        B     C       D
+ A                      287.37            2.04             -1.01        4794.21                      287.60                            Corn                                       ✓        ✓     ✓       ✓
+ B                      284.85            1.95             -0.93        4368.04                      470.35                            Spring wheat                               ✓        ✓     ✓       ✓
+ C                      285.61            2.12             -0.95        4376.90                      237.58                            Soybean                                    ✓        ✓     ✓        -
+ D                      285.90            0.68             -0.64        5079.23                      896.98                            Sunflower                                  ✓        ✓     ✓        -
+                                                                                                                                       Barley                                     ✓        ✓     ✓       ✓
+Table 1. The Environmental Conditions of the Study Areas. ”S”                                                                          Canola                                     ✓         -    ✓       ✓
+                                                                                                                                       Peas                                       ✓         -     -      ✓
+   denotes study areas, ”T” annual average temperature, ”P”                                                                            Sugarbeets                                  -       ✓      -      ✓
+ average hourly precipitation, ”E” average hourly evaporation                                                                          Dry Beans                                  ✓        ✓      -       -
+    rate, ”R” surface net solar radiation, and ”El” elevation.                                                                         Pasture and Forages                         -        -    ✓       ✓
+                                                                                                                                       Canary seed                                 -        -    ✓        -
+                                                                                                                                       Oats                                        -        -    ✓        -
+                                                                                                                                       Rye                                         -        -    ✓        -
+                                                                                                                                       Flax seed                                   -        -    ✓        -
+                                                                                                                                       Potatoes                                    -        -     -      ✓
+                                                                                                                                       Lentils                                     -        -     -      ✓
+
+                                                                                                                           Table 2. Crop Types in Study Area A, B, C, and D. ”✓” denotes
+                                                                                                                                the presence of a crop, while ”-” indicates its absence.
+
+                                                                                                                                                                 4. Methodology
+
+                                                                                                                           To address the cross-domain issue and label space discrepan-
+                                                                                                                           cies, the MulticropGAN model is proposed. It transforms the
+                                                                                                                           target domain data into the source domain while preserving the
+   Figure 3. The Crop Calendar delineates the planting and                                                                 characteristics of the target domain data related to crop types
+ harvesting schedules for target crops in the USA (above) and                                                              absent in the source domain. Figure 4 illustrates our proposed
+                       Canada (below).                                                                                     MultiCropGAN model, consisting of a generator, a discrim-
+                                                                                                                           inator, and a classifier. The primary goal of the generator is
+NDVI curves for a specific crop across different regions can                                                               to transform data from the target domain into the source do-
+be attributed to different environmental conditions, as detailed                                                           main. Meanwhile, the discriminator’s objective is to differ-
+in Table 1, and varying crop calendars, as illustrated in Fig-                                                             entiate between the transformed target data and the original
+ure 3. These factors contribute to distinct phenological char-                                                             source data. The classifier and the discriminator are structur-
+acteristics in crops within these regions. Consequently, when                                                              ally identical and share weights, with the exception of the out-
+a model trained on source domain data is directly applied to                                                               put layer. Trained with source data and labels, the classifier’s
+the target domain, it frequently underperforms, termed as the                                                              purpose is to categorize crop types in the target domain using
+cross-domain issue.                                                                                                        the transformed target data produced by the generator.
+
+                                                                                                                           4.1   Data Preprocessing
+3.3             Label Space Discrepancies Issue
+                                                                                                                           The preprocessing, shown in Figure 5, aims at providing com-
+                                                                                                                           plete time-series remote sensing data by filling gaps between
+Current cross-domain methods aim to align the data distribution                                                            MSI images due to cloud cover, atmospheric interference, or
+between the source and target domains to mitigate the domain                                                               sensor limitations. There are four dataset used in the prepro-
+shift problem, assuming that the crop types between these do-                                                              cessing:
+mains are identical. However, in the context of real-world ap-
+plications, these domains often display a variety of crop types.
+For instance, Table 2 illustrates the diverse crop types present                                                             • The Sentinel-2 MSI images, widely recognized and em-
+in the study areas. The absence of certain crop types in each do-                                                              ployed in numerous agricultural applications within the
+main leads to a significant difference between the data distribu-                                                              scientific community (Wang et al., 2021a, Blickensdörfer
+tions, which the current cross-domain methods cannot resolve,                                                                  et al., 2022), are utilized as remote sensing data. Sentinel-
+known as the label space discrepancies issue.                                                                                  2 captures high-resolution MSI images up to 10 meters,
+
+
+                              This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                                         https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                                                                          243
+           ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+     ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+
+Figure 4. The MultiCropGAN Structure with Training Dataflow.
+   It comprises three essential components: the generator, the
+                 discriminator, and the classifier.
+
+     with a 5-day revisit time, enabling frequent crop growth
+     monitoring.
+
+  • The Dynamic World dataset (Brown et al., 2022) is util-
+    ized, providing detailed class probabilities and labels with
+    a 10-meter resolution for nine distinct land categories, not-                      Figure 5. The Preprocessing.
+    ably including cropland.
+                                                                     a clear, 30-meter resolution. Consequently, a set of nine high-
+  • The CDL (Boryan et al., 2011), a crop-specific land cover        quality time-series MSI images is generated and characterized
+    raster map accessible for the entire contiguous U.S. land        by their absence of clouds and gaps. These images encompass
+    area at a 30-meter resolution, is provided by the USDA. It       six bands, all with a spatial resolution of 30 meters.
+    serves as the training GT for the USA.
+                                                                     4.2     Model Structure
+  • Similarly, the Canada Agriculture and Agri-Food Canada
+    (AAFC) Annual Crop Inventory (Fisette et al., 2013), with        In the MultiCropGAN framework, the generator operates as an
+    a 30-meter spatial resolution, is employed as the GT for         autoencoder. The encoder is composed of three residual blocks,
+    Canada in the test process.                                      each featuring two one-dimensional convolutional (Conv1D)
+                                                                     layers followed by a MaxPooling layer. The Conv1D layers
+The procedure, shown in Figure, starts by acquiring MSI im-          are characterized by 32 filters with a kernel size of 3. Mean-
+ages with six bands, including B2 (Blue), B3 (Green), B4 (Red),      while, the MaxPooling layers have a pool size of 3 and a stride
+B8 (NIR), B11 (Shortwave Infrared 1), and B12 (Shortwave             of 1. The encoder is followed by a flatten layer and a sequence
+Infrared 2), encompassing the entire designated study areas.         of fully connected layers with dimensions 96, 64, 64, 64, and
+These images originate from the Sentinel-2 Dataset and are cap-      96, respectively. The decoder, mirroring the encoder, employs
+tured at regular 10-day intervals as an image sequence. Our          Conv1DTranspose layers, which are specifically designed for
+primary goal is to identify target crops with label space dis-       transposing a Conv1D layer. This technique reverses the trans-
+crepancies and cross-domain problems during an early growth          formation performed by the corresponding Conv1D layers in
+stage. Consequently, the time series remote sensing data should      the encoder, thus aiding in reconstructing the original input fea-
+start after the planting period and end before the onset of crop     tures from their encoded state. The discriminator and classi-
+harvest. As depicted in Figure 3, the earliest target crop har-      fier adopt the same encoder structure as the generator. This is
+vesting season commences in August. As a result, nine image          followed by two fully connected layers, featuring dimensions
+groups are compiled, spanning from May 1st to July 30th. Sim-        of 32 and 16, respectively. The discriminator’s output layer
+ultaneously, to eliminate non-agricultural lands in the MSI im-      is a fully connected layer with a dimension of 2, designed to
+ages, the process extracts the cropland mask during the crop         distinguish between generated target data and original source
+growing season from the Dynamic World dataset and reprojects         data. Conversely, the classifier’s output layer is a fully connec-
+it to maintain a consistent 30-meter resolution. After excluding     ted layer with a dimension of 4, tasked with identifying target
+non-agricultural lands using the cropland mask extracted from        crops (such as corn, soybean, and spring wheat) and other crop
+the Dynamic World dataset, the MSI images in the nine image          types.
+groups specifically focus on agricultural lands. Within each im-
+age group, Sentinel Hub’s cloud detector (Skakun et al., 2022)       4.3     Losses
+is utilized to implement cloud masks on the Sentinel-2 MSI
+images. This merging process retains the mean values of the          4.3.1    Adversarial Loss    The adversarial loss function is defined
+cloud-free MSI images, resulting in a composite MSI image at         by
+
+
+         This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                    https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                  244
+              ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+        ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+                   MCGAN (Ours)               CropGAN                 STDAN           DACCN           TempCNN                  RF
+                   OA (%) F1 (%)             OA     F1              OA    F1        OA    F1          OA    F1          OA           F1
+          S1        80.90 80.91             74.47 73.89            70.52 69.66     72.52 72.04       71.44 70.37       67.93        66.90
+          S2        81.86 81.87             70.90 71.29            72.68 71.00     68.06 67.05       71.06 70.19       68.23        67.11
+          S3        81.64 81.54             72.81 72.02            68.98 67.51     67.82 65.02       66.76 63.37       66.07        64.71
+          S4        82.96 82.93             70.48 69.28            73.68 72.76     71.68 71.03       71.80 70.39       66.95        65.59
+          S5        81.08 81.04             73.39 73.87            64.88 61.77     73.86 72.27       70.90 68.78       67.35        66.09
+          Avg       81.69 81.66             72.41 72.07            70.15 68.54     70.79 69.48       70.39 68.62       67.31        66.08
+
+Table 3. Experiment Metrics for the First Experiment: Best metrics are indicated in bold, while the best metrics of the SOTA methods
+                                                          are underlined.
+
+                   MCGAN (Ours)               CropGAN                 STDAN           DACCN           TempCNN                  RF
+                   OA (%) F1 (%)             OA     F1              OA    F1        OA    F1          OA    F1          OA           F1
+          S1        79.96 80.27             70.00 69.25            64.19 63.06     67.24 68.52       71.68 72.35       76.78        76.93
+          S2        80.89 80.96             68.78 68.75            71.87 73.01     70.01 70.96       73.88 74.41       76.93        77.00
+          S3        79.53 80.55             70.94 72.97            69.40 70.76     66.89 65.25       72.05 73.26       77.27        77.25
+          S4        77.39 79.47             72.82 73.43            69.63 68.69     66.94 67.89       74.76 75.52       76.99        77.13
+          S5        80.68 81.45             72.03 72.37            68.65 69.92     67.07 67.07       75.27 76.07       77.09        77.12
+          Avg       79.69 80.54             70.91 71.35            68.75 69.09     67.63 67.94       73.53 74.32       77.01        77.09
+
+   Table 4. Experiment Metrics for the Second Experiment: Best metrics are indicated in bold, while the best metrics of the SOTA
+                                                    methods are underlined.
+
+                                                                             , where α, β, σ are the weight parameters. The total loss can be
+                                                                             expressed as a minimax function:
+  Ladv (G, D, Xt , Xs ) =Exs ∼pdata (xs ) [log D(xs )]+
+                                                                       (2)
+                              Ext ∼pdata (xt ) [1 − log D(G(xt ))]                         min max Ltotal (G, D, C, Xt , Xs , Ys )          (7)
+                                                                                           G,C   D
+
+, which aims to drive the generator to produce transformed data              , where the generator seeks to minimize the loss while the dis-
+within the target domain that closely resembles real data from               criminator aims to maximize it.
+the source domain. The discriminator’s objective is to distin-
+guish the generated data as fake data, while the generator’s goal
+is to craft realistic data to deceive the discriminator.                                             5. Experiments
+
+4.3.2    Identity Loss      The identity losses are defined by               In this section, our proposed MultiCropGAN is compared with
+                                                                             other state-of-the-art (SOTA) algorithms, including CropGAN,
+           Lidt (G, Xt ) = Ext ∼pdata (xt ) [||G(xt ) − xt ||1 ]       (3)   STDAN, DACCN, TempCNN, and RF, on two experiments of
+                                                                             cross-domain time series early crop classification with discrep-
+                                                                             ancies in label spaces. The classification encompasses four la-
+                                                                             bels, comprising three types of target crops (corn, soybean, and
+           Lids (G, Xs ) = Exs ∼pdata (xs ) [||G(xs ) − xs ||1 ]       (4)   spring wheat) and a category for other crop types.
+
+, which encourage the generator to preserve the identity of the              5.1    Experimental Setup
+input data. It computes the difference between the generator
+output and the input data. The objective of minimizing this                  Two experiments are set up in this paper:
+loss is to ensure that the generator does not make unnecessary
+alterations to the data and maintains its essential characteristics.             • The first experiment employs study areas A and B as the
+                                                                                   source domain, while study area C is designated as the tar-
+4.3.3 Class Loss The class loss, denoted as the multi-class                        get domain. Despite the alignment of target crop types
+cross-entropy loss, is defined by the equation:                                    with those in the source domain, variations exist in the
+                                       X                                           types of other crops.
+            Lclass (C, Xs , Ys ) = −        ys · log(C(xs ))           (5)
+                                                                                 • In the second experiment, study areas A and B function as
+                                                                                   the source domain, and study area D serves as the target
+This loss function encourages the classifier to extract features
+                                                                                   domain, specifically lacking soybean. The variations in
+that encompass class-related information. These features are
+                                                                                   the types of other crops are retained.
+shared with the discriminator since the classifier and the dis-
+criminator have shared weights. The discriminator utilizes these
+features to discern whether the data originates from the original            In the experiments, Our method and SOTA methods are cat-
+source domain or not.                                                        egorized into two groups. MultiCropGAN, CropGAN, STDAN,
+                                                                             and DACCN fall under the cross-domain methods category, while
+                                                                             TempCNN and RF are classified as direct methods.
+4.3.4    Total Loss      The total loss is defined by
+                                                                             5.2    Training Setup
+              Ltotal =αLadv (G, D, Xt , Xs )+
+                       β(Lidt (G, Xt ) + Lids (G, Xs ))+               (6)   The experiment utilizes data sampled from 2019. From the
+                       σLclass (C, Xs , Ys )                                 source domain, 5, 000 data points are randomly selected for
+
+
+           This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                      https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                         245
+           ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+     ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+
+            (a)                        (b)                          (c)                         (d)                       (e)
+
+
+
+
+                                      (f)                           (g)                         (h)                       (i)
+
+ Figure 6. Visualization of the Second Experiment Results Employing Cross-Domain Deep Learning Methods. In this visualization,
+yellow denotes corn, orange signifies soybean, green indicates spring wheat, and white represents other crops. (a) displays the GT for
+crop types. The crop mapping results are depicted in (b) for MultiCropGAN, (c) for CropGAN, (d) for STDAN, and (e) for DACCN.
+    The corresponding error images are illustrated in panels (f) through (i) for MultiCropGAN, CropGAN, STDAN, and DACCN,
+                                         respectively. Red highlights the misclassified pixels.
+
+                                                                          trained solely on the training sets to acquire well-trained mod-
+                                                                          els for these two experiments. Every compared method was
+                                                                          repeatedly trained on each subset from scratch 5 times with the
+                                                                          same training configuration. Our MultiCropGAN was trained
+                                                                          with α = 1, β = 20, σ = 1 in the loss function. The RF clas-
+                                                                          sifier was trained using specific parameters: tree num = 50
+                                                                          and leaf size = 15. The optimizer employed in all deep learn-
+                                                                          ing methods underwent a substitution, being replaced by the
+                                                                          Adam optimizer, initialized with a learning rate of 0.0005 and
+                  (a)                         (b)                         configured with β = (0.9, 0.998). The RF classifier underwent
+                                                                          training using the sklearn library, while all deep models were
+                                                                          constructed using Tensorflow. Training persisted until the com-
+                                                                          pletion of 500 epochs or upon convergence, as determined by
+                                                                          an early stopping criterion set at 50 epochs.
+                                                                          5.3   Experimental Results
+
+                                                                          Two metrics, the Overall Accuracy (OA) and Weighted F1 Score,
+                                                                          are utilized to assess the performance of the proposed Multi-
+                                                                          CropGAN model. Tables 3 and 4 present the OA and F1 score
+                  (c)                         (d)                         results of our method in comparison to the SOTA. Across two
+                                                                          experiments, our method demonstrates the highest average OA
+    Figure 7. Visualization of the Second Experiment Results              and F1 score.
+Employing the TempCNN and RF. The crop mapping results are
+depicted in (a) for TempCNN, and (b) for RF. The corresponding            In the first experiment, our approach achieved an average OA
+ error images are illustrated in (f) for TempCNN, and (i) for RF.         of 81.69% and an average F1 score of 81.66%. This marked
+                                                                          a notable improvement, with a +9.28% increase in OA and a
+                                                                          +9.59% boost in F1 score when compared to the CropGAN
+each of nine existing crop types, as detailed in Table 2, amount-         model’s performance, which had an OA of 72.41% and an F1
+ing to a total of 45, 000 data points. These are balanced and             score of 72.07%, securing the second position in the rankings.
+accompanied by source domain labels. In contrast, for each                Among the cross-domain methods, DACCN claimed the third
+target domain, 150, 000 data points were randomly sampled,                position, surpassing STDAN in performance. Within the cat-
+lacking label information and resulting in unbalanced data. For           egory of direct methods, TempCNN exhibited slightly better
+the training and evaluation of models, the source data was dis-           results than STDAN but lagged behind DACCN. Notably, RF
+tributed as follows: 80% was dedicated to training, and the               demonstrated the weakest performance among all the methods,
+remaining 20% was set aside for evaluation, specifically for              with an OA of 67.31% and an F1 score of 66.08%.
+the application of early stopping criteria. Notably, all target
+data were utilized in the training process of the cross-domain            In the second experiment, our approach achieved an OA of
+methods and testing process of all methods. All methods are               79.69% and an F1 score of 80.54%. In contrast, the RF model
+
+
+         This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                    https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                     246
+           ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+     ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+secured the second position, attaining an OA of 77.01% and an        main shift resulting from diverse regions and variations in label
+F1 score of 77.09%. Noteworthy is the performance of the dir-        spaces during early crop mapping, leveraging multi-temporal
+ect method TempCNN, which secured the third position with an         multispectral input data. The MultiCropGAN model comprises
+OA of 73.53% and an F1 score of 74.32%, outperforming the            three key components: a generator, a discriminator, and a clas-
+other three cross-domain methods. Among these cross-domain           sifier. Additionally, we introduce identity losses for both target
+methods, CropGAN demonstrated superior performance with              and source domain data to ensure that the generator maintains
+an OA of 70.91% and an F1 score of 71.35% compared to                essential data characteristics throughout the transformation pro-
+STDAN, which achieved an OA of 68.75% and an F1 score of             cess. The classifier is trained using source domain data and
+69.09%. Furthermore, STDAN outperformed DACCN, which                 their respective labels, sharing model weights with the discrim-
+attained an OA of 67.63% and an F1 score of 67.94%.                  inator to enable the latter to leverage class-related features for
+                                                                     distinguishing between generated target domain data and ori-
+The second experiment presents a more intricate scenario con-        ginal source domain data.
+cerning discrepancies within the label space, in contrast to the
+first experiment. This complexity is characterized not only by       Finally, our MultiCropGAN is evaluated against several SOTA
+a diversity of other crop types but also by the conspicuous ab-      methods in scenarios marked by variations in crop label spaces.
+sence of soybeans among the target crop categories. As de-           Experiments conducted across the USA and Canada demon-
+picted in Figure 6(a), it is evident that soybeans (depicted in      strated that MultiCropGAN outperforms various SOTA meth-
+yellow) are not present in the target domain, although they exist    ods, including CropGAN, STDAN, DACCN, TempCNN, and
+in the source domain. Figures 6 and 7 provide visual repres-         RF. The comparative analysis shows MultiCropGAN achieving
+entations of the results obtained through both our methodology       the highest classification metrics, particularly effective in hand-
+and SOTA approaches, specifically tailored to address the chal-      ling divergent label spaces in target and source domains. The
+lenges of the second experiment. In the results, it becomes ap-      results show that MultiCropGAN notably enhances classifica-
+parent that CropGAN and TempCNN misclassify parts of corn,           tion outcomes for the target domain without utilizing any label
+spring wheat, or other crop types as soybean pixels. Moreover,       information specific to the target domain.
+STDAN, DACCN, and RF exhibit trends of misclassification of
+corn and spring wheat as other crops.
+                                                                                         8. Acknowledgements
+                        6. Discussion                                I would like to express my deepest gratitude to my advisors,
+                                                                     Hui HUANG and Radu STATE, for their unwavering support,
+When there are moderate differences in label spaces across vari-
+                                                                     guidance, and mentorship throughout the duration of this re-
+ous cross-domain methods, such as those observed in the first
+                                                                     search project. Their expertise, encouragement, and invaluable
+experiment, cross-domain deep learning methods exhibit super-
+                                                                     insights have been instrumental in shaping the course of my
+ior performance over TempCNN and RF. Notably, when DACCN
+                                                                     academic journey.
+incorporates the MMD loss to extract the invariant features more
+strictly, it demonstrates higher performance than STDAN. Crop-       I would also like to extend my heartfelt appreciation to my fam-
+GAN outperforms both STDAN and DACCN, possibly due to                ily for their endless love, encouragement, and sacrifices. Their
+its utilization of the identity loss calculated from the source      unwavering belief in my abilities has been a constant source of
+domain data. Particularly noteworthy is the exceptional per-         motivation, and I am profoundly grateful for their unyielding
+formance of MultiCropGAN, surpassing all the other methods,          support.
+thereby establishing itself as the most effective method in this
+context.                                                             Additionally, I want to thank all my colleagues, friends, and
+                                                                     fellow researchers who provided valuable assistance, feedback,
+However, in scenarios characterized by substantial disparities
+                                                                     and inspiration during this research endeavor. Your contribu-
+among target crop labels, as evident in the second experiment,
+                                                                     tions have enriched the quality of this work and have been im-
+TempCNN and RF demonstrated superior performance com-
+                                                                     mensely valuable.
+pared to several cross-domain methods (such as CropGAN, STDAN,
+and DACCN). This could be attributed to the attempts made by
+these cross-domain methods to align data distributions between                                  References
+the target and source domains, despite the inherent differences
+caused by the absence of soybeans in the target domain. Despite     Ajakan, H., Germain, P., Larochelle, H., Laviolette, F.,
+DACCN’s more rigorous attempts to extract invariant features        Marchand, M., 2014. Domain-adversarial neural networks.
+by employing MMD loss compared to STDAN, it exhibited               arXiv preprint arXiv:1412.4446.
+less effective performance. Notably, CropGAN consistently
+demonstrated superior performance compared to both STDAN            Blickensdörfer, L., Schwieder, M., Pflugmacher, D., Nendel,
+and DACCN. As expected, MultiCropGAN maintained its po-             C., Erasmi, S., Hostert, P., 2022. Mapping of crop types
+sition as the top-performing approach, surpassing even Temp-        and crop sequences with combined time series of Sentinel-1,
+CNN and RF. One of the key contributing factors to MultiCrop-       Sentinel-2 and Landsat 8 data for Germany. Remote sensing of
+GAN’s success is its use of two identity losses, which ensure       environment, 269, 112831.
+that the generator retains crucial data characteristics without un-
+necessary alterations.                                              Boryan, C., Yang, Z., Mueller, R., Craig, M., 2011. Monitoring
+                                                                    US agriculture: the US department of agriculture, national ag-
+                                                                    ricultural statistics service, cropland data layer program. Geo-
+                         7. Conclusions                             carto International, 26(5), 341–358.
+
+This paper introduces MultiCropGAN, an innovative generative         Brown, C. F., Brumby, S. P., Guzder-Williams, B., Birch, T.,
+adversarial neural network designed to tackle the issue of do-       Hyde, S. B., Mazzariello, J., Czerwinski, W., Pasquarella, V. J.,
+
+
+         This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                    https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                   247
+           ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences, Volume X-1-2024
+     ISPRS TC I Mid-term Symposium “Intelligent Sensing and Remote Sensing Application”, 13–17 May 2024, Changsha, China
+
+
+
+Haertel, R., Ilyushchenko, S. et al., 2022. Dynamic World, Near      Pelletier, C., Webb, G. I., Petitjean, F., 2019. Temporal convo-
+real-time global 10 m land use land cover mapping. Scientific        lutional neural network for the classification of satellite image
+Data, 9(1), 251.                                                     time series. Remote Sensing, 11(5), 523.
+
+Creswell, A., White, T., Dumoulin, V., Arulkumaran, K., Sen-         Pittman, K., Hansen, M. C., Becker-Reshef, I., Potapov, P. V.,
+gupta, B., Bharath, A. A., 2018. Generative adversarial net-         Justice, C. O., 2010. Estimating global cropland extent with
+works: An overview. IEEE signal processing magazine, 35(1),          multi-year MODIS data. Remote Sensing, 2(7), 1844–1863.
+53–65.
+                                                                     Singha, C., Swain, K. C., 2016. Land suitability evaluation cri-
+Crisóstomo de Castro Filho, H., Abı́lio de Carvalho Júnior,        teria for agricultural crop selection: A review. Agricultural re-
+O., Ferreira de Carvalho, O. L., Pozzobon de Bem, P.,                views, 37(2), 125–132.
+dos Santos de Moura, R., Olino de Albuquerque, A.,
+Rosa Silva, C., Guimaraes Ferreira, P. H., Fontes Guimarães,        Skakun, S., Wevers, J., Brockmann, C., Doxani, G.,
+R., Trancoso Gomes, R. A., 2020. Rice crop detection using           Aleksandrov, M., Batič, M., Frantz, D., Gascon, F., Gómez-
+LSTM, Bi-LSTM, and machine learning models from Sentinel-            Chova, L., Hagolle, O. et al., 2022. Cloud Mask Intercom-
+1 time series. Remote Sensing, 12(16), 2655.                         parison eXercise (CMIX): An evaluation of cloud masking al-
+                                                                     gorithms for Landsat 8 and Sentinel-2. Remote Sensing of En-
+Duro, D. C., Franklin, S. E., Dubé, M. G., 2012. A comparison       vironment, 274, 112990.
+of pixel-based and object-based image analysis with selected
+machine learning algorithms for the classification of agricul-       Tariq, A., Yan, J., Gagnon, A. S., Riaz Khan, M., Mumtaz, F.,
+tural landscapes using SPOT-5 HRG imagery. Remote sensing            2023. Mapping of cropland, cropping patterns and crop types
+of environment, 118, 259–272.                                        by combining optical remote sensing images with decision tree
+                                                                     classifier and random forest. Geo-Spatial Information Science,
+Fisette, T., Rollin, P., Aly, Z., Campbell, L., Daneshfar, B.,       26(3), 302–320.
+Filyer, P., Smith, A., Davidson, A., Shang, J., Jarvis, I., 2013.
+Aafc annual crop inventory. 2013 Second International Con-           Tong, X.-Y., Xia, G.-S., Lu, Q., Shen, H., Li, S., You, S., Zhang,
+ference on Agro-Geoinformatics (Agro-Geoinformatics), IEEE,          L., 2020. Land-cover classification with high-resolution remote
+270–274.                                                             sensing images using transferable deep models. Remote Sensing
+                                                                     of Environment, 237, 111322.
+Ge, S., Zhang, J., Pan, Y., Yang, Z., Zhu, S., 2021. Transferable
+deep learning model based on the phenological matching prin-         Waldner, F., Fritz, S., Di Gregorio, A., Defourny, P., 2015. Map-
+ciple for mapping crop extent. International Journal of Applied      ping priorities to focus cropland mapping activities: Fitness
+Earth Observation and Geoinformation, 102, 102451.                   assessment of existing global, regional and national cropland
+                                                                     maps. Remote Sensing, 7(6), 7959–7986.
+Hamidi, M., Safari, A., Homayouni, S., 2021. An auto-
+encoder based classifier for crop mapping from multitemporal         Wang, Y., Feng, L., Zhang, Z., Tian, F., 2023a. An unsuper-
+multispectral imagery. International Journal of Remote Sens-         vised domain adaptation deep learning method for spatial and
+ing, 42(3), 986–1016.                                                temporal transferable crop type mapping using Sentinel-2 im-
+                                                                     agery. ISPRS Journal of Photogrammetry and Remote Sensing,
+Hamrouni, Y., Paillassa, E., Chéret, V., Monteil, C., Sheeren,      199, 102–117.
+D., 2021. From local to global: A transfer learning-based ap-
+proach for mapping poplar plantations at national scale us-          Wang, Y., Huang, H., State, R., 2023b. Early Crop Mapping
+ing Sentinel-2. ISPRS Journal of Photogrammetry and Remote           Using Dynamic Ecoregion Clustering: A USA-Wide Study. Re-
+Sensing, 171, 76–100.                                                mote Sensing, 15(20), 4962.
+
+Hao, P., Di, L., Zhang, C., Guo, L., 2020. Transfer Learning         Wang, Y., Huang, H., State, R., 2024. Cross Domain Early Crop
+for Crop classification with Cropland Data Layer data (CDL)          Mapping using CropGAN and CNN Classifier. arXiv preprint
+as training samples. Science of The Total Environment, 733,          arXiv:2401.07398.
+138869.                                                              Wang, Y., Zhang, Z., Feng, L., Ma, Y., Du, Q., 2021a. A new
+                                                                     attention-based CNN approach for crop mapping using time
+He, T., Xie, C., Liu, Q., Guan, S., Liu, G., 2019. Evaluation
+                                                                     series Sentinel-2 images. Computers and electronics in agri-
+and comparison of random forest and A-LSTM networks for
+                                                                     culture, 184, 106090.
+large-scale winter wheat identification. Remote Sensing, 11(14),
+1665.                                                                Wang, Z., Zhang, H., He, W., Zhang, L., 2021b. Phenology
+                                                                     alignment network: A novel framework for cross-regional time
+Konduri, V. S., Kumar, J., Hargrove, W. W., Hoffman, F. M.,
+                                                                     series crop classification. Proceedings of the IEEE/CVF Con-
+Ganguly, A. R., 2020. Mapping crops within the growing sea-
+                                                                     ference on Computer Vision and Pattern Recognition, American
+son across the United States. Remote Sensing of Environment,
+                                                                     Association for Artificial Intelligence, 2940–2949.
+251, 112048.
+
+Kwak, G.-H., Park, N.-W., 2022. Unsupervised domain adapt-
+ation with adversarial self-training for crop classification using
+remote sensing images. Remote Sensing, 14(18), 4639.
+
+Mathur, A., Foody, G. M., 2008. Crop classification by support
+vector machine with intelligently selected training data for an
+operational application. International Journal of Remote Sens-
+ing, 29(8), 2227–2240.
+
+
+         This contribution has been peer-reviewed. The double-blind peer-review was conducted on the basis of the full paper.
+                    https://doi.org/10.5194/isprs-annals-X-1-2024-241-2024 | © Author(s) 2024. CC BY 4.0 License.                  248
+

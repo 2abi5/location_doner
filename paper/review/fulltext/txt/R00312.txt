@@ -1,0 +1,1204 @@
+                                                 Boosting Crop Classification by Hierarchically Fusing Satellite, Rotational, and
+                                                                                Contextual Data
+
+                                                                                  Valentin Barriere1,2,∗ , Martin Claverie2,∗ , Maja Schneider3 ,
+                                                                                           Guido Lemoine2 , Raphaël d’Andrimont2
+                                                                                   1       Centro Nacional de Inteligencia Artificial (CENIA), Santiago , Chile
+                                                                                       2    European Commission, Joint Research Centre (JRC), Ispra , Italy
+                                                                                                3 Technical University of Munich, Munich, Germany
+                                                                                                             ∗ Shared first authorship.
+arXiv:2305.12011v3 [cs.CV] 7 Nov 2023
+
+
+
+
+                                        Abstract
+                                        Accurate in-season crop type classification is crucial for the crop production estimation and monitoring of agricultural parcels.
+                                        However, the complexity of the plant growth patterns and their spatio-temporal variability present significant challenges. While
+                                        current deep learning-based methods show promise in crop type classification from single- and multi-modal time series, most
+                                        existing methods rely on a single modality, such as satellite optical remote sensing data or crop rotation patterns. We propose a
+                                        novel approach to fuse multimodal information into a model for improved accuracy and robustness across multiple crop seasons and
+                                        countries. The approach relies on three modalities used: remote sensing time series from Sentinel-2 and Landsat 8 observations,
+                                        parcel crop rotation and local crop distribution. To evaluate our approach, we release a new annotated dataset of 7.4 million
+                                        agricultural parcels in France (FR) and Netherlands (NL). We associate each parcel with time-series of surface reflectance (Red
+                                        and NIR) and biophysical variables (LAI, FAPAR). Additionally, we propose a new approach to automatically aggregate crop
+                                        types into a hierarchical class structure for meaningful model evaluation and a novel data-augmentation technique for early-season
+                                        classification. Performance of the multimodal approach was assessed at different aggregation levels in the semantic domain, yielding
+                                        to various ranges of number of classes spanning from 151 to 8 crop types or groups. It resulted in accuracy ranging from 91% to
+                                        95% for NL dataset and from 85% to 89% for FR dataset. Pre-training on a dataset improves domain adaptation between countries,
+                                        allowing for cross- domain and label prediction, and robustness of the performances in a few-shot setting from France to Netherlands
+                                        i.e. when the domain changes as per with significantly new labels . Our proposed approach outperforms comparable methods by
+                                        enabling learning methods to use the often overlooked spatio-temporal context of parcels, resulting in increased precision and
+                                        generalization capacity.
+                                        Keywords: Agriculture, Crop type mapping, Earth Observation, Geospatial Application, Long-Short-Term-Memory, Sentinel-2
+
+
+                                        1. Introduction                                                                       tion (CR) with RS data, and also local Crop Distribution (CD).
+                                                                                                                              If this has been done before, like we will show in the Section
+                                           Crop-type maps are an essential element used in crop pro-                          1.1.2, none has tried to fuse these different modalities in an ele-
+                                        duction monitoring that feed into global food security assess-                        gant way. The current approaches are mainly focusing on mea-
+                                        ments (Porter et al., 2014). Satellite Earth Observation (EO)                         suring the intra-year dynamics, for example by only inferring
+                                        systems offer a valuable data source for crop classification due                      using the RS data of the target season, while forgoing the inter-
+                                        to the synoptic, repeated, consistent, and timely availability of                     year dynamics that is crucial since reflecting agricultural prac-
+                                        observations (Weiss et al., 2020). Since 2015, the data from                          tices. By fusing the different data sources in a hierarchical way,
+                                        the European Union (EU)’s Copernicus program, in particu-                             the approach described in this paper allows one to take advan-
+                                        lar those of the Sentinel-1 (S1) and Sentinel-2 (S2) sensors,                         tage of both the inter-year dynamics and the intra-year dynam-
+                                        provide systematic and consistent EO data at a spatial resolu-                        ics. For this aim, we construct and release a dataset of several
+                                        tion generally higher than the size of most agricultural parcels.                     seasons of time-series of the same parcels, based on data from
+                                        Benefiting from satellite image time series (SITS) organised in                       the EU’s Common Agricultural Policy. Finally, and because we
+                                        datasets that were developed over the last decade (see Capliez                        judge this important for the practitioners, we propose a method
+                                        et al., 2023, for a review of existing datasets), many crop-type                      for early-season detection works well with the proposed hierar-
+                                        mapping studies and operational systems based on EO have                              chical model (Section 1.1.3). The chosen encoders are arbitrary,
+                                        been carried out, leveraging abundant available data.                                 and our method could work with other more complex methods
+                                           Most of the current systems from crop classification rely on                       than the Recurrent Neural Network (RNN) - Long-Short-Term-
+                                        the Remote Sensing (RS) data of the season (Section 1.1.1).                           Memory (LSTM) (i.e., RNN-LSTM) we used in this work.
+                                        What we propose in this work is the conjunct use of Crop Rota-
+                                        Preprint submitted to Remote Sensing of Environment                                                                                      November 9, 2023
+1.1. Related Works                                                       et al. (2021b), which is an aggregation of satellite datasets for
+                                                                         crop type classification containing annotation at the pixel levels,
+   The related works have been separated in three subsections:
+                                                                         without an harmonized label taxonomy between the examples
+EO-based-only models, models using crop-rotations, and works
+                                                                         of different domains.
+on early-season predictions. We restrain this section to learning
+methods, as it is the focus of this work and as they have proven         1.1.2. Crop-rotation-based Models
+to lead to better results than classical machine learning and sig-
+                                                                            Crop rotation is an essential agronomic practice for sustain-
+nal processing-based methods at large scale.
+                                                                         able farming and preserving long-term soil quality. A good
+                                                                         understanding and design of crop rotation is vital for sustain-
+1.1.1. EO-based Models                                                   ability and mitigating the variability of agricultural productiv-
+   Rußwurm et al. (2019a) classify 13 crop types at the parcel-          ity induced by climate change (Bohan et al., 2021). Crop rota-
+level using all 13 available spectral bands of Sentinel2 during          tion patterns are complex and non-stable in time, often depen-
+the 2017 growing season in French Brittany. They compare                 dent on farmer management decisions and subject to changes
+a Transformer-Encoder (Vaswani et al., 2017) and a Recur-                due to economic considerations and administrative regulations
+rent Neural Network of LSTM type (Hochreiter & Schmidhu-                 (Dogliotti et al., 2003). As a result, expert knowledge-based
+ber, 1997) and find that both models perform similarly, with             models have limitations in terms of accuracy and applicabil-
+the Transformer-Encoder and LSTM achieving both compa-                   ity over large areas and long periods. Alternative approaches,
+rable accuracy and macro-F1, respectively close to 0.69 and              such as estimation of crop sequence probabilities using survey
+0.59. Rußwurm & Körner (2020) design a crop classifier at               data and hidden Markov models have been demonstrated in FR
+the parcel-level using S2 data from three regions of Germany             (Xiao et al., 2014), but these methods are not always feasible at
+and compare different approaches to model the signal, includ-            large scale due to the extended size of the required sample.
+ing a Transformer and an LSTM. They achieve overall accura-                 Past research has focused on using machine learning tech-
+cies between 0.85 and 0.92 using the LSTM, depending on the              niques to predict crop rotations. In Osman et al. (2015), a
+number of classes considered. They conclude that data process-           Markov Logic model is used to predict the following season’s
+ing was useful for those kind of models. A similar approach              crop in FR, achieving an accuracy of 60%. Other studies have
+was taken by Rußwurm et al. (2019b) on 40k parcels in Cen-               utilized deep neural networks, such as Yaramasu et al. (2020),
+tral Europe using S2 data, for which they proposed a new early           which reaches a maximum accuracy of 88% on a 6-class portion
+classification mechanism to enhance a classical model with an            of the US Cropland Data Layer (CDL) dataset over 12 years.
+additional stopping probability based on previously seen in-                Only three studies (Johnson & Mueller, 2021; Giordano
+formation. Furthermore, Rußwurm & Körner (2018) tackled                 et al., 2020; Quinton & Landrieu, 2021) have been identified
+the task of crop classification at the pixel level, by account-          that combine the use of crop rotations and satellite time-series
+ing for the spatial variation to detect parcels boundaries, us-          data with deep learning. Johnson & Mueller (2021) applied
+ing Convolutional Neural Network-Long-Short-Term-Memory                  this method over several seasons to derive near real-time CDL.
+(CNN-LSTM) on S2 images to classify 17 types of crops in a               However, this methodology is constrained to a small number of
+unique German region. Sainte Fare Garnot et al. (2019) pro-              crop types and the use of a Random Forest classifier, while re-
+posed to use a Convolutional Neural Networks (CNN) before                cent advancements in deep learning have shown significant im-
+a RNN to learn the aggregation of the parcel pixels instead of           provements in such high-data regime problems. Giordano et al.
+classically averaging them, and applied their system on 200k             (2020) used Conditional Random Fields to model the tempo-
+parcels of the south-west of France (FR). In the end, Sainte             ral dynamics of crop rotations. They focused on two French
+Fare Garnot et al. (2020) proposed a smart method to tackle              regions with very different climate conditions and agricultural
+parcel-level crop classification, by randomly sampling pixels of         practices, using around 9,230 and 1,902 parcels with 2 sea-
+the parcels to learn expressive descriptors that are processed by        sons of data. Quinton & Landrieu (2021) propose to use a
+a transformer. The application of their models was carried out           Pixel-Set Encoder with a Lightweight Temporal Attention En-
+on 191k parcels located in the south of FR, encompassing 20              coder (PSE-LTAE) (Sainte Fare Garnot et al., 2020) combined
+crop classes.                                                            with a multi-year classification method. They represent the past
+   Finally, only some works attempt few-shot classification (i.e.,       crops with a one-hot encoder that they sum, without modeling
+learning a classifier for a new dataset given only a few exam-           the dynamics of the sequence. In our work, we not only focus
+ples, zero-shot when no examples are available (Peng et al.,             on modeling the sequential aspects of crop rotations, but also
+2018)) with EO-data because it has been a difficult task for a           incorporate the RS signals from previous seasons.
+long-time, knowing that a majority of the systems work poorly
+without domain data. Nevertheless, Rußwurm et al. (2019c)                1.1.3. Early Season Classification
+and Tseng et al. (2021a) both propose to use the MAML meta-                 While end-of-season crop type maps have a great interest for
+learning algorithm in order to tackle few-shot crop or land cover        agricultural land monitoring (Weiss et al., 2020), in-season crop
+classification at the pixel-level, using EO data only. The for-          production monitoring requires a more rapid response, includ-
+mer on the Sen12MS (Schmitt et al., 2019) and DeepGlobe                  ing before-harvest crop type map releases. Some works have
+Challenge (Demir et al., 2018) datasets for land cover clas-             also focused on tackling early-season classification. Rußwurm
+sification. The latter on the CropHarvest dataset from Tseng             et al. (2019b) proposed to solve the problem in an elegant way,
+                                                                     2
+with an adapted cost function that only rewards the classifier              (i) We release a new dataset of more than 7.4 million parcels
+for an early classification if the right class has been predicted               with their associated crops, and RS signals for the period
+with a respectable degree of accuracy. They extend this work                    2016-2020 in FR and NL. This allows the integration of
+in Rußwurm et al. (2023) by presenting end-to-end Learned                       crop rotation patterns with the remote sensing signal.
+Early Classification of Time Series, also classifying crops at
+the parcel-level in France, Germany, Ghana and South Sudan.                (ii) We create a data- and knowledge-driven technique to au-
+Finally, Lin et al. (2022) proposed an original topology-based                  tomatically group crops together in a meaningful way
+approach to automatically label instances of the test season in                 according to their similarity and importance in the re-
+early-season. They focus on maximum or less than 4 classes                      gion, for a fairest comparison of classifiers in any crop
+at the pixel-level, training a random forest with the test season               dataset. It leverages expert knowledge from the Euro-
+pseudo-labels obtained previously.                                              Crops (Schneider et al., 2021) taxonomy and derive local
+   Without using a special cost function, Weilandt et al. (2023)                crop distribution.
+use a PSE-LTAE with a data-augmentation technique initially               (iii) We construct a novel approach for crop type mapping
+proposed by Barriere & Claverie (2022) on hierarchical LSTM                     from crop rotations and S2 optical time series in a mul-
+for crop-type classification at the parcel-level. They perform                  timodal way using a hierarchical LSTM network. This
+data-augmentation by randomly cropping the end of the EO                        approach is unique in its conception, as it fuses large
+time series during training. The data-augmentation technique                    amounts of temporally fine-grained EO data with crop
+boosts the performances of early-season classification. They                    rotation analysis in an advanced deep learning method.
+also compared separate models trained on data cropped up to                     The crop rotations and the S2 time series are enhanced by
+a unique certain period in the year (i.e. one model for one pe-                 previous-season crop distributions of the neighbourhing
+riod), which is not efficient in terms of computation and yielded               parcels.1
+similar results.
+                                                                          (iv) We develop a data-augmentation technique for the in-
+1.2. Positioning and Objectives                                                season classification, by randomly cropping the end of
+                                                                               the RS time-series data. This allows our model to clas-
+   To the best of the authors’ knowledge, there are some gaps in               sify parcels before the end of the season, a crucial feature
+the existing literature.                                                       for real-life application of crop monitoring.
+   A significant amount of research has focused on using re-
+mote sensing to predict crop types at the pixel or parcel level            (v) We assess the cross-domain generalization potential of the
+using only EO and in-situ observations of the current season,                  framework based on a modified nomenclature of Euro-
+treating the signal as independent from one season to another.                 Crops, without using any strategy to mitigate domain gap,
+Other studies have used parcel crop rotations to address pre-                  target shifts, or handle new classes.
+season prediction of crop types (Osman et al., 2015; Yaramasu
+et al., 2020), but the lack of sufficient information in the signal       2. Materials
+(i.e. short duration of the time series) limits their performance
+even when targeting minor classes. Although the integration                 This section presents a description of the study area and the
+of RS data with crop rotations has been investigated in certain           EO data processing procedure.
+studies (Giordano et al., 2020; Quinton & Landrieu, 2021), no
+one has yet taken this analysis a step further by incorporating           2.1. Crop reference data, study area, and harmonization of
+its dynamic modeling.                                                          parcel data
+   Over the past five years, a multitude of Satellite Image Time
+                                                                             The GSA corresponds to the annual crop declarations made
+Series (SITS) datasets have been made available. In his study,
+                                                                          by EU farmers for Common Agricultural Policy (CAP) area-aid
+Selea (2023) compiles a comprehensive inventory of these
+                                                                          support measures. The electronic GSA records include a spatial
+datasets, encompassing different regions across Europe. All of
+                                                                          delineation of the parcels. A GSA element is always a polygon
+these datasets are dependent on the accessibility of Land Par-
+                                                                          of an agricultural parcel with one crop (or a single crop group
+cel Identification System (LPIS) and Geospatial Aid Applica-
+                                                                          with the same payment eligibility). The GSA is operated at the
+tion (GSA) public datasets. The dataset we have released to
+                                                                          region or country level in the EU 27 member states, resulting in
+support our development is significantly larger in terms of num-
+                                                                          about 60 different designs and implementation schemes over the
+ber of parcel and lenght of the time series than any other exist-
+                                                                          EU. Since these infrastructures are set up in each region, data
+ing datasets (Selea, 2023). The processing of RS data, which
+                                                                          are not interoperable at the moment, and the legends are not
+incorporates a smoothing algorithm, sets this dataset apart from
+                                                                          semantically harmonised. Furthermore, only few EU member
+others in its category. We have collected data for a minimum
+                                                                          states release GSA data as open data, although the overall trend
+of 5 seasons and have gathered information on approximately
+                                                                          is towards increasingly opening up the data for public use.
+6.8 million (in FR) and 600 thousand (in the Netherlands (NL))
+parcels. Because of its diversity, we propose a method to ag-
+gregate the crops at the regional-level.                                     1 Our method is completely feature-independent and could be used with
+
+   The contributions of this study are 5-fold:                            other bands
+
+                                                                      3
+   Some efforts have been made to provide harmonised GSA                               Table 1: Original Geospatial Aid Application (GSA) parcel numbers and area
+                                                                                      per season used in the study for France (FR) and Netherlands (NL). The num-
+dataset over the EU. AI4boundaries (d’Andrimont et al., 2023)                         ber of distinct crop types are provided using original GSA (4th column) and
+provides harmonized parcel geometries over 7 countries in the                         harmonized using EuroCrops (5th column). The ”stack” lines correspond to
+EU to benchmark method for parcel delineation. EuroCrops                              the Feature Of Interest (FOI, see section 2.2).
+(Schneider et al., 2021) proposed a semantic harmonisation
+                                                                                       Country     Season     RS      # distinct crop types      Number of   Total area
+framework to harmonise the legend of GSA across different                                                            original    harmonized       polygons   (1000 ha)
+countries. This harmonisation is open source and is maintained                         NL            2013      ✗          76              41       762,725       1,855
+by the community 2 . While EuroCrops provides a unique ef-                             NL            2014      ✗          75              41       765,006       1,859
+fort so far, this work is still in progress especially regarding the                   NL            2015      ✗         260             117       790,930       1,873
+                                                                                       NL            2016      ✓         296             133       786,572       1,871
+time dimension. A recent European Commission Implement-                                NL            2017      ✓         300             136       785,710       1,882
+ing Regulation (EU) 2023/1383 identifies a list of specific high-                      NL            2018      ✓         312             135       774,822       1,871
+value datasets and the arrangements for their publication. This                        NL            2019      ✓         317             139       772,565       1,868
+should be a game changer in the opening of the GSA for public                          NL            2020      ✓         326             141       767,034       1,872
+                                                                                       NL            stack               401             148       596,762       1,407
+access in the future and thus foster their use for research.                           FR            2015      ✗         261             150     9,434,672      27,856
+   The Hierarchical Crop and Agriculture Taxonomy version                              FR            2016      ✓         261             147     9,334,043      27,876
+2 (HCATv2) from EuroCrops offers a knowledge graph re-                                 FR            2017      ✓         280             148     9,393,747      27,889
+grouping crops together in a hierarchical way that is coher-                           FR            2018      ✓         282             149     9,517,878      27,917
+                                                                                       FR            2019      ✓         241             149     9,604,463      27,960
+ent with agricultural practices. It contains 393 classes, which                        FR            2020      ✓         239             148     9,778,397      27,998
+are defined at six hierarchical levels of which the first two are                      FR            stack               319             151     7,051,683      25,495
+fixed due to compatibility with other taxonomies. For exam-
+ple 33-01-01-05-01 corresponds to the class Summer Oats,
+which is included in its parent class 33-01-01-05-00 (Oats)                           area of less than 0.1 ha and 0.5 ha for NL and FR, respectively.
+and its grand-parent class 33-01-01-00-00 (Cereals). Nev-                             The total FOI area cover 85% and 93% of the average GSA area
+ertheless, it is not possible to compare the labels only using the                    for NL and FR respectively (the ”stack” entries in Table 1). For
+hierarchy because some branches go to a deeper level than oth-                        each FOI, a crop type sequence was extracted, as well as the
+ers. For example, the class Capsicum is level-4 and represent                         remote sensing time series (Fig. 1).
+0.004% of FR, which is the same level than the class Cereal rep-
+resenting 32%. HCATv2 (Schneider et al., 2021) was used to                            2.3. Earth Observation processing
+represent a Sankey diagram linking the French GSA (left) and                             Remote sensing data were extracted from S2 MSI and L8
+the Dutch GSA (right), using HCATv2 (centre) is represented                           OLI sensors. While the GSA data spans from 2013 and 2015,
+in Fig. A.1 using 40 main crop types for each country4 .                              for NL6 and FR respectively, the remote sensing data were used
+   For this study, FR and the NL were selected because of i)                          starting 2016 cropping season (i.e., from October-2015), corre-
+their open parcel data availability, ii) their EU representative-                     sponding to the first cropping season with both sensors in-orbit.
+ness in covering a latitude range from 40◦ to 55◦ Northern lati-                         S2 MSI products with Level-2A surface reflectance data were
+tude as well as four biogeographic regions (i.e. Oceanic, Con-                        downloaded from the Copernicus Open Access Hub. L8 OLI
+tinental, Alpine and Mediterranean) and iii) the countries have                       surface reflectance data were downloaded from the L30 prod-
+different size and landscape. Parcel GSA data from seasons5                           ucts of the Harmonized Landsat Sentinel-2 (HLS) data set. For
+2015 to 2020 over FR and from 2013 to 2020 over the NL were                           both products, L2A and L30 Quality Assessment (QA) layers
+collected (Table 1).                                                                  were used to mask non-surface-related information. We masked
+                                                                                      all pixels flagged as cloud, cloud-shadow, cirrus and snow.
+2.2. Geometric minimum common parcel extraction through                                  Leaf Area Index (LAI) and Fraction of Absorbed Photo-
+     time                                                                             synthetically Active Radiation (FAPAR) Biophysical variables
+                                                                                      (BV) maps were derived from the S2 L2A (20m spatial res-
+   GSA are delivered yearly as a set of polygons outlining agri-
+                                                                                      olution) and L8 L30 (30m spatial resolution) products, using
+cultural parcels. From season-to-season, the parcel boundary
+                                                                                      the BV-NET algorithm developed by Weiss & Baret (1999). It
+may change. We intersected GSA data (i.e. 2013-2020 for NL
+                                                                                      aims to retrieve the two BV from multispectral reflectance us-
+and 2015-2020 for FR) in order to extract minimum common
+                                                                                      ing the inversion of the radiative transfer model PROSAIL and
+area, each with a distinct multi-annual crop sequence, named
+                                                                                      a back-propagation Artificial Neural Network (ANN). Follow-
+hereafter Feature Of Interest (FOI). Since FOI are the cross-
+                                                                                      ing the configuration of Delloye et al. (2018), the architecture of
+section of varying parcel bounds, their overall size is smaller
+                                                                                      the ANN consists of two layers: (i) one layer with five tangent
+than the annual GSA parcels. We discarded any FOI with an
+                                                                                      sigmoid transfer functions neurons and (ii) one layer with one
+                                                                                      linear transfer functions neuron. This configuration allows for
+   2 https://github.com/maja601/EuroCrops                                             greater dynamics in the output variables (Claverie et al., 2013).
+   3 https://eur-lex.europa.eu/eli/reg_impl/2023/138                                  The HLS products are normalised using the Bidirectional Re-
+  4 An interactive version of the diagram without class limitation is available
+                                                                                      flection Distribution Function (BRDF) with a nadir view zenith
+on https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/
+DRLL/CropDeepTrans/data/sankey_All_crops.html.
+  5 season n means from October n to October n+1                                         6 It starts from 2009 but we only took data from 2013
+
+
+                                                                                  4
+ Fig. 1: Feature Of Interest (FOI) extraction, time series extraction and smoothing. a) the map shows an overlap of the six GSA layers; b) Resulting blocks
+corresponding to the intersection of the six GSA layers, reduced by an inner buffer; c) rasterized version of the blocks used for extracting the S2 data; d) full S2 and
+crop types time series of two selected FOI (shown in panels a-c). Yearly crop types are displayed on the top sub-panel. Input variables time series are displayed
+using daily observations (circles and squares correspond to S2 and Landsat 8 (L8) data, respectively) and smoothed signal (used as LSTM inputs).
+
+angle and a variable sun angle (Claverie et al., 2018), while the                      FOI level were smoothed individually using a Whittaker filter.7
+S2 L2A products are unadjusted with BRDF. We retained these                            The time series are first gap-filled in time using a linear interpo-
+data specifications and configured two BV-NET models to ac-                            lation and a time step of 2 days. We applied the Whittaker con-
+count for them. For both product types, the cosine of the solar                        figuration with V-curve optimization of the smoothing parame-
+zenith angle was included in the BV-NET input set; for S2 L2A,                         ter and expectile smoothing using asymmetric weight, with an
+the view zenith and relative azimuth angles were also included.                        ”Envelope” value of 0.9 and a tested lambda range between -1
+                                                                                       and 1 (Eilers et al., 2017). This results in a smoothed time se-
+   Only the Red and Near Infrared bands (NIR) were kept for                            ries with a time step of 4 days and no interruption between the
+further analysis; the remaining spectral bands were discarded.                         seasons.
+Four variables (LAI, FAPAR, Red band and NIR band) pixel-
+based maps were thus used to derive time series per FOI. Pixels
+                                                                                       3. Methods
+whose centres fell within the FOI boundaries, reduced by a 15
+m inner buffer (to prevent from using mixed pixels and reduce                             The feature extraction and the model architecture are first de-
+impact of the geometric precision), were averaged using a zonal                        scribed in section 3.1), followed by a description of the learning
+statistics technique; flagged values (cloud, cloud shadow, cirrus                      model and the integration of features as observations (section
+or snow) from QA layers were not included in the averaging.                            3.2). In Section 3.3, we delve into the early-season data aug-
+FOI values were only considered valid if more than 75% of the                          mentation technique. Then in Section 3.4, we explore the train-
+LAI pixels were valid.                                                                 ing process and the application of models in various countries.
+                                                                                       Finally, section 3.7 outlines the processing facilities utilized in
+   Despite filtering the data using relevant QA layers, the re-                        the study and includes links to the data and code.
+sulting FOI-based time series are still contaminated by missed
+cloud, cloud shadow, haze or dense atmosphere. To remove                               3.1. Models description
+these remaining outliers, we applied a Hampel filter using red
+                                                                                          A series of models were developed involving various config-
+and NIR bands to discard cloud and cloud-shadow in the time
+                                                                                       uration and input modalities. The three modalities are RS, CR
+series respectively; the parameters of the filter follow Claverie
+et al. (2018).
+                                                                                         7 as developed         by     https://github.com/WFP-VAM/vam.
+   Finally, filtered time series of four variables aggregated at                       whittaker
+
+                                                                                   5
+Fig. 2: Overview of the conceptual data framework for crop classification to leverage satellite optical time series, yearly crop rotation history, and spatial local crop
+distributions.
+
+
+
+and CD (see the conceptual framework in Fig. 2). This section                          Crop Distribution
+describes the model and the integration of the data as features.                          We computed the total area of each crops in a circle of ra-
+   Crop rotation, defined as sequences of crops throughout the                         dius r = 10km from each FOI and turned it to percentage of the
+seasons, has been modeled in a manner similar to a sequences                           total cropped area. The crop type distribution around the FOI
+of words within a language model (Mikolov et al., 2010). This                          accounts spatial for variation in terms of agricultural practices
+modeling process is further enhanced by adding S2 time-series                          in relation with local agro-meteorological conditions, economic
+data, which is treated as analogous to the prosody of a speaker                        and historical factors. In the absence of major shocks, the distri-
+(Wöllmer et al., 2013a,b; Schuller et al., 2016), i.e. the pattern                    bution of the crop types in a region is expected to be stable over
+of intonation, stress and rhythm in a speech.8 Ultimately, the                         the seasons (Merlos & Hijmans, 2020), which determines the
+high-level spatial crop distribution features we add on the last                       a priori probability of local crop occurrence. We integrate this
+layer of the network can be seen as the distribution of the words                      local information by adding a vector representing the CD over
+generally used by the speaker.                                                         the surrounding crop types centered around each FOI centroid.
+                                                                                       The spatial CD was always derived from the same season for
+3.1.1. Features extraction                                                             computational reasons. We used the 2019 validation set season,
+Crop Rotation                                                                          i.e. not for the test season 2020. We rounded the probability at
+   The crop types labels were extracted from the respective                            10−4 , leading to some values being 0 when not null. Despite the
+GSA and remapped using EuroCrops. This yields to a total of                            Eurocrops harmonization, the crop lists of the two datasets (FR
+VNL = 141 and VFR = 151 classes, for NL and FR respectively,                           and NL) are not identical. We used the union of the two crop
+corresponding to V = 225 unique classes. We modeled the crop                           lists for both datasets.
+by a one-hot vector of size V and used it as an input to an em-
+bedding layer. For each FOI, we extracted the crop sequence                            3.1.2. Architecture of the models
+which corresponds to the CR feature.                                                      Eight models were developed for the study. Their architec-
+                                                                                       tures are presented hereafter and summarized in Table 2.
+Remote Sensing temporal integration
+   We integrated the RS time series into features using a sliding
+                                                                                       Baselines using Year-Independent models
+window of size W = 1 month with a step of size sw = 0.5W,
+obtaining a sequence of tw = 12sw = 24 inputs windows for the 12                       We used two baselines models that treat the RS time series sig-
+months of the season, from 1st of October to 31st of September.                        nal in a classical way without using hierarchical networks and
+By utilizing this setup, we obtained some overlap between the                          without modeling the dynamics between the seasons. One uni-
+windows, which should prevent loss of information by breaking                          modal model is using only RS data and another one is mul-
+the signal dynamics, albeit with a slight trade-off of redundancy                      timodal using RS and CR, based respectively on the works of
+in the features. On every time window, the four RS signals                             Rußwurm et al. (2019a) and Quinton & Landrieu (2021). These
+(LAI, FAPAR, Red band and NIR band) were integrated for                                models are referred to as IntraYERS and IntraYE MM , re-
+each window using seven statistical functionals (Schuller et al.,                      spectively.
+2016) representing the signal as a fixed vector: average mean,                            As stated in Rußwurm et al. (2019a), they only consider the
+standard deviation, min, max, median, first quartile, third quar-                      time series of a single season, without incorporating a multi-
+tile. As a total, we obtained 4 × 24 × 7 = 672 features per FOI                        season modeling approach for the RS data which is a key aspect
+per season. Finally, we normalised each of the 24 features.                            of our proposed approach.9 This unimodal network InterYERS
+
+  8 The RS encoding could use any other encoder type, like a state-of-the-art
+
+model such as PSE-LTAE (Sainte Fare Garnot et al., 2020)                                  9 This will be shown in next paragraph.
+
+
+                                                                                   6
+          Table 2: Summary of the different models used in this paper, using Crop Rotations (CR), Remote Sensing (RS), and Crop Distribution (CD).
+
+                                                                             Modelisation-level
+                                 Models          CR     RS    CD                                             Hierarchical
+                                                                      Within season   Between seasons
+                                 IntraYERS       ✗      ✓      ✗            ✓                  ✗                  ✗
+                                 IntraYE MM      ✓      ✓      ✗            ✓                  ✗                  ✗
+                                 InterYECrop     ✓      ✗      ✗            ✗                  ✓                  ✗
+                                 InterYERS       ✗      ✓      ✗            ✗                  ✓                  ✗
+                                 InterYE MM      ✓      ✓      ✗            ✗                  ✓                  ✗
+                                 HierERS         ✗      ✓      ✗            ✓                  ✓                  ✓
+                                 HierE MM        ✓      ✓      ✗            ✓                  ✓                  ✓
+                                 HierE f inal    ✓      ✓      ✓            ✓                  ✓                  ✓
+
+
+
+is the identical component utilized for encoding the RS signal                  blue local crop distribution vector. This model is denoted as
+at the season-level (one green Intra-Year Encoder (IntraYE) in                  InterYE MM , corresponding to a non-hierarchical multimodal
+Fig. 3). This provides a strong RS unimodal baseline. The                       model with RS. If the model only uses the RS modality, then it
+second baseline that we add comes from the work of Quinton                      is denoted as InterYERS .
+& Landrieu (2021), which is the strongest baseline among the
+three works incorporating CR as per with RS data. It integrates
+the CR modality by using a one-hot encoder vector of the past                   Multi-year hierarchical models
+crop sequence. In our case, as we model the crops as words,                     We chose to model jointly the inter-year and intra-year dynam-
+this would mean a well-known simple vector representation for                   ics with a hierarchical model composed of one network mod-
+text called Bag-of-Words (Harris, 1954), hence we will call it                  eling the RS dynamics within a season underneath another net-
+Bag-of-Crops Bag-of-Crops (BoC). Although this type of rep-                     work modeling the rotation dynamics between the seasons. We
+resentation is known to not work well for short texts like tweets               processed the RS signal beforehand using another RNN, before
+or speech turns (Benamara et al., 2016; Barriere et al., 2018;                  concatenating this unimodal RS vector obtained with the crop
+Barriere, 2017; Barriere et al., 2017), we can expect better re-                embedding, in a hierarchical way.
+sults with crop sequences which are considerably less complex                      We incorporated the sequential aspect of the RS time-series
+than natural language.                                                          by processing the RS features at the season level with a first se-
+                                                                                quential encoder before adding their yearly representation into
+Multi-year non-hierarchical models                                              the second neural network modeling the crop types, leading to
+                                                                                a hierarchical network with one top network modeling the se-
+Following the introduction, a set of novel model architectures is
+                                                                                quence outputs of another bottom network (Serban et al., 2015).
+suggested hereafter, and their performance is evaluated in com-
+parison to the existing baseline models. We first aimed to model                   Compared to InterYE MM and InterYERS , there is another net-
+the sequence of seasons with a recurrent encoder. These models                  work modeling the RS signal at the bottom. This corresponds
+use season-level features (that can be CR or RS) and are called                 to the orange color top InterYE and the green color IntraYE in
+Inter-Year Encoder (InterYE). This corresponds to the orange                    Fig. 3, modeling between the seasons as well as within a sea-
+top Encoder in Fig. 3, modeling the sequence of seasons.                        son. It does not use the blue local crop distribution vector. This
+   We modeled the multi-annual crop rotations in a language                     model is denoted as HierE MM , corresponding thus to a hier-
+model fashion by representing the crops as tokens and learning                  archical iIntraYE and InterYE to model both crop rotation and
+to predict the next one. This model takes the past sequence of                  RS time-series.
+crops (c1 , ..., ct ) as inputs and output the new crop ct+1 , model-              We enhanced the model by adding the CD vector after the
+ing the crop rotation dynamics through the seasons. This corre-                 IntraYE because it is a high-level feature regarding the task we
+sponds to the orange InterYE in Fig. 3, if only using crop em-                  are tackling and the deeper you go into the layers the higher-
+beddings. It does not use the blue local crop distribution vector.              level the representations are w.r.t. the task (Sanh et al., 2018).
+This unimodal model is denoted InterYECrop , corresponding                      This corresponds to the full network presented in Fig. 3, in-
+to an unimodal Crop Rotations model.                                            cluding the blue local crop distribution vector. This model
+   Using solely previous rotations to forecast future crop yields               is denoted as HierE f inal , corresponding thus to a hierarchical
+results in inadequate performance due to the limited amount                     IntraYE and InterYE to model the three modalities.
+of information provided. Therefore, we decided to enhance
+the model’s robustness by incorporating satellite data, leverag-                Encoders
+ing either the consensus principle or the complementary prin-
+ciple (Xu et al., 2013). We enhanced the unimodal model                         We compared several type of models using different archi-
+InterYECrop by adding season-level information from RS. This                    tectures and different modalities. Because our work mainly
+corresponds to the orange InterYE in Fig. 3, with a green vector                focuses on how to integrate multimodal data, we opted
+being the season-level concatenation of the RS signal (without                  to use Recurrent Neural Network-Long-Short-Term-Memory
+being processed by the green IntraYE). It does not include the                  (RNN-LSTM) backbones, proven competitive for this kind of
+                                                                            7
+ Fig. 3: Hierarchical Multimodal Model Conceptual Diagram. The two experiments (NL and FR) are represented with actual seasons used. Crop season 2020 is the
+final predicted label used for the test set.
+
+
+
+task (Rußwurm & Körner, 2020). Our method is also applica-                      2016) following the assumption that some parts of the season
+ble using other encoders such as transformers (Vaswani et al.,                   are more important than others to discriminate the crop type.
+2017) or Gated Recurrent Units (Chung et al., 2015).                             The biLSTM is composed of two LSTM, one of which reads
+     For the Inter-year encoder, we first add an embedding layer                 the sequence forward and the other reads it backward. The final
+to transform the crop type ct at season t into a vector embt =                   hidden states are a concatenation of the forward and backward
+ fe (ct ). This embedding vector embt is used as input of the                    hidden states. For a sequence of inputs [RSt1 , ..., RStw ] it out-
+LSTM to produce a hidden state ht at season t as seen in Equa-                   puts w hidden states [hRS t1 , ..., hRS tw ]. The self-attention layer10
+tion 1, which will be used to predict the next crop ct+1 in Equa-                will compute the scalar weights utw for each of the hRS tw (see
+tion 2.                                                                          Equation 4) in order to aggregate them to obtain the final state
+                                                                                 hRS t (see Equation 5).
+                      ht = LSTMy (embt , ht−1 )                        (1)
+                                                                                                             utw = att(hRS tw )                         (4)
+                       P(ct+1 |ct , ..., c1 ) = fc (ht )               (2)                                           X
+                                                                                                           hRS t =        utw hRS tw                    (5)
+   The RS features were integrated at the season-level into a                                                         w
+feature vector RSt before the modeling of the crop types by the                     For the crop distribution, we concatenated the hidden state ht
+LSTM. We feed the season t feature vector RSt into a neural                      of the LSTM with the crop distribution vector d and mixed them
+network layer frs to reduce its size and then concatenate it with                using two fully connected layers f f c1 and f f c2 (see Equation
+the crop embeddings before the LSTM (see Equation 3), using                      6). Hence, we obtain hdt instead of ht before the final fully
+emb MMt instead of embt in Equation 1.                                           connected layer f f c from Equation 2.
+
+                     emb MMt = [embt , frs (RSt )]                     (3)                              hdt = f f c2 ( f f c1 ([ht , d]))               (6)
+   For the IntraYE, we chose to use a bidirectional LSTM                            10 composed of a feedforward, a relu, another feedforward and a softmax
+
+(biLSTM) with a self-attention mechanism (Bahdanau et al.,                       layers
+
+                                                                             8
+3.2. Automatic Data- and Knowledge-Driven Label Aggrega-                  even though it does not observe the full time-series, as it would
+     tion                                                                 do at end-of-season.
+                                                                             We follow the approach of Barriere & Claverie (2022) by
+3.2.1. Rationale
+                                                                          randomly cropping the end of the vector feature of the RS data
+   Training and evaluating a model at large scale, on regions             RS = (RS 1 , ..., RS tw ), tw being the last bi-monthly date of the
+that contain different agro-climatic zones is complex due to the          time-series varying between 10 and 24. By setting the mini-
+heterogeneity of the temporal and spectral representations of             mum number of steps to 10, we ensure that each sample con-
+the crops and variability of the climate and agricultural prac-           tains sufficient information (at least 5 months) to facilitate the
+tices. Indeed, if the labels distribution is highly variable be-          training phase. Knowing the start of the time-series is October,
+tween two datasets, one label that was representative in one              it means we do not crop the end of the time series up to 1st of
+domain would become not representative in the other. In this              March. We used the same cropping size t among all the samples
+work we propose an aggregation of the labels, that would be               of the same mini-batch. For the hierarchical models, we used
+on the one hand representative of the dataset, and on the other           the same cropping size t among all the seasons.
+hand thematically pertinent. In this way, it should be possible
+to evaluate the performances of the classification model at dif-          3.4. Transfer learning between countries
+ferent scales: using all the labels from the region, even the ones
+                                                                             We ran several experiments in order to take advantage of
+with very few examples, then using an aggregation of labels that
+                                                                          the normalized taxonomy that we used for both countries, by
+is representative of the region. This also offers the advantage to
+                                                                          investigating the potential of transferring knowledge between
+evaluate a model on two different datasets with a relevant eval-
+                                                                          different domains. For these purposes, we compared the per-
+uation on each dataset. We discuss this method in Subsection
+                                                                          formances of a model trained from scratch (i.e. Vanilla) and
+5.1.
+                                                                          a model pre-trained over one country before being fine-tuned
+                                                                          over another one. This pre-training allows to transfer knowl-
+3.2.2. A Hierarchical Method to Group Labels                              edge from a source task and domain to a target task and domain.
+   The labels obtained with the Hierarchical Crop and Agricul-               We tested this approach in (i) cross-domain zero-shot set-
+ture Taxonomy from EuroCrops (see Section 2.1) have hetero-               ting, for which the pre-trained model does not see any samples
+geneous distribution and level of interest because of geograph-           of the new domain, and (ii) cross-domain few-shot setting,11
+ically constrained occurrence. We propose a method to merge               for which the pre-trained model sees limited number samples
+non-representative crops together to only keep the most relevant          of the new domain. For the cross-domain zero-shot setting, we
+in a region of interest by using its label distribution. The method       used a network that was trained over one country on the other
+is applied for the evaluation only. We take the best of both              country, without fine-tuning it. For the cross-domain few-shot
+worlds by fusing expert knowledge and data-driven method.                 setting, we fine-tuned the network only on a subset of the target
+The method is applicable to any dataset, at any geographic scale          dataset, taking few examples representative of this dataset. We
+and fully automatic.                                                      generated the few-shot subsets by randomly sampling 2N (with
+   Benefiting on the hierarchical structure of EuroCrops, we              N ∈ {4, 6, 8, 10}) examples of each of the aggregated class (see
+selected crops for which the number of FOI is above a given               Section 4.1). For this, we sampled using the global crop distri-
+threshold (th). The crops with number of FOI below th are                 bution of 2019, which was used as validation cropping season.
+merged together with the other EuroCrops-sibling crops toward             We think that this setup is realistic as we only sample from the
+their parent-class. The remaining number of FOI falling down              aggregated classes that are the prominent ones in each of the
+into the parent-class is compared with the threshold for an iter-         datasets, and the ones to calculate the metrics to validate the
+ative process.                                                            models. We added more and more data increasingly so that all
+   For both countries, we set the threshold th at 0.3% of the             the examples from 2N1 are comprised in 2N2 , with N1 < N2 . A
+dataset size, which roughly corresponds to 2k samples for the             summary of the different experiments can be seen in Table 3.
+NL and 20k samples for FR. We regrouped all the classes                   We did not freeze any layer during the fine-tuning.
+falling under the subclass ”Permanent Crops” together as one
+for both datasets, as they are the simplest examples to classify          3.5. Dataset Segmentation and Validation
+when considering rotations. This was done to mitigate its im-                The datasets are generally split regarding time or space. Wei-
+pact by creating multiple labels for permanent crops. The auto-           landt et al. (2023) proposed to compare the results of models
+matic aggregation over FR and NL is shown in Fig. 4.                      trained with or without training data from the same cropping
+                                                                          season as the test season, in end-of-season and early-season set-
+3.3. Early-Season data augmentation                                       tings. They found out that the difference in performance was
+                                                                          minimal.
+   Applying the end-of-season models (i.e. trained with the data             In this work, we are interested to apply early-season setting
+from the whole season) for early-season (i.e. using incomplete            and therefore segmenting the train and test sets among seasons.
+time-series) is not suitable. We propose a data-augmentation              This provides two key advantages: we are in a real-life setting
+technique in order to help the model to classify a sample even
+without getting the full time series of the season. The idea be-
+hind this method is to force the model to predict the right class           11 i.e. when the domain changes as per with significantly new labels
+
+
+                                                                      9
+ Fig. 4: Aggregated classes selected for validation in each country for FR (A) and NL (B) along with the distribution. The colour highlight the crop type or crop
+group that were assessed for both country in red and only for one respective country in cyan.
+
+
+
+
+                                                                              10
+                                    Table 3: Settings of the different experiments. N ∈ {4, 6, 8, 10} for the few-shot experiments.
+
+                                Name                     Pre-Training      Training     Testing     # data from target        Models
+                                few-shot-NL                    ∅           NL             NL                 2N             HierE f inal
+                                few-shot-FR                    ∅           FR             FR                2N              HierE f inal
+                                Vanilla-FR                     ∅           FR             FR               100%             All models
+                                Vanilla-NL                     ∅           NL             NL               100%             All models
+                                0-shot-NL                     ∅            FR             NL                 0              HierE f inal
+                                Transfer-few-shot-NL          FR           NL             NL                2N              HierE f inal
+                                transfer-NL                   FR           NL             NL               100%             HierE f inal
+                                Transfer-FR                   NL           FR             FR               100%             HierE f inal
+
+
+
+without in-situ data from the test season, and prohibit training                      ics Platform (BDAP) using an HTCondor environment (Soille
+with data from the end of the season in early-season setting.                         et al., 2018). The platform16 has been built upon the near-data
+We trained our networks as for a sequence classification task,                        processing concept, which prescribes placing the computing fa-
+always with several seasons of data. The labels up to 2018 were                       cility close to the storage units to avoid the bottleneck of delay-
+used as training set, while the labels from 2019 were used as                         ing or degrading interconnection. Experiments with the neural
+validation set and the labels from 2020 as test set (see Fig. 3).                     networks were run using PyTorch 1.4.0 (Paszke et al., 2019)
+All results presented hereafter refer to the analysis of 2020 crop                    on a GPU Nvidia RTX-8000 using CUDA 12.0. The training
+types, which are based on models trained with the period 2013-                        phase allows to process between roughly 5k and 30k examples
+2019 for NL and 2015-2019 for FR, thus independent from the                           per seconds, with each example containing 4 seasons of data.
+2020 crop types observations. We zero-padded when no RS                                  The data extracted and used for this study are openly avail-
+data was available (before 2016).                                                     able on the public FTP17 . The code for the data processing, the
+   In order to confirm Weilandt et al. (2023) findings, we added                      labels aggregation, and deep learning experiments will be freely
+experiments with a temporal and spatial split of the data in Ap-                      available after publication.18
+pendix 6, showing that the results of a model trained on other
+seasons and other parcels still reach high results.
+   We validated the models using metrics calculated for four                          4. Experiments and Results
+level of aggregation: (i) with all the labels, (ii) with the ag-
+gregation of the labels using the Automatic Hierarchical Label
+Aggregation, (iii) with a set of crop of interest from the aggrega-                   4.1. Feature Extractions
+tion that were recognized important by a Food Security expert
+                                                                                      4.1.1. Crop Rotation
+and with or (iv) without classes others and grassland (majority
+class in NL dataset). We used macro-average of the Precision,                            The crop label categories for the 2020 test set correspond
+Recall and F1-score because the dataset is imbalanced. We also                        to a long-tailed class distributions, as shown for the 32-class
+used micro-F1 score (m-F1) for the last setting, because accu-                        and 24-class aggregations for the French and the Dutch data
+racy is not possible when focusing on a subset of the classes. In                     sets in Fig. 5 and Fig. 6, respectively. The models are finally
+addition, we computed the Accuracy as a general metric.                               validated on a set of crops of interest from the 32-class and
+                                                                                      24-class aggregation. Those 8- and 12-class, respectively for
+3.6. Implementation                                                                   the NL and FR, were identified by experts as essential for crop
+   We trained all the networks via mini-batch stochastic gradi-                       production monitoring and food security. They are shown in
+ent descent using the Adam optimizer (Kingma & Ba, 2014)                              green in Fig. 5 and Fig. 6.
+with a learning rate of 10−3 and a cross-entropy loss function.
+The number of neurons for the crop embedding layer,12 both the
+                                                                                      4.1.2. RS-based Features
+RNN internal layers,13 and the fully connected RS layer frs 14 as
+well as the number of stacked LSTM15 were chosen using hy-                               First, the RS data retrieved as described in 2.3 were obtained.
+perparameters grid search of power of 2 on a subset of the NL                         The final dataset which consists in the full time series of more
+dataset. The sizes of the layers fc1 and fc2 are the same as the                      than 7M FOI, for a total of more than 35M FOI-season (NL : 5
+one from the second RNN state ht .                                                    seasons x 596k FOI; FR: 5 seasons x 6,49M) are available for
+                                                                                      download, as well as the extracted features used in the experi-
+3.7. Processing facility, data and code                                               ments19 .
+   The EO extraction and processing, the classification and the
+benchmarking were performed on the JRC Big Data Analyt-                                 16 https://jeodpp.jrc.ec.europa.eu/bdap/
+                                                                                        17 The data can be downloaded on https://jeodpp.jrc.ec.
+  12 from 16 to 128, best 64
+                                                                                      europa.eu/ftp/jrc-opendata/DRLL/CropDeepTrans/.
+  13 from 64 to 512, best 256                                                           18 Add URL after publication
+  14 from 32 to 256, best 128                                                           19 https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/
+  15 from 1 to 4, best 3                                                              DRLL/CropDeepTrans/
+
+                                                                                 11
+Fig. 5: Distributions of the crop types in the NL dataset for the test season (2020), after aggregation. Green bars are the selected crops for the 8-class evaluation;
+Red bars refer to the grasslands, and blue bars to the remaining crops.
+
+
+
+
+Fig. 6: Distributions of the crop types in the France dataset for the test season (2020), after aggregation. Green bars are the selected crops for the 12-class evaluation;
+Red bars refer to the grasslands, and blue bars to the remaining crops.
+
+
+
+
+                                                                                   12
+  Labels                                        141-class                      24-class                       10-class                       8-class
+                      # Modalities
+  Model                                P       R      F1      Acc    P       R      F1      Acc     P       R      F1      Acc     P      R       F1      m-F1
+  InterYECrop             1 (C)        36.0    25.5 27.4      76.2   53.3    37.2 39.1      76.5    51.8    43.0 43.5      77.7    43.3   35.5 34.9       53.6
+  IntraYERS 2019a        1 (RS)        27.4    20.9 20.4      89.8   64.0    60.9 60.4      90.3    78.8    75.9 74.5      92.9    76.1   72.6 70.8       87.8
+  InterYERS              1 (RS)        22.8    17.7 17.1      89.1   59.2    58.5 57.3      89.6    71.2    73.4 72.0      92.1    67.0   69.6 68.0       85.6
+  HierERS                1 (RS)        20.7    17.5 16.7      90.2   64.3    61.0 61.2      90.9    80.5    74.4 74.3      93.5    78.0   70.4 70.3       88.3
+  IntraYE MM 2021     2 (RS+BoC)       55.6    39.7 43.2      92.8   76.6    69.8 72.1      93.1    83.0    80.5 80.9      94.7    80.2   77.9 78.0       90.0
+  InterYE MM           2 (RS+C)        41.1    33.0 33.6      92.2   70.8    70.5 69.9      92.6    82.2    79.7 80.4      94.5    80.2   76.3 77.5       89.5
+  HierE MM             2 (RS+C)        47.3    38.7 39.7      93.3   74.7    75.5 74.7      93.7    85.2    81.9 83.1      95.2    83.6   78.8 80.6       91.1
+  HierE f inal           3 (All)       47.1    39.3 40.2      93.6   76.6    75.8 75.7      94.0    86.7    81.9 83.6      95.5    85.3   78.7 81.1       91.6
+
+ Table 4: Results over Netherlands of the end-of-season classification models with different modalities: Remote Sensing (RS), Crop Rotations as embeddings (C)
+or BoC, and Spatial Crop Distribution. The metrics shown are macro Precision (P), Recall (R) and F1 score, as well as accuracy and micro-F1 score (m-F1).
+  Labels                                        151-class                       32-class                      14-class                     12-class
+                       # Modalities
+  Model                                 P      R      F1       Acc P          R      F1      Acc P          R      F1      Acc P         R       F1    m-F1
+  InterYECrop             1 (C)        35.6    31.0   31.7    66.0   43.7    38.8    38.7   66.2    38.9    34.3   31.7    69.1    30.9   26.4    23.0    42.7
+  IntraYERS 2019a        1 (RS)        22.9    15.7   15.2    64.0   51.1    46.0    44.6   64.5    69.8    62.2   64.7    75.7    69.3   59.7    63.1    74.6
+  InterYERS              1 (RS)        21.3    13.2   12.6    54.9   46.5    41.5    39.2   55.5    63.9    59.6   60.2    72.2    62.7   57.4    58.5    71.2
+  HierERS                1 (RS)        25.3    19.0   18.8    66.3   55.5    50.7    50.1   66.9    72.5    65.5   67.7    76.9    71.9   63.2    66.1    76.5
+  IntraYE MM 2021     2 (RS+BoC)       52.7    32.4   35.9    82.7   70.1    59.3    61.8   82.8    78.1    68.7   71.0    86.6    76.2   65.6    68.0    80.3
+  InterYE MM           2 (RS+C)        45.9    35.2   36.4    82.4   67.7    60.5    62.4   82.7    72.7    67.4   69.2    86.1    70.0   63.6    65.8    77.5
+  HierE MM             2 (RS+C)        50.2    41.9   43.2    84.8   70.7    67.6    68.2   85.0    77.0    73.4   74.9    88.4    75.0   70.2    72.3    81.8
+  HierE f inal           3 (All)       45.1    37.3   38.1    85.4   72.1    68.8    69.2   85.7    79.8    76.1   77.6    89.1    78.1   73.5    75.4    83.6
+
+Table 5: Results over France of the end-of-season classification models with different modalities: Remote Sensing (RS), Crop Rotations as embeddings (C) or
+Bag-of-Crops (BoC), and Spatial Crop Distribution. The metrics shown are macro precision, recall and F1 score, as well as accuracy and micro-F1 score (m-F1).
+
+
+
+
+           Fig. 7: Comparison of early classification using different modalities, with/out data augmentation (macro-F1 with 10 classes) on Netherlands.
+
+
+
+4.2. In-country end-of-season results                                               also made with a unimodal model using only the CR, and
+   The results of the various models on France and the NL are                       an unimodal IntraYERS enhanced with the data-augmentation
+shown in Table 4 and Table 5 with respect to four distinct classi-                  technique.
+fication schemes, ranging from a fine-grained 141-class scheme                         Fig. 7 shows the performances of the model in terms of
+for NL (resp. 151 for FR) to a coarse-grained 10-class scheme                       micro-F1 on the set of 10 crops. For sake of clarity, we focused
+(resp. 14 for FR). The 8-class scheme (resp. 12 for FR) is the                      on the results of the model trained using this data-augmentation
+same than the 10-class one, in order to only focus the perfor-                      over the NL.
+mances on the crops of interest. Table 4 and Table 5 aim at
+showing the interest of our multi-modal method compared to                          4.4. Cross-country transfer learning results
+what is generally used in the field, by using only the remote                          Table 6 shows the performance of our best architecture model
+sensing of the season, in an independent way.                                       on the NL. The neural network was trained either from scratch
+                                                                                    or using a pre-trained model. We compared its performances on
+4.3. In-country early-season results                                                a few-shot setting against using the full NL dataset. The table
+  We compared the performance of our best model trained                             shows that pre-training the model led to improved performance
+without the data-augmentation technique, i.e. trained solely                        in terms of almost in terms of all metrics for all tasks. Fur-
+on end-of-season classification examples, with an in-season                         thermore, the performance increases with the number of train-
+model of the same architecture trained using the proposed data-                     ing examples, and the highest performance was achieved for
+augmentation technique (see Section 3.3). Comparisons were                          1024 training examples for each aggregated class. Notice that
+                                                                               13
+ Labels                           141-class                          24-class                          10-class                           8-class
+                 N
+Pre-train.               P       R      F1        Acc      P       R      F1        Acc      P       R      F1        Acc      P       R       F1       m-F1
+                  0      ∅       ∅      ∅         ∅        ∅       ∅      ∅         ∅        ∅       ∅      ∅         ∅        ∅       ∅       ∅        ∅
+                 16      5.8     5.1    4.8       70.8     23.7    21.4 20.4        71.1     38.5    37.4 36.3        73.6     38.5    37.4 36.3        45.3
+     ✗           64      2.7     2.5    2.2       69.2     17.1    13.1 12.5        69.4     27.3    25.7 23.3        69.6     27.3    25.7 23.3        34.7
+                256      4.2     4.8    2.9       66.5     18.2    16.9 14.1        66.8     25.0    23.2 20.5        68.1     25.0    23.2 20.5        20.4
+                1024     19.6    13.3 12.4        80.8     53.6    39.8 37.2        80.3     69.7    60.4 61.5        84.0     69.7    60.4 61.5        76.3
+                  0      5.7     4.8    4.2       47.3     14.7    15.1 11.1        46.6     20.6    19.7 16.6        46.9     12.3    7.4     8.4      24.5
+                 16      12.2    7.8    7.6       70.3     30.5    23.8 24.5        70.4     37.9    33.9 34.0        72.3     37.9    33.9 34.0        45.2
+     ✓           64      16.7    13.6 13.5        74.7     41.9    38.7 38.1        75.0     51.6    45.4 46.6        76.4     51.6    45.4 46.6        54.4
+                256      25.8    21.4 20.8        82.5     55.6    51.1 50.6        82.7     67.3    58.0 60.1        84.6     67.3    58.0 60.1        69.2
+                1024     32.7    27.3 26.0        84.9     61.3    57.3 54.3        84.9     73.8    72.0 71.6        87.0     73.8    72.0 71.6        80.9
+     ✗           All     47.1    39.2 40.2        93.7     76.6    75.8 75.8        94.0     86.7    81.9 83.6        95.5     85.3    78.7 81.1        91.6
+     ✓           All     42.5    35.3 36.0        92.8     67.3    53.4 55.9        94.2     89.9    82.2 85.3        95.7     88.8    77.6 82.3        91.8
+
+ Table 6: Results over Netherlands of the few-shot final classification models, with or without pre-training over France. N represent the number of examples shown
+per aggregated class on the target dataset. The metrics shown are macro precision, recall and F1 score, as well as accuracy and micro-F1 score (m-F1). N stands for
+the Few-Shot size.
+
+the non-pretrained model (i.e., red-cross) using N = All corre-                     8-class scheme. With the exception of HierERS , which failed
+sponds to HierE f inal from Table 4.                                                to learn during the optimization process even on the training
+                                                                                    set (achieving an F1 score of 0 for both the 8- and 12-class
+                                                                                    settings), all models based on LSTM to process RS time se-
+5. Discussion
+                                                                                    ries achieve higher performances compared to the approach
+   The results are discussed in the five first subsections of the                   of concatenating statistical functional vectors of each slid-
+section, then followed by a presentation of the limitations (Sec-                   ing window. Notably, the unimodal IntraYERS outperformed
+tion 5.6) and recommendations for future research (section 5.7).                    InterYERS , while the multimodal IntraYE MM and HierE MM out-
+                                                                                    perform InterYE MM . More details are found in the next subsec-
+5.1. The label aggregation method                                                   tion (5.3).
+                                                                                       Several similarities and notable differences can be observed
+   In line with second objective, we introduced a distinct bench-
+                                                                                    when comparing the models between the NL (Table 4) and FR
+marking approach that utilizes HCATv2, the hierarchical crop
+                                                                                    (Table 5). First, the general performance metrics were lower
+type classification system of EuroCrops. This is a method to
+                                                                                    for FR than for the NL. This difference may be attributed to FR
+output pertinent metrics on a dataset that has many classes with
+                                                                                    having more classes than the NL. Second, the performances of
+a long tail distribution, by grouping together the minoritarian
+                                                                                    the RS model’s performance using only one season of context
+classes that are similar (i.e. close in the HCATv2 graph). In Ta-
+                                                                                    (InterYERS ) were significantly lower than for the same one on
+ble 4 (NL) and Table 5 (FR), the aggregation level is displayed
+                                                                                    NL, relatively to the other models. The higher variance of the
+in the 24-class and 32-class columns, respectively. This means
+                                                                                    RS data in FR, resulting from its larger size and greater diversity
+that the performance results for both countries incorporate the
+                                                                                    compared to the NL, may contribute to the lower performances
+internal distributions. Overall, the accuracy scores for both
+                                                                                    observed in this scenario.
+countries did not exhibit significant variation when accounting
+for all EuroCrops classes (93.6 and 85.4, for NL and FR, re-
+spectively) or after aggregation (94.0 and 85.7), suggesting that                   5.3. Performances per crops
+the models performed well on the very dominant classes. How-                           The utilization of various modalities and their combinations
+ever, the macro F1-scores experienced an improvement due to                         for each of the primary crops in both countries is depicted in
+the merging of classes with a limited number of samples: it                         Fig. 8 and Fig. 9. It demonstrated an upward trend in the level
+reveals the interest of the aggregation method for classifier per-                  of improvement with an increase in the number of modalities
+formances evaluation on a dataset with a high number of crop                        employed. The benefits of crop rotation were more significant
+classes.                                                                            for certain crops such as pasture, while others such as beetroot
+                                                                                    are harder to predict without RS signal. This suggested that
+5.2. Hierarchical multimodal models: a way to gain in perfor-                       the crop rotation for FR, limited to only starting from 2015,
+     mances                                                                         might not offer enough information to accurately predict crops
+   The third objective of the study (section 1.2) is to evaluate                    in complex or irregular crop rotation sequences.
+the performances of models relying on diverse model configu-                           Fig. 10 provides more detailed information on the perfor-
+rations involving different modalities.                                             mance of the best model in the NL. It displays the F1 scores
+   For the NL, the results of Table 4 indicate that the best perfor-                for eight crops of interest in the NL, based on the time of the
+mance was achieved by the final model (HierE f inal ) combining                     season used for prediction. Furthermore, for the same crops,
+the three modalities. It achieved a macro-F1 score of 40.2%                         we analysed the time series data for the 2020 cropping season
+on the 141-class scheme and a micro-F1 score of 91.6% on the                        (i.e., the test season) averaged at the country level for each of
+                                                                               14
+ Fig. 8: Comparison of the F1-scores by crops of the best hierarchical multimodal model and the model using different modalities (Crop rotation, Remote sensing
+only and all) on the Netherlands. We used the InterYECrop (in blue), IntraYERS (in orange) and HierE f inal (in green) models.
+
+
+
+
+ Fig. 9: Comparison of the F1-scores by crops of the best hierarchical multimodal model and the model using different modalities (Crop rotation, Remote sensing
+only and all) on France We used the InterYECrop , IntraYERS and HierE f inal models.
+
+
+
+
+                                                                             15
+the four remotely sensed variables on Fig. A.2, accompanied               5.4. Early-season models
+by the standard error shown on Fig. A.3. These visualizations
+                                                                             The use of sub-setting technique, intended for in-season clas-
+highlight both the variability between crops and the potential
+                                                                          sification, was found to be ineffective in improving the perfor-
+confusion that can arise between different crop types. As the
+                                                                          mance of a model solely trained on remote sensing data, as
+season progresses, there is a noticeable trend of increasing F1-
+                                                                          shown in Fig. 7. However, when the multimodal model in-
+scores, highlighting the improved accuracy of crop discrimina-
+                                                                          cluding crop rotations was applied, it resulted in improved per-
+tion. However, there are evident disparities among crops. No-
+                                                                          formances as early as May. It is worth noting that the overall
+tably, grassland demonstrates a high F1-score at the season’s
+                                                                          performances of the multimodal model was observed to be in-
+onset and maintains this level from the end of spring onwards.
+                                                                          ferior to that of a unimodal crop-only model. This was due
+This is attributed to the fact that the unique temporal signature
+                                                                          to the model overemphasizing the RS modality as the season
+of grassland phenology doesn’t provide significant discrimina-
+                                                                          progressed. To address this issue, a gate mechanism could be
+tory power as the season advances. Contrarily, crops with dis-
+                                                                          incorporated, as proposed in Arevalo et al. (2017) and Chen
+tinct morphological and phenological characteristics, such as
+                                                                          et al. (2017), which selectively discards noisy modalities. By
+potatoes, green silo maize, and sugar beet, achieve higher F1-
+                                                                          utilizing the multimodal hierarchical configuration, the model
+scores earlier in the season. The F1-score of barley reaches a
+                                                                          achieved around mid-July 95% of the end-of-season overall ac-
+peak of 0.75 by the end of July. An intriguing observation is
+                                                                          curacy. This corresponds to the period when the winter crops
+that during the early spring, spring barley exhibits a higher F1-
+                                                                          are harvested, and the summer crops reach their peak vegeta-
+score. However, by June, winter barley surpasses it. This shift
+                                                                          tion.
+can be elucidated by the differential crop calendars that spring
+                                                                             In Fig. 10, the HierE MM model data-augmented model was
+and winter barley adhere to.
+                                                                          assessed through time. F-score are provided for the 10 classes
+                                                                          of interest for NL, as defined in Section 4. Overall, there was
+   The end-of-season performances of the models in the NL and
+                                                                          an offset of the curve rise-up. The shift is earlier (from mid-
+FR, denoted as HierE f inal , are presented using 5km grid cell
+                                                                          April to mid-June), which was consistent with other studies
+maps in Fig. 11 and Fig. 12 respectively. The maps reveal
+                                                                          (Rußwurm et al., 2023).
+notable regional effects, particularly in FR. For instance, in
+Brittany (located in the north-west of FR), lower accuracy was
+observed for most crops, especially winter barley. It worth not-          5.5. Cross-country transfer learning results
+ing that despite labeling the crop types uniformly by country,               According to Table 6, there were two notable distinctions
+variations in crop varieties, climates, and agricultural practices        between the models pre-trained on FR and the ones trained
+among farmers have an impact on phenology, consequently af-               from scratch. The first distinction pertained to few-shot set-
+fecting the RS signal. Consequently, using a single dataset for           ting, where the pre-training enables not only superior but also
+training the model resulted in heterogeneous performances over            more consistent results in few-shot classification, reducing de-
+a large country like FR. The development of regional models               pendence on the specific examples used during few-shot train-
+is thus highly recommended. Furthermore, the model lacks in-              ing. The second distinction lies in the full-data setting, where
+formation regarding the specific locations, except through the            we observed that the from-scratch model performs better when
+proxy of crop distribution. Incorporating geographic coordi-              validated with 141 and 24 classes (with an m-F1 score of 40.2
+nates and/or weather variables as model inputs could contribute           and 75.8, respectively, compared to 36.0 and 55.9), while the
+to accounting for spatial variations over large areas, such as FR.        pre-trained model was better when using fewer classes. These
+                                                                          results highlighted an intriguing behaviour, suggesting that the
+   The confusion matrices for both countries can be seen in Fig.          pre-trained neural network was more general and less prone to
+13. Because of the highly imbalanced distribution of the labels,          over-fitting on the prominent classes of the NL dataset. We can
+we classically normalised each matrix regarding the predicted             conclude that transfer learning proves beneficial when limited
+values (i.e. by row) for visibility reasons. Hence, the diag-             labeled examples are available, while in the full-dataset training
+onal cells represent the precision of the model on each class.            mode, it enhances the model’s performance for general classes
+We display the values in percentage, meaning they go from                 at the expense of specific classes in the dataset.
+0 to 100. These matrices allow for grouping crops based on
+the observed confusions. In general, for both countries, there
+                                                                          5.6. Limitations
+are instances of misclassification between crops, indicating dif-
+ficulties in distinguishing between certain crop types: (i) be-              The primary constraint of this study, particularly in develop-
+tween green silo maize and grain maize corn popcorn, (ii) be-             ing countries and numerous other nations, is the requirement
+tween winter cereals (winter common soft wheat, winter bar-               for digitized parcel boundary data. Another limitation is the ne-
+ley, winter triticale), (iii) between spring cereals (spring bar-         cessity to obtain information regarding the crops cultivated in
+ley, spring common soft wheat) , (iv) between summer crops                the previous season. The impact of noisy input data, such as
+sunflower, millet/sorghum. These confusions are anticipated               past crop information derived from a prediction system rather
+as they occur with synchronous phenologies of the crops that              than ground-truth data, remains unknown in terms of the sys-
+could differs significantly from one region to the other in Eu-           tem’s response. Exploring this aspect constitutes an intriguing
+rope (d’Andrimont et al., 2020, 2021; Meroni et al., 2021).               avenue for future research.
+                                                                     16
+ Fig. 10: F1-score for each crop group along the season for NL. When crop have winter and spring varieties, the spring varieties are represented as dashed lines.
+
+   For encoding the RS signal, we utilized a backbone consist-                      the learning model, for example by creating multi-level embed-
+ing of a mean aggregation of the FOI’s pixels, followed by                          dings of each crop. This could improve the ability of the model
+the application of a temporal context window with statistical                       to capture the complex spatiotemporal variability of crops. It
+functionals. Studies proved that other methods were more effi-                      would be also possible to integrate knowledge at the loss level,
+cient in terms of performances Sainte Fare Garnot et al. (2020).                    in a way similar to what Turkoglu et al. (2021) proposed.
+An inherent enhancement to encode the RS signal in a more                              A more complex way to fuse the modalities together could
+effective manner would involve employing an end-to-end ap-                          also be explored, such as using a Gated Multimodal Unit
+proach. This approach entails learning the aggregation of RS                        (Arevalo et al., 2017). This could lead to better integration of
+data and integrating its representation into a neural network,                      the different data modalities and improved performance of the
+similar to architectures such as CNN-temporal or CNN-RNN                            model.
+(Pelletier et al., 2019; Sainte Fare Garnot et al., 2019) or more                      It would also be valuable to investigate the results at a more
+advanced structures like PSE-LTAE (Sainte Fare Garnot et al.,                       regional/local level, especially for FR with its large landmass,
+2020; Quinton & Landrieu, 2021; Weilandt et al., 2023). By                          crop diversity, and meteorological conditions. Local hierarchi-
+adopting these powerful architectures, the encoding of RS sig-                      cal clustering and the performance of the model at the regional
+nals can be optimized, thereby potentially improving the overall                    level could be examined to gain a deeper understanding of how
+performance and accuracy of the system.                                             the model performs in different regions. We saw that the results
+   Finally, we would like to try a meta-learning method to tackle                   for FR were lower, possibly due to the diversity of crops and
+the few-shot learning more effectively, by using specific algo-                     the distribution vector used. Investigating the effect of a region-
+rithm like MAML (Finn et al., 2017) and MetaNorm (Du et al.,                        specialized model, for example by fine-tuning using Adapter
+2020). Also, a domain adaptation method like the one proposed                       layers (Poth et al., 2020), could be a potential solution. In ad-
+by Capliez et al. (2023), but spatially and not temporally, would                   dition, adding meteorological features and investigating their
+be very useful for the few-shot setting.                                            impact could be worthwhile, especially in the case of extreme
+                                                                                    events. Methods such as Tseng et al. (2021b) or using learned
+5.7. Recommendations                                                                embeddings that represent the time of the thermals (Nyborg
+   Regarding future research directions, there are several av-                      et al., 2022) could be explored.
+enues for further exploration. One potential direction is to in-                       Another area to investigate is the potential of a specific loss
+tegrate knowledge from the EuroCrop ontology graph inside                           function for the early season model, like the one proposed in
+                                                                               17
+ Fig. 11: Map of F1 for the six most important crops over The Netherlands. The F1-score is computed for each crop and for each 5km grid cell. Grid cells with less
+than 50ha (i.e., 2% of the land) of the given crops are not plotted. Map projection is EPSG:3035.
+
+
+
+
+                                                                               18
+                               Fig. 12: Map of F1 for the six most important crops over Metropolitan France. See legend of Fig. 11.
+
+
+
+
+Fig. 13: Confusion matrices for the 10- and 14-class settings for Netherlands and France, respectively. True labels are in rows and predicted label are in columns,
+with a column-level normalization.
+
+
+                                                                               19
+Rußwurm et al. (2023), as per our simple data-augmentation                 on the manuscript. They also would like to thank the Big Data
+technique. This could lead to better performance in the early              Analytics project for their continuous support. V.B. has been
+season, which is an ongoing challenge for crop classification.             funded by the grant National Center for Artificial Intelligence
+    Other potential avenues for future work include adding more            CENIA FB210017, Basal ANID.
+countries to the experiments, but also testing the system with
+different backbones, allowing ingestion of the EO raw time se-
+ries as they are. Furthermore, assessing the effects of differ-            References
+ent combinations of bands and sensors, encompassing various
+specifications such as spatial, temporal, angular, and spectral            Arevalo, J., Solorio, T., Montes-Y-Gómez, M., & González, F. A. (2017). Gated
+                                                                              multimodal units for information fusion. In 5th International Conference
+aspects, would be necessary to determine their influence on per-              on Learning Representations, ICLR 2017 - Workshop Track Proceedings.
+formance. This last step would prevent reliance on man-made                   arXiv:1702.01992.
+filters like Hampel or Whittaker and man-made features like                Bahdanau, D., Chorowski, J., Serdyuk, D., Brakel, P., & Bengio, Y. (2016).
+FAPAR and LAI , as they contain filtered information, filter-                 End-to-end attention-based large vocabulary speech recognition. ICASSP,
+                                                                              IEEE International Conference on Acoustics, Speech and Signal Processing
+ing some that may be useful for the final task (Trigeorgis et al.,            - Proceedings, 2016-May, 4945–4949. doi:10.1109/ICASSP.2016.
+2016).                                                                        7472618. arXiv:1508.04395.
+    Overall, these future directions could further improve the ac-         Barriere, V. (2017). Hybrid Models for Opinion Analysis in Speech Interac-
+                                                                              tions. In ICMI (pp. 647–651).
+curacy and generalization of the proposed multimodal approach              Barriere, V., Clavel, C., & Essid, S. (2017). Opinion Dynamics Modeling for
+for crop classification.                                                      Movie Review Transcripts Classification with Hidden Conditional Random
+                                                                              Fields. In INTERSPEECH.
+                                                                           Barriere, V., Clavel, C., & Essid, S. (2018). Attitude Classification in Adja-
+6. Conclusions                                                                cency Pairs of a Human-Agent Interaction with Hidden Conditional Random
+                                                                              Fields. In ICASSP.
+   In conclusion, we proposed a multimodal hierarchical ap-                Barriere, V., & Claverie, M. (2022). Multimodal Crop Type Classification
+proach for crop classification that leverages crop rotation his-              Fusing Multi-Spectral Satellite Time Series with Farmers Crop Rotations
+tory, optical remote sensing signals, and local crop distribu-                and Local Crop Distribution. In Proceedings of 2nd Workshop on Complex
+                                                                              Data Challenges in Earth Observation, IJCAI (pp. 50–57). volume 3207.
+tions. We released a large harmonized time series dataset of 7M               arXiv:2208.10838.
+Feature Of Interest (FOI) for a total of around 35M FOI-season.            Benamara, F., Taboada, M., & Mathieu, Y. (2016).                Evaluative Lan-
+We introduced a new dataset-agnostic method relying on data                   guage Beyond Bags of Words: Linguistic Insights and Computational
+and expert knowledge for aggregating crops, allowing to evalu-                Applications.       Computational Linguistics, . URL: http://www.
+                                                                              mitpressjournals.org/doi/10.1162/COLI{_}a{_}00278.
+ate a classifier on a specific region in a meaningful way. Finally,           doi:10.1162/COLI_a_00278. arXiv:1309.4408.
+we propose a data-augmentation method to boost the results                 Bohan, D. A., Schmucki, R., Abay, A. T., Termansen, M., Bane, M., Charal-
+in early-season setting. Our approach achieved high accuracy                  abidis, A., Cong, R.-G., Derocles, S. A., Dorner, Z., Forster, M., Gibert,
+without in-situ data from the test season and showed promis-                  C., Harrower, C., Oudoire, G., Therond, O., Young, J., Zalai, M., & Pocock,
+                                                                              M. J. (2021). Chapter five - designing farmer-acceptable rotations that assure
+ing results for cross-domain generalization through transfer                  ecosystem service provision in the face of climate change. In D. A. Bohan,
+learning and few-shot learning experiments. Pre-training on a                 A. J. Dumbrell, & A. J. Vanbergen (Eds.), The Future of Agricultural Land-
+dataset improves domain adaptation between countries, allow-                  scapes, Part III (pp. 169–244). Academic Press volume 65 of Advances
+                                                                              in Ecological Research.        URL: https://www.sciencedirect.
+ing for cross- domain and label prediction and stabilization of               com/science/article/pii/S0065250421000027. doi:https:
+the learning in a few-shot setting. Our approach can contribute               //doi.org/10.1016/bs.aecr.2021.01.002.
+significantly to agriculture management and policy monitoring.             Capliez, E., Ienco, D., Gaetano, R., Baghdadi, N., & Salah, A. H. (2023).
+                                                                              Temporal-Domain Adaptation for Satellite Image Time-Series Land-Cover
+                                                                              Mapping with Adversarial Learning and Spatially Aware Self-Training.
+Author contributions                                                          IEEE Journal of Selected Topics in Applied Earth Observations and Remote
+                                                                              Sensing, 16, 3645–3675. doi:10.1109/JSTARS.2023.3263755.
+   V.B. and M.C. conceptualized the study. V.B., M.C. and R.D.             Chen, M., Wang, S., Liang, P. P., Baltrušaitis, T., Zadeh, A., & Morency, L.-P.
+designed the methodology: M.C. extracted the RS time-series                   (2017). Multimodal sentiment analysis with word-level fusion and rein-
+                                                                              forcement learning. In Proceedings of the 19th ACM International Confer-
+and the original cropcodes on every Feature Of Interest, and                  ence on Multimodal Interaction (pp. 163–171).
+proposed to use neural nets on rotations. V.B. proposed hier-              Chung, J., Gulcehre, C., Cho, K., & Bengio, Y. (2015). Gated feedback
+archical multimodal models, the hierarchical aggregation, the                 recurrent neural networks. Proceedings of the 32nd International Con-
+data-augmentation, the few-shot and transfer learning experi-                 ference on Machine Learning, {ICML} 2015, 37, 2067—-2075. URL:
+                                                                              http://arxiv.org/abs/1502.02367. doi:10.1145/2661829.
+ments, extracted the features and ran the experiments. M.S.                   2661935. arXiv:1502.02367.
+provided the EuroCrops dataset, harmonisations and support.                Claverie, M., Ju, J., Masek, J. G., Dungan, J. L., Vermote, E. F., Roger, J.-C.,
+R.D. helped to formalize all the research. V.B., M.C. and R.D.                Skakun, S. V., & Justice, C. (2018). The harmonized landsat and sentinel-2
+wrote the draft of the paper. All the authors analyzed the results            surface reflectance data set. Remote sensing of environment, 219, 145–161.
+                                                                           Claverie, M., Vermote, E. F., Weiss, M., Baret, F., Hagolle, O., & Demarez,
+and wrote the final paper.                                                    V. (2013). Validation of coarse spatial resolution lai and fapar time series
+                                                                              over cropland in southwest france. Remote Sensing of Environment, 139,
+                                                                              216–230.
+Acknowledgements                                                           d’Andrimont, R., Claverie, M., Kempeneers, P., Muraro, D., Yordanov, M.,
+                                                                              Peressutti, D., Batič, M., & Waldner, F. (2023). Ai4boundaries: an open ai-
+  The authors would like to thank Momtchil Iordanov for his                   ready dataset to map field boundaries with sentinel-2 and aerial photography.
+support for visuals and Loı̈c Landrieu for the useful comments                Earth System Science Data, 15, 317–329.
+
+                                                                      20
+d’Andrimont, R., Taymans, M., Lemoine, G., Ceglar, A., Yordanov, M., &                       015.
+   van der Velde, M. (2020). Detecting flowering phenology in oil seed rape               Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T.,
+   parcels with sentinel-1 and-2 time series. Remote Sensing of Environment,                 Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Köpf, A., Yang, E., De-
+   239, 111660.                                                                              Vito, Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L., Bai,
+d’Andrimont, R., Verhegghen, A., Lemoine, G., Kempeneers, P., Meroni, M., &                  J., & Chintala, S. (2019). PyTorch: An imperative style, high-performance
+   Van der Velde, M. (2021). From parcel to continental scale–a first european               deep learning library. Advances in Neural Information Processing Systems,
+   crop type map based on sentinel-1 and lucas copernicus in-situ observations.              32. arXiv:1912.01703.
+   Remote sensing of environment, 266, 112708.                                            Pelletier, C., Webb, G. I., & Petitjean, F. (2019). Temporal convolutional neural
+Delloye, C., Weiss, M., & Defourny, P. (2018). Retrieval of the canopy chloro-               network for the classification of satellite image time series. Remote Sensing,
+   phyll content from sentinel-2 spectral bands to estimate nitrogen uptake in               11, 1–22. doi:10.3390/rs11050523. arXiv:1811.10166.
+   intensive winter wheat cropping systems. Remote Sensing of Environment,                Peng, K. C., Wu, Z., & Ernst, J. (2018). Zero-Shot Deep Domain Adapta-
+   216, 245–261.                                                                             tion. ECCV, (pp. 793–810). doi:10.1007/978-3-030-01252-6_47.
+Demir, I., Koperski, K., Lindenbaum, D., Pang, G., Huang, J., Basu, S.,                      arXiv:1707.01922.
+   Hughes, F., Tuia, D., & Raska, R. (2018). DeepGlobe 2018: A challenge                  Porter, J., Xie, L., Challinor, A., Cochrane, K., Howden, S., Iqbal, M., Lobell,
+   to parse the earth through satellite images. IEEE Computer Society Confer-                D., Isabel Travasso, M., Chhetri, N., Garrett, K. et al. (2014). Food security
+   ence on Computer Vision and Pattern Recognition Workshops, 2018-June,                     and food production systems, .
+   172–181. doi:10.1109/CVPRW.2018.00031. arXiv:1805.06561.                               Poth, C., Pfeiffer, J., Andreas, R., Kamath, A., Vuli, I., Ruder, S., Cho, K., &
+Dogliotti, S., Rossing, W., & Van Ittersum, M. (2003). Rotat, a tool for sys-                Gurevych, I. (2020). AdapterHub : A Framework for Adapting Transform-
+   tematically generating crop rotations. European Journal of Agronomy, 19,                  ers. arXiv preprint arXiv:2007.07779, .
+   239–250.                                                                               Quinton, F., & Landrieu, L. (2021). Crop rotation modeling for deep learning-
+Du, Y., Zhen, X., Shao, L., & Snoek, C. G. (2020). Metanorm: Learning to                     based parcel classification from satellite time series. Remote Sensing, 13.
+   normalize few-shot batches across domains. In International Conference on                 doi:10.3390/rs13224599. arXiv:2110.08187.
+   Learning Representations.                                                              Rußwurm, M., Courty, N., Emonet, R., Lefèvre, S., Tuia, D., & Tavenard, R.
+Eilers, P. H., Pesendorfer, V., & Bonifacio, R. (2017). Automatic smoothing of               (2023). End-to-end learned early classification of time series for in-season
+   remote sensing data. In 2017 9th International Workshop on the Analysis of                crop type mapping. ISPRS Journal of Photogrammetry and Remote Sensing,
+   Multitemporal Remote Sensing Images (MultiTemp) (pp. 1–3). IEEE.                          196, 445–456. URL: https://doi.org/10.1016/j.isprsjprs.
+Finn, C., Abbeel, P., & Levine, S. (2017). Model-agnostic meta-learning for                  2022.12.016. doi:10.1016/j.isprsjprs.2022.12.016.
+   fast adaptation of deep networks. 34th International Conference on Machine             Rußwurm, M., & Körner, M. (2018). Multi-temporal land cover classification
+   Learning, ICML 2017, 3, 1856–1868. arXiv:1703.03400.                                      with sequential recurrent encoders. ISPRS International Journal of Geo-
+Giordano, S., Bailly, S., Landrieu, L., & Chehata, N. (2020). Improved crop                  Information, 7. doi:10.3390/ijgi7040129. arXiv:1802.02080.
+   classification with rotation knowledge using sentinel-1 and -2 time series.            Rußwurm, M., & Körner, M. (2020). Self-attention for raw optical Satellite
+   Photogrammetric Engineering and Remote Sensing, 86, 431–441. doi:10.                      Time Series Classification. ISPRS Journal of Photogrammetry and Remote
+   14358/PERS.86.7.431.                                                                      Sensing, 169, 421–435. doi:10.1016/j.isprsjprs.2020.06.006.
+Harris, Z. S. (1954). Distributional Structure. Word, 10, 146–162. URL:                      arXiv:1910.10536.
+   http://psycnet.apa.org/psycinfo/1956-02807-001.                                        Rußwurm, M., Lefèvre, S., & Körner, M. (2019a). Breizhcrops: a satellite time
+   doi:10.1007/978-94-009-8467-7_1.                                                          series dataset for crop type identification. Time Series Workshop of the 36th
+Hochreiter, S., & Schmidhuber, J. (1997). LONG SHORT-TERM MEM-                               ICML, .
+   ORY.       Neural Computation, 9, 1735–1780. URL: http://www7.                         Rußwurm, M., Tavenard, R., Lefèvre, S., & Körner, M. (2019b). Early Clas-
+   informatik.tu-muenchen.de/{˜}hochreit{%}5Cnhttp:                                          sification for Agricultural Monitoring from Satellite Time Series. ICML
+   //www.idsia.ch/{˜}juergen. doi:10.1162/neco.1997.9.8.                                     AI4socialgood workshop, . URL: http://arxiv.org/abs/1908.
+   1735. arXiv:1206.2944.                                                                    10283. arXiv:1908.10283.
+Johnson, D. M., & Mueller, R. (2021). Pre-and within-season crop type clas-               Rußwurm, M., Wang, S., Körner, M., & Lobell, D. (2019c). Meta-Learning for
+   sification trained with archival land cover information. Remote Sensing of                Few-Shot Land Cover Classification. In IEEE/CVF conference on computer
+   Environment, 264, 112576.                                                                 vision and pattern recognition workshops.
+Kingma, D., & Ba, J. (2014). Adam: A Method for Stochastic Optimization.                  Sainte Fare Garnot, V., Landrieu, L., Giordano, S., & Chehata, N. (2019). Time-
+   International Conference on Learning Representations, (pp. 1–13). URL:                    Space Tradeoff in Deep Learning Models for Crop Classification on Satellite
+   http://arxiv.org/abs/1412.6980. doi:http://doi.acm.                                       Multi-Spectral Image Time Series. In IGARSS (pp. 6247–6250). doi:10.
+   org.ezproxy.lib.ucf.edu/10.1145/1830483.1830503.                                          1109/igarss.2019.8900517. arXiv:1901.10503.
+   arXiv:1412.6980.                                                                       Sainte Fare Garnot, V., Landrieu, L., Giordano, S., & Chehata, N. (2020).
+Lin, C., Zhong, L., Song, X.-P., Dong, J., Lobell, D. B., & Jin, Z. (2022). Early-           Satellite image time series classification with pixel-set encoders and tem-
+   and in-season crop type mapping without current-year ground truth: Gen-                   poral self-attention. In Proceedings of the IEEE Computer Society Con-
+   erating labels from historical information via a topology-based approach.                 ference on Computer Vision and Pattern Recognition (pp. 12322–12331).
+   Remote Sensing of Environment, 274, 112994.                                               doi:10.1109/CVPR42600.2020.01234. arXiv:1911.07757.
+Merlos, F. A., & Hijmans, R. J. (2020). The scale dependency of spatial crop              Sanh, V., Wolf, T., Ruder, S., Court, H., & Row, H. (2018). A Hierarchical
+   species diversity and its relation to temporal diversity. Proceedings of the              Multi-task Approach for Learning Embeddings from Semantic Tasks. In
+   National Academy of Sciences, 117, 26176–26182.                                           AAAI. arXiv:arXiv:1811.06031v1.
+Meroni, M., d’Andrimont, R., Vrieling, A., Fasbender, D., Lemoine, G., Rem-               Schmitt, M., Hughes, L. H., Qiu, C., & Zhu, X. X. (2019). SEN12MS
+   bold, F., Seguini, L., & Verhegghen, A. (2021). Comparing land surface                    &ndash; A CURATED DATASET of GEOREFERENCED MULTI-
+   phenology of major european crops as derived from sar and multispectral                   SPECTRAL SENTINEL-1/2 IMAGERY for DEEP LEARNING and
+   data of sentinel-1 and-2. Remote sensing of environment, 253, 112232.                     DATA FUSION. ISPRS Annals of the Photogrammetry, Remote Sens-
+Mikolov, T., Karafiát, M., Burget, L., Černockỳ, J., & Khudanpur, S. (2010).              ing and Spatial Information Sciences, 4, 153–160. doi:10.5194/
+   Recurrent neural network based language model. In Eleventh annual con-                    isprs-annals-IV-2-W7-153-2019. arXiv:1906.07789.
+   ference of the international speech communication association.                         Schneider, M., Broszeit, A., & Körner, M. (2021). Eurocrops: A pan-
+Nyborg, J., Pelletier, C., & Assent, I. (2022). Generalized Classification                   european dataset for time series crop type classification. arXiv preprint
+   of Satellite Image Time Series with Thermal Positional Encoding. IEEE                     arXiv:2106.08151, .
+   Computer Society Conference on Computer Vision and Pattern Recogni-                    Schuller, B., Steidl, S., Batliner, A., Hirschberg, J., Burgoon, J. K., Baird, A.,
+   tion Workshops, 2022-June, 1391–1401. doi:10.1109/CVPRW56347.                             Elkins, A., Zhang, Y., Coutinho, E., & Evanini, K. (2016). The INTER-
+   2022.00145. arXiv:2203.09175.                                                             SPEECH 2016 Computational Paralinguistics Challenge: Deception, Sin-
+Osman, J., Inglada, J., & Dejoux, J. F. (2015). Assessment of a Markov logic                 cerity & Native Language. In Proceedings of the Annual Conference of the
+   model of crop rotations for early crop mapping. Computers and Electron-                   International Speech Communication Association, INTERSPEECH.
+   ics in Agriculture, 113, 234–243. doi:10.1016/j.compag.2015.02.                        Selea, T. (2023). Agrisen-cog, a multicountry, multitemporal large-scale
+
+
+                                                                                     21
+   sentinel-2 benchmark dataset for crop mapping using deep learning. Re-
+   mote Sensing, 15. URL: https://www.mdpi.com/2072-4292/15/
+   12/2980.
+Serban, I. V., Sordoni, A., Bengio, Y., Courville, A., & Pineau, J. (2015). Build-
+   ing End-To-End Dialogue Systems Using Generative Hierarchical Neural
+   Network Models, . URL: http://arxiv.org/abs/1507.04808.
+   doi:10.1017/CBO9781107415324.004. arXiv:1507.04808.
+Soille, P., Burger, A., De Marchi, D., Kempeneers, P., Rodriguez, D., Syrris,
+   V., & Vasilev, V. (2018). A versatile data-intensive computing platform for
+   information retrieval from big geospatial data. Future Generation Computer
+   Systems, 81, 30–40.
+Trigeorgis, G., Ringeval, F., Brueckner, R., Marchi, E., Nicolaou, M. A.,
+   Schuller, B., & Zafeiriou, S. (2016). Adieu features? End-to-end speech
+   emotion recognition using a deep convolutional recurrent network. In 2016
+   IEEE International Conference on Acoustics, Speech and Signal Processing
+   (ICASSP) (pp. 5200–5204). URL: http://ieeexplore.ieee.org/
+   document/7472669/. doi:10.1109/ICASSP.2016.7472669.
+Tseng, G., Kerner, H., Nakalembe, C., & Becker-Reshef, I. (2021a). Learning
+   to predict crop type from heterogeneous sparse labels using meta-learning.
+   IEEE Computer Society Conference on Computer Vision and Pattern
+   Recognition Workshops, (pp. 1111–1120). doi:10.1109/CVPRW53098.
+   2021.00122.
+Tseng, G., Zvonkov, I., Nakalembe, C., & Kerner, H. (2021b). CropHar-
+   vest: a global satellite dataset for crop type classification. In Neurips
+   NeurIPS (pp. 1–14). URL: https://github.com/nasaharvest/
+   cropharvest.
+Turkoglu, M. O., D’Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler,
+   K., & Wegner, J. D. (2021). Crop mapping from image time se-
+   ries: Deep learning with multi-scale label hierarchies. Remote Sens-
+   ing of Environment, 264, 1–37. doi:10.1016/j.rse.2021.112603.
+   arXiv:2102.08820.
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez,
+   A. N., Kaiser, Ł., & Polosukhin, I. (2017). Attention Is All You Need.
+   arXiv:1706.03762 [cs], .
+Weilandt, F., Behling, R., Goncalves, R., Madadi, A., Richter, L., Sanona, T.,
+   Spengler, D., & Welsch, J. (2023). Early crop classification via multi-
+   modal satellite data fusion and temporal attention. Remote Sensing, 15.
+   URL: https://www.mdpi.com/2072-4292/15/3/799. doi:10.
+   3390/rs15030799.
+Weiss, M., & Baret, F. (1999). Evaluation of canopy biophysical variable re-
+   trieval performances from the accumulation of large swath satellite data.
+   Remote sensing of environment, 70, 293–306.
+Weiss, M., Jacob, F., & Duveiller, G. (2020). Remote sensing for agricultural
+   applications: A meta-review. Remote sensing of environment, 236, 111402.
+Wöllmer, M., Kaiser, M., Eyben, F., Schuller, B., & Rigoll, G. (2013a).
+   LSTM-modeling of continuous emotions in an audiovisual affect recog-
+   nition framework. Image and Vision Computing, 31, 153–163. doi:10.
+   1016/j.imavis.2012.03.001.
+Wöllmer, M., Weninger, F., Knaup, T., Schuller, B., Sun, C., Sagae,
+   K., & Morency, L.-P. (2013b).           YouTube Movie Reviews: Senti-
+   ment Analysis in an Audio-Visual Context.              IEEE Intelligent Sys-
+   tems, 28, 46–53. URL: http://ieeexplore.ieee.org/lpdocs/
+   epic03/wrapper.htm?arnumber=6487473. doi:10.1109/MIS.
+   2013.34.
+Xiao, Y., Mignolet, C., Mari, J.-F., & Benoı̂t, M. (2014). Modeling the spatial
+   distribution of crop sequences at a large regional scale using land-cover sur-
+   vey data: A case from france. Computers and Electronics in Agriculture,
+   102, 51–63.
+Xu, C., Tao, D., & Xu, C. (2013). A Survey on Multi-view Learning, . (pp.
+   1–59). URL: http://arxiv.org/abs/1304.5634. doi:10.1145/
+   1553374.1553391. arXiv:1304.5634.
+Yaramasu, R., Bandaru, V., & Pnvr, K. (2020). Pre-season crop type
+   mapping using deep neural networks. Computers and Electronics in
+   Agriculture, 176, 105664. URL: https://www.sciencedirect.
+   com/science/article/pii/S0168169920307742. doi:https:
+   //doi.org/10.1016/j.compag.2020.105664.
+
+
+
+
+                                                                                     22
+Appendix A
+
+
+
+
+ Fig. A.1: Sankey diagram of the crop harmonisation, linking the French RPG (left) and the Dutch BRP (right), using HCATv2 from EuroCrops (center). The
+bars represent a relative share of the surface for each country. For sake of presentation (in order to fit in one page), only the 40 main crop types for each
+country are represented. Other crop types are grouped in ”Other” classes. An interactive version of the diagram without class limitation is available on https:
+//jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/DRLL/CropDeepTrans/data/sankey_All_crops.html.
+
+
+
+
+                                                                              1
+ Fig. A.2: Mean of the EO-derived variable for each country 2019-2020. When crop have winter and spring varieties, the spring varieties are represented as dashed
+lines..
+
+
+
+
+                                                                               2
+Fig. A.3: Standard deviation of the EO-derived variable for each country for the growing season 2019-2020. When crop have winter and spring varieties, the spring
+varieties are represented as dashed lines.
+
+
+
+
+                                                                               3
+Appendix B
+
+   In our main paper, all the experiments were ran using a temporal split between the train, dev and test. In Table Table A.1 we
+show the results of experiments using a spatio-temporal split. It means the parcels used for testing are from different years than
+the year used for training, but also they are different parcels. We used 90% of the parcels for training, and 10% of the parcels for
+testing. Our results show a slight deterioration of the performances, coinciding with the ones of Weilandt et al. (2023) as we stated
+in the main paper.
+
+  Labels                            141/151-class                     24/32-class                        10/14-class                      8/12-class
+                 Split
+  Dataset                    P       R     F1       Acc      P        R      F1      Acc      P          R      F1      Acc      P       R      F1         m-F1
+                  T          47.2    41.9 42.7      93.7     77.2     75.9 76.0      94.1     87.0       82.1 83.8      95.6     85.7    78.9 81.4         91.7
+  NL
+                 T+S         47.3    42.5 42.7      93.3     75.8     74.8 74.6      93.7     86.6       81.2 82.9      95.3     85.3    77.8 80.4         91.0
+                  T          44.4    38.7 39.4      85.4     72.0     68.6 69.1      85.6     79.5       75.9 77.4      89.1     77.8    73.2 75.1         83.5
+  FR
+                 T+S         44.8    38.4 38.4      85.1     71.6     68.0 68.8      85.4     79.1       74.4 76.3      88.8     77.3    71.5 73.9         82.7
+
+ Table A.1: Results over the Netherlands and France of the best end-of-season classification architecture on 10% of the parcels of the dataset for the test season
+2020. One split is purely temporal (T) and and the other one is temporal and spatial (T+S). The T split lines contain the results of our model on this specific 10%
+subpart of the dataset. The T+S lines contain the results of a model with the same architecture trained only over the 90% remaining. None of the models have seen
+timeseries from season 2020 during training. The metrics shown are macro Precision (P), Recall (R) and F1 score, as well as accuracy and micro-F1 score (m-F1).
+
+
+
+
+Appendix C
+
+   In our main paper, all the experiments were ran using a set of features comprising FAPAR, LAI, B4 and B8A. As we stated in
+the main paper, the focus of this work is not on the input features sets, as our architecture is modular and the encoder we used
+can be changed for another one, using different features. Our work on modeling focused on showing the interest of an hierarchical
+architecture.
+   In Table Table A.2 we show the results of experiments using more features obtained from more spectral bands, over data from
+NL. In addition to the initial feature set, we added B2, B3, B8 given at 10m resolution, and also B11 and B12 that were interpolated
+at 10m. With 9 time-series instead of 4, we obtained a feature vector of size 63 instead of 28. Our results show an amelioration of
+all the models that are using more features. We also observe the same improvement between the different architectures proposed,
+confirming that the hierarchy helps even with a broader feature set.
+
+  Labels                                    141-class                        24-class                        10-class                         8-class
+                   Features
+  Model                             P      R      F1       Acc      P      R      F1     Acc      P        R      F1      Acc     P        R       F1      m-F1
+  IntraYERS                         27.4   20.9 20.4       89.8     64.0   60.9 60.4     90.3     78.8     75.9 74.5      92.9    76.1     72.6 70.8       87.8
+  IntraYE MM                        55.6   39.7 43.2       92.8     76.6   69.8 72.1     93.1     83.0     80.5 80.9      94.7    80.2     77.9 78.0       90.0
+                         4
+  InterYE MM                        41.1   33.0 33.6       92.2     70.8   70.5 69.9     92.6     82.2     79.7 80.4      94.5    80.2     76.3 77.5       89.5
+  HierE f inal                      47.1   39.3 40.2       93.6     76.6   75.8 75.7     94.0     86.7     81.9 83.6      95.5    85.3     78.7 81.1       91.6
+  IntraYERS                         36.0   27.4 27.4       92.5     73.3   68.9 69.6     92.9     86.5     82.3 82.2      95.2    84.7     79.9 79.6       91.7
+  IntraYE MM                        61.0   45.6 49.0       94.3     81.0   75.9 77.7     94.6     88.0     85.9 86.3      96.1    85.9     84.2 84.2       92.7
+                         9
+  InterYE MM                        47.1   35.8 37.9       94.0     77.2   74.6 75.5     94.4     88.6     84.5 86.0      96.1    87.3     82.2 84.0       92.8
+  HierE f inal                      52.5   46.3 46.7       95.3     81.5   81.2 81.1     95.6     90.6     87.9 89.0      96.9    8.96     85.7 87.3       94.2
+
+ Table A.2: Results over the Netherlands of several end-of-season classification architectures, using different features sets. The first one is composed of B4, B8A,
+FAPAR and LAI, and the second one is an extension composed of first one with B2, B3, B8, B11 and B12. The metrics shown are macro Precision (P), Recall (R)
+and F1 score, as well as accuracy and micro-F1 score (m-F1).
+
+
+
+
+Appendix D
+
+   The computational power in terms of training time per batch and per dataset, and GPU memory used during the training of the
+different models is shown in Table Table A.3. We used a batch size of 256. We did not use any stopping strategy, as we chose the
+model giving the best performance on the validation set. We used a maximum number of 25 epochs for NL and 10 epochs for FR.
+We used float16 as precision for the weights and neurons of the neural network.
+
+
+
+
+                                                                                 4
+                                             Modelisation-level                                      Training time (s)
+Models         CR   RS       CD                                                      Hierar.                                  Mem.
+                                      Within season   Between seasons                            Batch/s    NL        FR
+IntraYERS      ✗    ✓         ✗               ✓                        ✗                 ✗          49         3575   12300   1.03
+IntraYE MM     ✓    ✓         ✗               ✓                        ✗                 ✗          47         3725   12810   1.03
+InterYECrop    ✓    ✗         ✗               ✗                        ✓                 ✗         116          500    1720   1.00
+InterYERS      ✗    ✓         ✗               ✗                        ✓                 ✗         162          350    1200   1.00
+InterYE MM     ✓    ✓         ✗               ✗                        ✓                 ✗          93          625    2150   1.00
+HierERS        ✗    ✓         ✗               ✓                        ✓                 ✓          11         5300   18230   1.59
+HierE MM       ✓    ✓         ✗               ✓                        ✓                 ✓          11         5300   18230   1.59
+HierE f inal   ✓    ✓         ✓               ✓                        ✓                 ✓          11         5300   18230   1.60
+
+                         Table A.3: Computation for each of the models: time in seconds and GPU RAM in Gigabytes
+
+
+
+
+                                                                   5
+

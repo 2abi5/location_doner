@@ -1,0 +1,953 @@
+                                         Forecasting the Number of Harvest-ready Fruits of Sweet Peppers
+                                         Using Multimodal Time-Series Data
+                                         Enrico Pallottaa,b,∗ , Mohamed Faraga , Esra Guclua , Chris McCoola,b,c , Ribana Roschera and
+                                         Juergen Galla,b
+                                         a University of Bonn, Bonn, Germany
+                                         b Lamarr Institute for Machine Learning and Artificial Intelligence, Bonn, Germany
+                                         c CSIRO, Pullenvale, Australia
+
+
+
+                                         ARTICLE INFO                                         ABSTRACT
+                                         Keywords:                                            Accurate yield forecasting at the individual-plant level is critical for precision agriculture and
+                                         Phenotype forecasting                                supply-chain planning, yet public datasets capturing both visual growth dynamics and per-plant
+                                         Time-series data                                     measurement labels are scarce. In this paper, we introduce a novel, annotated image time-series dataset
+                                         Deep learning                                        of 691 sweet pepper plants monitored over two growing seasons, comprising 4837 images with per-
+                                                                                              plant fruit counts categorized by maturity. We propose a multimodal deep learning framework that
+                                                                                              fuses high-dimensional image features, extracted using the DinoV3 encoder, with numerical count
+                                                                                              measurements. Our architecture utilizes a Long Short-Term Memory (LSTM) network to model
+                                                                                              temporal dependencies and handles irregular sampling intervals common in greenhouse monitoring.
+                                                                                              Through quantitative experiments, we demonstrate that this multimodal approach reduces RMSE over
+arXiv:2607.19975v1 [cs.CV] 22 Jul 2026
+
+
+
+
+                                                                                              a persistence baseline by 33% and 38% in the 2022 and 2023 seasons, respectively, with a further 1.2%
+                                                                                              average gain over a measurement-only model. Furthermore, we employ Deep Ensembles and Gaussian
+                                                                                              Negative Log-Likelihood (NLL) to provide calibrated uncertainty estimates, with an Uncertainty
+                                                                                              Calibration Error (UCE) ranging from 0.39 to 0.89 depending on the cross-season evaluation direction,
+                                                                                              offering a principled confidence signal for real-world agricultural decision-making. We release the
+                                                                                              dataset and code to support reproducible research and to accelerate development of data-driven yield
+                                                                                              forecasting methods for horticultural crops.
+
+
+
+                                         1. Introduction                                                                that combine temporal models with environmental and im-
+                                                                                                                        age data Kierdorf et al. (2024); Kamangir et al. (2026).
+                                             Sweet pepper (Capsicum annuum), commonly known as                              However, two limitations persist in this line of work.
+                                         bell pepper, is a major horticultural crop grown worldwide
+                                                                                                                        First, many existing studies rely on measurements and pro-
+                                         for fresh-market and processing use. Global production of                      prietary datasets collected by commercial growers that are
+                                         peppers reached a record in recent years Sood et al. (2023),                   never publicly released, limiting reproducibility and slowing
+                                         with total production measured in tens of millions of tonnes,                  the development of benchmark models for smart greenhouse
+                                         underlining the crop’s economic and food-security impor-                       management. Second, even where forecasting models are
+                                         tance. A large and growing share of commercial sweet-
+                                                                                                                        developed, they typically rely on a single modality (discrete
+                                         pepper production takes place in controlled environments
+                                                                                                                        fruit counts) and rarely provide a measure of confidence
+                                         (greenhouses), where climate control, fertigation and inte-                    in their predictions, despite the inherently stochastic nature
+                                         grated pest management enable higher yields, better fruit                      of individual plant development and the practical need for
+                                         quality and extended production seasons compared with                          growers to distinguish reliable forecasts from uncertain ones.
+                                         open-field growing. Well-managed greenhouse systems can                            In this work, we address both limitations. We introduce
+                                         achieve very high per-area yields and are increasingly used
+                                                                                                                        a carefully collected, multimodal dataset of sweet-pepper
+                                         where year-round supply and premium quality are required.
+                                                                                                                        growth and production from a monitored greenhouse, span-
+                                             Accurate yield forecasts in greenhouse horticulture are                    ning two growing seasons, 2022 and 2023, and we pro-
+                                         valuable for growers and supply-chain actors because they                      pose a multimodal deep learning framework for forecasting
+                                         support operational decisions such as labour planning, har-                    the number of harvest-ready fruits at the plant level. The
+                                         vest scheduling, storage allocation and contracts with buy-                    framework fuses high-dimensional visual features, extracted
+                                         ers Sauviller et al. (2008); Lin and Hill (2008); Onoufriou
+                                                                                                                        using a DinoV3 Siméoni et al. (2025) encoder, with per-
+                                         et al. (2023). This need has motivated a growing body of
+                                                                                                                        plant fruit-count measurements within a Long Short-Term
+                                         research on forecasting methods for greenhouse crops, in-                      Memory (LSTM) network that models temporal dependen-
+                                         cluding mechanistic Jones et al. (1991) and data-driven Peng                   cies in plant development. To accommodate the irregular
+                                         et al. (2023) approaches and recent deep-learning methods                      sampling intervals that are common in greenhouse moni-
+                                                 e.pallott@uni-bonn.de (E. Pallotta)                                    toring, the framework explicitly incorporates the time delta
+                                              ORCID (s): 0009-0003-9276-0540 (E. Pallotta); 0000-0003-4301-1140         Δ𝑡 between observations, allowing it to modulate temporal
+                                         (M. Farag); 0000-0003-1106-5566 (E. Guclu); 0000-0002-0577-1299 (C.            transitions based on elapsed time rather than assuming fixed-
+                                         McCool); 0000-0003-0094-6210 (R. Roscher); 0000-0002-9447-3399 (J. Gall)
+                                                                                                                        interval sampling. Beyond point forecasts, we extend the
+                                                                                                                        framework with Deep Ensembles and a Gaussian negative
+
+                                         E Pallotta et al.: Preprint submitted to Elsevier                                                                                          Page 1 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+log-likelihood objective to produce calibrated uncertainty          integrated with positional embeddings to encode temporal
+estimates, offering growers a principled confidence signal          information. While effective for single-stage readiness, this
+alongside each prediction.                                          approach does not explicitly model the sequential dependen-
+    Through quantitative experiments on both seasons, we            cies between growth stages.
+show that this multimodal approach substantially outper-                In the domain of yield prediction, de Oca et al. (2025)
+forms a persistence baseline, cutting RMSE by 33% in 2022           proposed an LSTM-based framework to iteratively predict
+and by 38% in 2023. It further provides a marginal but con-         the count of harvest-ready strawberries. A key contribu-
+sistent gain over a counting-only model that relies solely on       tion of their work is the integration of physical constraints
+numerical measurements, reducing RMSE by an additional              into the loss function, ensuring that the transition between
+2% in 2022 and 0.3% in 2023, indicating that visual fea-            ripeness classes adheres to biological growth rates. How-
+tures capture morphological and color transitions not fully         ever, their model relies solely on count-based inputs, dis-
+reflected in discrete counts. We also show that the integration     carding potentially rich visual information present in the raw
+of temporal deltas allows the model to generalize across            images.
+seasons despite irregular and varying sampling frequencies,             Most relevant to our study is the work of Shimomoto
+though calibration quality is asymmetric: training on 2022          et al. (2025), who addressed sweet pepper yield forecasting.
+and evaluating on 2023 yields a well-calibrated ensemble            They employed a two-stage pipeline consisting of fruit de-
+(UCE of 0.39), while the reverse direction produces a higher        tection and color-based classification, followed by a linear
+calibration error (UCE of 0.89). Even in this less favorable        regression model to predict the next week’s yield. While
+direction, the resulting uncertainty estimates remain practi-       their setup provides a foundational baseline for pepper fore-
+cally useful for supporting harvest-related decision-making.        casting, our work extends this by exploring non-linear deep
+    By releasing both the dataset and the proposed fore-            learning architectures and investigating the benefits of multi-
+casting framework, we aim to (i) enable direct comparison           modal fusion, where both discrete counts and visual features
+between forecasting methods on greenhouse sweet-pepper              are utilized for prediction.
+data, (ii) advance multimodal, image-based yield prediction
+by demonstrating a temporal architecture that fuses visual          2.2. Generative modeling for plant growth
+and numerical signals while explicitly handling irregular                A parallel line of research focuses on “predicting the fu-
+sampling, and (iii) provide a reproducible benchmark that           ture” through image synthesis, where the goal is to generate
+couples accurate point forecasts with calibrated uncertainty        the visual state of a plant at a future time step. Yasrab et al.
+quantification, supporting practical gains in labour and lo-        (2021) utilized Generative Adversarial Networks (GANs) to
+gistics planning for commercial growers.                            predict future frames of Arabidopsis thaliana root growth
+                                                                    from segmentation masks. While promising, GAN-based
+                                                                    approaches in agriculture have often been critiqued for pro-
+2. Related works                                                    ducing blurry results that lack the high-frequency detail
+    The intersection of computer vision and precision agri-         required for precise phenotypic analysis Wang et al. (2022);
+culture has shifted significantly from static trait estimation to   Drees et al. (2021).
+dynamic temporal forecasting. This section reviews recent                To address these limitations, Wang et al. (2022) pro-
+advancements in phenotypic prediction and the emerging              posed the use of Spatio-Temporal LSTMs (ST-LSTM) com-
+field of generative plant growth modeling.                          bined with Memory In Motion (MIM) modules to predict
+                                                                    wheat growth sequences. By framing the problem as a
+2.1. Predicting phenotypes and yield forecasting                    video prediction task, they achieved higher structural sim-
+    Predicting plant traits and harvest readiness from lon-         ilarity (SSIM) compared to standard convolutional LSTMs.
+gitudinal data is a critical component of smart greenhouse          However, these generative models primarily focus on vi-
+management. Early approaches often relied on manual fea-            sual appearance rather than the explicit quantification of
+ture extraction and statistical modeling.                           harvestable yield. Our work bridges this gap by utilizing
+For instance, Das Choudhury (2020) utilized neural net-             temporal visual data not for image synthesis, but as a high-
+works to forecast morphological traits such as height, width,       dimensional feature space to improve the accuracy of numer-
+and areal density; however, their approach relied exclusively       ical yield forecasting.
+on geometric descriptors rather than raw image data. Simi-
+larly, Buxbaum et al. (2022) developed a dataset focused on        2.3. Statistical and model-based approaches
+biomass estimation across different treatment groups, high-            Traditional agronomic models continue to play a role
+lighting the potential for time-series analysis in monitoring      in phenotype prediction. Kim and Kim (2020) developed
+growth responses, though their primary focus remained on           a parametrized model based on the correlation between
+estimation rather than multi-step forecasting.                     environmental variables (e.g., temperature, humidity) and
+    More recently, deep learning architectures have been           physical traits like plant height. While these models of-
+leveraged to handle the complexity of image-based time-            fer high interpretability, they often struggle to capture the
+series. Kierdorf et al. (2024) introduced a method for cauliflower stochastic nature of individual plant development compared
+harvest prediction using a Multi-Layer Perceptron (MLP)            to data-driven computer vision approaches. Our framework
+trained on features extracted from a ResNet backbone,
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                     Page 2 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+aims to combine the strengths of data-driven learning with
+the temporal structure inherent in biological growth.
+
+2.4. Uncertainty quantification
+     Due to its significance, there have been multiple at-
+tempts to integrate uncertainty quantification techniques into
+the agricultural machine learning framework. Wang et al.
+(2019) use a full Bayesian approach to estimate uncertainty
+for subsoil heterogeneity estimations. They specify a prior
+distribution and use Bayes’ rule to get the posterior as
+they use a model with a relatively low number of param-
+eters compared to deep learning models. MC-Dropout and
+Stochastic Gradient Langevin Dynamics (SGLD) Welling
+and Teh (2011) have been used by Hernández and López
+(2020) as an approximation of a full Bayesian approach for
+plant disease detection. Chrispell et al. (2021) and Meenken
+et al. (2021) have investigated Bayesian approaches for real-
+time crop management and estimating crop sensitivity to
+weather changes, using hybrid modeling that combines ma-
+chine learning with mechanistic models.
+     Several works Chrispell et al. (2021); Padarian et al.
+(2022); Li et al. (2023); Celikkan et al. (2023) have fo-
+cused on using MC-Dropout or ensembles to estimate data
+uncertainty or model uncertainty in deep learning models
+for applications in agricultural or soil modeling. These ap-
+proaches are computationally efficient during training and
+provide a direct way to measure uncertainty estimates by
+using metrics such as mean and variance. As an alternative,      Figure 1: Glasshouse at the University of Bonn Campus Klein
+conformal prediction has gained attention for agricultural       Altendorf.
+applications Melki et al. (2023); Farag et al. (2023) due to
+its simplicity and robust statistical guarantees for providing
+calibrated uncertainty estimates.                                timeseries dataset, we aligned the recorded images over
+                                                                 the growing period. To do so, we designed a python GUI
+                                                                 that allowed us to go through a pair of sequences and save
+3. Material and methods                                          aligned image pairs manually. Images were selected such
+3.1. Data acquisition                                            that they would contain most of the plant’s visible parts,
+    The data utilized in this study were captured during the     furthermore an overlayed grid allowed to achieve a precise
+2022 and 2023 seasons within the sweet pepper chamber            spatial alignment between plant frames over different dates.
+of a commercial glasshouse (Figure 1) at the University          After repeating this process for both 2022 and 2023 record-
+of Bonn Campus Klein Altendorf (CKA). The chamber                ings, we obtained visual timeseries data for 691 plants, each
+consists of 6 rows, each approximately 34 meters in length,      timeseries representing the growth over 7 dates, resulting in
+where mavera and allrounder sweet peppers are grown.             4837 image frames.
+Data acquisition was performed using the robotic platform
+PATHoBot Smitt et al. (2021) shown in Figure 2, which is         3.3. Plant-level fruits annotation
+designed specifically for monitoring and intervention tasks          To generate instance-level sweet pepper annotations for
+in glasshouse environments. PATHoBot operates by moving          selected image time series, we employ CTVIS Ying et al.
+along the pipe-rail system in the glasshouse and is equipped     (2023), a video-based instance segmentation model. Instead
+with three Intel RealSense D435i RGB-D cameras, enabling         of relying on image-based models operating on individual
+the capture of synchronized color and depth imagery. In ad-      frames, a video instance segmentation (VIS) framework
+dition to visual data, the platform provides wheel odometry      is chosen to leverage the richer spatial-temporal informa-
+information during operation. For each of the two seasons,       tion available in sequential data. By processing temporally
+data were captured on 7 days, resulting in a total of 14         adjacent frames jointly, VIS models can exploit multiple
+recording days across both years.                                viewpoints of the same object over time, resulting in more
+                                                                 robust feature representations and more reliable instance
+3.2. Time series annotation                                      association.
+    As a result of the data acquisition process, we have one         Although the target data for annotation consists of 4837
+video for each row and recording date, which is stored as        individual reference frames extracted from the 2022 and
+a sequence of images. In order to create a per-plant image       2023 recordings, the original data is inherently sequential.
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                Page 3 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+                                                                                                                                 Season 2022
+                                                                                                                                                                                         Ready
+                                                                                   6
+                                                                                                                                                                                         Not ready
+                                                                                   5
+
+                                                                                   4
+
+
+
+
+                                                                Number of fruits
+                                                                                   3
+
+                                                                                   2
+
+                                                                                   1
+
+                                                                                   0
+
+
+
+
+                                                                                        -11
+
+
+
+
+                                                                                                                          -22
+
+                                                                                                                                 -24
+
+
+
+
+                                                                                                                                                         -29
+
+                                                                                                                                                                 -31
+
+
+
+
+                                                                                                                                                                                  -05
+
+                                                                                                                                                                                         -07
+                                                                                   -08
+
+
+
+
+                                                                                                                      -08
+
+                                                                                                                                -08
+
+
+
+
+                                                                                                                                                     -08
+
+                                                                                                                                                               -08
+
+
+
+
+                                                                                                                                                                              -09
+
+                                                                                                                                                                                        -09
+                                                                             22
+
+
+
+
+                                                                                                                     22
+
+                                                                                                                                22
+
+
+
+
+                                                                                                                                                    22
+
+                                                                                                                                                              22
+
+
+
+
+                                                                                                                                                                             22
+
+                                                                                                                                                                                    22
+                                                                      20
+
+
+
+
+                                                                                                                     20
+
+                                                                                                                            20
+
+
+
+
+                                                                                                                                                    20
+
+                                                                                                                                                           20
+
+
+
+
+                                                                                                                                                                            20
+
+                                                                                                                                                                                    20
+                                                                                                                                     Capture date
+
+
+                                                                                                                                     (a)
+                                                                                                                                     Season 2023
+                                                                                                                                                                                         Ready
+                                                                                   10
+                                                                                                                                                                                         Not ready
+                                                                                   8
+
+
+
+
+                                                                Number of fruits
+                                                                                   6
+
+                                                                                   4
+
+                                                                                   2
+
+                                                                                   0
+
+
+
+
+                                                                                        -20
+
+
+                                                                                                   -22
+
+
+
+
+                                                                                                               -27
+
+
+
+                                                                                                                           -30
+
+
+
+
+                                                                                                                                                               -07
+
+
+
+
+                                                                                                                                                                            -11
+
+
+
+                                                                                                                                                                                         -14
+                                                                                       -06
+
+
+                                                                                               -06
+
+
+
+
+                                                                                                            -06
+
+
+
+                                                                                                                          -06
+
+
+
+
+                                                                                                                                                           -07
+
+
+
+
+                                                                                                                                                                        -07
+
+
+
+                                                                                                                                                                                        -07
+                                                                                   23
+
+
+                                                                                              23
+
+
+
+
+                                                                                                           23
+
+
+
+                                                                                                                      23
+
+
+
+
+                                                                                                                                                         23
+
+
+
+
+                                                                                                                                                                       23
+
+
+
+                                                                                                                                                                                    23
+                                                                           20
+
+
+                                                                                              20
+
+
+
+
+                                                                                                          20
+
+
+
+                                                                                                                     20
+
+
+
+
+                                                                                                                                                         20
+
+
+
+
+                                                                                                                                                                       20
+
+
+
+                                                                                                                                                                                    20
+                                                                                                                                     Capture date
+
+
+                                                                                                                                     (b)
+                                                                Figure 3: Timeseries showing the number of ready and not
+                                                                ready fruits for years 2022 and 2023.
+
+
+
+Figure 2: The PATHoBot robotic platform used for capturing      3.4. Forecasting framework
+image data.                                                         To transform raw counting information into actionable
+                                                                agricultural insights, we formulated a forecasting task fo-
+                                                                cused on harvest readiness. We aggregated the five maturity
+To enable the application of the video-based model, the         classes into two primary categories:
+original recordings are divided into subsequences of 30 con-                            1. Ready to Harvest: Comprising the red and yellow
+secutive frames. Each subsequence has a selected reference                                 classes.
+frame at its center. In this way, a total of 4837 short video
+                                                                                        2. Not Ready: Comprising the green, mixed-red, and
+clips are formed, each centered around a reference frame,
+                                                                                           mixed-yellow classes.
+allowing the VIS model to exploit temporal context while
+producing annotations for the target images.                        The objective is to predict the number of fruits ready for
+     Spatial-CTVIS is trained on BUP-ST20 Guclu et al.          harvest at a future time step 𝑡 + 1, given the historical state
+(2025), a weakly labelled spatial-temporal dataset of sweet     of the plant. We define the forecasting function 𝑓𝜃 as:
+peppers suitable for robotic perception in agricultural sce-
+narios. For each reference frame, the model generates in-                                     𝑓𝜃 (𝑥𝑡 , 𝑥𝑡−1 , … , 𝑥𝑡−𝑘 , Δ𝑡 ) = 𝑦̂𝑡+1 ,                                                          (1)
+stance segmentation masks, class labels (red, green, yellow,
+                                                                where 𝑥𝑡 represents the state of the plant at time 𝑡 (e.g.,
+mixed-red, and mixed-yellow), and associated confidence
+                                                                fruit counts per class), 𝑘 is the number of past observations,
+scores for each sweet pepper in the image. These outputs
+                                                                Δ𝑡 represents the number of days between the most recent
+serve as the final annotations for the image time series
+                                                                observation 𝑡 and the target date 𝑡+1 and 𝑦̂𝑡+1 is the predicted
+utilized in this study.
+                                                                count of harvest-ready fruits at the target date.
+     As illustrated in Figure 3, the timeseries obtained for
+                                                                    This forecasting problem naturally takes the form of
+2022 and 2023, where the various classes have been grouped
+                                                                a multivariate time-series prediction task, in which plant
+into “ready” and “not ready”, display comparable trends,
+                                                                development follows a gradual and temporally dependent
+even though the measurement frequency differs considerably
+                                                                process. Fruit appearance, growth, and ripening are driven
+between the two years. Specifically, the green and mixed
+                                                                by cumulative effects over time, such as past fruit load
+categories (not ready) gradually decline over time as the
+                                                                and growth dynamics, which cannot be captured by models
+fruits develop, whereas the ready category fluctuates due to
+                                                                that assume independent observations. For this reason, we
+human intervention, since fruits are harvested when needed.
+                                                                employ Long Short-Term Memory (LSTM) Graves (2012)
+                                                                modules to build our network 𝑓𝜃 . LSTMs are a class of
+                                                                recurrent neural networks specifically designed to capture
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                                                                           Page 4 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+
+
+
+Figure 4: Architecture of the proposed model. Past frames 𝑖𝑡−𝑘 , … , 𝑖𝑡 are encoded by a frozen vision encoder, projected by an MLP,
+and modeled by a visual LSTM branch, while the corresponding fruit-count measurements [𝑥𝑡−𝑘 , … , 𝑥𝑡 ] are processed by a parallel
+counting LSTM branch. The forecast horizon Δ𝑡 is mapped by a FiLM projector to per-channel scale-and-shift parameters that
+modulate (𝑚) both LSTM context embeddings. The modulated counting context is passed through an MLP to produce a base
+prediction (𝜇𝜃 , 𝜎𝜃2 ), while both modulated contexts are jointly fed to a corrector that estimates a residual correction (Δ𝜇, Δ log 𝜎).
+A learned gate (𝑔) combines the base prediction with this correction to yield the final predictive mean 𝜇̂ and variance 𝜎̂ 2 that will
+be used in the ensemble to estimate 𝑦̂𝑡+1 .
+
+
+
+long-term temporal dependencies through gated memory                  𝑖𝑡 . Our architecture, illustrated in Figure 4, processes them
+mechanisms. This makes them well suited for agricultural              in two separate temporal branches that are combined at the
+growth modeling, where the current yield state depends not            prediction stage.
+only on recent observations but also on longer-term develop-               The counting branch feeds the sequence of past fruit
+mental trends. Moreover, LSTMs can handle variable-length             counts [𝑥𝑡−𝑘 , … , 𝑥𝑡 ] directly to a dedicated LSTM, produc-
+sequences and irregular temporal sampling when augmented              ing a temporal context ℎ𝑚 that, on its own, corresponds to a
+with explicit temporal information, such as the time delta            purely count-based forecaster.
+Δ𝑡 . This is particularly relevant in greenhouse monitoring                The visual branch extracts deep visual features from
+scenarios, where image acquisition and annotations may not            each past frame 𝑖𝑗 , 𝑗 ∈ {𝑡 − 𝑘, … , 𝑡}, using the frozen
+occur at fixed intervals. By explicitly providing Δ𝑡 as an            DinoV3 foundation model Siméoni et al. (2025). DinoV3 is a
+input, the model can learn to modulate temporal transitions           Vision Transformer Dosovitskiy (2020) trained through self-
+based on the elapsed time between observations.                       supervised learning, which allows it to learn complex visual
+     Rather than injecting the elapsed time Δ𝑡 as a raw, con-         patterns and object shapes directly from vast datasets with-
+catenated input, we condition the model’s internal temporal           out requiring manual human labels. By comparing different
+representations on Δ𝑡 through a Feature-wise Linear Mod-              “views” of the same image, the model develops an intuitive
+ulation (FiLM) Perez et al. (2018) mechanism, described in            understanding of the underlying structure and consistency
+Section 3.4.1. This design allows the network to learn how            of objects, enabling the extraction of robust and semanti-
+to reshape its representations as a function of elapsed time,         cally meaningful representations. The resulting features are
+rather than treating Δ𝑡 as an undifferentiated additional input       𝓁2 -normalized, projected to a lower-dimensional space by
+dimension.                                                            a small MLP, and passed to a second, dedicated LSTM,
+     The model parameters 𝜃 are optimized using gradient              yielding a visual temporal context ℎ𝑣 .
+descent to minimize an objective function that quantifies the              Since the elapsed time Δ𝑡 between the last observation
+discrepancy between the predicted and ground-truth number             and the forecast date can vary, both contexts are modulated
+of harvest-ready fruits. Given a training set of 𝑁 samples,           by Δ𝑡 prior to fusion: a lightweight FiLM conditioner maps
+the parameters are iteratively updated to minimize the total          Δ𝑡 to per-channel scale and shift parameters (𝛾, 𝛽), which
+loss:                                                                 rescale each context as ℎ′ = ℎ⊙(1+𝛾)+𝛽. The conditioner’s
+                                                                      output layer is zero-initialized, so at initialization 𝛾 = 𝛽 = 0
+               1 ∑ ( (𝑖) (𝑖) )
+                  𝑁
+                                                                      and both contexts pass through unmodulated; because this
+      (𝜃) =         𝓁 𝑦 , 𝑦̂  ,                              (2)
+               𝑁 𝑖=1                                                  starting point is the identity mapping, the model is not forced
+                                                                      to condition on Δ𝑡 .
+where 𝓁 represents the specific loss criterion employed                    The modulated counting context ℎ′𝑚 is then passed
+during training, the details of which are provided in Section         through a small MLP head that produces a base prediction
+3.4.3.                                                                of the target’s mean and log-variance:
+                                                                                              (             )
+3.4.1. Multimodal inputs                                                         𝑧𝑚 = ReLU 𝑊𝑏 ℎ′𝑚 + 𝑏𝑏 ,
+     While fruit counts are important, they do not reflect the
+                                                                                 𝜇𝜃 = 𝑊𝜇 𝑧𝑚 + 𝑏𝜇 ,                                  (3)
+full state of the plant. We therefore investigate the predictive
+value of visual information by augmenting a counting-only                    log 𝜎𝜃2 = 𝑊𝜎 𝑧𝑚 + 𝑏𝜎 .
+backbone with a parallel branch operating on plant images
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                         Page 5 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+    In parallel, ℎ′𝑚 and the modulated visual context ℎ′𝑣 are       3.4.3. Probabilistic forecasting with Gaussian
+jointly passed to a corrector network – an MLP applied                      negative log-likelihood
+to their concatenation [ℎ′𝑚 ; ℎ′𝑣 ] – that predicts a residual          While the MSE loss (2) yields deterministic point es-
+adjustment to this base prediction:                                 timates of 𝑦̂𝑡+1 , it is not designed to capture predictive
+                         (                  )                       uncertainty by using the variance of the ensemble mean
+             𝑧𝑐 = ReLU 𝑊𝑐 [ℎ′𝑚 ; ℎ′𝑣 ] + 𝑏𝑐 ,                       prediction. To address this, we adopt the probabilistic for-
+            Δ𝜇 = 𝑊𝑐,𝜇 𝑧𝑐 + 𝑏𝑐,𝜇 ,                            (4)    mulation of Lakshminarayanan et al. (2017), which extends
+                                                                    the network to model a full predictive distribution rather than
+      Δ log 𝜎 2 = 𝑊𝑐,𝜎 𝑧𝑐 + 𝑏𝑐,𝜎 .                                  a single output value.
+    A learned scalar gate 𝑔 = tanh(𝛼), also zero-initialized            Specifically, each ensemble member 𝑓𝜃(𝑚) is modified to
+so that 𝑔 = 0 at the start of training, weights the contribution    output two quantities: a predicted mean 𝜇𝜃(𝑚) (𝑥𝑡 , … , 𝑥𝑡−𝑘 , Δ𝑡 )
+of this residual, giving the model’s final predictive mean and      and a predicted variance 𝜎𝜃2(𝑚) (𝑥𝑡 , … , 𝑥𝑡−𝑘 , Δ𝑡 ) > 0, param-
+log-variance:                                                       eterizing a Gaussian distribution over the target fruit count.
+                                                                    The model is then trained by minimizing the Gaussian Nega-
+            𝜇̂ = 𝜇𝜃 + 𝑔 Δ𝜇,
+                                                             (5)    tive Log-Likelihood (NLL), which simultaneously penalizes
+      log 𝜎̂ 2 = log 𝜎𝜃2 + 𝑔 Δ log 𝜎 2 .                            inaccurate mean predictions and learns prediction variance:
+
+This gated-residual design guarantees that, at initialization
+                                                                                       (                 )2
+(𝑔 = 0), the model is exactly equivalent to a counting-only                          ⎡ (𝑖)        (𝑚)(𝑖)                   ⎤
+                                                                                ∑𝑁       𝑦
+                                                                                     ⎢ 𝑡+1  −   𝜇
+forecaster, and that visual information is incorporated only to         (𝑚)   1                   𝜃          1     2(𝑚)(𝑖) ⎥
+                                                                       NLL =
+                                                                              𝑁 𝑖=1 ⎢⎢
+                                                                                                            + log 𝜎𝜃       ⎥ . (7)
+the extent that it improves predictive accuracy. The specific                              2𝜎𝜃2(𝑚)(𝑖)        2             ⎥
+output quantities (predictive mean and variance) produced                            ⎣                                     ⎦
+by this fusion are detailed in Section 3.4.3.
+                                                                    Crucially, this loss prevents the model from trivially reduc-
+3.4.2. Ensemble learning for uncertainty                            ing uncertainty by inflating 𝜎 2 : any increase in predicted
+         quantification                                             variance is penalized by the log 𝜎 2 term, while underestimat-
+     Reliable fruit count predictions alone are insufficient        ing variance is penalized by the quadratic residual term. To
+for practical deployment; a model that also quantifies its          ensure numerical stability and enforce positivity, we pass the
+own uncertainty enables growers to make more informed               raw variance output through a softplus activation and apply
+harvesting decisions, particularly under ambiguous or out-          clamping.
+of-distribution conditions. To this end, we extend the deter-           The final ensemble prediction is then obtained as a
+ministic forecasting framework described above to produce           mixture of 𝑀 = 4 Gaussian distributions, one per member,
+both a point estimate and a calibrated uncertainty measure          approximated by a single Gaussian whose mean and vari-
+for each prediction.                                                ance are:
+     We adopt Deep Ensembles Lakshminarayanan et al.                                               𝑀 (             )
+                                                                          1 ∑ (𝑚)               1 ∑ 2(𝑚)
+                                                                               𝑀
+                                                                                                                 2
+(2017) as a tractable approximation to Bayesian Neural Net-          𝜇̂ =      𝜇 ,           2
+                                                                                           𝜎̂ =        𝜎𝜃 + 𝜇𝜃(𝑚) − 𝜇̂ 2 (8)
+works (BNNs) Abdar et al. (2021). Rather than maintaining                 𝑀 𝑚=1 𝜃               𝑀 𝑚=1
+a full posterior distribution over model parameters, which
+is computationally prohibitive for sequence models, Deep            where 𝜇̂ serves as the final fruit count estimate and 𝜎̂ 2
+Ensembles achieve uncertainty estimation by training 𝑀              captures both the aleatoric uncertainty (averaged from each
+independent copies (members) of 𝑓𝜃 , each initialized with          member’s learned variance) and the epistemic uncertainty
+a distinct random seed. The diversity induced by different          (from disagreement between member means).
+initializations encourages the members to explore different
+regions of the loss landscape, yielding a set of predictions        3.5. Experimental protocol
+whose disagreement reflects the model’s uncertainty. The                To evaluate the model’s ability to generalize across
+ensemble prediction is then obtained by averaging across all        different growing seasons, we adopt a leave-one-year-out
+members:                                                            cross-validation strategy. Specifically, the model is trained
+                                                                    and validated on data from one year using a 95/5% split and
+                                                                    evaluated on the held-out year. This procedure is performed
+                               1 ∑ (𝑚)
+                                  𝑀
+                                                                    twice, using 2022 for training and validation and 2023 for
+   𝑓̃𝜃 (𝑥𝑡 , … , 𝑥𝑡−𝑘 , Δ𝑡 ) =      𝑓 (𝑥𝑡 , … , 𝑥𝑡−𝑘 , Δ𝑡 ) , (6)   testing, and vice versa. This evaluation protocol ensures that
+                               𝑀 𝑚=1 𝜃
+                                                                    forecasting performance is robust to inter-annual variations
+    where the predictive variance across members serves             in environmental conditions, greenhouse management prac-
+as a proxy for model uncertainty, providing a principled            tices, and plant growth dynamics.
+signal for downstream decision-making in the greenhouse                 We train two variants of the LSTM model:
+monitoring pipeline.                                                    • Counting: a standard model that uses only historical
+                                                                          fruit-count information of each plant as input.
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                       Page 6 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+    • Multimodal: a model that combines fruit-count data                                2022                  2023
+      and extracted image features.                                 Method           RMSE MASE             RMSE MASE
+If not otherwise specified, we use 𝑘 = 5 past measurements          Baseline          1.261        –        2.066        –
+as observations.                                                    Counting          0.866      0.628      1.287      0.785
+    We report performance using two complementary point-            Multimodal        0.848      0.622      1.283      0.770
+forecast metrics. The Root Mean Squared Error (RMSE) is            Table 1
+defined as:                                                        Comparison of our multimodal forecasting model against a
+                                                                   model using just counting values and a persistency prediction
+             √                                                     baseline.
+             √    𝑁 (              )2
+             √1 ∑
+      RMSE = √        𝑦(𝑖) − 𝑦
+                             ̂ (𝑖)
+                                      ,                     (9)                         2022                  2023
+               𝑁 𝑖=1 𝑡+1       𝑡+1
+                                                                    𝑘=5              RMSE MASE             RMSE MASE
+     where 𝑁 is the number of forecast instances in the test        Baseline          1.261        –        2.066        –
+set. RMSE is expressed in the same units as the fruit counts
+                                                                    Without Δ𝑡        0.894      0.626      1.283      0.738
+and penalizes large deviations disproportionately, making it
+                                                                    Δ𝑡 concat         0.865      0.619      1.296      0.746
+sensitive to occasional severe mis-counts.
+                                                                    Δ𝑡 FiLM           0.848      0.622      1.283      0.770
+     To assess accuracy relative to a naive reference and
+to allow comparison across seasons with different baseline         Table 2
+difficulty, we additionally report the Mean Absolute Scaled        Ablation of the temporal delta (Δ𝑡 ) encoding strategy within
+Error (MASE) Hyndman and Koehler (2006):                           the multimodal forecasting model. Without Δ𝑡 , the elapsed-
+                                                                   time signal is omitted entirely; Δ𝑡 concat appends Δ𝑡 as a
+                                                                   raw scalar input to the fused representation; Δ𝑡 FiLM uses
+                    1 ∑𝑁 | (𝑖)        (𝑖) |                        the proposed FiLM-based conditioning (Section 3.4.1). The Δ𝑡
+                   𝑁   𝑖=1 ||𝑦𝑡+1 − 𝑦̂𝑡+1 ||                       FiLM row corresponds to the Multimodal model reported in
+      MASE =                                         ,     (10)
+                 1     ∑𝑁train | (𝑗)         (𝑗−1) |               Table 1.
+                                |𝑦     − 𝑦train |
+             𝑁train − 1 𝑗=2 | train                |
+
+where the numerator is the mean absolute forecast error on         early stopping was used to prevent overfitting. All the
+the test set, and the denominator is the mean absolute one-        experiments were run on a single NVIDIA A40 (48 GB
+step difference of the training-year series (written as a single   RAM) with the following libraries setup: CUDA (12.6),
+long timeseries for a simpler equation), i.e. the in-sample        Python (3.10.12), PyTorch (2.7.1).
+error of a naive persistence forecaster. A MASE below
+one indicates the model improves on the naive persistence
+forecaster in absolute-error terms, while values above one
+                                                                   4. Results and discussion
+indicate the opposite. Being scale-independent, MASE also          4.1. Quantitative performance analysis
+enables direct comparison of forecast quality between the              The experimental results, summarized in Table 1, demon-
+2022 and 2023 seasons despite their differing count magni-         strate that our deep learning framework significantly outper-
+tudes and baseline RMSE.                                           forms the persistence baseline across both growing seasons.
+     To isolate the contribution of the elapsed-time signal Δ𝑡     In the season 2022, the Multimodal model achieved the
+within the Multimodal model, we additionally train three           highest accuracy, with an RMSE of 0.848 and a MASE of
+variants that differ only in how Δ𝑡 is incorporated: omitting      0.622, corresponding to a 32.7% RMSE reduction over the
+it entirely, concatenating it as a raw scalar input to the fused   baseline (1.261). In the season 2023, both models yielded a
+representation, and the proposed FiLM-based conditioning.          substantially larger relative improvement over the season’s
+This ablation is reported and discussed in Section 4.2.            baseline (2.066), reducing RMSE by approximately 38%. In
+     Finally, we evaluate the effect of temporal context by        both years, the inclusion of DinoV3-extracted visual features
+varying the number of past available states. Given that each       provided a consistent gain over the Counting-only model. In
+time series consists of seven observation dates, we train          contrast to counts, the high-dimensional image features can
+model variants using between one and six past states as            capture subtle morphological and color transitions, such as
+input.                                                             the gradual ripening of a "mixed" pepper.
+
+3.6. Technical details                                             4.2. Impact of temporal delta encoding
+    The extraction of the image features is done using                 To assess how the elapsed time Δ𝑡 between the last
+the DinoV3-ViT-H+ vision encoder. For training, we used            observation and the forecast date should be incorporated
+AdamW optimizer with a starting learning rate of 10−3 to           into the multimodal model, we compare three variants in
+10−4 (optimized via hyper-parameter search on the valida-          Table 2: omitting Δ𝑡 entirely (Without Δ𝑡 ), concatenating Δ𝑡
+tion set) and weight decay of 10−5 . A reduce-on-plateau           as a raw scalar input to the fused representation (Δ𝑡 concat),
+mechanism was added to the learning rate scheduler and
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                   Page 7 of 11
+                  Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+                            Performance on 2022 data                                              Performance on 2023 data
+                                                                              2.1
+                                                            Baseline                                                                   Baseline
+       1.4                                                  Ours              2.0                                                      Ours
+
+                                                                              1.9
+       1.2
+                                                                              1.8
+       1.0                                                                    1.7
+RMSE
+
+
+
+
+                                                                       RMSE
+                                                                              1.6
+       0.8
+                                                                              1.5
+
+       0.6                                                                    1.4
+
+                                                                              1.3
+             1         2         3                  4   5       6                    1       2         3                  4   5            6
+                                     Past Context                                                          Past Context
+
+                                     (a)                                                                   (b)
+
+             Figure 5: RMSE performance varying the number 𝑘 of past observations in comparison to the persistence baseline.
+
+
+
+
+                                     (a)                                                                   (b)
+Figure 6: Calibration assessment of an ensemble by using a reliability diagram. (a): Training on 2022 and testing on 2023 shows
+under-confidence, while (b) demonstrates over-confidence.
+
+
+
+and the proposed FiLM-based conditioning described in                  4.4. Predictive uncertainty and calibration
+Section 3.4.1 (Δ𝑡 FiLM).                                                    analysis
+    Explicit Δ𝑡 conditioning is not uniformly beneficial:                  Beyond point accuracy, a reliable forecasting system for
+FiLM yields the best RMSE in 2022 and ties for best in                 greenhouse management must also produce well-calibrated
+2023, but its MASE is the worst of the three variants in both          uncertainty estimates, so that growers can distinguish con-
+seasons, with the no-Δ𝑡 variant instead achieving the lowest           fident predictions from uncertain ones and act accordingly.
+MASE in 2023. Concatenation sits between the two on most               We measure calibration quantitatively using the Uncertainty
+metrics. We adopt FiLM as our default given its consistent             Calibration Error (UCE) Laves et al. (2020) and NLL, re-
+RMSE advantage, while noting this trade-off rather than                ported in Table 3, and qualitatively through reliability dia-
+presenting FiLM as a uniform improvement.                              grams shown in Figure 6.
+                                                                       UCE measures the discrepancy between a model’s pre-
+4.3. Impact of temporal context                                        dicted uncertainty and its actual prediction error. To com-
+     The influence of the number (𝑘) of past observations on           pute it, predictions are grouped into 𝐵 bins according to
+forecasting performances is reported in Figure 5. The general          their predicted uncertainty level, and the average predicted
+trend is clear, increasing the number of past observations,            uncertainty within each bin is compared against the average
+i.e., past context information, leads to better performance.           empirical error of that bin. The overall UCE is then the
+We can see a nearly linear reduction in RMSE for the                   weighted mean of these per-bin discrepancies:
+evaluation on the 2022 season. On the other hand, for 2023, a
+distinct performance pivot occurs after three days of context.
+Beyond this point, the RMSE for our model drops sharply,                                  ∑
+                                                                                          𝐵
+                                                                                            |𝐵𝑏 | | 2       |
+suggesting that the LSTM requires a minimum historical se-                          UCE =         |𝜎 − err𝑏 |                              (11)
+                                                                                             𝑁 | 𝑏
+                                                                                           𝑏=1
+                                                                                                            |
+quence to accurately model the non-linear growth dynamics
+of sweet peppers under irregular sampling conditions.
+                                                                       where |𝐵𝑏 | is the number of samples in bin 𝑏, 𝜎 2𝑏 is the mean
+                                                                       predicted variance in that bin, and err𝑏 is the mean squared
+                                                                       error of the predictions in that bin. A UCE of zero indicates
+                                                                       perfect calibration, meaning predicted uncertainty faithfully
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                                 Page 8 of 11
+             Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+                                  UCE       NLL                  less representative prior for the distributional characteristics
+                2022 → 2023       0.391    1.264                 of 2022. This is further corroborated by the reliability dia-
+                2023 → 2022       0.888    1.958                 grams in Figure 6, where the model trained on 2023 shows
+                                                                 under-confidence.
+Table 3
+Calibration metrics for the NLL-trained multi-modal forecast-
+                                                                     Nevertheless, the cross-season UCE values remain low
+ing ensemble. The lower the calibration metric the better.       enough to confirm that the ensemble’s uncertainty estimates
+                                                                 are practically useful, providing growers with a principled
+                                                                 confidence signal to support harvest decision-making under
+tracks actual error, while a value approaching one indicates     seasonal variability.
+severe miscalibration. The reliability diagram provides a
+visual counterpart to UCE, plotting 𝜎 2𝑏 against err𝑏 for each   Conclusions
+bin; a perfectly calibrated model follows the diagonal line.
+                                                                      In this work, we addressed the challenge of yield fore-
+Cross-season generalization: When training on 2022               casting for individual plants by leveraging multimodal time-
+and testing on 2023, the model achieves well-calibrated          series data from sweet pepper crops. Our findings validate
+uncertainty estimates with low NLL and UCE, indicating           that plant development is a temporally dependent process
+that the predicted uncertainty faithfully reflects the actual    where combining past numerical states with visual cues
+prediction error as shown in Figure 6 (a). In the ranges         provides a more comprehensive representation of growth
+from 0.0 to 0.2 and 0.8 to 1.0 on the x-axis, the model is       than discrete counts alone. Experimental results across two
+aligned with the diagonal line demonstrating approximately       growing seasons confirmed the robustness of our framework,
+perfect calibration. However in the range of 0.2 to 0.8,         showing that performance improves with increased histori-
+the reliability diagram shows that the observed coverage         cal context.
+consistently exceeds the expected coverage, the curve lies       Additionally, by incorporating Deep Ensembles and Gaus-
+above the diagonal, indicating that the model is under-          sian NLL, we provided a mechanism for uncertainty quan-
+confident in this regime, producing prediction intervals that    tification, which is essential for building trust in automated
+are wider than necessary. We observe the opposite when           agricultural systems. While cross-season generalization re-
+training on 2023 data and testing on 2022. The model is          vealed potential for variance inflation in specific scenarios,
+over-confident across the full range from 0.0 to 1.0 on the      the overall low Uncertainty Calibration Error (UCE) indi-
+x-axis.                                                          cates that these estimates remain practically useful for grow-
+                                                                 ers. Ultimately, this research provides a scalable foundation
+4.5. Discussion                                                  for data-driven yield monitoring and logistics planning in
+    Our results are consistent with the hypothesis that past     controlled-environment horticulture.
+plant states are predictive of future yield, and that model-
+ing this temporal dependency explicitly, rather than treat-      CRediT authorship contribution statement
+ing observations independently, provides a substantial im-
+                                                                     Enrico Pallotta: Conceptualization, Data curation, For-
+provement over a persistence baseline. The contribution of
+                                                                 mal analysis, Investigation, Methodology, Software, Valida-
+visual information, extracted via self-supervised DinoV3
+                                                                 tion, Visualization, Writing - original draft, Writing - review
+features, was modest: across both seasons the Multimodal
+                                                                 & editing. Mohamed Farag: Formal analysis, Methodol-
+model provided a consistent but small improvement over the
+                                                                 ogy, Software, Validation, Visualization, Writing - original
+Counting-only model, suggesting that visual features carry
+                                                                 draft, Writing - review & editing. Esra Guclu: Data cura-
+a complementary signal beyond fruit counts, though counts
+                                                                 tion, Resources, Visualization, Writing - review & editing.
+alone already capture most of the predictable variance. The
+                                                                 Chris McCool: Funding acquisition, Supervision, Writing
+robustness of the leave-one-year-out cross-validation is par-
+                                                                 - review & editing. Ribana Roscher: Funding acquisition,
+ticularly encouraging for applications. Despite the stochastic
+                                                                 Supervision, Writing - review & editing. Juergen Gall:
+nature of individual plant development and the fluctuations
+                                                                 Funding acquisition, Project administration, Supervision,
+introduced by human harvest intervention, the model ef-
+                                                                 Writing - review & editing.
+fectively generalizes across seasons. This suggests that the
+integration of temporal deltas (Δ𝑡 ) allows the network to
+successfully modulate biological transitions even when data      Declaration of competing interest
+acquisition is irregular.
+                                                                     The authors declare that they have no known competing
+    Beyond point accuracy, the adoption of Gaussian NLL
+                                                                 financial interests or personal relationships that could have
+training within the ensemble framework enables the model
+                                                                 appeared to influence the work reported in this paper.
+to produce calibrated uncertainty estimates alongside its
+predictions. The calibration results in Table 3 reveal an
+asymmetry between the two cross-season scenarios: training       Acknowledgments
+on 2022 and evaluating on 2023 yields lower UCE and NLL             This work was supported by the Deutsche Forschungs-
+than the reverse, suggesting that the 2023 season provides a     gemeinschaft (DFG, German Research Foundation) GA
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                  Page 9 of 11
+               Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+1927/9-1, RO 4839/6-1, and MC 831/2-1 (KI-FOR 5351                             Lakshminarayanan, B., Pritzel, A., Blundell, C., 2017. Simple and scalable
+AID4Crops). The authors gratefully acknowledge the access                         predictive uncertainty estimation using deep ensembles, in: Proceedings
+to the Marvin cluster at the University of Bonn, which                            of the 31st International Conference on Neural Information Processing
+                                                                                  Systems, Curran Associates Inc., Red Hook, NY, USA. p. 6405–6416.
+enabled them to perform all experiments.                                       Laves, M.H., Ihler, S., Fast, J.F., Kahrs, L.A., Ortmaier, T., 2020. Well-
+                                                                                  calibrated regression uncertainty in medical imaging with deep learning,
+                                                                                  in: International Conference on Medical Imaging with Deep Learning.
+References                                                                        URL: https://api.semanticscholar.org/CorpusID:212411041.
+Abdar, M., Pourpanah, F., Hussain, S., Rezazadegan, D., Liu, L.,               Li, Y., Yan, S., Gong, J., 2023.          Quantifying uncertainty in soil
+   Ghavamzadeh, M., Fieguth, P., Cao, X., Khosravi, A., Acharya, U.R.,            moisture retrieval using a bayesian neural network framework.
+   Makarenkov, V., Nahavandi, S., 2021. A review of uncertainty quan-             Computers and Electronics in Agriculture 215, 108414. URL: https:
+   tification in deep learning: Techniques, applications and challenges. In-      //www.sciencedirect.com/science/article/pii/S0168169923008025,
+   formation Fusion 76, 243–297. doi:https://doi.org/10.1016/j.inffus.            doi:https://doi.org/10.1016/j.compag.2023.108414.
+   2021.05.008.                                                                Lin, W., Hill, B., 2008. Neural network modelling to predict weekly yields
+Buxbaum, N., Lieth, J.H., Earles, M., 2022. Non-destructive plant biomass         of sweet peppers in a commercial greenhouse. Canadian journal of plant
+   monitoring with high spatio-temporal resolution via proximal rgb-d             science 88, 531–536.
+   imagery and end-to-end deep learning. Frontiers in Plant Science 13,        Meenken, E.D., Triggs, C.M., Brown, H.E., Sinton, S., Bryant, J.R., No-
+   758818.                                                                        ble, A.D., Espig, M., Sharifi, M., Wheeler, D.M., 2021. Bayesian
+Celikkan, E., Saberioon, M., Herold, M., Klein, N., 2023. Semantic                hybrid analytics for uncertainty analysis and real-time crop management.
+   segmentation of crops and weeds with probabilistic modeling and un-            Agronomy Journal 113, 2491–2505.
+   certainty quantification, in: Proceedings of the IEEE/CVF International     Melki, P., Bombrun, L., Diallo, B., Dias, J., Da Costa, J.P., 2023. Group-
+   Conference on Computer Vision (ICCV) Workshops, pp. 582–592.                   conditional conformal prediction via quantile regression calibration for
+Chrispell, J.C., Jenkins, E.W., Kavanagh, K.R., Parno, M.D., 2021. Char-          crop and weed classification, in: Proceedings of the IEEE/CVF interna-
+   acterizing prediction uncertainty in agricultural modeling via a coupled       tional conference on computer vision, pp. 614–623.
+   statistical–physical framework. Modelling 2, 753–775. URL: https:           de Oca, A.M., Magney, T., Vougioukas, S.G., Racano, D., Torrez-Orozco,
+   //www.mdpi.com/2673-3951/2/4/40, doi:10.3390/modelling2040040.                 A., Fennimore, S.A., Martin, F.N., Earles, M., 2025. Strawberry
+Das Choudhury, S., 2020. Time series modeling for phenotypic prediction           fruit yield forecasting using image-based time-series plant phenological
+   and phenotype-genotype mapping using neural networks, in: European             stages sequences. Computers and Electronics in Agriculture 237,
+   Conference on Computer Vision, Springer. pp. 228–243.                          110516.
+Dosovitskiy, A., 2020. An image is worth 16x16 words: Transformers for         Onoufriou, G., Hanheide, M., Leontidis, G., 2023. Premonition net,
+   image recognition at scale. arXiv preprint arXiv:2010.11929 .                  a multi-timeline transformer network architecture towards strawberry
+Drees, L., Junker-Frohn, L.V., Kierdorf, J., Roscher, R., 2021. Temporal          tabletop yield forecasting. Computers and Electronics in Agriculture
+   prediction and evaluation of brassica growth in the field using condi-         208, 107784.
+   tional generative adversarial networks. Computers and Electronics in        Padarian, J., Minasny, B., McBratney, A., 2022.                      Assessing
+   Agriculture 190, 106415.                                                       the uncertainty of deep learning soil spectral models using
+Farag, M., Kierdorf, J., Roscher, R., 2023. Inductive conformal prediction        monte carlo dropout.         Geoderma 425, 116063.            URL: https:
+   for harvest-readiness classification of cauliflower plants: A comparative      //www.sciencedirect.com/science/article/pii/S0016706122003706,
+   study of uncertainty quantification methods, in: Proceedings of the            doi:https://doi.org/10.1016/j.geoderma.2022.116063.
+   IEEE/CVF International Conference on Computer Vision, pp. 651–659.          Peng, X., Yu, X., Luo, Y., Chang, Y., Lu, C., Chen, X., 2023. Prediction
+Graves, A., 2012. Long short-term memory. Supervised sequence labelling           model of greenhouse tomato yield using data based on different soil
+   with recurrent neural networks , 37–45.                                        fertility conditions. Agronomy 13, 1892.
+Guclu, E., Halstead, M., Denman, S., McCool, C., 2025. Weakly labelled         Perez, E., Strub, F., De Vries, H., Dumoulin, V., Courville, A., 2018. Film:
+   spatial-temporal sweet pepper data: Enabling higher quality detection,         Visual reasoning with a general conditioning layer, in: Proceedings of
+   segmentation, and tracking. The International Journal of Robotics              the AAAI conference on artificial intelligence.
+   Research , 02783649251379093.                                               Sauviller, C., Baets, W., Verlinden, B., Nicolai, B., 2008. Predicting the
+Hernández, S., López, J.L., 2020. Uncertainty quantification for plant            weekly yield fluctuations of greenhouse bell pepper, in: I International
+   disease detection using bayesian deep learning. Applied Soft Computing         Symposium on Horticulture in Europe 817, pp. 261–268.
+   96, 106597. URL: https://www.sciencedirect.com/science/article/             Shimomoto, K., Shimazu, M., Matsuo, T., Kato, S., Naito, H., Kashino,
+   pii/S1568494620305354,         doi:https://doi.org/10.1016/j.asoc.2020.        M., Ohta, N., Yoshida, S., Fukatsu, T., 2025. Predicting sweet pepper
+   106597.                                                                        yield based on fruit counts at multiple ripeness stages monitored by an
+Hyndman, R.J., Koehler, A.B., 2006. Another look at measures of forecast          ai-based system mounted on a pipe-rail trolley. Horticulturae 11, 718.
+   accuracy. International journal of forecasting 22, 679–688.                 Siméoni, O., Vo, H.V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C.,
+Jones, J.W., Dayan, E., Allen, L., Van Keulen, H., Challa, H., 1991. A            Khalidov, V., Szafraniec, M., Yi, S., Ramamonjisoa, M., et al., 2025.
+   dynamic tomato growth and yield model (tomgro). Transactions of the            Dinov3. arXiv preprint arXiv:2508.10104 .
+   ASAE 34, 663–0672.                                                          Smitt, C., Halstead, M., Zaenker, T., Bennewitz, M., McCool, C., 2021.
+Kamangir, H., Sams, B.S., Dokoozlian, N., Sanchez, L., Earles, J.M., 2026.        Pathobot: A robot for glasshouse crop phenotyping and intervention,
+   Cmavit: Integrating climate, management, and remote sensing data for           in: 2021 IEEE International Conference on Robotics and Automation
+   crop yield prediction with multimodel vision transformers. IEEE Journal        (ICRA), IEEE. pp. 2324–2330.
+   of Selected Topics in Applied Earth Observations and Remote Sensing         Sood, T., Sood, S., Sood, V., Badiyal, A., Kapoor, S., Sood, V., Kumar, N.,
+   .                                                                              et al., 2023. Characterisation of bell pepper (capsicum annuum l. var.
+Kierdorf, J., Stomberg, T.T., Drees, L., Rascher, U., Roscher, R., 2024.          grossum sendt.) accessions for genetic diversity and population structure
+   Investigating the contribution of image time series observations to            based on agro-morphological and microsatellite markers. Scientia
+   cauliflower harvest-readiness prediction. Frontiers in Artificial Intel-       Horticulturae 321, 112308.
+   ligence 7, 1416323.                                                         Wang, C., Pan, W., Song, X., Yu, H., Zhu, J., Liu, P., Li, X., 2022. Predicting
+Kim, D.S., Kim, S., 2020. Prediction of strawberry growth and fruit               plant growth and development using time-series images. Agronomy 12,
+   yield based on environmental and growth data in a greenhouse for               2213.
+   soil cultivation with applied autonomous facilities. Wonye kwahak           Wang, H., Wellmann, F., Zhang, T., Schaaf, A., Kanig, R.M., Verweij, E.,
+   kisulchi = Korean journal of horticultural science and technology / 38.        von Hebel, C., van der Kruk, J., 2019. Pattern extraction of topsoil
+   doi:10.7235/HORT.20200076.
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                                                           Page 10 of 11
+               Forecasting the Number of Harvest-ready Fruits of Sweet Peppers Using Multimodal Time-Series Data
+
+   and subsoil heterogeneity and soil-crop interaction using unsupervised
+   bayesian machine learning: An application to satellite-derived ndvi
+   time series and electromagnetic induction measurements. Journal of
+   Geophysical Research: Biogeosciences 124, 1524–1544.
+Welling, M., Teh, Y.W., 2011. Bayesian learning via stochastic gradient
+   langevin dynamics, in: International Conference on Machine Learning.
+   URL: https://api.semanticscholar.org/CorpusID:2178983.
+Yasrab, R., Zhang, J., Smyth, P., Pound, M.P., 2021. Predicting plant growth
+   from time-series data using deep learning. Remote Sensing 13, 331.
+Ying, K., Zhong, Q., Mao, W., Wang, Z., Chen, H., Wu, L.Y., Liu, Y., Fan,
+   C., Zhuge, Y., Shen, C., 2023. Ctvis: Consistent training for online video
+   instance segmentation, in: Proceedings of the IEEE/CVF International
+   Conference on Computer Vision, pp. 899–908.
+
+
+
+
+E Pallotta et al.: Preprint submitted to Elsevier                                                             Page 11 of 11
+

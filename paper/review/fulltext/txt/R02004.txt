@@ -1,0 +1,1111 @@
+                                        Highlights
+                                        Lightweight Vision Transformer Compression for On-Device Plant Disease Detection in Resource-
+                                        Constrained Agricultural Field Conditions
+                                        Mahadev Sunil Kumar, Bhavika Gondi, Desaisetty Venkata Satya Sai Swapnith, Gangireddy Rahul Jogi, Sudheesh Manalil,
+                                        Arnab Raha, Amitava Mukherjee, Parthasarathy Seethapathy, G. Gopakumar
+
+
+                                           • H-BAC enables curvature-aware adaptive block pruning of Vision Transformers.
+
+                                           • H-BAC cuts ViT-B/16 FLOPs by 49% while retaining 95.53% OOD accuracy.
+                                           • The full pipeline compresses ViT-B/16 by 54.5× to a 6.01 MB model.
+                                           • Cross-village and cross-device testing evaluates real-world generalization.
+arXiv:2609.05334v1 [cs.CV] 4 Sep 2026
+Lightweight Vision Transformer Compression for On-Device Plant
+Disease Detection in Resource-Constrained Agricultural Field
+Conditions⋆
+Mahadev Sunil Kumara , Bhavika Gondia , Desaisetty Venkata Satya Sai Swapnitha ,
+Gangireddy Rahul Jogia , Sudheesh Manalilb , Arnab Rahac , Amitava Mukherjeed ,
+Parthasarathy Seethapathye and G. Gopakumara,∗
+a Department of Computer Science and Engineering, Amrita School of Computing, Amrita Vishwa Vidyapeetham, Amritapuri, Kerala, India
+b Amrita School of Agricultural Sciences, Amrita Vishwa Vidyapeetham, Coimbatore, 642109, Tamil Nadu, India
+c Intel Corporation, Santa Clara, California, USA
+d Department of Computer Science, Birla Institute of Technology and Science, Pilani Dubai Campus, Dubai, United Arab Emirates
+e Agrotechnology Division, CSIR–Institute of Himalayan Bioresource Technology, Palampur, 176061, India
+
+
+
+ARTICLE INFO                                        ABSTRACT
+Keywords:                                           Chilli (Capsicum annuum) is one of India’s most economically significant crops, yet its productivity
+Vision Transformer                                  is persistently threatened by diseases that are difficult to identify without expert intervention. While
+Model Compression                                   Vision Transformers (ViTs) have achieved high classification accuracy, their large computational
+Edge AI                                             footprint makes deployment on resource constrained devices challenging. Existing compression
+Plant Disease Detection                             approaches typically address pruning, quantization, and knowledge distillation in isolation, leaving the
+Knowledge Distillation                              potential benefits and interactions of their combined application insufficiently explored. We propose a
+                                                    unified Vision Transformer compression framework that combines Hessian-Balanced Adaptive Block
+                                                    Pruning (H-BAC), guided by second-order sensitivity estimation, with quantization and attention-
+                                                    based knowledge distillation. To systematically identify the most effective configuration within each
+                                                    compression family, each technique is first evaluated independently through controlled ablation
+                                                    studies, after which the best-performing components are integrated into a sequential deployment
+                                                    pipeline tailored to real-world agricultural constraints. On a chilli 3-class village-split dataset with
+                                                    a genuine cross-village, cross-device out-of-distribution test split, the resulting compressed models
+                                                    match or exceed the 95.13% FP32 baseline’s accuracy, alongside 74–98% model size reduction, and
+                                                    the fully integrated compression pipeline achieves a 54.5× size reduction (327.42 MB to 6.01 MB)
+                                                    at 95.13 ± 2.32% accuracy across four tested configurations. A direct comparison further reveals
+                                                    that, on this dataset, a directly-trained student of the same final size, without pruning or distillation,
+                                                    reaches comparable accuracy of 94.87%, at the same 6.01 MB INT8 size, indicating where H-BAC
+                                                    and knowledge distillation are, and are not yet shown to be, worth their computational cost.
+
+
+
+1. Introduction                                                                throughout the country, chilli (Capsicum annuum) is of ma-
+                                                                               jor importance because the country is the largest producer of
+    The major portion of India’s economy is reliant on
+                                                                               chilli in the world and Andhra Pradesh on its own produces
+agriculture that is the main source of livelihood for nearly
+                                                                               49% of the total amount at the national level [34]. However,
+55% of the population. Among the crop varieties produced                       this crucial crop is constantly at the risk of diseases. Leaf
+    ⋆
+      This work was supported by the ANRF, New Delhi, India, under             Curl Virus, Anthracnose, and Bacterial Wilt are some of
+Grant No. SUR/2022/004268, “Light Weight Deep Learning Based Mobile            the diseases that result in a loss of 20% to total crop failure
+Application for the Early Detection, Identification, and Spatiotemporal        depending on the severity of infection [34], and pest pressure
+Monitoring of Plant Diseases.”
+    ∗ Corresponding author                                                     compounds this risk further [45]. What makes this even
+        mahadevsunilkumar03@gmail.com ( Mahadev Sunil Kumar);                  more challenging is that many of these diseases look the
+bhavikareddy.gondi@gmail.com ( Bhavika Gondi); swapnith07@gmail.com (          same visually in the very early stages. Traditional diagnosing
+Desaisetty Venkata Satya Sai Swapnith); rahuljogi756@gmail.com (               by manual expert checking or laboratory-based serological
+Gangireddy Rahul Jogi); sudheeshmanalil@amrita.edu ( Sudheesh Manalil);
+arnab.raha@intel.com ( Arnab Raha); amitava@dubai.bits-pilani.ac.in (
+                                                                               testing is very slow, far too costly, and highly dependent on
+Amitava Mukherjee); parthasarathy.91@csir.res.in (                             having specialists available, which makes it not feasible at
+Parthasarathy Seethapathy); gopakumarg@am.amrita.edu ( G. Gopakumar)           the scale of rural Indian farming [12].
+        https://www.mahadevsunilkumar.com ( Mahadev Sunil Kumar);                   To address this problem, it is necessary to have an
+https://sites.google.com/site/arnaverse ( Arnab Raha);
+                                                                               automated system that can not only detect plant diseases but
+https://www.bits-pilani.ac.in/dubai/dr-amitava-mukherjee/ (
+Amitava Mukherjee); https://www.amrita.edu/faculty/gopakumarg/ (               also identify them at the earliest stage in a direct manner
+G. Gopakumar)                                                                  in the field. The last ten years have witnessed tremendous
+      ORCID (s): 0009-0005-4368-6537 ( Mahadev Sunil Kumar);                   strides in this area. At first, the use of traditional machine
+0000-0002-8848-1069 ( Arnab Raha); 0000-0003-1694-3911 (
+                                                                               learning methods based on hand-crafted features like color
+Amitava Mukherjee); 0000-0003-0660-9311 ( Parthasarathy Seethapathy);
+0000-0003-1559-5150 ( G. Gopakumar)                                            histograms, texture descriptors and support vector machine
+                                                                               classifiers were setting the stage but unfortunately, they did
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                                             Page 1 of 16
+                                    Lightweight ViT Compression for Plant Disease Detection
+
+not generalize well to actual field conditions [41, 1]. It was     2. Related work and research gaps
+the advent of Convolutional Neural Networks (CNNs) that
+transformed the scene: [8] reached 95% classification per-         2.1. From traditional ML to vision transformers
+formance over 25 plant species, deeply rooting image-based             The detection of crop diseases using automated meth-
+deep learning as the prime approach. Further crop-specific         ods has evolved considerably over the past decade. Early
+designs even improved on this; for example, [34] reached           approaches relied on traditional machine learning with
+99.12% on a chilli dataset. Vision Transformers (ViTs) [7],        hand-crafted features such as color histograms, texture
+which model relationships across all image patches simul-          descriptors, and SVM classifiers [4, 35, 13]. Earlier plant
+taneously through self-attention, have since pushed perfor-        disease studies combined classical machine learning with
+mance beyond 99% on standard benchmarks [24, 9], and now           CNN-based feature learning, demonstrating that hybrid
+represent the state of the art for plant disease classification.   approaches can improve detection performance over hand-
+    However, this state-of-the-art representational power          crafted feature methods [39]. These methods, although fea-
+comes at a steep computational cost. A standard ViT-B/16           sible, were unable to generalize under real field conditions.
+occupies 327 MB and takes nearly 28 ms per CPU inference           Deep learning solved this problem by allowing an end-to-end
+even on modern consumer hardware (Section 4), making it            feature learning that directly extracts features from images
+incompatible with the low-end mobile devices that represent        without the need for intermediate representation [41, 1].
+the primary computing resource available to most rural             Image-based deep learning frameworks have also been
+farmers [24, 9]. The gap between laboratory performance            proposed for plant disease prediction, showing that end-
+and field deployability is not a minor inconvenience; it is the    to-end models can effectively learn discriminative disease
+central unsolved problem in applied agricultural AI.               features directly from leaf images [22]. [8] found that CNNs
+    Model compression techniques (pruning, quantization,           could achieve 95% accuracy in classifying 25 different plant
+and knowledge distillation) offer a good guide forward, but        species in the PlantVillage dataset [32], establishing the
+previous works see them as separated interventions [27, 21].       convolutional approach as the reference standard in the field
+No one has, so far, conducted a joint evaluation of all three      of agricultural image classification. Following that, domain-
+for ViT compression in agriculture where, besides variable         specific modifications: [34] through the integration of a
+lighting and class imbalance, device inference limitations         Squeeze-and-Excitation CNN into a chilli dataset, reached
+add up to changes in what the general benchmark can de-            an accuracy of 99.12%, while [10] developed a particular
+pict [19].                                                         network architecture for chilli disease detection. Recent
+    Although pruning, quantization, and knowledge distilla-        work has shown that CNN-based transfer learning can sig-
+tion have been individually explored, existing works largely       nificantly improve plant disease classification accuracy [31].
+treat them as independent techniques and do not account            More recent crop-specific studies show that transformer-
+for the varying sensitivity of transformer blocks. More-           based and modern deep learning models are increasingly
+over, conventional distillation approaches often suffer from       being adapted for agricultural diagnosis [30].
+feature mismatch when applied to heterogeneous architec-               Nevertheless, CNN-based approaches are still limited by
+tures, and prior evaluations are typically limited to general-     their local receptive fields, which is one of the reasons for
+purpose benchmarks without considering real-world deploy-          changing the focus on attention-based architectures. Vision
+ment constraints.                                                  Transformers (ViTs), introduced by [7], overcome this limi-
+    The main contributions of this work are as follows:            tation by considering an image as a set of patches where self-
+                                                                   attention is applied to model local as well as global contexts.
+   • We propose H-BAC, a curvature-aware adaptive block            This characteristic is very advantageous for the task of
+     pruning method for Vision Transformers that com-              plant disease detection, which requires relating the infection
+     bines Hutchinson-estimated block-level Hessian cur-           pattern to the overall leaf structure. [42] claimed that their
+     vature with first-order Taylor-based component prun-          GAN-augmented ViT could reach an accuracy of 99.92%
+     ing within each block, and is, to our knowledge, the          on PlantVillage, whereas [2] demonstrated tomato disease
+     first such method evaluated as part of a joint compres-       detection through a ViT-SmartAgri app on a smartphone
+     sion pipeline for agricultural disease detection.             at 90.99% accuracy. [12] supplemented attention mecha-
+   • We introduce an attention-based knowledge distilla-           nisms to architectures used for multi-crop classification,
+     tion scheme that transfers relational reasoning through       beating previous best results on several benchmarks. [14]
+     attention maps, bypassing the feature-dimension mis-          proposed a multitask ViT that jointly localizes and classifies
+     match that causes conventional feature-based distilla-        plant disease regions, demonstrating that attention-based
+     tion to fail when teacher and student differ substan-         architectures can support diagnostic tasks beyond simple
+     tially in capacity.                                           classification. However, standard ViTs require very high
+                                                                   computational resources [43]. Crop-specific mobile disease
+   • We present the first joint evaluation of pruning, quan-       diagnosis has also been explored for eggplant little leaf
+     tization aware training, and knowledge distillation for       disease, reinforcing the need for deployment-aware model
+     ViT compression under real-world agricultural con-            selection [40]. [9] proposed TrIncNet, replacing Multi-Layer
+     straints, providing a systematic comparison across all        Perceptron (MLP) blocks with Inception modules to reduce
+     three techniques.
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                    Page 2 of 16
+                                    Lightweight ViT Compression for Plant Disease Detection
+
+model complexity. Newer framework-level studies continue           unsupervised domain adaptation through iterative KD and
+to confirm the promise of deep learning for early detection of     pruning under label scarcity. [25] demonstrated that Open-
+plant diseases, but most still do not directly address efficient   VINO’s [18] Joint Pruning, Quantization, and Distillation
+deployment under strict edge-device constraints [44].              toolkit achieves a 5.24× compression ratio with a 4.19×
+                                                                   performance gain on BERT-base at under 1% accuracy loss.
+2.2. Lightweight architectures and model                           In the context of agricultural disease detection using Vision
+     compression                                                   Transformers, a joint evaluation of these combined compres-
+     Plant-based Mobile ViT (PMVT) [24] fused the ef-              sion methods remains unexplored. Despite these promising
+ficiency of MobileViT with Convolutional Block Atten-              results, each approach treats pruning, quantization, and dis-
+tion Modules (CBAM), demonstrating acceptable accuracy-            tillation as largely separable steps, optimized without regard
+efficiency trade-offs. SLViT [26] aimed at sugarcane leaf          for how one technique influences the behavior of the others.
+disease diagnosis, introduced shuffle operations to reduce         These interdependencies mean that sequentially applying
+computational complexity. A recent Edge-AI for agricul-            well-performing individual techniques does not guarantee a
+ture study [19] showed that full-scale ViTs (323 MB) can           well-performing joint solution, and can lead to compound-
+reach 96% accuracy but are unsuitable for resource limited         ing accuracy losses. Beyond this methodological limitation,
+settings, demonstrating that architectural efficiency alone        none of the above works are evaluated under conditions
+is insufficient and post-training compression methods are          representative of real agricultural deployment.
+required.
+     Model compression covers pruning, quantization, and           2.3. Research gaps and our contributions
+knowledge distillation [27]. The work by [11] on a com-                 Despite these advancements, there is still a major re-
+bination of magnitude-based pruning with quantization              search gap in the systematic co-design of pruning, quan-
+and Huffman coding [16] laid the groundwork, resulting             tization, and distillation for ViTs in agricultural contexts.
+in significant storage reductions with almost no accuracy          Most existing compression works are aimed at general-
+loss. [33] further enhanced this with importance estimation        purpose benchmarks and overlook domain-specific chal-
+based on Taylor expansion, including first-order gradient          lenges such as changing light conditions, uneven class dis-
+information for more principled pruning decisions. Closest         tributions, and the need for explanation in farmer-facing
+to our pruning approach, [48] (NViT) derives a Hessian-            tools [27, 19]. Furthermore, conventional ViT pruning tech-
+based structural saliency criterion for global ViT pruning         niques score first-order importance identically for all trans-
+with latency-aware regularization, redistributing parameters       former blocks, thereby neglecting significant differences in
+across blocks and within-block structures. H-BAC differs           block-level sensitivity. Conventional feature-based distilla-
+in three respects: it estimates block-level curvature via the      tion similarly breaks down when teacher and student differ
+Hutchinson trace estimator specifically to keep second-order       substantially in hidden dimension, as linear adapters cannot
+estimation tractable at ViT-B/16 scale without a differen-         adequately bridge the feature-space mismatch.
+tiable latency-regularization term, combines this with a                This work addresses these gaps through a compression
+separate first-order Taylor criterion for within-block com-        pipeline co-designed around ViT geometry rather than a
+ponent (attention head and MLP neuron) selection rather            sequential application of independent methods. The block-
+than a single unified saliency score, and is evaluated as one      level curvature gap is addressed by H-BAC, which em-
+stage of a joint pruning-distillation-quantization deployment      ploys second-order Hessian curvature to assign non-uniform
+pipeline on a real-world agricultural edge-deployment task         pruning rates across transformer blocks. The attention-based
+rather than as a standalone pruning method on general-             KD gap is targeted by an Attention-Based Knowledge Dis-
+purpose benchmarks. Knowledge distillation [15] allows             tillation scheme that transfers relational reasoning through
+small student models to learn deeper inter-class relations         multi-head attention maps, bypassing feature-dimension in-
+from the teacher’s soft probability outputs. [37] revealed that    compatibility entirely. Finally, the joint evaluation gap is
+the student can get closer to the teacher model’s performance      filled by evaluating H-BAC, Attention-Based KD, and PTQ-
+if temperature scaling and intermediate layer alignment are        Dynamic INT8 quantization together as a single deployment
+combined. Quantization-Aware Training (QAT) imitates low           pipeline rather than as independent techniques.
+numerical precision during fine-tuning, so the model can
+update its weights before INT8 conversion [3]. Each of
+these methods has been analyzed in isolation, meaning that
+                                                                   3. Methodology
+whether their combination yields cumulative compression            3.1. Dataset and preprocessing
+benefits remains an open research question.                            The dataset [20] consists exclusively of locally captured
+     Recent work demonstrates that combining compression           images of diseased chilli leaves, taken on-site across small-
+techniques yields results beyond what any single method            holder farms in Coimbatore, Tamil Nadu, India, spanning
+achieves. [21] proposed PQK, a sequential pruning, quan-           three classes: Healthy control, Initial Symptoms of chilli
+tization, and distillation pipeline. [29, 28] showed that joint    leaf curl virus (ChiLCV), and Severe Symptoms of ChiLCV.
+knowledge distillation and channel pruning consistently out-       These images reflect real-world acquisition conditions that
+performs either applied individually. [46] extended this to
+
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                    Page 3 of 16
+                                   Lightweight ViT Compression for Plant Disease Detection
+
+include natural lighting variation, partial occlusion, com-
+plex backgrounds, and mixed disease symptom presenta-
+tion: characteristics largely absent from controlled labora-
+tory datasets. A selection of representative images from this
+collection is shown in Fig. 1.
+
+
+
+
+Figure 1: Indigenously collected chilli leaf images captured in   Figure 2: Per-class image counts across the four village-
+field conditions.                                                 partitioned splits (log scale).
+
+
+    Unlike a pooled random split, every split in this dataset
+is drawn from a physically distinct village, and the Out          statistics [5] (mean = [0.485, 0.456, 0.406], std = [0.229,
+of Distribution (OOD) split used for every reported result        0.224, 0.225]).
+in this paper additionally spans different smartphone cam-
+era devices than training. The training split (17,655 im-         3.2. Baseline model
+ages) was collected in Arasampalayam; the validation split            ViT-B/16 was chosen as the high-accuracy baseline
+(2,207 images) in Vadasithur; an in-distribution test split       model pre-trained on ImageNet-1K [5] due to its well-
+(2,207 images) in Myleripalayam; and a fourth, an out-of-         established performance on image classification tasks [7].
+distribution split (760 images) across two further villages,      To adapt the model for 3-class chilli disease classifica-
+Kuladupalayam and Andipalayam, captured on three differ-          tion, the final classification head was replaced with a fully
+ent phones (Realme C2, Redmi Note 12, Samsung Galaxy              connected layer with 3 output units, while all other pre-
+S23) not used to collect any other split. All four splits         trained weights were retained and fine-tuned end-to-end on
+were collected between June and November 2024. Fig. 2             the Train split (Arasampalayam). The fine-tuned baseline,
+visualizes the per-class composition of each split.               evaluated on the OOD split, achieved an accuracy of 95.13%,
+    As every split is a physically distinct village, rather       a (weighted) precision of 95.55%, recall of 95.13%, and F1-
+than a random stratified sample of a pooled collection, this      score of 95.10%. All latency figures in this paper use batched
+dataset directly tests cross-domain generalization. There-        throughput timing: each timed call processes a batch of 128
+fore, a model can no longer succeed by memorizing village-        images, and wall-clock time is divided by 128 to obtain
+specific lighting, soil background, or camera-sensor charac-      a per-sample figure measurement. Reported values are the
+teristics that happen to recur across a random train and test     mean over independent runs (3 trials on CPU, 10 on GPU).
+portions. We exploit this directly by reporting all held-out      Model training/fine-tuning and CPU inference latency mea-
+accuracy, precision, recall, and F1 figures throughout this       surement used an Apple M4 Pro (12-core CPU) MacBook
+paper on the OOD split rather than the in-distribution Test       Pro; GPU inference latency was measured separately on
+split, since OOD additionally varies the acquisition device.      a NVIDIA RTX 4060 (8 GB) instance. All CPU latency
+This provides stricter and more deployment-realistic gener-       figures are measured through Apple’s Core ML runtime
+alization test than an in-distribution village would provide      (models converted with coremltools, executed on the CPU
+on its own.                                                       compute unit), which on this hardware is substantially faster
+    All images were resized to 224×224 pixels using bicubic       than PyTorch’s eager-mode CPU execution for every archi-
+interpolation to meet the patch embedding input require-          tecture tested here; GPU figures remain PyTorch/CUDA
+ments of the ViT-B/16 architecture [7]. During training,          measurements, since Core ML targets only Apple’s own
+random resized cropping with scale range (0.8, 1.0) and           compute units. The baseline performance and deployment
+random horizontal flipping were applied to improve robust-        characteristics are summarized in Table 1.
+ness to scale variation and viewpoint changes. Color jitter           The baseline fine-tuning recipe (AdamW, LR= 10−4 ,
+augmentation with brightness and contrast factors of 0.2 was      weight decay 10−4 , label smoothing 0.1, cosine schedule
+applied to simulate natural lighting variation encountered in     with a 3-epoch warmup, early stopping on validation loss
+field settings. All images were normalized using ImageNet         with patience 5) was used. We compared it, on the same
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                   Page 4 of 16
+                                    Lightweight ViT Compression for Plant Disease Detection
+
+Table 1
+Baseline ViT-B/16 Performance and Deployment Characteris-
+tics
+  Metric                                 Value
+  OOD Accuracy                           95.13%
+  Precision (weighted)                   95.55%
+  Recall (weighted)                      95.13%
+  F1-Score (weighted)                    95.10%
+  Model Size                             327.42 MB
+  Parameters                             85.80M
+  CPU Latency (Apple M4 Pro, Core ML) 7.18 ± 0.01 ms
+  GPU Latency (NVIDIA RTX 4060)          5.56 ± 0.004 ms
+
+
+held-out run, against four alternatives: a 3× and 10× lower
+learning rate (3 × 10−5 and 10−5 ), the lower learning rate
+combined with a dropout layer (0.1) before the classification
+head, and the lower learning rate combined with a 5× higher
+weight decay (5 × 10−4 ). None of the four alternatives
+improved on the existing recipe (96.05% OOD accuracy in
+this comparison).
+    Although the baseline achieves strong classification
+accuracy on genuinely unseen villages and devices, its
+large parameter count (85.80M) makes it a poor fit for the
+low-computation-power smartphones that most smallholder
+farmers in India rely upon. This motivates the compression
+pipeline described in the following subsections.
+    To handle the large model, we have applied three com-
+plementary model compression methods: Hessian-Balanced
+Adaptive Block Pruning (H-BAC), PTQ-Dynamic INT8
+quantization, and Attention-Based Knowledge Distillation
+(KD). Fig. 3 illustrates the general principle of a size/accuracy-
+budget-driven deployment workflow: compress, check against
+the target size and minimum-accuracy constraints, and es-
+calate to a more aggressive configuration if the constraints
+are not yet met. The paper reports two concrete uses of this
+principle. The primary one, evaluated throughout Section 4,
+is the fixed Integrated Compression Pipeline described
+below (H-BAC at a single pre-selected pruning ratio, then            Figure 3: Workflow of a size/accuracy-budget-driven com-
+KD, then PTQ-Dynamic quantization), which does not itself            pression workflow: compress, check against target constraints,
+iterate. The second is a constrained search mode where               escalate if not met. Section 4 details the concrete 4-stage
+we start from a size budget and an accuracy-drop budget              cascade used by the constrained search mode and its results.
+and want the least aggressive configuration that meets both
+automatically; Section 4 reports this mode’s concrete staged
+algorithm and grid-search results separately from the fixed          The method proceeds through four phases: obtaining block-
+pipeline’s own numbers.                                              wise curvature via Hessian trace estimation, assigning prun-
+                                                                     ing resources based on curvature, executing structural prun-
+3.3. H-BAC pruning                                                   ing on attention heads and MLP neurons, and performing
+    We present Hessian-Balanced Adaptive Block Pruning               fine-tuning for accuracy recovery.
+(H-BAC), the curvature-aware pruning method that reduces                 Unlike first-order pruning methods that rely solely on
+Vision Transformer FLOPs while preserving classification             gradient magnitudes, Hessian-based sensitivity measure
+accuracy for edge deployment. Unlike prior work that ap-             captured through the Hessian matrix provides a more prin-
+plies uniform pruning across all transformer blocks, H-BAC           cipled measure of parameter sensitivity. However, exact
+incorporates second-order Hessian curvature information              computation of the full Hessian is computationally in-
+to allocate non-uniform, curvature-weighted pruning rates            tractable for large models such as ViT-B/16, as memory
+across blocks, and calculates importance using first-order           and compute requirements grow quadratically with the num-
+Taylor series for component-level pruning within each block.         ber of parameters [48]. To make second-order sensitivity
+                                                                     estimation tractable, H-BAC employs the Hutchinson trace
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                      Page 5 of 16
+                                   Lightweight ViT Compression for Plant Disease Detection
+
+estimator [17], which approximates the Hessian trace using       direct weighting empirically identifies blocks that tolerate
+random Rademacher vectors without explicitly forming the         more pruning, not less.
+full Hessian matrix. This reduces the per-block curvature            At the component level, each transformer layer contains
+estimation cost from (𝑝2 ) to (𝐾𝑝), where 𝑝 is the number      multiple attention heads that are rated using a first-order Tay-
+of parameters in a block and 𝐾 is the number of Hutchinson       lor importance criterion [23, 33]. For a particular attention
+samples. In practice, 𝐾 = 10 samples per block were found        head ℎ, the importance score is:
+sufficient for stable curvature estimates.                                          ⟨              ⟩
+                                                                              1 ∑
+                                                                                 𝐵
+    We used the Hutchinson estimator [17] to approximate                               𝜕      (𝑏)
+the curvature of each transformer block by calculating the              𝐼𝑗 =                ,𝑓                                (3)
+                                                                             𝐵 𝑏=1 𝜕𝑓 (𝑏) 𝑗
+trace of the Hessian:                                                                    𝑗
+
+
+              1 ∑ 𝑇
+                    𝐾                                            where 𝑓𝑗(𝑏) denotes the feature map produced by the 𝑗-th
+      Tr(𝐻) ≈      𝑣 𝐻𝑣𝑘                                  (1)    filter for the 𝑏-th sample in a mini-batch of size 𝐵,  is
+              𝐾 𝑘=1 𝑘
+                                                                 the classification loss, and ⟨⋅, ⋅⟩ denotes the Frobenius inner
+where 𝑣𝑘 are random Rademacher vectors. For each trans-          product. For block 𝑏, the number of heads pruned 𝑘𝑏 is:
+former block, we compute the curvature separately for at-
+                                                                       𝑘𝑏 = ⌈𝑅𝑏 ⋅ 𝐻⌉                                         (4)
+tention parameters and MLP parameters. The total block
+curvature is the weighted sum:                                   where 𝐻 is the total number of heads in the block. The least
+                                                                 important heads are masked by zeroing the corresponding
+            𝑏
+      𝐶𝑏 = 𝐻attn        𝑏
+                 + 𝜆 ⋅ 𝐻mlp                               (2)    Query, Key and Value slices.
+                                                                     MLP neuron pruning is performed at the neuron level
+where 𝜆 balances the relative importance of the Multi-Layer
+                                                                 in the first fully connected layer of each transformer block.
+Perceptron (MLP) component. This coefficient is essential
+                                                                 Neuron importance is estimated from a first-order Taylor
+because the significant differences in parameter counts and
+                                                                 approximation:
+gradient scales between the attention and MLP layers would
+otherwise cause the MLP block to dominate the overall                        | 𝜕        |
+sensitivity estimate. To make rough second-order estimates             𝐼𝑛 = ||     ⊙ 𝑤𝑛 ||                                   (5)
+                                                                             | 𝜕𝑤𝑛       |
+more reliable, we take the absolute value of the curvature
+and average it over a small calibration dataset.                 where 𝑤𝑛 denotes the weights of neuron 𝑛. Neurons are
+    Unlike conventional pruning methods that apply uniform       ordered according to the L2 norm of their output weights,
+or magnitude-based criteria across all blocks, H-BAC uses        and those with the least importance are eliminated.
+block-level curvature as a sensitivity metric to determine            H-BAC uses mask-based structured pruning, where de-
+how much each block should be pruned. Having curvatures          activated attention heads and MLP neurons are found by
+of blocks 𝐶1 , 𝐶2 , … , 𝐶𝐵 , we                                  zeroing their weights while keeping tensor dimensions in-
+           √            (√    ) normalise the pruning weights
+as 𝑊𝑏 = 𝐶𝑏 ∕mean            C . Given a global pruning rate 𝑟,   tact. During fine-tuning, the masks act as gradient masks to
+                                                                 control the effect of pruning on training. An iterative short-
+the pruning ratio 𝑅𝑏 assigned to block 𝑏 is: 𝑅𝑏 = 𝑟 ⋅ 𝑊𝑏
+                                                                 retraining phase is conducted after the pruning steps to help
+    Block ratios are clipped to [0.05, 0.95], then rescaled
+                                                                 the network recover from potential performance degrada-
+so the mean ratio across blocks equals the global pruning
+                                                                 tion. Fine-tuning is performed using a reduced learning rate
+target 𝑟, and finally re-clipped to the same bounds (clipping
+                                                                 with all remaining parameters unfrozen, and a single epoch
+alone does not preserve the mean when curvature values are
+                                                                 was used in our testing.
+highly skewed across blocks, so an explicit renormalization
+                                                                      The hybrid design of H-BAC is crucial because it in-
+step after clipping is required, and the rescaling can in turn
+                                                                 corporates second-order curvature to reveal global sensi-
+push individual ratios back outside the bounds, so a second
+                                                                 tivity differences among the blocks, and uses first-order
+clip is applied; see Algorithm 1). Under this direct (non-
+                                                                 Taylor pruning as a lightweight mechanism for within-block
+inverted) weighting, higher-curvature blocks receive larger
+                                                                 pruning, producing higher pruning granularity and a better
+pruning ratios and lower-curvature blocks are pruned less.
+                                                                 accuracy-efficiency trade-off. H-BAC exploits the curvature
+This was verified empirically. At a 50% global ratio, pre-
+                                                                 of the loss function to decide the pruning ratio of each trans-
+finetune accuracy under this direct weighting (64.87%) ex-
+                                                                 former block, giving more pruning to high-curvature blocks
+ceeds a uniform-pruning baseline at the same ratio (41.32%)
+                                                                 and less to low-curvature, non-critical ones (see Section 3.3
+by 23.55 percentage points. This direct-weighting formu-
+                                                                 for the empirical validation of this direct weighting).
+lation runs counter to the inverse-curvature intuition (pro-
+tect high-curvature/high-sensitivity blocks) that motivates      3.4. Quantization strategies
+most Hessian-based pruning heuristics in the literature. A           To further reduce memory usage and accelerate infer-
+theoretically-motivated inverse-weighting variant, tested un-    ence, two Post-Training Quantization (PTQ) variants were
+der identical conditions, performed worse on both ends           investigated: dynamic and static quantization, both applied
+(34.21% pre-finetune, 94.21% post-finetune) – even under-        directly to an already-trained FP32 checkpoint with no addi-
+performing uniform pruning pre-finetune – confirming that        tional fine-tuning.
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                   Page 6 of 16
+                                   Lightweight ViT Compression for Plant Disease Detection
+
+ Algorithm 1: H-BAC: Hessian-Balanced Adap-                           PTQ-Static converts both weights and activations to
+ tive Block Pruning                                              INT8 before inference using a calibration dataset to com-
+   Input: Pretrained ViT model  with 𝐵                          pute fixed scale factors, offering greater speedup than dy-
+            transformer blocks;                                  namic quantization [36]. However, static quantization re-
+   Calibration dataset 𝑐𝑎𝑙𝑖𝑏 ;                                  mains challenging for complex Vision Transformer archi-
+   Global pruning ratio 𝑟;                                       tectures, primarily due to missing quantization operators for
+   Hutchinson samples 𝐾;                                         attention mechanisms and unsupported layer normalization
+   MLP balance coefficient 𝜆;                                    operations. To address this, we propose a calibrated hybrid
+   Per-block ratio bounds 𝜌min = 0.05, 𝜌max = 0.95               solution in which all linear layers are quantized to INT8,
+   Output: Pruned model ′                                       and a calibration dataset of 1,000 training images sampled
+ 1 Initialize block curvature vector 𝐂 ← 𝟎 ∈ ℝ ;
+                                              𝐵                  using Weighted Random Sampling ensures class-balanced
+ 2 for 𝑏 = 1 to 𝐵 do
+                                                                 calibration across all 3 disease classes. We quantize every
+ 3      𝑐𝑏 ← 0;                                                  checkpoint in this study with PTQ-Dynamic applied directly
+ 4      foreach (𝑥, 𝑦) ∈ 𝑐𝑎𝑙𝑖𝑏 do                               to its final trained weights, with no extra fine-tuning stage,
+ 5          𝓁 ← ((𝑥), 𝑦);                                      and no accuracy is given up once the checkpoint being
+                       (        )                                quantized is already well-trained.
+ 6          𝐻attn ← Tr ∇ 𝑏 𝓁 estimated using 𝐾
+                           2                                          Full performance results across both quantization ap-
+                           𝜃attn
+                                                                 proaches are reported in Table 6 (Section 4).
+             Hutchinson samples;                                      Between the two quantization candidates, PTQ-Dynamic
+                      (       )
+ 7          𝐻mlp ← Tr ∇2𝑏 𝓁 estimated using 𝐾                    (94.34% accuracy, 84.42 MB) and PTQ-Static (94.61% accu-
+                           𝜃mlp                                  racy, 85.78 MB) both sit close to the FP32 baseline (95.13%).
+             Hutchinson samples;                                 PTQ-Static’s 0.27-point edge is within normal run-to-run
+ 8          𝑐𝑏 ← 𝑐𝑏 + 𝐻attn + 𝜆 ⋅ 𝐻mlp ;                         noise, and PTQ-Dynamic is what the rest of this pipeline
+ 9     𝐶𝑏 ← max(𝑐𝑏 , 0)∕|𝑐𝑎𝑙𝑖𝑏 |;                               (KD ablation, capacity sweep, constrained search) already
+         √            √                                          uses consistently, so PTQ-Dynamic is adopted through-
+10 𝐖 ←     𝐂∕mean( 𝐂);                                           out for its simplicity. On CPU latency, the INT8-quantized
+11 𝐑 ← clip(𝑟 ⋅ 𝐖, 𝜌min , 𝜌max );                                model measures 7.21 ms (Apple M4 Pro via Core ML),
+12 𝐑 ← 𝑟 ⋅ 𝐑∕mean(𝐑);                                            showing no significant improvement over the FP32 base-
+13 𝐑 ← clip(𝐑, 𝜌min , 𝜌max );                                    line’s 7.18 ms.
+14 for 𝑏 = 1 to 𝐵 do
+15     Compute first-order Taylor importance                     3.5. Knowledge distillation
+              |     𝜕𝓁 ||                                            Knowledge distillation (KD) transfers the knowledge
+        𝐼𝑖 = ||𝑤𝑖 ⋅ 𝜕𝑤  | for attention heads in block 𝑏;
+              |       𝑖|                                         of a large and powerful teacher model to a small student
+16     Prune ⌈𝑅𝑏 ⋅ 𝐻⌉ least-important heads by                   model. We evaluated three distillation approaches: response-
+        zeroing corresponding QKV projection slices              based, feature-based, and attention-based, for compressing
+        and output projection channels;                          the ViT-B/16 teacher (85.80M parameters, 327.42 MB) to
+17     Compute first-order Taylor importance                     a TinyViT student (5.52M parameters, 21.15 MB), result-
+              |     𝜕𝓁 ||                                        ing in a 15.48× compression ratio. The student model
+        𝐼𝑖 = ||𝑤𝑖 ⋅ 𝜕𝑤  | for MLP neurons in block 𝑏;
+              |       𝑖|                                         vit-tiny-patch16-224 [7, 47] was initialized from ImageNet-
+18     Prune ⌈𝑅𝑏 ⋅ 𝑁⌉ least-important neurons by                 21k [6] pre-training with 5.52M parameters and 21.15 MB.
+        zeroing corresponding rows in fc1 and                        Response-Based KD: Response-based KD uses the final
+        columns in fc2;                                          output probability distributions (logits) for knowledge trans-
+19   return ′ ;                                                 fer without requiring internal model representations. For
+                                                                 each training batch 𝑡, teacher logits 𝑧𝑡 ∈ ℝ3 are obtained by
+                                                                 passing the input images through the frozen teacher model,
+                                                                 and the same images are passed through the student model to
+    PTQ-Dynamic converts trained models to low preci-            obtain student logits 𝑧𝑠 ∈ ℝ3 . Both sets of logits are divided
+sion without the need for retraining. Dynamic quantization       by temperature 𝑇 = 4.0 before softmax for softer probability
+was applied to the trained ViT-B/16 checkpoint, convert-         distributions:
+ing selected layer weights from FP32 to INT8 at inference
+time [36]. All Linear layers, including attention projections,                   exp(𝑧𝑡𝑖 ∕𝑇 )                exp(𝑧𝑠𝑖 ∕𝑇 )
+                                                                        𝑝𝑡𝑖 = ∑                   , 𝑝𝑠𝑖 = ∑                   (6)
+MLP layers, and the classifier head were targeted, with                         3
+                                                                                    exp(𝑧  𝑡 ∕𝑇 )           3
+                                                                                                                exp(𝑧 𝑠 ∕𝑇 )
+                                                                                𝑗=1        𝑗                𝑗=1       𝑗
+weights quantized to QINT8 to reduce memory footprint and
+speed up linear operations. Activations remain in FP32, with     Here, 𝑧𝑡𝑖 and 𝑧𝑠𝑖 denote the teacher and student logits, re-
+scale factors computed dynamically at inference, requiring       spectively, and 𝑝𝑡𝑖 and 𝑝𝑠𝑖 denote the corresponding softened
+no calibration dataset.                                          probabilities. The combined loss balances learning from the
+                                                                 ground truth and soft targets:
+                                                                       RKD = 𝛼hard + (1 − 𝛼)soft                          (7)
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                   Page 7 of 16
+                                     Lightweight ViT Compression for Plant Disease Detection
+                              ∑
+The hard loss hard = − 3𝑖=1 𝑦𝑖 log(𝑝𝑠𝑖 ) employs the true               Full performance results across all knowledge distilla-
+labels to guarantee correct prediction; the soft loss soft =        tion approaches are reported in Table 7 (Section 4).
+     ∑             𝑝𝑡
+𝑇 2 ⋅ 3𝑖=1 𝑝𝑡𝑖 log 𝑝𝑠𝑖 (Kullback-Leibler divergence) expresses
+                   𝑖                                                 Table 2
+to what extent the student imitates the teacher’s distribution;
+                                                                     H-BAC 50% Pruning – Classification Performance (post-
+and 𝛼 = 0.5 weights both targets equally. 𝑇 2 scaling                finetune)
+compensates for the gradient magnitude decrease that results
+from the temperature division.                                       Model                          Accuracy (%)         FLOPs
+                                                                     ViT-B/16 Baseline                 95.13         35.13 GFLOPs
+    Feature-Based KD: Feature-based KD targets the stu-
+                                                                     ViT-B/16 + H-BAC (50%)            95.53         17.86 GFLOPs
+dent model’s learning at both the output level and the internal
+representation levels of the teacher model. Considering the
+hierarchical feature learning of Vision Transformers [38, 7],
+we chose 4 intermediate transformer layers spaced at Layers          3.6. Integrated Compression Pipeline
+3, 6, 9, and 11 (out of 12). Since teacher features have                  The proposed compression framework follows a two-
+768 dimensions and the student has only 192 dimensions,              stage optimization strategy designed to ensure principled
+adaptation layers are needed to bridge this gap, follow-             component selection before pipeline integration. Initially,
+ing practical guidelines established for ViT feature-based           the three compression families – pruning, quantization, and
+distillation [49]. For each matched layer, we introduce a            knowledge distillation, are evaluated independently through
+learnable adapter network consisting of a two-layer MLP              controlled ablation experiments. This step determines the
+with ReLU activation: Linear(192 to 768) followed by ReLU            maximum performance achievable and side-effects related
+non-linearity, and Linear(768 to 768) for final projection.          to the deployment for each individual technique, which
+The combined feature KD loss FKD is:                                allows for a fair comparison of compression families without
+                                                                     the influence of confounding interactions.
+      FKD = 𝛼FKD
+               hard + 𝛽feature + 𝛾soft                      (8)         PTQ-Dynamic is used for the pipeline’s final quantiza-
+                                    ∑                                tion stage. An extra fine-tuning pass before quantization only
+where the feature loss feature = 41 𝑙∈{3,6,9,11} MSE(𝑓̂𝑙𝑠 , 𝑓𝑙𝑡 )   matters on checkpoints that have not yet had adequate train-
+averages Mean Squared Error across 4 layers, and 𝛼 = 0.5,            ing, and every checkpoint reaching this stage of the pipeline
+𝛽 = 0.3, 𝛾 = 0.2, 𝑇 = 4.0.                                           already has KD’s 15 distillation epochs. PTQ-Dynamic is
+    Attention-Based KD. Unlike prior feature-based ap-               applied directly with no added training step. Attention-Based
+proaches, attention-based KD works by transferring knowl-            KD is selected among distillation strategies for its capacity
+edge via the distribution of attention weights rather than           to transfer relational reasoning. In the second stage, the
+raw feature values. The attention weights reveal which               selected components are composed sequentially to construct
+patches interact strongly (e.g., diseased region attending to        the final deployment-ready model. The full-precision ViT-
+healthy regions for contrast), enabling the student to learn         B/16 teacher undergoes H-BAC structural pruning to re-
+the teacher’s visual reasoning process. For each transformer         duce its computational footprint while preserving important
+layer, self-attention computes:                                      transformer blocks. Attention-Based Knowledge Distillation
+                                      (         )                    is subsequently applied, imparting the reasoning patterns
+                                        𝑄𝐾 𝑇                         of the frozen pruned teacher to the student model. Finally,
+       Attention(𝑄, 𝐾, 𝑉 ) = softmax √            𝑉          (9)
+                                           𝑑𝑘                        PTQ-Dynamic quantization is applied directly to the dis-
+                                            √                        tilled student to obtain an INT8-precision model suitable for
+The attention matrix 𝐴 = softmax(𝑄𝐾 𝑇 ∕ 𝑑𝑘 ) ∈ ℝ197×197              deployment on resource-constrained hardware. This sequen-
+represents pairwise token relationships. Since the teacher           tial composition ensures that after each stage, the working
+has 12 attention heads per layer and the student has only 3,         representation is further compressed and that the handling
+the attention weights are averaged across all heads within           of compression technique interactions is done in a way that
+each layer:                                                          is controlled and reproducible rather than the joint optimiza-
+                                                                     tion disregarding their interdependencies.
+              1 ∑ 𝑡                1∑ 𝑠
+                 12                   3
+      𝐴̄ 𝑡 =        𝐴 ,     𝐴̄ 𝑠 =      𝐴                    (10)         Table 4 reports the stage-by-stage outcome of this pipeline
+             12 ℎ=1 ℎ              3 ℎ=1 ℎ                           at the 50% H-BAC operating point, measured on the OOD
+                                                                     split throughout. Starting from the pipeline’s own 95.13% /
+For each matched layer 𝑙 ∈ {3, 6, 9, 11}, teacher and student        327.42 MB FP32 entry point, H-BAC pruning followed by
+multi-head attention maps are collected and averaged over            one epoch of recovery fine-tuning yields 94.34% accuracy at
+heads to produce 𝐴̄ 𝑡𝑙 and 𝐴̄ 𝑠𝑙 . The combined attention KD         unchanged mask-based size (43.70M of 85.80M parameters
+loss AKD is:                                                        active). Attention-Based KD distills this into a 21.15 MB
+      AKD = 𝛼AKD                                           (11)    TinyViT student at 93.68% accuracy, and the final PTQ-
+               hard + 𝛽attention + 𝛾soft
+                                                                     Dynamic quantization step, applied directly with no further
+                                             ∑                       fine-tuning, produces a 6.01 MB deployed model at 91.97%
+where the attention loss attention = 41 𝑙∈{3,6,9,11} and
+MSE(𝐴̄ 𝑠𝑙 , 𝐴̄ 𝑡𝑙 ) averages Mean Squared Error between atten-       accuracy, corresponding to a 54.5× size reduction relative to
+tion maps, and 𝛼 = 0.5, 𝛽 = 0.3, 𝛾 = 0.2, 𝑇 = 4.0.                   the FP32 checkpoint size.
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                      Page 8 of 16
+                                      Lightweight ViT Compression for Plant Disease Detection
+
+Table 3
+H-BAC 50% Pruning – Deployment Characteristics, uncompacted mask-based model (CPU: Apple M4 Pro via Core ML; GPU:
+NVIDIA RTX 4060 via PyTorch)
+                       Model                             Active Params      Size (MB)       CPU (ms)       GPU (ms)
+                       ViT-B/16 Baseline                    85.80M            327.42          7.18           5.560
+                       ViT-B/16 + H-BAC (50%)               43.70M            327.42          7.18           5.560
+ Latency here is measured on the mask-based model before structural compaction (pruned rows/columns still physically present, zeroed),
+  matching the pipeline stages of Table 4. The two rows are, by construction, the same architecture (mask-based pruning zeroes weights
+ without changing tensor shapes), so they get an identical measured latency here – this is deliberately not the deployment-facing number,
+                                            which Table 5 reports after structural compaction.
+
+
+Table 4
+Integrated Compression Pipeline: stage-by-stage results (H-BAC 50%, OOD split; CPU: Apple M4 Pro via Core ML; GPU: NVIDIA
+RTX 4060 via PyTorch)
+         Stage                               Accuracy (%)        Size (MB)      Active Params (M)        CPU (ms)       GPU (ms)
+         FP32 Baseline†                         95.13              327.42              85.80               7.18           5.560
+         H-BAC Pruned (pre-finetune)            64.87              327.42              43.70               7.18           5.560
+         H-BAC Pruned (finetuned)               95.53              327.42              43.70               7.18           5.560
+         + Attention-Based KD                   93.68               21.15               5.52               1.02           0.660
+         + PTQ-Dynamic (deployed)               91.97                6.01               5.52               1.02             –
+         Direct-training alternative ∗          94.87               6.01               5.52                1.02            —
+   ∗ Skips H-BAC pruning and KD entirely: TinyViT trained directly on ground-truth labels, then quantized with PTQ-Dynamic, applied
+
+   directly with no extra fine-tuning. † Measured through the pipeline’s own data loader, which applies the same background-suppression
+preprocessing used to originally train this checkpoint – see the baseline-model note earlier in this section. The pre-finetune row is measured
+directly from the saved intermediate checkpoint. All latency figures use batched throughput timing (batch of 128, wall time divided by 128)
+        to amortize fixed per-call dispatch overhead; CPU and GPU latency are pending re-measurement on the target hardware (see
+                                                             baseline-model note).
+
+
+     Repeating the full pipeline across three additional con-            Model training/fine-tuning and CPU inference latency mea-
+figurations yields accuracies of 91.97% (50% pruning, Ta-                surement used an Apple M4 Pro (12-core CPU) MacBook
+ble 4), 97.24% and 96.45% (two further 50% runs), and                    Pro; GPU inference latency was measured separately on a
+94.87% (70% pruning). Across the four tested configura-                  NVIDIA RTX 4060 (8 GB). These measurements charac-
+tions, the final-stage accuracy is therefore 95.13 ± 2.32%.              terize each compression technique’s relative efficiency gain
+The traced 50%-pruning configuration gives the lowest ac-                (size reduction, FLOPs reduction, and cross-method latency
+curacy at 91.97%, suggesting some variability in final-stage             ranking) under controlled, reproducible conditions, not the
+performance across runs.                                                 absolute latency a farmer’s device would see. Validating the
+     We additionally tested the simplest alternative to this             deployed model on actual ARM smartphone hardware is a
+pipeline, skipping H-BAC pruning and KD entirely, by                     scope boundary of the present study, discussed further in
+training a TinyViT student directly on labels and subse-                 Section 4.
+quently quantizing it. As shown in the final row of Table 4,
+this direct-training alternative reaches 94.87% accuracy at
+the same 6.01 MB model size. This is comparable to the
+95.13 ± 2.32% accuracy obtained across the four pipeline
+configurations, while avoiding the additional pruning and
+distillation stages. Section 4 discusses this comparison and
+its implications in detail.
+
+
+4. Results
+4.1. Experimental setup
+    All experiments are carried out with the ViT-B/16
+backbone fine-tuned on the chilli 3-class village-split dataset
+described in Fig. 2 (17,655 training images; all reported
+accuracy/precision/recall/F1 figures below are measured
+on the 760-image OOD split). H-BAC serves as a post-                     Figure 4: OOD accuracy (%) of H-BAC pruned ViT-B/16
+training, mask-based structured pruning method. Global                   at each global pruning ratio, before and after one epoch of
+pruning ratios from 10% to 90% with a step of 10% were                   recovery fine-tuning. Both curves are measured.
+evaluated; ratios beyond 90% were not swept in this study.
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                               Page 9 of 16
+                                      Lightweight ViT Compression for Plant Disease Detection
+
+Table 5
+Ablation of H-BAC pruning ratio. FLOPs and active parameters (mask-based model) decrease with pruning ratio; CPU/GPU
+latency measured on a structurally compacted copy (CPU: Apple M4 Pro via Core ML, 3 trials; GPU: NVIDIA RTX 4060 via
+PyTorch, 10 trials).
+     Pruning ratio (%) Active params (M) FLOPs (G) Acc. pre-FT (%) Acc. post-FT (%) CPU (ms) GPU (ms)
+        0 (baseline)          85.80        35.13         95.13           93.95        7.13     5.560
+            10                77.14        31.57         94.87           96.45        6.76     5.034
+            20                68.56        28.04         89.34           96.32        6.13     4.554
+            30                60.34        24.68         73.03           94.61        5.50     4.027
+            40                51.72        21.13         68.68           97.37        4.88     3.494
+            50                43.70        17.86        64.87            95.53        4.27     3.003
+            60                36.30        14.81         53.42           94.08        3.62     2.489
+            70                29.37        11.98         34.21           91.97        3.27     2.138
+            80                25.75        10.50         33.03           93.68        2.96     1.888
+            90                22.88         9.32         34.21           91.84        2.62     1.649
+ Sparsity (%) is omitted as it is directly derivable from active params: 1 − active∕85.80. All latency figures use batched throughput timing
+                                                   (batch of 128, wall time divided by 128).
+
+
+    Fig. 4 shows the pre-/post-finetune accuracy trends dis-             active parameter counts (43.70M vs. 43.30M); post-finetune,
+cussed below. Because H-BAC’s mask-based pruning zeroes                  95.53% vs. 93.16% (a 2.37-point margin). Curvature-guided
+weights without shrinking the underlying tensors, latency                budget allocation therefore protects accuracy more effec-
+was measured on a structurally compacted copy of each                    tively than a flat allocation both before and after recovery
+pruned model, consistent with the deployment-facing sizes                training, confirming that the block-level sensitivity informa-
+reported below. Table 5 reports both the pre-finetune and                tion H-BAC estimates via the Hutchinson trace is worth the
+post-finetune accuracy at each global pruning ratio, since H-            extra computation it costs.
+BAC’s recovery fine-tuning stage substantially changes the
+accuracy-ratio trade-off. All accuracy figures are measured              4.2. Quantization results
+on the OOD split.                                                            Two quantization strategies were evaluated against the
+    Pre-finetune accuracy declines steeply and steadily with             FP32 baseline: dynamic post-training quantization (PTQ-
+pruning ratio, from 95.13% at 0% to a near-random floor of               Dynamic) and calibrated static post-training quantization
+33–34% by 80–90% pruning. This is the expected signature                 (PTQ-Static). Both target INT8 precision on all Linear layers
+of removing function before any recovery step is applied:                and are applied directly to the trained FP32 checkpoint,
+heavier pruning strips away more of the network’s learned                with no additional fine-tuning step. Table 6 summarizes the
+capacity, and pre-finetune accuracy tracks that loss almost              results.
+monotonically across the sweep.                                              Both methods produce a ∼74% model size reduction,
+    Post-finetune, the picture changes entirely: accuracy is             as the change in weight precision is the primary driver
+remarkably stable across the full ratio sweep, ranging only              of compression, not structural modifications (PTQ-Static’s
+91.84–97.37% with no visible degradation trend even at 90%               slightly larger footprint reflects the small overhead of its em-
+pruning (91.84%, within 2 points of the least-aggressive                 bedded quantization observers/scale metadata). Each costs
+configurations tested). One epoch of recovery fine-tuning                a small amount of accuracy relative to the FP32 baseline
+is sufficient to erase nearly all of the pre-finetune ratio-             (PTQ-Dynamic −0.79 points, PTQ-Static −0.52 points) –
+dependence on this dataset. In practice, this gives a practi-            the expected signature of converting an already-fixed set
+tioner considerable headroom: once recovery fine-tuning is               of FP32 weights to INT8 with no further adaptation. PTQ-
+part of the pipeline (as it always is in the integrated pipeline         Static’s 0.27-point edge over PTQ-Dynamic is within nor-
+of Table 4), the pruning ratio’s dominant effect is on FLOPs             mal run-to-run noise; we adopt PTQ-Dynamic throughout
+and active-parameter count rather than on final accuracy,                this study (Table 4 onward) for its simplicity, since it requires
+so the ratio can be pushed well past this study’s chosen                 no calibration dataset.
+50% operating point – trading further FLOPs reduction for                    On latency, INT8 quantization shows no significant im-
+essentially no measured accuracy cost.                                   provement over FP32 inference on this hardware (1.00×;
+    H-BAC’s curvature-aware allocation was compared against              7.21 ms vs. 7.18 ms). Because these figures use batched
+a uniform-pruning baseline at the same 50% global ratio                  throughput timing (batch of 128, wall time divided by 128),
+(identical first-order Taylor ranking within each block, but             fixed per-call dispatch overhead is already amortized out of
+every block assigned the same pruning rate rather than H-                the measurement, so this reflects the compute cost of Core
+BAC’s curvature-weighted allocation). H-BAC outperforms                  ML’s weight-only INT8 path, which dequantizes weights
+uniform pruning at both stages of the pipeline: pre-finetune,            back to floating point for the matrix multiply rather than
+64.87% vs. 41.32% (a 23.55-point margin) at near-identical               executing native INT8 arithmetic, leaving per-operation cost
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                             Page 10 of 16
+                                     Lightweight ViT Compression for Plant Disease Detection
+
+Table 6
+Ablation of quantization methods (CPU: Apple M4 Pro via Core ML, 3 trials). Both methods achieve a ∼74% model size
+reduction; the difference is in accuracy retention.
+                          Method            Size (MB) Acc. (%) ΔAcc. (%) Latency (ms) Speedup
+                          FP32 Baseline       327.42        95.13         —              7.18          1.00×
+                          PTQ-Dynamic         84.42         94.34        −0.79           7.21𝑎         1.00×
+                          PTQ-Static           85.78        94.61        −0.52           7.21𝑎         1.00×
+𝑎 Core ML applies a single weight-only INT8 scheme, so both PTQ variants convert to the same INT8 weight representation and share one
+
+             measured latency; the accuracy figures are from the respective PyTorch PTQ implementations, which do differ.
+
+
+Table 7
+KD Ablation Study: Model Size, Performance, and Speedup Comparison (CPU: Apple M4 Pro via Core ML, 3 trials), mean ±
+std over 3 runs
+                    Method                   Size (MB)      Compression Ratio       Acc. (%)        CPU Speedup𝑏
+                    Teacher (ViT-B/16)       327.42         1.00×                   95.13           1.00×
+                    TinyViT (no KD)𝑎         21.15          15.48×                  96.58 ± 0.26    7.07×
+                    Response KD              21.15          15.48×                  96.27 ± 0.65    7.07×
+                    Feature KD               21.15          15.48×                  96.18 ± 0.60    7.07×
+                    Attention KD             21.15          15.48×                  96.71 ± 1.03    7.07×
+  𝑎 Trained using ground truth labels only. 𝑏 Speedup computed from batched-throughput CPU inference latency (batch of 128, wall time
+
+divided by 128); the teacher’s CPU latency in this benchmark run was 7.18 ms, TinyViT’s 1.02 ms. All four student configurations share the
+identical TinyViT architecture, so CPU speedup is identical across rows by construction; only the learned weights (and therefore accuracy)
+                                                                  differ.
+
+
+essentially unchanged. This is an important consideration                  Beyond the standalone comparison above, the question
+for practitioners targeting ARM-based edge hardware: on                that matters for deployment is whether Attention-Based KD
+this platform, INT8 quantization’s benefit is almost en-               earns its place inside the full integrated pipeline, where it
+tirely in model size (74% reduction, critical for storage- and         distills from an H-BAC-pruned-and-finetuned teacher rather
+bandwidth-constrained devices), not inference speed.                   than the full unpruned one, and is followed directly by PTQ-
+                                                                       Dynamic quantization. Training a fresh TinyViT student di-
+4.3. Knowledge distillation results                                    rectly on ground-truth labels and quantizing it with the same
+     Three distillation strategies, plus a no-distillation con-        PTQ-Dynamic step used by the pipeline’s final stage yields
+trol, were evaluated for compressing the ViT-B/16 teacher              a 6.01 MB model at 94.87% accuracy (Table 4’s direct-
+(327.42 MB, 85.80 M parameters, 95.13% OOD accuracy) to                training alternative row). Compared against the matched
+a TinyViT student (21.15 MB, 5.52 M parameters): response-             single pipeline run (91.97%), this direct-training alternative
+based KD, feature-based KD, and attention-based KD. All                is 2.89 points ahead; compared against the mean of four
+configurations achieve an identical 15.48× compression                 independent pipeline configurations (95.13 ± 2.32%, three at
+ratio. Table 7 reports mean ± standard deviation over 3                a 50% pruning ratio and one at 70%), it is instead 0.26 points
+independent runs per method.                                           behind. The full pipeline’s run-to-run variance is therefore
+     All four training recipes cluster tightly, within a 0.53-         the more important effect here than any fixed accuracy
+point band of each other (96.18–96.71%), with Attention-               cost or benefit from chaining H-BAC and Attention-Based
+Based KD achieving the highest mean accuracy of the four               KD ahead of quantization: averaged over multiple runs, the
+(96.71±1.03%), narrowly ahead of direct training on ground-            integrated pipeline is modestly ahead of simply training
+truth labels alone (96.58 ± 0.26%, no KD), response KD                 the target-sized architecture directly and quantizing it, even
+(96.27±0.65%), and feature KD (96.18±0.60%). Attention-                though any single pipeline run can land above or below that
+Based KD’s advantage over the no-KD control is modest                  simpler alternative.
+(0.13 points) but consistent with attention transfer being the             To test whether Attention-Based KD’s advantage over
+more effective of the three distillation signals tested here:          direct training grows as student capacity shrinks below
+it is also the only KD variant with a higher mean than the             TinyViT’s 5.52 M parameters, we swept four smaller stu-
+no-KD control, while response KD and feature KD both                   dent configurations (1.31 M to 3.16 M parameters), each
+trail it. Attention-Based KD does carry the widest run-to-run          trained from scratch (no ImageNet-pretrained checkpoint
+spread of the four (std 1.03 vs. 0.26 for no-KD), meaning              exists for these custom architectures, so both the no-KD
+its advantage should be read as a consistent edge across               and Attention-KD runs at a given size start from identi-
+configurations rather than a guaranteed per-run win.                   cal random initialization, a fair like-for-like comparison)
+                                                                       and quantized directly with PTQ-Dynamic, across 3 runs
+
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                          Page 11 of 16
+                                      Lightweight ViT Compression for Plant Disease Detection
+
+Table 8                                                        tried in both FP32 and INT8 form – twelve candidate stages
+Capacity sweep: Attention-Based KD vs. no-KD direct train-     in total. Within families 1 and 2, where a continuous pruning
+ing (both taken through PTQ-Dynamic quantization, applied      ratio must be chosen, we exploit the fact that both size and
+directly with no extra fine-tuning), four from-scratch (non-   accuracy are monotonically non-increasing in pruning ratio
+pretrained) student sizes below TinyViT’s 5.52 M parameters,   (Table 5): the ratio that just barely satisfies the size budget
+mean ± std over 3 runs                                         is therefore also the ratio with the best accuracy among
+ Params      No-KD (%)        Attn-KD (%) Advantage (pp)       every ratio that fits, so a bisection search over the ratio finds
+ 1.31 M      77.24 ± 13.75    70.26 ± 19.15   −6.97 ± 32.59    the optimal configuration within a family in 𝑂(log(1∕𝜖))
+ 1.89 M      70.57 ± 19.35    76.80 ± 15.86   +6.23 ± 34.25    evaluations rather than a linear sweep. Each capacity-tier
+ 2.63 M       77.15 ± 6.01     81.32 ± 8.92   +4.17 ± 5.41
+                                                               stage trains its candidate once per target with a freshly drawn
+                                                               random initialization rather than the fixed initializations
+ 3.16 M      90.35 ± 0.88      82.11 ± 8.07   −8.25 ± 8.06
+                                                               used elsewhere in this study, since this mode answers "can
+                                                               a feasible model be found" as a live search rather than
+per size. Table 8 reports the resulting means. Run-to-run      reproducing a specific prior run.
+variance dominates this sweep: at three of the four sizes            We evaluated 5 size targets (10, 15, 20, 25, 30 MB)
+(1.31 M, 1.89 M, 2.63 M) A fairly consistent effect emerges    ×  2   accuracy-drop budgets (2% and 3%), 10 combinations
+is in the largest tested, 3.16 M parameters, where Attention-  in  total.   All 10 were satisfied, but the tightest and loosest
+KD trails direct training by a margin close to its own noise   budgets     in  this grid are met by different mechanisms. At the
+(−8.25±8.06 points across runs). Training these small, non-    two    loosest    size budgets (25 and 30 MB), the cascade stops
+pretrained architectures from scratch is evidently a much      at  stage   3:   the  plain FP32 KD-distilled student (21.15 MB,
+less stable process than fine-tuning an ImageNet-pretrained    93.68%      accuracy,      a 1.45-point drop from baseline) already
+backbone. Deploying at these sizes should budget for mul-      fits,   so  no     quantization      is needed. At the three tightest
+tiple training runs rather than trusting a single run, and     budgets     (10,    15, and   20 MB),     stage 4 – the same KD student,
+should not expect a clean, monotonic capacity-dependent        quantized      to  INT8    – is not  enough:     at 6.01 MB it comfortably
+trend from this recipe on this dataset.                        fits the   size   budget,    but its  3.16-point     accuracy drop exceeds
+     Attention-Based KD from the pruned-and-finetuned teacher  even     the  looser    3%    target,   so   the  search   escalates further.
+reaches 93.68%, 1.84 percentage points below Attention-        Stages     5  through      8  (the  two    largest   capacity-tier  students,
+Based KD run from the unpruned teacher under otherwise         FP32      and   INT8)     are   each    tried  and    rejected  on accuracy,
+identical settings (95.53%). This suggests that, at least on   not size: all four reach their size targets easily but sit 8.7–
+this dataset, whatever generalization capacity is lost through 11.8 points below baseline. The search succeeds at stage
+H-BAC pruning and its single-epoch recovery fine-tune          9, the 1.89 M-parameter capacity-tier student (FP32, no-
+is not fully passed on for the student to recover during       KD strategy): 7.27 MB at 94.08% accuracy, only a 1.05-
+distillation. Quantizing the KD student directly with PTQ-     point drop – comfortably inside every budget from 10 MB
+Dynamic reaches 91.97%, matches or slightly exceeds a fine-    upward. Table 9 summarizes the grid; Table 10 traces stages
+tune-then-quantize variant we tested on the same checkpoint    3 through 9 of the escalation for the tightest target (10 MB,
+(91.45%). This is consistent with the pattern established in   2% drop). No target in this grid was satisfied at stage 1 or 2
+3. The extra fine-tuning pass is only useful on checkpoints    (H-BAC pruning alone, with or without quantization): H-
+that have not yet had adequate training, and the KD student,   BAC’s mask-based pruning does not reduce stored model
+which already distilled for 15 epochs, does not need.          size at all, so a pruned-but-unquantized ViT-B/16 stays at
+                                                               327.42 MB regardless of ratio, far above every budget tested
+4.4. Constrained search results                                here.
+     Beyond the fixed pipeline evaluated above, we imple-            Both search modes are provided for different use cases:
+mented a constrained search mode for the scenario where        the   fixed pipeline (Table 4) is the right tool when the de-
+a a maximum deployment size and a maximum acceptable           ployment        target is already the smallest, most aggressive
+accuracy drop from the FP32 baseline is specified. The least   configuration        and the goal is to characterize its accuracy cost
+aggressive configuration that satisfies both automatically,    precisely;     the   constrained search is the right tool when the
+rather than committing to the full H-BAC+KD+quantization       deployment         target is a size or accuracy constraint from which
+pipeline by default is needed. The search cascades through     the   appropriate      compression        level – and, as this grid shows,
+candidate families of increasing aggressiveness, stopping      potentially       an  entirely   different     model family – should be
+at the first one that satisfies both constraints: (1) H-BAC    derived     automatically.       The   escalation     from the KD-distilled
+structural pruning alone (FP32), (2) H-BAC pruning plus        TinyViT       family     to  the  capacity-tier       student  family at the
+dynamic INT8 quantization, (3) the KD-distilled TinyViT        tightest    budgets     in this  grid   is a  direct  demonstration    of that
+student (FP32), (4) the KD-distilled student plus INT8         value:    a search    restricted   to  the  fixed  pipeline’s  own  architec-
+quantization, and, should none of these four satisfy the       ture (stages 1–4 only) would have reported no feasible model
+target, four additional from-scratch student architectures     under 21 MB at all, despite one existing.
+below TinyViT’s capacity (the 3.16 M, 2.63 M, 1.89 M, and
+1.31 M-parameter students of Table 8, largest first), each
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                             Page 12 of 16
+                                    Lightweight ViT Compression for Plant Disease Detection
+
+Table 9
+Constrained search: full 10-target grid (5 size budgets × 2 accuracy-drop budgets). All 10 combinations were satisfied.
+                Size budget    Stage reached                      Family                    Acc. (%)     Size (MB)
+                10–20 MB              9            1.89M-param student (FP32, no-KD)          94.08         7.27
+                25–30 MB              3                    KD student (FP32)                  93.68         21.15
+
+
+
+Table 10                                                                    Table 13 consolidates the best configuration from each
+Escalation trace for the tightest target in Table 9 (10 MB, 2%         compression family against the FP32 baseline (95.13% OOD
+accuracy-drop budget), stages 3 through 9. Stages 1–2 (H-              accuracy, Table 1), providing a unified view of the accuracy-
+BAC pruning, with or without quantization) already fail every          efficiency space navigated by each method.
+budget in this grid on size alone and are omitted; stages 5–8               Three of the four families in this table meet or ex-
+fit the size budget but fail the accuracy budget.                      ceed the FP32 baseline’s 95.13%: H-BAC 50% pruning by
+Stage Family                        Acc. (%) Size (MB)       Result    0.40 points, Attention KD by 1.58 points, and the inte-
+   3     KD student (FP32)           93.68      21.15       size fails grated pipeline, averaged over its four tested configurations,
+   4     KD student + INT8           91.97       6.01      drop fails  matches it exactly. PTQ-Dynamic quantization alone is the
+   5     3.16M student (FP32)        86.32      12.11      drop fails  one family that costs accuracy against the baseline (−0.79
+   6     3.16M student + INT8        86.45       3.64      drop fails  points), the expected small penalty of converting an already-
+   7     2.63M student (FP32)        83.42      10.08      drop fails  fixed set of FP32 weights to INT8 with no further adaptation.
+   8     2.63M student + INT8        83.29       3.08      drop fails  H-BAC achieves its computational reduction through struc-
+   9     1.89M student (FP32)        94.08       7.27      succeeds    tured FLOP elimination (49.1% active-parameter reduction,
+                                                                       49.2% FLOPs reduction) while preserving important trans-
+Table 11                                                               former blocks; PTQ-Dynamic cuts the model size by 74.2%
+Comparison of our optimized model to existing models (CPU:             at a small, expected accuracy cost; and Attention-Based KD
+Apple M4 Pro via Core ML, 3 trials; GPU: NVIDIA RTX 4060               gives the largest single-technique reduction in size (93.5%,
+via PyTorch, 10 trials)                                                327.42 MB to 21.15 MB) with no measured accuracy cost.
+        Model          Mean Latency (ms) Std. Dev. (ms)                     H-BAC, Attention-Based KD, and PTQ-Dynamic quan-
+                       CPU            GPU        CPU       GPU         tization were combined sequentially into the integrated com-
+      ResNet50         2.320         1.712      0.010 0.0001           pression   pipeline described in Section 4 (Table 4). The
+   EfficientFormer 1.386             1.031      0.010 0.0002           combined pipeline outcome is shown in the last row of
+     Our Model         1.015         0.660      0.002 0.0003           Table 13: a 98.2% size reduction (327.42 MB to 6.01 MB,
+  CPU std. dev. is across 3 trials, GPU across 10; CPU trial count     a 54.5× compression ratio) at 95.13 ± 2.32% accuracy, aver-
+       was reduced from GPU’s for wall-clock practicality (see         aged over four independent runs, exactly matching the FP32
+                Methodology baseline-model note).                      baseline’s 95.13% despite compounding all three techniques,
+                                                                       and notably higher than PTQ-Dynamic’s own standalone
+4.5. Latency comparison                                                −0.92-point cost, since KD’s accuracy headroom more than
+                                                                       offsets quantization’s small penalty in the full pipeline. The
+     We compared our model after optimization – the Attention-
+                                                                       final model size (6.01 MB) is set almost entirely by KD’s
+Based KD-distilled TinyViT student, FP32, prior to the
+                                                                       architectural change to TinyViT followed by quantization,
+final INT8 quantization step – against other lightweight
+                                                                       since H-BAC contributes FLOPs reduction rather than file-
+image classification architectures trained and evaluated on
+                                                                       size reduction.
+the same chilli 3-class village-split dataset: ResNet50 and
+                                                                            As detailed in the Knowledge Distillation Results sec-
+EfficientFormer. The results are tabulated in Table 11. CPU
+                                                                       tion, this same 6.01 MB size is also reachable by skipping
+benchmarks were run on an Apple M4 Pro (12-core CPU)
+                                                                       H-BAC and KD entirely, training a TinyViT of the same
+MacBook Pro; GPU benchmarks were run on a rented
+                                                                       target size directly on labels and quantizing it, reaching
+NVIDIA RTX 4060 (8 GB) instance; both use batched
+                                                                       95.13% accuracy on this dataset. Averaged over its four
+throughput timing (batch of 128, wall time divided by
+                                                                       configurations, the full pipeline (95.39%) is modestly ahead
+128). On CPU, our model is faster than ResNet50 (2.3×)
+                                                                       of this simpler alternative, though any single pipeline run
+and EfficientFormer (1.4×). The same ordering holds on
+                                                                       can land above or below it. The full pipeline’s additional
+GPU, where our model again leads ResNet50 (2.6×) and
+                                                                       value beyond matching this simpler alternative’s accuracy
+EfficientFormer (1.6×).
+                                                                       lies in what the direct-training alternative cannot provide
+4.6. Comparative analysis and discussion                               on its own: an H-BAC-pruned intermediate checkpoint that
+     Table 12 situates this study’s baseline accuracy against          keeps the full ViT-B/16 backbone at near-full accuracy while
+two prior plant-disease-detection works. This study evalu-             cutting its FLOPs roughly in half (Table 2), useful whenever
+ates exclusively on locally collected, village-partitioned field       a deployment target needs the larger backbone’s represen-
+images (Fig. 2).                                                       tational capacity but not its full compute cost, alongside
+
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                      Page 13 of 16
+                                      Lightweight ViT Compression for Plant Disease Detection
+
+Table 12
+Comparison of Existing Research on Plant Disease Detection with the Current Study
+       Research Work                                Dataset                                 Acc. (%) Architecture
+       Current Study (Ours)                         Chilli 3-Class, Village-Split Field Im-  95.13   ViT-B/16
+                                                    ages (OOD split)
+       Deep Learning-Based Disease Detection PlantVillage                                    99.69   GoogLeNet
+       Model in Plants
+       Multiclass Plant Disease Detection via Dense PlantVillage                             99.25   DenseNet201
+       CNNs
+
+
+Table 13
+Summary of the best configuration from each compression family, plus the fully integrated pipeline (last row). H-BAC reduces
+effective computation (FLOPs) without reducing stored model size, while quantization and KD reduce both model size and
+inference latency. CPU: Apple M4 Pro via Core ML; GPU: NVIDIA RTX 4060 via PyTorch.
+           Configuration            Size (MB)     Reduction (%)     Accuracy (%)     CPU Latency (ms)       GPU Latency (ms)
+           ViT-B/16 (FP32)            327.42           —                 95.13             7.18                  5.560
+           H-BAC (50% pruning)        327.42          49.1∗              95.53            4.27†                  3.003†
+           PTQ-Dynamic                 84.42          74.2               94.34             7.21                    —
+           Attention KD                21.15          93.5           96.71 ± 1.03          1.02                  0.660
+           Integrated Pipeline         6.01           98.2           95.13 ± 2.32‡        1.02§                    —
+ ∗ Reduction in active parameters (43.70M of 85.80M); H-BAC’s mask-based pruning does not shrink the stored checkpoint, so its FLOPs
+
+reduction (49.2%) is the operative efficiency gain, not file size. † Measured on a structurally compacted copy (pruned dimensions physically
+ removed), consistent with Table 5. ‡ Mean ± std over 4 independent configurations (three at pruning ratio 0.5, plus one at ratio 0.7); the
+  single ratio-0.5 configuration traced stage-by-stage in Table 4 reaches 91.97%. § Identical to the Attention KD row above: this row is the
+same distilled student with PTQ-Dynamic quantization additionally applied, which on this Apple M4 Pro CPU shows no significant latency
+ change either way (Table 6) – the size reduction (21.15 MB → 6.01 MB) is real, but it does not come with a latency improvement on this
+    hardware. Both PTQ-Dynamic’s and the Integrated Pipeline’s GPU latency are omitted because the INT8 models were benchmarked
+  through Core ML’s CPU compute unit, and no CUDA-executable INT8 build was produced for the RTX 4060 used for this study’s GPU
+                                                                 measurements.
+
+
+the fully compressed 6.01 MB endpoint for targets that need             that each compression method contributes differently: H-
+both.                                                                   BAC pruning at the 50% operating point reduces FLOPs by
+    It is important to note that the ablation above evalu-              49.2% (35.13 GFLOPs to 17.86 GFLOPs), reaching 95.53%
+ates each compression technique independently, while the                accuracy after recovery fine-tuning (0.40 points above the
+pipeline described in Section 4 introduces interactions be-             95.13% baseline); PTQ-Dynamic quantization achieves a
+tween techniques that cannot be predicted from individual               74.2% size reduction (327.42 MB to 84.42 MB) at 94.34%
+results alone. For instance, the final PTQ-Dynamic quan-                accuracy, a small expected cost of converting an already-
+tization step is applied to a pruned-then-distilled student’s           trained FP32 checkpoint to INT8 with no further adaptation;
+weight distribution rather than the original dense teacher’s,           and Attention-Based KD achieves 96.71±1.03% accuracy at
+so its accuracy cost is not necessarily the same as quantiz-            a 93.5% size reduction (327.42 MB to 21.15 MB) and lower
+ing the unpruned baseline directly (Table 6). Such interde-             CPU latency than ResNet50 and EfficientFormer. Chaining
+pendencies are why we followed a sequential composition                 all three techniques into a single integrated pipeline reduces
+strategy, wherein each compression stage is applied to the              the model size from 327.42 MB to 6.01 MB, corresponding
+output of the preceding stage in a controlled, reproducible             to a 54.5 × compression ratio (98.16% reduction) and at
+order, and why we report the integrated pipeline’s measured             91.97% accuracy for the traced configuration. Also this
+outcome directly (Table 4) rather than inferring it from the            result is broadly stable across three additional pruning-ratio
+individual ablations.                                                   configurations (95.13±2.32%, 𝑛 = 4) – exactly matching the
+                                                                        95.13% baseline despite compounding all three compression
+5. Conclusion                                                           techniques, with KD’s accuracy headroom offsetting quanti-
+                                                                        zation’s small standalone cost.
+    This paper introduces H-BAC, a compact and efficient                     Several considerations qualify these results. First, on
+pipeline for plant disease detection using the Vision Trans-            the Apple M4 Pro CPU used for all CPU latency mea-
+former, tailored for real-time application on resource-limited          surements in this study, INT8 quantization shows no sig-
+edge devices. H-BAC combines attention-driven knowledge                 nificant improvement over FP32 inference (Table 6), unlike
+distillation, pruning of structured parts, and low-precision            the speedup typically reported on server-class x86 hard-
+quantization into a unified system that shrinks the model               ware; INT8’s benefit here is in model size, not latency, and
+size and computational footprint while maintaining accu-                practitioners targeting other ARM/edge platforms should re-
+rate diagnostic capability. Our experimental results show               measure latency on their actual target device rather than
+
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                            Page 14 of 16
+                                   Lightweight ViT Compression for Plant Disease Detection
+
+assume quantization speedups transfer across hardware. This       ONNX Runtime Mobile, or CoreML conversion is necessary
+holds under Core ML’s own weight-only INT8 quantiza-              before any latency-based deployment claim can be made
+tion, which dequantizes weights to floating point for the         with confidence, and is left to future work.
+matrix multiply rather than executing native INT8 arith-
+metic, so per-operation cost is essentially unchanged; ab-
+sent dedicated INT8 compute kernels, weight-only quan-
+                                                                  Acknowledgment
+tization buys size, not speed, on this platform. No GPU-              The authors would like to acknowledge Mr. Kannan,
+native (ONNX/TensorRT) INT8 comparison was built for              Project Associate, ANRF Grant No. SUR/2022/004268, for
+this study, so no claim is made either way about GPU              his valuable assistance in organizing and making the dataset
+quantization behavior. Second, the compressed model is not        publicly available through Figshare
+the fastest option in this comparison on either device class:         (https://doi.org/10.6084/m9.figshare.32820110), which
+it leads ResNet50 and EfficientFormer on both CPU (2.3×           was used in this study. The authors are grateful to the ANRF,
+and 1.4×) and GPU (2.6× and 1.6×). Third, our KD ablation         New Delhi, India, for funding the research on “Light Weight
+across 3 independent runs shows all four training recipes         Deep Learning Based Mobile Application for the Early
+(no distillation, response-, feature-, and attention-based KD)    Detection, Identification, and Spatiotemporal Monitoring of
+clustered tightly within a 0.53-point band, with Attention-       Plant Diseases” (Grant No. SUR/2022/004268).
+Based KD narrowly the highest (96.71±1.03%) and no clear
+instability in any single strategy (Table 7). This underscores
+                                                                  References
+that distillation’s accuracy benefit over direct training is
+                                                                   [1] Ahmad, A., Saraswat, D., El Gamal, A., 2023. A survey on using deep
+modest at best on this task, and should not be assumed
+                                                                       learning techniques for plant disease diagnosis and recommendations
+a priori for a new deployment target. Fourth, we directly              for development of appropriate tools. Smart Agricultural Technology
+tested whether the full H-BAC + KD + quantization pipeline             3, 100083.
+is actually necessary: training a TinyViT student directly         [2] Barman, U., Sarma, P., Rahman, M., Deka, V., Lahkar, S., Sharma,
+on labels (skipping pruning and distillation entirely) and             V., Saikia, M.J., 2024.        Vit-smartagri: vision transformer and
+                                                                       smartphone-based plant disease detection for smart agriculture.
+quantizing it with PTQ-Dynamic yields a 6.01 MB model
+                                                                       Agronomy 14, 327.
+at 94.87% accuracy, 2.89 points above the matched pipeline         [3] Cheng, Y., Wang, D., Zhou, P., Zhang, T., 2018. Model compression
+configuration, but 0.26 points below the pipeline’s own 4-             and acceleration for deep neural networks: The principles, progress,
+configuration mean (95.13 ± 2.32%). The full pipeline’s run-           and challenges. IEEE Signal Processing Magazine 35, 126–136.
+to-run variance is the larger effect here; averaged over multi-    [4] Cortes, C., Vapnik, V., 1995. Support-vector networks. Machine
+                                                                       Learning 20, 273–297. doi:10.1007/BF00994018.
+ple configurations it is modestly ahead of the simplest direct-
+                                                                   [5] Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L., 2009a.
+training-plus-quantization alternative, though any single run          Imagenet: A large-scale hierarchical image database, in: 2009 IEEE
+can land on either side of it. Distilling from the H-BAC-              conference on computer vision and pattern recognition, Ieee. pp. 248–
+pruned teacher rather than the full teacher cost 1.84 points           255.
+here, a genuine trade-off of the sequential H-BAC → KD             [6] Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L., 2009b.
+                                                                       Imagenet: A large-scale hierarchical image database, in: 2009 IEEE
+design against the FLOPs savings pruning provides. Fifth,
+                                                                       Conference on Computer Vision and Pattern Recognition, pp. 248–
+we tested whether KD’s advantage over direct training grows            255. doi:10.1109/CVPR.2009.5206848.
+as student capacity shrinks below TinyViT’s 5.52 M parame-         [7] Dosovitskiy, A., 2020. An image is worth 16x16 words: Transformers
+ters, with a capacity sweep across four smaller, from-scratch          for image recognition at scale. arXiv preprint arXiv:2010.11929 .
+student sizes (1.31 M to 3.16 M, Table 8) replicated across 3      [8] Ferentinos, K.P., 2018. Deep learning models for plant disease
+                                                                       detection and diagnosis. Computers and electronics in agriculture
+runs per size; that table and Section 4 discuss the resulting
+                                                                       145, 311–318.
+capacity-dependent pattern in detail. Sixth, and most directly     [9] Gole, P., Bedi, P., Marwaha, S., Haque, M.A., Deb, C.K., 2023.
+relevant to this paper’s stated deployment motivation, every           Trincnet: a lightweight vision transformer network for identification
+latency figure reported here was measured on an Apple M4               of plant diseases. Frontiers in Plant Science 14, 1221557.
+Pro laptop CPU and a rented NVIDIA RTX 4060 GPU                   [10] Hamim, S.A., Jony, A.I., 2024. Enhanced deep learning model
+                                                                       architecture for plant disease detection in chilli plants. Journal of Edge
+instance, neither of which is representative of the low-end
+                                                                       Computing 3, 136–146.
+Android smartphones that motivate this work (Section 1).          [11] Han, S., Mao, H., Dally, W.J., 2015. Deep compression: Compressing
+This is a genuine scope boundary of the present study,                 deep neural networks with pruning, trained quantization and huffman
+not an oversight discovered late: these devices were chosen            coding. arXiv preprint arXiv:1510.00149 .
+because they give controlled, reproducible measurements           [12] Haque, M.A., Deb, C.K., Gole, P., Karmakar, S., Dheeraj, A., Shah,
+                                                                       M.U.D., Dutta, S., Kumar, M.P., Marwaha, S., 2025. An enhanced
+suitable for comparing compression techniques against each
+                                                                       vision transformer network for efficient and accurate crop disease
+other, and the resulting size and FLOPs reductions (which              detection. Expert Systems with Applications , 127743.
+are device-independent) are the primary claims this paper         [13] Haralick, R.M., Shanmugam, K., Dinstein, I., 1973. Textural features
+rests its deployment argument on. The absolute latency                 for image classification. IEEE Transactions on Systems, Man, and
+numbers, however, should not be read as predictions of                 Cybernetics SMC-3, 610–621. doi:10.1109/TSMC.1973.4309314.
+                                                                  [14] Hemalatha, S., Jayachandran, J.J.B., 2024. A multitask learning-
+on-device farmer-facing performance. Validating the final
+                                                                       based vision transformer for plant disease localization and classifi-
+deployed model on actual ARM smartphone-class hardware                 cation. International Journal of Computational Intelligence Systems
+(e.g. Snapdragon or MediaTek SoCs) via TensorFlow Lite,                17, 188.
+
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                               Page 15 of 16
+                                           Lightweight ViT Compression for Plant Disease Detection
+
+[15] Hinton, G., Vinyals, O., Dean, J., 2015. Distilling the knowledge in a     [36] Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G.,
+     neural network. arXiv preprint arXiv:1503.02531 .                               Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Köpf,
+[16] Huffman, D., 2024. A method for the construction of minimum-                    A., Yang, E., DeVito, Z., Raison, M., Tejani, A., Chilamkurthy, S.,
+     redundancy codes. 1952. Proceedings of the IRE 40, 1098.                        Steiner, B., Fang, L., Bai, J., Chintala, S., 2019. Pytorch: An imper-
+[17] Hutchinson, M., 1989. A stochastic estimator of the trace of the                ative style, high-performance deep learning library, in: Advances in
+     influence matrix for laplacian smoothing splines. Communication in              Neural Information Processing Systems, pp. 8026–8037.
+     Statistics- Simulation and Computation 18, 1059–1076. doi:10.1080/         [37] Paula, E., Soni, J., Upadhyay, H., Lagos, L., 2025. Comparative anal-
+     03610919008812866.                                                              ysis of model compression techniques for achieving carbon efficient
+[18] Intel Corporation, 2023. Intel® distribution of OpenVINO™ toolkit.              ai. Scientific Reports 15, 23461.
+     https://github.com/openvinotoolkit/openvino. Open-source toolkit           [38] Raghu, M., Unterthiner, T., Kornblith, S., Zhang, C., Dosovitskiy, A.,
+     for optimizing and deploying deep learning models.                              2021. Do vision transformers see like convolutional neural networks?,
+[19] Joshi, H., 2024. Edge-ai for agriculture: lightweight vision models             in: Advances in Neural Information Processing Systems, pp. 12116–
+     for disease detection in resource-limited settings. arXiv preprint              12128.
+     arXiv:2412.18635 .                                                         [39] Sajitha, N., Nema, S., Bhavya, K., Seethapathy, P., Pant, K., 2022.
+[20] Kannan, M., Seethapathy, P., 2026. Chilli leaf curl virus dataset final         The plant disease detection using cnn and deep learning techniques
+     ver. URL: https://doi.org/10.6084/m9.figshare.32820110, doi:10.                 merged with the concepts of machine learning, in: 2022 2nd Interna-
+     6084/m9.figshare.32820110.                                                      tional conference on advance computing and innovative technologies
+[21] Kim, J., Chang, S., Kwak, N., 2021. Pqk: model compression via                  in engineering (ICACITE), IEEE. pp. 1547–1551.
+     pruning, quantization, and knowledge distillation. arXiv preprint          [40] Seethapathy, P., Kannan, M., Gopakumar, G., Manivasagam, V., Man-
+     arXiv:2106.14681 .                                                              alil, S., 2025. Comparative analysis of pretrained cnn architectures for
+[22] Kirola, M., Joshi, K., Chaudhary, S., Singh, N., Anandaram, H.,                 mobile-based early detection of brinjal little leaf disease, in: AI and
+     Gupta, A., 2022. Plants diseases prediction framework: a image-                 Sustainable Transformations. CRC Press, pp. 108–114.
+     based system using deep learning, in: 2022 IEEE World Conference           [41] Shoaib, M., Shah, B., Ei-Sappagh, S., Ali, A., Ullah, A., Alenezi, F.,
+     on Applied Intelligence and Computing (AIC), IEEE. pp. 307–313.                 Gechev, T., Hussain, T., Ali, F., 2023. An advanced deep learning
+[23] Lecun, Y., Denker, J., Solla, S., 1989. Optimal brain damage, in:               models-based plant disease detection: A review of recent research.
+     Advances in Neural Information Processing Systems, pp. 598–605.                 Frontiers in Plant Science 14, 1158933.
+[24] Li, G., Wang, Y., Zhao, Q., Yuan, P., Chang, B., 2023a. Pmvt:              [42] Singh, A.K., Rao, A., Chattopadhyay, P., Maurya, R., Singh, L., 2024.
+     a lightweight vision transformer for plant disease identification on            Effective plant disease diagnosis using vision transformer trained
+     mobile devices. Frontiers in Plant Science 14, 1256773.                         with leafy-generative adversarial network-generated images. Expert
+[25] Li, J., Zhang, L.L., Xu, J., Wang, Y., Yan, S., Xia, Y., Yang, Y.,              Systems with Applications 254, 124387.
+     Cao, T., Sun, H., Deng, W., et al., 2023b. Constraint-aware and            [43] Thai, H.T., Tran-Van, N.Y., Le, K.H., 2021. Artificial cognition for
+     ranking-distilled token pruning for efficient transformer inference, in:        early leaf disease detection using vision transformers, in: 2021 In-
+     Proceedings of the 29th ACM SIGKDD Conference on Knowledge                      ternational conference on advanced technologies for communications
+     Discovery and Data Mining, pp. 1280–1290.                                       (ATC), IEEE. pp. 33–38.
+[26] Li, X., Li, X., Zhang, S., Zhang, G., Zhang, M., Shang, H., 2023c.         [44] Vinay, K., Surya, V., Thushar, S., Singh, T., Sahay, A., 2025. A deep
+     Slvit: Shuffle-convolution-based lightweight vision transformer for             learning framework for early detection and diagnosis of plant diseases.
+     effective diagnosis of sugarcane leaf diseases. Journal of King Saud            Procedia Computer Science 258, 1435–1445.
+     University-Computer and Information Sciences 35, 101401.                   [45] Wang, X., Liu, J., Chen, Q., 2025a. An advanced deep learning
+[27] Li, Z., Li, H., Meng, L., 2023d. Model compression for deep neural              method for pepper diseases and pests detection. Plant Methods 21,
+     networks: A survey. Computers 12, 60.                                           70.
+[28] Malihi, L., Heidemann, G., 2023. Efficient and controllable model          [46] Wang, Z., Shi, L., Mei, Z., Zhao, X., Wang, Z., Li, J., 2025b.
+     compression through sequential knowledge distillation and pruning.              Iterative knowledge distillation and pruning for model compression in
+     Big Data and Cognitive Computing 7, 154.                                        unsupervised domain adaptation. Pattern Recognition 164, 111512.
+[29] Malihi, L., Heidemann, G., 2024. Matching the ideal pruning method         [47] WinKawaks, 2022. vit-tiny-patch16-224. https://huggingface.co/
+     with knowledge distillation for optimal compression. Applied System             WinKawaks/vit-tiny-patch16-224.
+     Innovation 7, 56.                                                          [48] Yang, H., Yin, H., Shen, M., Molchanov, P., Li, H., Kautz, J., 2023.
+[30] Megalingam, R.K., Menon, G.G., Binoj, S., Sai, D.A., Kunnambath,                Global vision transformer pruning with hessian-aware saliency, in:
+     A.R., Manoharan, S.K., 2024. Cowpea leaf disease identification                 Proceedings of the IEEE/CVF conference on computer vision and
+     using deep learning. Smart Agricultural Technology 9, 100662.                   pattern recognition, pp. 18547–18557.
+[31] Menon, V., Ashwin, V., Deepa, R.K., 2021. Plant disease detection          [49] Yang, Z., Li, Z., Zeng, A., Li, Z., Yuan, C., Li, Y., 2022. Vitkd:
+     using cnn and transfer learning, in: 2021 international conference on           Practical guidelines for vit feature knowledge distillation. arXiv
+     communication, control and information sciences (ICCISc), IEEE.                 preprint arXiv:2209.02432 .
+     pp. 1–6.
+[32] Mohanty, S.P., Hughes, D.P., Salathé, M., 2016. Using deep learning
+     for image-based plant disease detection. Frontiers in plant science 7,
+     1419.
+[33] Molchanov, P., Mallya, A., Tyree, S., Frosio, I., Kautz, J., 2019. Im-
+     portance estimation for neural network pruning, in: Proceedings of the
+     IEEE/CVF conference on computer vision and pattern recognition,
+     pp. 11264–11272.
+[34] Naik, B.N., Malmathanraj, R., Palanisamy, P., 2022. Detection and
+     classification of chilli leaf disease using a squeeze-and-excitation-
+     based cnn model. Ecological Informatics 69, 101663.
+[35] Ojala, T., Pietikainen, M., Maenpaa, T., 2002. Multiresolution gray-
+     scale and rotation invariant texture classification with local binary
+     patterns. IEEE Transactions on Pattern Analysis and Machine Intel-
+     ligence 24, 971–987. doi:10.1109/TPAMI.2002.1017623.
+
+
+
+
+M.S Kumar et al.: Preprint submitted to Elsevier                                                                                           Page 16 of 16
+

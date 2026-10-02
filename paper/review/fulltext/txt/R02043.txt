@@ -1,0 +1,1552 @@
+                                                  From Foundation Embeddings to Cropland Maps:
+                                                   Label Efficiency, Temporal Transferability and
+                                                          Independent Human Validation
+                                          Mohammad Ammar Mughees1 , Giovanni Montefoschi1 , Zhongxin Chen2 , and Maria Antonia
+                                                                             Brovelli1
+                                                         1
+                                                             Department of Civil and Environmental Engineering, Politecnico di Milano, Milan, Italy
+                                                                   2
+                                                                     Food and Agriculture Organization of the United Nations, Rome, Italy
+arXiv:2609.17138v1 [cs.CV] 15 Sep 2026
+
+
+
+
+                                             Abstract. Geospatial foundation models provide reusable representations of satellite imagery that can support
+                                             downstream mapping with limited task-specific modelling. We evaluate whether annual AlphaEarth embeddings
+                                             support binary cultivated-versus-non-cultivated mapping in Maine, USA, using 192 spatially separated image patches
+                                             and labels derived from the USDA Cropland Data Layer (CDL). Without fine-tuning the foundation model, a
+                                             lightweight classifier reaches approximately 93.7% overall accuracy and 90.8% balanced accuracy on held-out patches.
+                                             Logistic regression is within 0.3 percentage points of a gradient-boosted ensemble, while a nearest-class-centroid
+                                             rule, which uses labelled class centroids but no iterative parameter fitting, reaches 90.2%. A balanced sample of
+                                             60,000 labelled pixels is within approximately 1.3 percentage points of the full pool of 8.6 million pixels; because
+                                             pixels are spatially autocorrelated, this result concerns pixel-sample efficiency rather than 60,000 independent
+                                             annotation sites. In a same-region temporal-transfer experiment, classifiers trained in one year remain accurate
+                                             across 2018 to 2023. Against a blind, two-interpreter consensus at 385 randomly sampled points in one contiguous
+                                             2023 block, the AlphaEarth-plus-random-forest map agrees at 95.3% (κ = 0.82), compared with 91.7% for the CDL
+                                             (κ = 0.72; exact two-sided McNemar p = 0.0161). This local result is consistent with partial smoothing of CDL label
+                                             noise, but it does not establish statewide correction of the reference product. On the same points, the difference
+                                             from a fine-tuned TerraMind segmentation model is not statistically significant (95.3% versus 93.5%; p = 0.14),
+                                             and the experiment is not a controlled comparison of computational cost. These results support frozen geospatial
+                                             embeddings as a low-compute candidate for regional cropland mapping, subject to the limits of a single-state study,
+                                             a 30 m-derived training reference, and a one-block human validation.
+                                             Keywords: geospatial foundation models; AlphaEarth embeddings; cropland classification; Cropland Data Layer;
+                                             label efficiency; random forest; photo-interpretation validation
+
+
+                                         1     Introduction                                               trained model can then serve several downstream tasks.
+                                                                                                          They divide into two broad ways of working. One route
+                                         Producing land-use and land-cover information used to            provides a pre-trained backbone that the user still has
+                                         be slow and expensive. It relied on the manual inter-            to fine-tune for each task, as with Prithvi [13] or Ter-
+                                         pretation of imagery and on task-specific models that            raMind [14]. The other route runs the model once, at
+                                         had to be built almost from scratch for every new prob-          the developer’s side, and releases its output directly as
+                                         lem, and the biggest obstacle was data: training such            embeddings: fixed-length per-pixel vectors that behave,
+                                         models needed very large, carefully labelled datasets,           in geospatial terms, like bands. AlphaEarth [7] and
+                                         and high-quality labels are scarce because they are              TESSERA [11] follow this second route, releasing 64-
+                                         costly to collect [7]. Satellite missions such as Sentinel       dimensional and 128-dimensional annual embeddings
+                                         and Landsat have been both an asset and a challenge              respectively. For every 10 m × 10 m pixel the user ob-
+                                         in this respect. They provide a continuous stream of             tains one such vector, which compactly summarises a
+                                         observations from which a dataset can be built, but              whole year of multimodal observations at that location,
+                                         the volume of that data is too large to use directly,            and which can be fed straight into a light classifier with
+                                         so a geospatial expert has to spend considerable effort          no heavy model to train or run.
+                                         cleaning, compositing and engineering features before               This paper is concerned with that second family, and
+                                         the data becomes usable [11]. Compositing, the usual             specifically with what it delivers for cropland mapping.
+                                         way of dealing with clouds, also discards part of the            Four related terms are used here in a specific sense. A
+                                         temporal phenological signal that matters most for               crop is a cultivated plant grown for food, fibre or fodder.
+                                         crops.                                                           Cropland is land used to grow such crops, comprising
+                                            Geospatial foundation models have begun to change             arable land together with land under permanent crops
+                                         this picture. Instead of engineering features by hand,           [12]. Cultivated land is the broader category of land
+                                         these models learn the features themselves, mostly               worked for agriculture; in the USDA Cropland Data
+                                         through self-supervised pre-training, and a single pre-          Layer it is represented by a dedicated Cultivated Layer,
+
+
+                                                                                                      1
+defined operationally as land cropped in at least two            fine-tune a heavy model and attach a task head, which
+of the previous five years [4]. Non-cultivated land is ev-       is precisely the cost the embedding paradigm avoids. A
+erything outside that category, including forest, water,         broader benchmark of eight satellite foundation models
+developed, barren and similar non-agricultural cover.            is a useful warning in this context: it finds performance
+The task addressed here is the binary separation of              strongly task-dependent, the quality of the pre-training
+cultivated from non-cultivated land, and, as explained           data more important than its sheer size, and the step
+in Section 2, we derive our own binary mask from the             from a ViT-Base to a ViT-Large backbone worth less
+annual 254-class Cropland layer rather than using the            than one per cent of accuracy [27]. A larger model is
+ready-made Cultivated Layer.                                     not necessarily a better one, which is part of why a
+   The premise that precomputed embeddings plus a                simple classifier on a good embedding merits serious
+simple classifier are sufficient has so far been tested          consideration.
+mostly by the model authors themselves. TESSERA                     The gap we address is therefore not whether embed-
+reports that its embeddings, with only a handful of              dings can map cropland at all, which Zvonkov et al.
+labels, match or outperform task-specific models across          [31] have now demonstrated, but how far such a map
+five very different tasks and without any fine-tuning            can be trusted. The existing evaluations are reported
+[11]. Independent evaluations are still few. The clearest        as accuracy against a single reference product, on one
+we found applies the same AlphaEarth and TESSERA                 region and one year, and none of them examines the
+embeddings to riverine habitat and geomorphic classes            structure of the embedding space that produces the
+with ordinary supervised classifiers, and reports a              result, tests whether a model fitted in one year still
+high potential for the approach [3]. Closer to our               holds in another, or asks whether the reference product
+own task, a recent study evaluates AlphaEarth em-                itself is right where the map and the reference disagree.
+beddings for irrigated-cropland mapping in China and             Whether a lightweight classifier on these embeddings is
+the United States, training random forests directly              competitive for binary cultivated mapping, how much
+on the 64-dimensional vectors, and reports overall ac-           labelled data it needs, which properties of the embed-
+curacies around 95 per cent with stable transfer be-             ding space decide the outcome, and how the resulting
+tween years but weaker generalisation across regions             map compares with independent human judgement
+[29]. Independent evidence has accumulated quickly               rather than with the labels it was trained on, have not
+since. Zvonkov et al. [31] map cropland in Togo from             been examined together for a single task.
+precomputed Presto and AlphaEarth embeddings with                   In this paper we address that question over the state
+a light random forest, reporting overall accuracies of           of Maine, in the United States, using the annual Al-
+0.897 and 0.859 respectively against a national test             phaEarth embeddings as the only input and labels
+set. AlphaEarth is the weaker of their two embeddings            derived from the USDA Cropland Data Layer. We
+there, level with the GLAD product (0.859) and below             report four things. First, a statistical characterisation
+WorldCover (0.880), though the two embeddings are                of the embedding space itself, on the unit hypersphere
+not evaluated on equal terms: their Presto embeddings            where the vectors lie, which establishes which analy-
+span the 2019 to 2020 season of the reference labels,            ses are legitimate and gives a classifier-free read on
+whereas the earliest AlphaEarth year available to them           how hard the task is (Section 4). Second, the ac-
+was 2021. Ma et al. [19] benchmark AlphaEarth em-                curacy of a graded set of light classifiers placed on
+beddings across three agricultural downstream tasks in           the frozen embeddings, from a single linear model to
+the United States, crop-yield prediction, tillage map-           gradient-boosted ensembles (Section 5). Third, how
+ping and cover-crop mapping, and find them compet-               much labelled data the approach actually needs, and
+itive with purpose-built remote-sensing models when              how well a single-year model transfers across the years
+trained on local data, while reporting limited spatial           2018 to 2023 (Sections 6 and 7). Fourth, a valida-
+transferability, low interpretability and limited time           tion that steps outside the reference layer altogether,
+sensitivity. Lisaius et al. [18] apply the same paradigm         comparing the model, the Cropland Data Layer and
+to crop-type classification under smallholder conditions         a fine-tuned segmentation model against independent
+in the groundnut basin of Senegal. Two further stud-             human photo-interpretation on a common set of ref-
+ies examine the embedding space itself rather than               erence points (Section 8). Throughout, we keep the
+a mapping task: Benavides-Martínez et al. [2] char-              classifier deliberately simple, so that the embedding,
+acterise the functional roles of individual dimensions,          and not the model placed on top of it, is the object of
+and Rahman et al. [26] the geometry of the embedding             study.
+manifold over the conterminous United States. We                    Summarising, before entering into the details of our
+return to both in Section 4. The agricultural literature         work, we want to emphasise the boundaries we are
+otherwise remains dominated by the fine-tuning and               considering. “Label efficiency” refers to the number of
+dedicated-training route: AgriFM is pre-trained on               CDL-labelled pixels used by the downstream classifier,
+more than 25 million multi-source samples and out-               not to the number of independent fields or manually
+performs general-purpose foundation models on crop               annotated sites. “Transferability” refers to temporal
+mapping and field-boundary delineation [17], while               reuse across years within the same Maine sampling
+fine-tuning studies find that large models pull ahead            frame; geographic transfer to other regions is not tested.
+of traditional machine learning mainly when labels are           The human-reference comparison is point-based and
+scarce [5]. Both of those routes still have to train or          local to one contiguous block in 2023.
+
+
+                                                             2
+2     Data and Study Area                                         above, which represents a single calendar year; and
+                                                                  the Cultivated layer, a ready-made binary map that
+2.1    Maine as a study area                                      NASS derives from several consecutive Cropland layers,
+                                                                  labelling a pixel as cultivated when it was cropped in
+The experimental work is carried out over the state
+                                                                  at least two of the previous five years [4]. We build
+of Maine, in the north-eastern United States. Two
+                                                                  our own labels from the annual Cropland layer rather
+practical constraints fixed this choice. The first is the
+                                                                  than from the ready-made Cultivated layer, and the
+ground truth: our labels are taken from the USDA
+                                                                  reason is temporal. The Cultivated layer is defined over
+Cropland Data Layer, which is produced only for the
+                                                                  several years, which makes it a single, slowly changing
+United States, so the study area had to lie within it.
+                                                                  product that is almost identical from one year to the
+The second is the availability of the embeddings. Al-
+                                                                  next and does not represent the state of any individual
+phaEarth provides annual embeddings globally, but we
+                                                                  year. Our study uses one embedding per year and
+also wanted an area covered by the other precomputed-
+                                                                  examines how the classification behaves across years,
+embedding model we considered, TESSERA, whose
+                                                                  so we need a label that tracks each year on its own.
+coverage spans a more limited set of years and loca-
+                                                                  Only the annual Cropland layer provides this.
+tions, so that the same dataset could in principle be
+                                                                     The grouping itself is straightforward. We assign
+reused for a direct comparison in future work. Maine
+                                                                  to the cultivated class all of the genuine crop classes,
+met both conditions.
+                                                                  that is the field crops, the forage crops such as hay and
+   Maine is, however, a demanding area for an agri-
+                                                                  alfalfa, and the tree and specialty crops (CDL codes
+cultural study, and this shaped the rest of the data
+                                                                  1 to 60, 66 to 80, and 196 to 255). Everything else
+preparation. The state is dominated by forest, and
+                                                                  becomes non-cultivated: pasture and grassland, fallow
+cultivated land makes up only a small fraction of its
+                                                                  land, forest, shrubland, barren ground, developed land,
+surface, concentrated in a few regions such as the potato
+                                                                  open water, and wetlands. The mask is built separately
+land of the north and the blueberry barrens and hay
+                                                                  for each year of the study period, 2018 to 2023, so that
+or dairy land elsewhere. Grouping the Cropland Data
+                                                                  each label is temporally consistent with the embedding
+Layer into our binary target, cultivated land accounts
+                                                                  it is paired with.
+for only about 3% of Maine in 2023, so it is a clear mi-
+                                                                     One consequence of this design deserves to be stated
+nority class, and this becomes the central difficulty in
+                                                                  explicitly. The CDL is a 30 m categorical product,
+building a usable dataset. An initial attempt confirmed
+                                                                  whereas the AlphaEarth embeddings are provided on
+how severe the imbalance is: a single contiguous region
+                                                                  a 10 m grid. Each annual CDL raster is therefore
+of about 50 km by 50 km in central Maine turned out
+                                                                  aligned to the EPSG:32619 AlphaEarth grid by nearest-
+to be roughly 99.9% non-cultivated. A single block of
+                                                                  neighbour resampling, which is the Earth Engine de-
+that kind does not contain enough cultivated land in
+                                                                  fault applied when the sampling toolkit reprojects the
+Maine to pose a balanced classification problem, and
+                                                                  layer without requesting any other kernel, with the
+this is what led us away from one large region and to-
+                                                                  target origin, extent and pixel centres fixed by the
+wards the patch-based, class-balanced sampling design
+                                                                  embedding raster. No interpolation of class codes is
+described in Section 2.3.
+                                                                  permitted. Consequently, three-by-three groups of 10 m
+                                                                  model pixels inherit the same 30 m source label (Fig-
+2.2    Ground truth: from 254 classes to                          ure 1), and pixel-level accuracy against the CDL should
+       a binary mask                                              not be interpreted as independent 10 m reference infor-
+                                                                  mation, nor as direct evidence of boundary accuracy at
+Our labels come from the USDA Cropland Data Layer
+                                                                  10 m. The disagreement this introduces is not spread
+(CDL), produced annually by the National Agricultural
+                                                                  evenly: it is concentrated where a 30 m cell straddles a
+Statistics Service. The CDL is a raster land-cover map
+                                                                  field edge, which is precisely where the classifier’s own
+of the conterminous United States in which every pixel
+                                                                  residual errors also sit (Section 5.3). The independent
+is assigned one of 254 detailed classes, most of them
+                                                                  photo-interpretation of Section 8 provides a separate,
+specific crops. It is generated by a supervised decision-
+                                                                  though spatially limited, check on this reference mis-
+tree classifier trained on ground truth from the Farm
+                                                                  match. The cultivated-code list given above, that is
+Service Agency Common Land Unit programme, that
+                                                                  CDL codes 1 to 60, 66 to 80 and 196 to 255, is exactly
+is, the farmers’ own field reports, together with satellite
+                                                                  the list implemented in the executable pipeline as its
+imagery, and it is the standard crop-specific reference
+                                                                  remap_crops rule, and the same list is reported in the
+for the United States [4]. For the years we use it was
+                                                                  repository metadata.
+distributed at 30 m resolution. Its accuracy is high for
+the major commodity crops, commonly around 85 to 95
+per cent producer’s and user’s accuracy, whereas rarer            2.3    Patch generation and sampling
+and more fragmented classes are less reliable [4], and            The dataset was prepared jointly for two parallel studies
+the layer is known to contain noisy pixels [30]. Since            of the same area, one using the AlphaEarth embeddings
+the CDL is the output of a classifier rather than direct          (reported here) and one using a fine-tuned segmentation
+ground truth, we treat it as a reference to be tested             model, so that the two remain directly comparable.
+rather than as truth, which is the purpose of Section 8.          The patches were produced with an open Google Earth
+   The CDL is distributed as two related products: the            Engine toolkit [22], and the sampling design explains
+annual Cropland layer, the 254-class map described
+
+
+                                                              3
+  (a) Land cover at 10 m                       (b) USDA CDL at 30 m                     (c) Label each pixel inherits
+
+
+
+
+       what the embedding                         one class code per cell,                    outlined: inherited label
+         grid can resolve                        spanning 3 × 3 = 9 pixels                     differs from the cover
+                               cultivated        non-cultivated        label disagrees with cover
+Figure 1: How a 30 m CDL label is carried onto the 10 m embedding grid. (a) The land cover an embedding pixel can
+resolve. (b) The CDL assigns a single class code to each 30 m cell, outlined in bold for one cell, which covers a 3 × 3 block
+of embedding pixels. (c) Nearest-neighbour alignment gives every pixel in that block the same label, so the label boundary
+is forced onto the coarse grid; the outlined pixels are those whose inherited label therefore differs from the cover beneath
+them. The disagreement is confined to cells that straddle a field edge. The figure is a schematic drawn to illustrate the
+mechanism, not measured data.
+
+
+several properties of the dataset.
+   A regular grid of cells about 8 km apart is laid
+over the area of interest, spaced so that the extracted
+patches never touch. Keeping the patches apart mat-
+ters for two reasons: the same pixel is never sampled
+twice, and neighbouring patches cannot leak informa-
+tion between the training and the test sets, which is a
+common and easily overlooked cause of over-optimistic
+accuracy. Within each cell one location is selected
+by stratified sampling on the binary CDL label, and
+around that location a patch of 224 × 224 pixels at
+10 m resolution, about 2.24 km on a side, is cut out
+and reprojected onto a common grid (EPSG:32619, the
+Sentinel-2 10 m grid in UTM zone 19N).
+   The decisive step for class balance is the acceptance
+rule: a patch is kept only if at least 10% of its pixels
+are cultivated, and patches below this threshold are
+discarded. Since cultivated land is a small minority
+across Maine, an unconstrained sample would be over-
+whelmingly non-cultivated; this rule concentrates the
+patches on the agricultural parts of the state and is
+what raises the cultivated share of the dataset to about
+22%, a balance on which a classifier can be meaning-
+fully trained and evaluated. Figure 2 shows where the            Figure 2: Centres of the 192 sampled patches across Maine,
+192 accepted patches fall.                                       coloured by split (training, validation, test), on an Esri
+   This acceptance rule was designed to enrich the eval-         World Imagery basemap; the red line is the state boundary.
+uation dataset with agricultural areas and therefore             The patches follow the agricultural parts of the state, the
+does not produce a probability-based sample represen-            Aroostook County farmland in the north and the central
+tative of Maine as a whole. The 192 sampled patches              and southern valleys, and the three splits are interspersed
+                                                                 across the same regions while the non-contiguous grid keeps
+are appropriate for assessing the model’s ability to dis-
+                                                                 every patch several kilometres from its neighbours.
+criminate between cultivated and non-cultivated land;
+their observed class prevalence and overall accuracy
+should not, however, be interpreted as statewide es-             continuous conditions. Nevertheless, that block is also
+timates of cultivated area or of map accuracy. The               not a random statewide sample, as it was selected to
+separate contiguous block introduced in Section 2.5              maximise the achievable cultivated proportion while
+provides a complementary assessment under spatially              satisfying the predefined spatial exclusion constraints.
+
+
+                                                             4
+2.4    The AlphaEarth embeddings                                uct specification and the composition for the reference
+                                                                year 2023. The cultivated share sits between about
+The input to every experiment is the AlphaEarth
+                                                                18 and 23 per cent across the three splits, and the
+embedding.       For each patch and each year we
+                                                                overall fraction of about 22% is the direct effect of the
+obtain a single image of 64 bands from the
+                                                                acceptance rule of Section 2.3. Because the sampling
+GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL collection
+                                                                grid keeps the patches several kilometres apart, the
+in Google Earth Engine. Every pixel of that image
+                                                                training, validation and test patches are spatially sepa-
+holds a 64-dimensional vector, the model’s annual sum-
+                                                                rated by construction, which avoids the spatial leakage
+mary of the 10 m ground cell beneath it, and it is this
+                                                                that would otherwise inflate the test accuracy. The
+vector, rather than any raw reflectance, that becomes
+                                                                AlphaEarth embeddings are annual products and are
+the feature on which the pixel is classified.
+                                                                complete over every patch, so the inputs contain no
+   A few properties matter for the way we use the em-
+                                                                missing pixels.
+beddings. The product is global and is published as
+                                                                   Alongside the scattered patches we use a separate,
+one layer per year from 2017 onward, which is what
+                                                                continuous test area in southern Maine: a block of
+makes the year-to-year analysis of Section 7 possible;
+                                                                about 11.2 km by 8.96 km (1120 × 896 pixels at 10 m),
+we use the six years from 2018 to 2023. The values
+                                                                tiled into 20 patches in the same format and kept at
+are small numbers of either sign, in our tiles roughly
+                                                                least 2 km away from all training patches, for which we
+between −0.51 and 0.48, and each 64-vector is nor-
+                                                                hold the same data for every year from 2018 to 2023.
+malised to unit length, so that it lies on the surface of
+                                                                We located it with a sliding-window search over the
+a 63-dimensional unit hypersphere S 63 . This geometric
+                                                                state: the region was tiled into 158,400 candidate boxes
+property governs how the embeddings are distributed
+                                                                at a 1 km stride, every box falling outside Maine or
+and is taken up in Section 4. In its compact pub-
+                                                                within the 2 km exclusion buffer around any training
+lished form each embedding is quantised to one byte
+                                                                patch was discarded, leaving 56,841 valid candidates,
+per dimension, that is 64 bytes per pixel, whereas the
+                                                                and the remaining boxes were scored by their cultivated
+GeoTIFF tiles we download and work with store the
+                                                                fraction. Two targets were searched in parallel, the box
+64 values in double-precision floating point. Table 1
+                                                                closest to the training-set balance of about 22% and
+collects these properties together with the composition
+                                                                the box closest to an even split, and both converged
+of the dataset.
+                                                                on the same area, at roughly 17% cultivated. This is
+   Because a 64-band image cannot be shown directly,
+                                                                a direct consequence of Maine’s land cover: no block
+we visualise an embedding as a false-colour image built
+                                                                of this size anywhere in the valid search region reaches
+from three channels. Rather than pick three of the
+                                                                an even split, so the selected box represents the best
+sixty-four bands arbitrarily, we summarise all 64 with
+                                                                achievable class balance rather than a freely chosen
+a principal component analysis and map the first three
+                                                                target. Its cultivated fraction is stable across the study
+principal components to the red, green and blue chan-
+                                                                period, between about 15% and 22% from 2018 to
+nels. The first three components together account for
+                                                                2023. This block is the basis of the cross-year check of
+about 57 per cent of the variance across the embedding,
+                                                                Section 7 and of the photo-interpretation validation of
+far more than any three individual bands could capture
+                                                                Section 8.
+(three arbitrary bands hold only about 5 per cent, and
+even the three most variable bands only about 11 per
+cent). Each channel is therefore a combination of all           3     Embedding-Based Classifica-
+64 numbers, so the colours carry no physical meaning,
+but they are the most informative three-channel view                  tion Framework
+available. Figure 3 does this for one patch and places it
+                                                                A single decision runs through the whole study. We
+next to the binary CDL label of the same patch. Even
+                                                                treat the embedding as the representation and keep
+compressed to three channels, the field boundaries are
+                                                                the classifier on top of it deliberately simple. We can-
+clearly visible in the embedding and they correspond
+                                                                not fine-tune the foundation model itself, because Al-
+closely to the cultivated areas in the label, which is a
+                                                                phaEarth is released only as precomputed embeddings
+first indication that the embedding already separates
+                                                                and not as an open, trainable model; and, even setting
+fields from their surroundings.
+                                                                that aside, we deliberately do not train a deep network
+                                                                of our own. We take the released embeddings as they
+2.5    The dataset                                              are and fit light, standard classifiers to them. This
+Applying this sampling over the years 2018 to 2023              makes the embedding, rather than the classifier, the
+yields the dataset used throughout: 192 patches, each           object of study, and it raises a question that has to be
+available for all six years, with a 64-band AlphaEarth          answered before any classification: what do these 64
+embedding and the binary CDL label for every patch              numbers actually look like, and which statistical tools
+and year. The patches are split once into 153 for train-        are even valid on them? The work is therefore organ-
+ing, 19 for validation and 20 for testing, and the same         ised in two halves, summarised in Figure 4. Section 4
+split is used for every year. The training and vali-            characterises the embedding space itself; the present
+dation patches are pooled when fitting the classifiers,         section and those that follow put it to work.
+while the 20 test patches are held out and used only
+for the final evaluation. Table 1 summarises the prod-
+
+
+                                                            5
+Figure 3: One sample patch of the 2023 dataset. Left: the AlphaEarth embedding shown in false colour, with the first
+three principal components of the 64 bands mapped to red, green and blue (together about 57% of the embedding variance);
+each channel combines all 64 bands, so the colours carry no physical meaning. Right: the binary CDL label for the same
+patch (green: cultivated; tan: non-cultivated). The patch is 224 × 224 pixels at 10 m and is 48% cultivated.
+
+Table 1: The AlphaEarth annual embedding product as used here (top) and the composition of the 192-patch dataset for
+the reference year 2023 (bottom). Pixel counts and cultivated shares are computed from the binary CDL labels.
+
+                   Embedding product
+                   Earth Engine collection    GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL
+                   Embedding dimensions       64 bands (A00 to A63)
+                   Spatial resolution         10 m
+                   Temporal sampling          one annual layer per year; years used 2018 to 2023
+                   Patch size                 224 × 224 pixels (≈ 2.24 km square)
+                   Coordinate system          EPSG:32619 (UTM zone 19N)
+                   Value range (our tiles)    approximately −0.51 to 0.48
+                   Vector norm                unit length, so each vector lies on S 63
+                   Storage                    published as int8 (64 bytes per pixel); our tiles float64
+
+                               Split (2023)    Patches          Pixels   Cultivated (%)
+                               Training              153    7,676,928                22.35
+                               Validation             19      953,344                23.43
+                               Test                   20    1,003,520                18.35
+                               Total                 192    9,633,792                22.04
+
+
+3.1    Problem set-up                                           are masked out before stacking. The pooled training
+                                                                patches give about 8.6 million labelled pixels, at the
+The classification is binary and per pixel. Each pixel is
+                                                                natural class balance of roughly 77.5% non-cultivated
+described by its 64-dimensional embedding and carries
+                                                                to 22.5% cultivated; the 20 test patches, about one
+the binary CDL label of Section 2.2, and the task is
+                                                                million pixels, are held out.
+to predict that label from the embedding. To train
+                                                                   Working per pixel, rather than feeding whole patches
+and evaluate the classifiers we flatten the patches into
+                                                                to a convolutional network, is a deliberate choice and
+a table: every pixel of every patch becomes one row
+                                                                it follows directly from what the embedding is. The
+of 64 columns, and the patches of a split are stacked
+                                                                AlphaEarth embedding was trained to encode the spa-
+into a single matrix X ∈ Rn×64 with a label vector y ∈
+                                                                tial and temporal context around each pixel, so the
+{1, 2}n . Invalid pixels, those with a missing embedding
+                                                                64 numbers at a single location already summarise its
+or a label that is neither cultivated nor non-cultivated,
+                                                                neighbourhood and its year. A classifier placed on top
+
+
+                                                            6
+                                                  1                          2                      3                    4
+
+
+
+                   64-d
+
+               Input                  Sec. 4                 Sec. 3                     Sec. 7               Sec. 8
+           64-d embedding             Statistical         Light classifier             Cross-year       Photo-interpretation
+              per pixel            characterisation          binary map                 transfer             validation
+
+
+
+
+Figure 4: Overview of the approach. A 64-dimensional AlphaEarth embedding per pixel is first characterised statistically
+(Section 4), then read by a light classifier into a binary cultivated map (Section 3); the classifier is then transferred across
+years (Section 7) and the labels validated by independent photo-interpretation (Section 8). The label under each stage
+gives the section in which that stage is set out; the corresponding results follow in Sections 5 to 8.
+
+
+of the embedding therefore does not need to look at the              ing patches; they are not 60,000 independent manual
+surrounding pixels itself; reading each pixel’s vector               annotations. The experiment therefore measures how
+independently is the standard and sufficient recipe, and             many pixel rows the downstream classifier needs once
+it keeps the classifier light, which is the premise of the           a labelled raster is already available, not the cost of
+whole approach. It also means the choice of classifier               building a new reference dataset from field surveys.
+becomes a question about the embedding rather than
+about spatial modelling, which is what makes the com-                3.3         Classifiers
+parison of classifiers below informative. Although the
+classifiers operate on individual pixels, neighbouring              We do not use a single classifier but a graded set, or-
+pixels within a patch are spatially autocorrelated, so              dered from the simplest possible model to progressively
+the pixel counts should not be interpreted as counts                more flexible ones. The purpose of the ladder is diag-
+of fully independent samples; spatial generalisation                nostic: if a one-line linear model is already almost as
+is assessed instead through held-out patches that are               good as a large tree ensemble, that tells us the embed-
+spatially separated from the training data.                         ding has done most of the work and the classifier is
+                                                                    secondary, which is precisely the claim we set out to
+                                                                    examine. Table 2 collects the settings.
+3.2     Two training regimes: balanced
+                                                                       Those settings were fixed in advance of any evalua-
+        sample against full pool                                    tion. They are declared once, as conventional values
+We train the classifiers under two regimes, and the                 for models of this kind, in a version-controlled con-
+contrast between them is itself one of the questions of             figuration file of the released pipeline, and no hyper-
+this paper. The first is a small balanced sample: 30,000            parameter search of any form was carried out: the
+pixels drawn from each class, 60,000 in total, from the             codebase contains no grid search, randomised search
+pooled training patches. Drawing equal numbers from                 or cross-validation procedure. No data therefore in-
+the two classes counteracts the natural imbalance, so               formed the choice, and in particular the 20 test patches
+the classifier is not simply rewarded for predicting the            were used neither for hyperparameter tuning, nor for
+majority class, and 60,000 pixels is small enough to                decision-threshold selection, nor for model selection.
+train even the heavier classifiers, such as the support             Because the stacking meta-learner relies on an internal
+vector machine, in seconds. The second regime is the                pixel-level split, its performance is interpreted as a
+full pool: all of the roughly 8.6 million training pixels,          secondary diagnostic rather than as evidence of spa-
+left at their natural balance. Training the same clas-              tial generalisation, and the main conclusions rest on
+sifiers both ways tests how much data they actually                 the individual classifiers evaluated on spatially sepa-
+need. If a model trained on 60,000 pixels is almost as              rated test patches. The cost of not searching is that
+accurate as the same model trained on 8.6 million, then             the accuracies reported below are not optimised ones,
+the embedding is informative enough that a small bal-               and should be read as a floor rather than a ceiling: a
+anced sample suffices. Throughout, the 20 test patches              tuned model would plausibly do slightly better. That
+are never used in either regime.                                    cost is worth paying here, because the comparison we
+   We use the term pixel-sample efficiency for this com-            care about is between classifiers rather than against a
+parison. The 60,000 observations are labelled pixels                leaderboard, and holding every model at conventional
+inherited from the CDL and sampled from the train-                  untuned settings means their near-equal performance
+
+
+                                                                7
+cannot be an artefact of unequal tuning effort.                   combiner. It governs only the internal training of the
+   Logistic regression is the linear baseline. It draws           combiner, since all classifiers are ultimately compared
+a single hyperplane through the 64-dimensional space              on the 20 held-out test patches, which are spatially
+and reads the probability of cultivated from which side           separate from the training pool and share no pixels
+of it a pixel falls,                                              with it.
+                                                     1
+p(cultivated | x) = σ(w⊤ x + b),         σ(z) =           ,       3.4    Evaluation protocol and metrics
+                                                  1 + e−z
+                                                        (1)       Every classifier and ensemble is evaluated on the 20
+so there are only 65 parameters to learn. We stan-                held-out test patches, which are never used in any fit-
+dardise each dimension first and fit by minimising the            ting and, because of the sampling grid of Section 2.3,
+L2 -regularised cross-entropy. Logistic regression can            are spatially separated from the training patches so that
+only separate the classes with a flat boundary, so if it          no pixel and no immediate neighbourhood is shared.
+performs well that is strong evidence that the embed-             This is what makes the test accuracy an estimate of
+ding is close to linearly separable for this task, with           performance on genuinely new ground rather than a
+the foundation model, not the classifier, providing the           measure of memorisation. To be explicit about how
+separation.                                                       the splits are used: the 153 training and 19 validation
+   Random forest [6] grows many decision trees, each on           patches are pooled into the fitting pool, so the valida-
+a bootstrap sample of the pixels and with only a random           tion patches enter model fitting rather than serving as
+subset of the 64 dimensions considered at each split,             a separate patch-level selection set, and the classifiers
+and averages their votes. Because the trees are grown             are compared on the held-out test patches. Because
+on different samples and feature subsets they are largely         the leading classifiers differ by only about a tenth of
+independent, and averaging them reduces variance. A               a percentage point, the conclusions do not depend on
+random forest captures non-linear interactions between            which of them is retained.
+dimensions without being told about them and needs                   We report several metrics because the task is im-
+no feature scaling, but its trees are fitted independently        balanced: with only about 22% of pixels cultivated,
+and so the forest never corrects its own errors, which            a trivial model that calls everything non-cultivated
+is the gap that boosting fills.                                   already scores about 78% overall accuracy. Alongside
+   Gradient boosting also uses trees, but grows them in           overall accuracy we therefore report the per-class pre-
+sequence, each new tree fitted to the errors the previous         cision and recall, the macro-averaged F1 score, the
+trees still make, so that the score after T rounds is an          balanced accuracy
+additive sum of small trees scaled by a learning rate
+η. We use two implementations that differ mainly in                                BA = 21 Rcult + Rnon ,
+                                                                                                         
+                                                                                                                        (2)
+how each tree is grown: LightGBM [15] grows leaf-
+wise, repeatedly splitting whichever leaf promises the            the unweighted mean of the two classes’ recalls, and the
+largest loss reduction, and XGBoost [8] grows level-wise          cultivated intersection-over-union IoUcult = T P/(T P +
+to a fixed depth and folds the regularisation directly            F P + F N ). Because each class counts equally in Equa-
+into the split gain it maximises. On our data the two             tion 2 regardless of its size, a model that simply predicts
+are effectively tied. For completeness we also include            the majority class scores only 0.5, which makes the bal-
+a support vector machine with a radial basis kernel               anced accuracy a fairer single number than overall
+and a k-nearest-neighbours classifier, but only in the            accuracy on this task. All experiments use the fixed
+balanced-sample regime, since kernel SVM training                 random seed 42 so that the splits, samples and model
+grows between quadratically and cubically with the                fits are reproducible.
+number of pixels and k-nearest neighbours must store                 The independent sampling unit for spatial gener-
+and search the entire training set at prediction time.            alisation is the held-out patch, not the pixel. We
+   Because the individual classifiers may make differ-            therefore use the pixel-level metrics as descriptive sum-
+ent mistakes, we also combine them, in both cases on              maries over the held-out area, and avoid interpreting
+the same balanced 60,000-pixel sample as the sampled              the approximately one million test pixels as one million
+single classifiers. Soft voting averages the cultivated           independent observations. Formal paired inference is
+probabilities of the four base models and thresholds at           used only in Section 8, where competing maps are eval-
+0.5. Stacking instead learns how much to trust each               uated on the same independently sampled reference
+model: the balanced sample is divided by a strati-                points. Differences of a few tenths of a percentage point
+fied random split at the pixel level into a development           between classifiers should consequently be read as prac-
+part (80%, used to fit the four base classifiers) and             tically small, unless they are stable across patches or
+a held-out part (20%, on which the bases are scored               supported by an explicit uncertainty analysis.
+and a logistic-regression meta-learner is fitted to their
+predicted probabilities). Scoring the bases on pixels
+they have never seen gives the meta-learner realistic,            4     Embedding-Space Analysis
+out-of-sample predictions to weigh. This split is at the
+pixel level rather than the patch level, so neighbouring          Before fitting any classifier we study the embeddings
+pixels of the same patch can fall on both sides of it; a          themselves. There are two reasons for doing this first.
+patch-grouped split would be the cleaner choice for the           The practical reason is that the analysis decides which
+
+
+                                                              8
+Table 2: Classifier settings in the two training regimes. A dash means the model is not used in that regime. All models
+use random seed 42. Logistic regression, the random forest, the support vector machine and k-nearest neighbours are
+implemented in scikit-learn [25]; LightGBM and XGBoost use their own libraries.
+
+             Classifier             Full pool (∼8.6 M px)                  Balanced sample (60 k px)
+             Logistic regression    standardise + L2 (C=1)                 standardise + L2 (C=1)
+             Random forest          200 trees, depth 22                    250 trees, depth 20
+             LightGBM               400 trees, η=0.05, 31 leaves           450 trees, η=0.03, 255 leaves
+             XGBoost                400 trees, η=0.05, depth 6, λ=1.0      450 trees, η=0.03, depth 12, λ=0.5
+             SVM (RBF)              –                                      C=2.0
+             k-nearest neighbours   –                                      k=5
+
+
+tools are valid further down: several of the tests and            not by itself guarantee that any single directional model
+models we might reach for, and the distance an algo-              fits; that has to be tested empirically.
+rithm uses to compare two pixels, assume a particular
+shape for the data, and if that shape does not hold               4.2    Concentration and the von Mises-
+we have to choose differently. The second reason is
+                                                                         Fisher model
+that a careful look at the embedding space gives a
+first, classifier-free picture of how hard the task is, by        The natural first model for data on S 63 is the direc-
+measuring directly how far apart the cultivated and               tional analogue of the Gaussian, the von Mises-Fisher
+non-cultivated pixels sit.                                        (vMF) distribution [20], whose density f (x | µ, κ) =
+   One caveat applies throughout. Because neighbour-              Cd (κ) exp(κ µ⊤ x) is governed by a mean direction µ
+ing pixels within the same patch are spatially autocor-           and a concentration κ that plays the role the inverse
+related, and because the sample sizes are very large,             variance plays for a Gaussian. WePestimate κ from
+the p-values reported below are used mainly as di-                the mean resultant length R̄ = ∥ n1 i xi ∥, the length
+agnostics, while effect sizes, angular separability and           of the average of n unit vectors, which is short when
+held-out classification performance are treated as the            the directions disagree and cancel and long when they
+more informative measures.                                        agree, using the closed-form approximation of Banerjee
+                                                                  et al. [1] with d = 64.
+4.1    Directional geometry                                          It matters which set of embeddings is being measured.
+                                                                  AlphaEarth is trained with a batch-uniformity objective
+Each AlphaEarth pixel is a vector e ∈ R64 , and the               whose explicit purpose is to spread the embeddings as
+published embeddings are L2 -normalised to unit length,           evenly as possible over S 63 [7], so taken over the whole
+so every embedding lies on the surface of the unit hyper-         Earth the distribution is close to uniform, which by
+sphere S 63 = {x ∈ R64 : ∥x∥2 = 1}. We confirmed this             definition means a near-zero concentration. The high
+on our own tiles: the mean Euclidean length of a sam-             concentrations we report are not in tension with this:
+pled embedding is 1.000 to three decimal places. The              we never measure the global set, but the embeddings
+consequence is geometric and important for everything             of one region split into two land-cover classes, and
+that follows. Because all vectors have the same length,           a subset that is globally a thin slice of an overall-
+the magnitude of an embedding carries no information              uniform sphere can perfectly well have a large κ of
+and only its direction does, so the natural way to com-           its own. Within each class the concentration is high,
+pare two pixels is the angle between them, measured               of the order of 102 (Table 3), corresponding to tight
+by the cosine similarity s(ei , ej ) = ei · ej , where the        angular clusters. The non-cultivated class is slightly
+equality with the inner product holds precisely because           more concentrated (κ̂ ≈ 159) than the cultivated class
+the vectors are unit length.                                      (κ̂ ≈ 137); a plausible reading, which we do not test
+   This also bears on the statistics we are allowed to use.       directly, is that the non-cultivated class is dominated by
+A multivariate Gaussian places its mass throughout                spectrally homogeneous forest while the cultivated class
+R64 , including regions off the sphere where no embed-            mixes several crop types. The combined estimate (κ̂ ≈
+ding can ever fall, so it is geometrically mismatched             125) is lower than either class alone, exactly as expected
+to data confined to S 63 . The same constraint has a              when two slightly offset clusters are pooled. The per-
+stricter, one-dimensional consequence: the unit norm              class estimate computed on a 50,000-pixel subsample
+forces every single coordinate  into the bounded interval         (137.1) is very close to the full-pool value (136.9), and
+[−1, 1], because e2j ≤ k e2k = 1, and in our tiles into a
+                       P
+                                                                  the estimate settles from only a few hundred pixels,
+much narrower range still (Table 1). A bounded quan-              so it appears to reflect a stable property of the data
+tity cannot be exactly normal, so the non-normality               rather than a sampling artefact.
+documented below is in part a structural consequence                 Two cautions apply. AlphaEarth’s own use of the
+of the spherical geometry rather than a surprise. The             vMF is a training-time mechanism with an imposed
+matching family is directional statistics, which model            concentration, a stochastic bottleneck on the whole
+points on a sphere directly and replace ordinary dis-             64-dimensional unit vector; it does not assert that
+tance with angle. We stress that unit normalisation               the empirical distribution of the released embeddings
+makes a directional treatment appropriate, but it does            is itself vMF, and that empirical question is the one
+
+
+                                                              9
+we take up here. Second, a single vMF describes a                geometry, and predictive performance on held-out data.
+class as one round blob with exactly one preferred               Gaussian-based analyses are retained only as secondary
+direction, which is faithful only if the class really is         large-sample consistency checks.
+one cluster. The cultivated class is not one thing, it
+is potatoes, hay, blueberries and so on, and each crop           4.4    Per-dimension signal and class sep-
+may point in its own direction, so a mixture of several
+                                                                        arability
+vMF components may describe it better. Our low-
+dimensional projections do show such sub-clusters, so            We now ask whether all 64 dimensions actually mat-
+we use κ as a descriptive summary of concentration               ter for telling cultivated from non-cultivated land, or
+rather than as an established model.                             whether only a handful do the separating. The qualifi-
+                                                                 cation matters: a dimension that is uninformative for
+4.3    Normality and marginal shape                              this binary distinction is not noise in general, and may
+                                                                 well be exactly what separates two forest types or two
+The analyses available to us split into two families: one        crop types in another task.
+that assumes approximately normal data, including                   Looking at the per-dimension mean difference alone
+parametric two-sample tests and Gaussian-implied dis-            is not enough, because a difference in means is only
+tances, and one that is distribution-free. Normality             meaningful relative to the spread of the data. We
+testing is therefore used here as a diagnostic step that         therefore summarise each dimension by Cohen’s stan-
+decides which family is legitimate. We test each of              dardised mean difference dC,j [10], which expresses the
+the 64 dimensions, separately for the two classes, with          gap between the two class means in units of the data’s
+three complementary tests, controlling the family-wise           own spread and so does not change with sample size.
+error rate over the 64 × 2 = 128 tests with a Bonferroni         This is preferable to a p-value here: at our sample sizes
+correction: Shapiro-Wilk on a 5,000-pixel subsample,             almost any non-zero difference is statistically signifi-
+D’Agostino-Pearson K 2 and Anderson-Darling on a                 cant, so a p-value would flag essentially every dimension
+50,000-pixel sample.                                             and tell us nothing about which ones actually help.
+   Normality is rejected almost everywhere. Of the 128              The separating signal is spread across the embedding
+dimension-class combinations, 126 reject the null on all         rather than held in a few coordinates (Figure 5). Across
+three tests and the remaining two reject on at least one,        the 64 dimensions, 31 reach a large effect (|dC | ≥ 0.8),
+with Shapiro-Wilk p-values many orders of magnitude              10 a medium and 13 a small one, and only 10 are
+below the threshold and widespread non-zero skewness             effectively negligible, with a mean absolute effect of
+and excess kurtosis. Fitting a panel of seven candi-             0.80 and a maximum near 2.0. Yet the two class mean
+date distributions per dimension (normal, Student’s t,           profiles track each other closely and their ±1 standard-
+Laplace, logistic, generalised normal, skew-normal and           deviation bands overlap heavily on every dimension, so
+Cauchy) and selecting by the Akaike information crite-           even the strongest single dimension leaves the classes
+rion confirms this quantitatively: the normal is never           far from separable on its own. A large effect size is
+the preferred model, the skew-normal is the single most          not the same as a dimension that decides the class: at
+frequent best fit (73 of the 128 cases), followed by the         dC = 0.8 the two class means are separated by less
+generalised normal (46), with a handful of Student’s             than one standard deviation, so a threshold rule on
+t (8) and one logistic fit. Averaged over the cases, the         that one dimension would still misclassify a large frac-
+improvement of the best fit over the normal is large,            tion of pixels. The two statements are consistent, and
+with a mean ∆AIC of about 2,400, where a difference              together they say that the distinction is encoded collec-
+above ten already counts as decisive. The dominant               tively, across many weakly-to-moderately informative
+departure is therefore asymmetry, not heavy tails: the           dimensions.
+marginals are best described as mildly skewed bell                  Distribution-free tests agree that almost every di-
+shapes. These fitted distributions are used as empirical         mension carries class signal. Using the Mann-Whitney
+summaries of marginal shape, not as exact generative             U , Kolmogorov-Smirnov and Brunner-Munzel tests for
+models, since the coordinates are bounded by the unit-           location and distribution, and a median-based Levene
+norm constraint whereas most of the candidates have              test for spread, all at the Bonferroni-corrected level, 61
+unbounded support.                                               of the 64 dimensions differ between the classes in both
+   One point is worth stating clearly, because it is easy        location and spread, two differ in location only, one in
+to misread. Failing the normality test does not mean             spread only, and none fails to differ on both. Welch’s
+a dimension is uninformative. The rejection of exact             t-test, run as a parametric cross-check and valid here
+marginal normality does not imply that linear classi-            by the central limit theorem despite the non-normality
+fiers, or large-sample comparisons of class means, are           of the data, agrees on essentially every dimension. As
+inappropriate. Rather, it indicates that a multivariate          above, the practical message is read from the effect
+Gaussian model does not adequately describe the dis-             sizes rather than from significance.
+tribution of the unit-normalised embeddings, and that,
+given the very large sample size, marginal-test p-values
+alone provide limited information about practical class
+separation. We therefore place greater emphasis on
+effect sizes, distribution-free comparisons, directional
+
+
+                                                            10
+Figure 5: Per-dimension profiles for the two classes. Top: class mean profiles with ±1 standard-deviation bands; the
+bands overlap heavily on every dimension. Middle: per-dimension mean difference (cultivated minus non-cultivated),
+small but systematic. Bottom: per-dimension effect size, Cohen’s dC,j , with the large-effect line |d| = 0.8 dashed. Many
+dimensions reach a large effect, but none is individually decisive.
+
+
+4.5     Angular geometry and a low-                                  Table 3: Directional geometry of the two classes on S 63 ,
+                                                                     computed on the 192-patch dataset. Higher κ̂ means a
+        capacity supervised baseline                                 tighter angular cluster. Cohesion is the mean cosine of a
+The tests so far treat the 64 dimensions one at a time.              class’s pixels to their own centroid and cross-class similarity
+The cosine analysis instead measures separability in                 the mean cosine to the other class’s centroid; the nearest-
+the way the geometry of Section 4.1 suggests, by angle               class-centroid rule estimates one labelled centroid per class
+                                                                     and fits no further parameters.
+between whole vectors, and it needs no assumption
+about the marginal distributions. For each class we
+form the centroid, the normalised mean direction of                          Quantity                              Value
+that class’s embeddings, and summarise the geometry                          κ̂, cultivated                          136.9
+by the within-class cohesion (the mean cosine of a                           κ̂, non-cultivated                      158.5
+class’s pixels to their own centroid), the cross-class                       κ̂, combined                            125.1
+similarity (to the other class’s centroid), their difference,                Within-class cohesion                   0.808
+and the angle between the two centroids. We compute                          Cross-class similarity                  0.599
+these with both the mean and the median centroid and                         Separation gap                          0.209
+check that the two agree.                                                    Centroid angle                          42.2◦
+   The picture is of two classes that sit close together                     evNearest-class-centroid accuracy      90.2%
+on the sphere but remain distinguishable (Table 3).
+The within-class cohesion is 0.808, clearly above the
+cross-class similarity of 0.599, giving a separation gap             label-free method. Its performance shows that a large
+of 0.209, and the two centroids are separated by an                  fraction of the class separation is already expressed
+angle of 42.2◦ . All these similarities are positive, so             by the embedding geometry, while the remaining gain
+both classes occupy the same broad region of the sphere              from trained classifiers reflects a more flexible decision
+rather than pointing in opposite directions, which is                boundary, and it fixes a baseline the trained classifiers
+why the task is non-trivial. evEven so, a nearest-class-             must clearly beat.
+centroid rule, which estimates one labelled centroid
+per class but performs no iterative parameter fitting,
+classifies 90.2% of pixels correctly. This should be read
+as a low-capacity supervised baseline rather than a
+
+
+                                                                11
+4.6    Can the 64 dimensions be com-                             redundant: Rahman et al. [26] report that just 47 of
+       pressed?                                                  the 2,016 dimension pairs exceed a correlation of 0.5
+                                                                 in absolute value, so most dimensions carry variance
+Finally we test directly whether the embedding can               that is not duplicated elsewhere. Within this balanced
+be reduced without losing accuracy, from an unsuper-             Maine binary-classification experiment, neither prin-
+vised direction (principal component analysis, which             cipal component analysis nor the tested supervised
+compresses by variance) and a supervised one (fea-               feature-selection procedure improves accuracy, and re-
+ture selection, which keeps only the dimensions that             taining all 64 dimensions is the safest choice for the
+separate the classes).                                           analyses that follow. This is a task- and protocol-
+   One point on the set-up, because it affects how               specific result, not a claim that AlphaEarth dimensions
+the numbers below should be read. The experiments                are universally irreducible; where a small accuracy
+in this subsection, and the tangent-space comparison             loss is acceptable, the evidence above suggests a much
+that closes it, are run on the class-balanced sample             smaller subset would serve.
+of 100,000 pixels (50,000 per class) used throughout                There is also a geometric reason to be wary of reduc-
+the embedding-space analysis, with a 70/30 split inside          tion. The directional analysis rests on the embeddings
+that sample and lighter classifier settings than those           lying on S 63 ; projecting onto a handful of principal
+of Table 2. They therefore use neither of the training           components, or dropping coordinates outright, moves
+regimes of Section 3.2 and are not evaluated on the              the points off that sphere and breaks the unit-norm
+held-out test patches. Their absolute accuracies are             property, so the angular geometry and any directional
+consequently a little lower than those of Table 4 and            model no longer strictly apply to the reduced vectors.
+should not be compared with it; what is meaningful               We therefore keep all 64 dimensions and use principal
+here is the change in accuracy as dimensions are re-             component analysis only as a diagnostic and for the
+moved, which is measured under identical conditions              false-colour visualisation of Section 2.4. For the same
+throughout.                                                      reason we tested whether respecting the curvature of
+   The variance concentrates quickly: about 15 prin-             the sphere helps, by projecting the embeddings into
+cipal components capture 90% of the total variance,              the tangent space at their Fréchet mean before clas-
+22 capture 95% and 43 capture 99% (Figure 6, left).              sifying; across four classifiers this changed accuracy
+Variance is not the same as class information, however.          by at most 0.03 percentage points in either direction,
+A logistic regression trained on the first m principal           well inside run-to-run noise, which is what the high
+components improves monotonically as m grows, from               concentration of Section 4.2 would predict, since a class
+90.2% on the first two components to 92.3% on all 64             that occupies such a small patch of the sphere is al-
+(Figure 6, right), and is still creeping upward at the           most flat already. This last result should be scoped
+end: the last components, which carry almost no vari-            carefully. Rahman et al. [26], characterising the Al-
+ance, still add accuracy, because principal component            phaEarth manifold over 12.1 million samples across
+analysis orders directions by variance and not by class          the conterminous United States, report that tangent
+separation. The supervised view agrees. Keeping only             spaces rotate substantially from place to place, with
+the 61 separating dimensions and discarding the other            84% of sampled locations showing tangent-space angles
+three lowers accuracy slightly rather than leaving it            above 60◦ and local-global principal-component align-
+unchanged, from 92.96% to 92.89% for the random for-             ment close to the random baseline. Our finding does
+est and from 92.28% to 92.13% for logistic regression.           not contradict theirs: a single tangent space taken at
+There is therefore no subset of the 64 dimensions that           the Fréchet mean of two tightly concentrated classes
+can be dropped for free.                                         within one region is a very different object from the
+   This conclusion needs stating carefully, because two          manifold as a whole, and the same subset-versus-global
+recent studies of the embedding space reach what may             distinction applies here as it does to κ in Section 4.2. A
+look like the opposite result. Benavides-Martínez et al.         single global tangent space is adequate for this regional
+[2] report that land-cover classification at 98% of base-        task; it would not be for the manifold at large.
+line performance can be reached with as few as 2 to 12              Taken together, these results show that the Al-
+of the 64 dimensions, depending on the class, eight of           phaEarth embedding space is not well described by
+them for their cropland class, and Rahman et al. [26]            simple Gaussian coordinate-wise assumptions, but that
+estimate an effective dimensionality of about 13 and a           it has a clear and stable angular structure. The culti-
+local intrinsic dimensionality near 10. The difference           vated and non-cultivated classes are not separated by
+is the acceptance criterion rather than the measure-             one or two dominant dimensions; instead, the signal is
+ment. Those studies ask how few dimensions suffice               distributed across the full 64-dimensional vector. This
+while tolerating a small relative loss, and answer that          justifies carrying all dimensions into the classification
+very few do; we ask whether any dimension can be                 experiments, and it explains why even simple classifiers
+removed at no measurable cost, and find that none                can perform competitively.
+can. Both readings describe the same embedding: the
+class signal is heavily redundant, yet thinly spread,
+so that discarding coordinates is cheap but never free.
+Read through its correlation structure rather than its
+task performance, the space is in fact only moderately
+
+
+
+                                                            12
+Figure 6: Left: cumulative variance explained by the principal components, with the 90%, 95% and 99% levels marked;
+the variance saturates after roughly 22 components. Right: logistic-regression accuracy as a function of the number of
+principal components used; accuracy keeps rising past the point where the variance has saturated, because low-variance
+directions still carry class signal.
+
+
+5     Classification Results                                       5.2    Class imbalance and per-class be-
+                                                                          haviour
+5.1    The classifier ladder
+                                                                   Because only about 18% of the test pixels are cul-
+The central result of the classification experiments is            tivated, overall accuracy alone flatters the result: a
+how little the choice of classifier matters once the em-           trivial model that labelled everything non-cultivated
+bedding is fixed. Table 4 reports overall accuracy,                would already score about 82%. The balanced accu-
+macro-averaged F1 and balanced accuracy on the held-               racy corrects for this. For the chosen random forest
+out test patches, for the full-pool models and for the             it is 90.8% against 93.75% overall: the model recovers
+balanced-sample models. On the full pool the four                  95.4% of the non-cultivated pixels and 86.2% of the
+models span a band of just 0.27 percentage points,                 cultivated ones. The gap between the two recalls is
+from 93.48% for plain logistic regression to 93.75%                the expected signature of the imbalance and of the
+for the random forest and XGBoost, with macro-F1                   cultivated class being the harder, more heterogeneous
+around 0.89 throughout. A single linear hyperplane                 one, but a balanced accuracy close to 91% shows that
+through the 64-dimensional space is therefore almost as            the minority class is genuinely being recovered and not
+accurate as a large gradient-boosted ensemble, which               sacrificed to the majority.
+indicates that the embedding space is close to linearly               The two training regimes trade these quantities off
+separable for this task and that the foundation model,             against each other. Under full-pool training balanced
+rather than the classifier, provides the separation. This          accuracy sits between 89.6% and 90.8%, mirroring
+connects back to how the embeddings are trained: the               the overall-accuracy ordering. Training on the class-
+batch-uniformity objective spreads the representation              balanced 60,000-pixel sample instead raises balanced
+over the hypersphere and prevents collapse, so the dis-            accuracy to between 92.4% and 93.0%, even though
+criminative structure is largely present in the embed-             it lowers overall accuracy by about one percentage
+ding geometry already and little is left for the classifier        point: balancing the training set recovers more of the
+to add. The same point is made from below by the                   minority cultivated class, whose recall rises from about
+nearest-centroid baseline of Section 4.5: at 90.2% from            86% to about 93%, at the cost of a few more non-
+labelled class centroids alone, with no iterative param-           cultivated false positives. Which regime is preferable
+eter fitting, it is already within roughly three points of         therefore depends on whether overall agreement or an
+the trained models.                                                even-handed treatment of the two classes matters more
+   The overall accuracies of the classifiers differ by only        for the intended application.
+a few tenths of a percentage point, whereas performance               Table 5 gives the full per-class breakdown for the
+varies across held-out patches and errors are spatially            chosen model. The cultivated class is consistently the
+clustered. We therefore treat the principal empirical              harder of the two, with a lower precision (80.9%) and re-
+result as equivalence in practical performance among               call (86.2%) than the non-cultivated class (both above
+several lightweight readouts, rather than as evidence              95%), so its F1 (0.835) trails the non-cultivated F1
+that one specific classifier is universally best. The              (0.961). The confusion matrix behind these numbers
+random forest is selected for the mapping that follows             has 781,982 non-cultivated and 158,796 cultivated pix-
+because it combines strong performance, non-linear                 els correctly classified, against 37,375 cultivated false
+capacity, and straightforward implementation; it needs             positives and 25,367 cultivated false negatives, so the
+no feature scaling, and it is the model used unchanged             residual error is split between the two kinds of culti-
+for the cross-year transfer of Section 7 and for the               vated mistake rather than dominated by either.
+human validation of Section 8.
+
+
+
+                                                              13
+Table 4: Classification accuracy on the 20 held-out test patches. The full-pool models are trained on all ∼8.6 million
+pixels of the training pool (train plus validation); the balanced-sample models on 60,000 pixels (30,000 per class). Balanced
+accuracy is the mean of the two class recalls. A dash means the model is not run in that regime.
+
+                                                     Full pool                         Balanced sample
+                 Classifier                 OA      macro-F1       Bal. acc.      OA      macro-F1   Bal. acc.
+                 Logistic regression      93.48%      0.892    89.6%            92.05%      0.880    92.4%
+                 Random forest            93.75%      0.898    90.8%            92.45%      0.886    92.6%
+                 LightGBM                 93.72%      0.896    90.0%               –          –        –
+                 XGBoost                  93.75%      0.897    90.0%               –          –        –
+                 SVM (RBF)                   –          –        –              92.22%      0.883    93.0%
+                 Stacked ensemble            –          –        –              92.64%      0.888    92.7%
+                 Nearest class centroid             90.2% (OA)                                –
+
+Table 5: Per-class performance of the chosen random forest on the held-out 2023 test patches (full-pool training). Balanced
+accuracy equals the macro-averaged recall.
+
+                                Class              Precision       Recall        F1      Pixels
+                                Non-cultivated         96.9%        95.4%      0.961     819,357
+                                Cultivated             80.9%        86.2%      0.835     184,163
+                                Macro average          88.9%        90.8%      0.898   1,003,520
+                                Overall accuracy 93.75%; balanced accuracy 90.8%.
+
+
+5.3    Predictions in the map domain                               the analysis: the embedding is informative enough that
+                                                                   a small, class-balanced sample is close to sufficient, and
+The aggregate numbers are easiest to interpret when
+                                                                   the expensive full-pool training adds only a modest
+the predictions are seen as maps. Figure 7 shows four
+                                                                   refinement.
+of the twenty held-out test patches, chosen to span the
+                                                                      The comparison is in fact sharper than overall accu-
+range of difficulty, with the AlphaEarth embedding as
+                                                                   racy alone suggests, because the two regimes differ in
+a principal-component false-colour, the CDL ground
+                                                                   what they optimise. On the imbalance-aware metric
+truth, the random-forest prediction, and a pixel-by-
+                                                                   the sampled models are the better ones: the balanced
+pixel agreement map. On the easier patches the predic-
+                                                                   random forest reaches 92.6% balanced accuracy against
+tion is almost indistinguishable from the ground truth
+                                                                   90.8% for the full-pool model, and the balanced-sample
+and the field boundaries are recovered crisply. Where
+                                                                   support vector machine reaches 93.0% (Table 4). In
+errors occur they are of two kinds and both visible in
+                                                                   other words, 140 times more data buys about 1.3 per-
+the agreement panels: small clusters of false positives
+                                                                   centage points of overall accuracy while costing about
+where the model calls non-cultivated land cultivated,
+                                                                   two points of balanced accuracy, because the extra data
+typically along field edges and in small clearings, and
+                                                                   arrives at the natural 78:22 class ratio and pulls the
+false negatives on cultivated parcels the model misses,
+                                                                   decision boundary towards the majority class. For a
+usually narrow or fragmented fields. The errors sit on
+                                                                   cropland product, where the minority cultivated class
+boundaries and small features rather than over whole
+                                                                   is the object of interest, the small balanced sample is
+parcels, which is the behaviour expected from a per-
+                                                                   therefore not merely an acceptable compromise but
+pixel classifier on a 10 m grid and is consistent with
+                                                                   arguably the better default.
+the cultivated class being the harder one.
+                                                                      Combining classifiers does not change the picture
+                                                                   either. The ensembles, both the soft-voting average
+6     Label Efficiency                                             and the stacked combiner, were trained on the same
+                                                                   balanced 60,000-pixel sample as the base models, so
+How much labelled data does the approach actually                  they are compared like for like against the sampled
+need? This is the practical question behind the two                single classifiers. The stacked ensemble, which learns
+training regimes of Section 3.2, and for an operational            how much to trust each base model, reaches 92.64%,
+product it is often the decisive one, since labelled pixels        only 0.19 percentage points above the balanced random
+are the expensive ingredient.                                      forest (92.45%) and still below the full-pool random
+  Training on the full pool rather than the balanced               forest (93.75%). Learning to combine four classifiers
+sample buys surprisingly little. The random forest                 on the small sample therefore buys less than adding
+improves from 92.45% on 60,000 pixels to 93.75% on                 more data does, and far less than the embedding itself
+the full ∼8.6 million, a gain of about 1.3 percentage              already provides.
+points for roughly 140 times as much data, and the                    Read together with the nearest-centroid baseline of
+other models behave similarly (Table 4). The balanced              Section 4.5, which reaches 90.2% from two labelled class
+60,000-pixel sample therefore already captures most of             centroids and no iterative fitting, the picture is consis-
+the available signal, which is consistent with the rest of         tent: the task is not primarily limited by the volume
+
+
+                                                              14
+Figure 7: Random-forest predictions on four held-out 2023 test patches, ordered from the strongest to the weakest by
+cultivated intersection-over-union. Columns, left to right: the AlphaEarth embedding as a principal-component false-colour;
+the CDL ground truth; the random-forest prediction; and the agreement map (true non-cultivated, true cultivated, false
+positive, false negative). The prediction closely tracks the ground truth, with errors concentrated on field boundaries and
+small parcels.
+
+
+of labelled pixels once a balanced sample is available,          result indicates that, on agriculture-enriched held-out
+because most of the useful discriminative information is         patches, additional spatially correlated CDL-labelled
+already present in the embedding representation. This            pixels provide diminishing returns once a balanced
+is the property that makes the paradigm attractive for           training sample is available.
+operational mapping, and it is consistent with what the
+model authors report for other tasks [7, 11] and with the
+independent irrigated-cropland evaluation of Yang et al.         7     Cross-Year Transfer
+[29]. The two training regimes show that a balanced
+                                                                 The classification so far is built and tested within a
+sample of 60,000 pixels retains most of the full-pool
+                                                                 single year, 2023. A foundation model that produces
+accuracy and achieves higher balanced accuracy at the
+                                                                 one embedding layer per year is only useful across time
+default 0.5 threshold. This does not define a minimum
+                                                                 if those yearly embeddings are consistent, that is, if the
+label requirement, nor does it establish class balanc-
+                                                                 64 numbers mean the same thing in 2019 as in 2023.
+ing as optimal for all applications. More broadly, the
+                                                                 The cross-year experiment tests this directly.
+
+
+                                                            15
+                                                                   anced accuracy stays in a narrow band, 91.8% (2018),
+                                                                   90.6% (2019), 91.5% (2020), 90.8% (2021), 90.8% (2022)
+                                                                   and 90.8% (2023), and the cultivated-class recall like-
+                                                                   wise holds between 85.9% and 87.6% across the six
+                                                                   years. The minority class is therefore recovered consis-
+                                                                   tently from year to year, not only in aggregate, and the
+                                                                   same holds across the full transfer matrix on balanced
+                                                                   accuracy, where every train-evaluate combination stays
+                                                                   between about 86% and 92%.
+                                                                      The only notable dip is 2019, which is the lowest
+                                                                   point both on the diagonal, where it is intrinsically
+                                                                   the hardest year to classify, and in transfer, where
+                                                                   the 2023 model applied to 2019 falls to about 92.5%.
+                                                                   A natural guess is that a cloudier year leaves fewer
+                                                                   clear acquisitions behind its embeddings. We checked
+                                                                   this against the Sentinel-2 record over the study area
+                                                                   and do not find support for it. The growing season
+Figure 8: Cross-year transfer of the random forest: overall
+                                                                   of 2019 was indeed somewhat cloudier than the other
+accuracy for every combination of training year (rows) and         years, with fewer low-cloud scenes between April and
+evaluation year (columns) on the held-out test patches.            October; however, the AlphaEarth embedding for a
+The diagonal is the per-year matched accuracy; off-diagonal        year integrates all of that year’s acquisitions across
+entries are temporal transfer. Accuracy is high and roughly        Sentinel-2, Landsat and Sentinel-1, so the quantity
+uniform, with 2019 the weakest year both on the diagonal           that matters is the clear-sky availability over the full
+and as a transfer target.                                          calendar year. Over the full year, 2019 is not the
+                                                                   cloudiest in the record: 2018 is, on every clear-sky
+                                                                   measure, and yet 2018 is among the better-classified
+   The design is deliberately simple. We take the ran-             years rather than the worst. Cloud cover therefore does
+dom forest trained on 2023 and apply it unchanged to               not line up with the accuracy pattern, so we do not
+the test patches of every year from 2018 to 2023, scoring          attribute the small 2019 dip, a fraction of a percentage
+each year’s predictions against that year’s CDL label.             point on the diagonal and about one point in transfer,
+We do not retrain, fine-tune or adjust the model in any            to it, and report it as a minor difference without a
+way; only the input embeddings change. Holding the                 single identified cause.
+model fixed is the point of the test, not a shortcut: it              The small difference between diagonal and off-
+removes the classifier as a variable, so that any change           diagonal performance indicates stable temporal transfer
+in accuracy can be attributed to the embeddings, or to             across 2018 to 2023 within the same Maine sampling
+the satellite inputs behind them, rather than to a fresh           frame. However, because the same patch locations
+model fit. To read that row correctly, however, we also            are reused and predictions are evaluated against each
+need to know what each year’s accuracy would be at                 year’s CDL, this experiment does not assess geographic
+best, so we additionally train a separate random forest            transfer, or changes in crop calendars or reference-
+on each year and evaluate every such model on every                generation procedures. The result should therefore be
+year. This gives a full train-year by evaluation-year              interpreted as same-region temporal transfer, rather
+matrix that separates two effects the fixed model alone            than as general temporal invariance of the embedding
+would confound: the diagonal is the per-year matched               representation. It suggests that annual retraining may
+performance, showing whether a given year is intrinsi-             not be necessary for this regional workflow, while appli-
+cally harder to classify, while the off-diagonal entries           cation to new regions would still require independent
+are transfer proper.                                               validation. We note that Ma et al. [19], benchmarking
+   The yearly embeddings turn out to be consistent                 the same embeddings on other agricultural tasks, re-
+enough that a single-year model transfers with little              port limited time sensitivity as a limitation. The two
+loss. Applying the 2023 random forest to every year                observations are plausibly the same property seen from
+gives overall accuracies between 92.5% and 93.8%. The              opposite sides: annual embeddings that change little
+full matrix (Figure 8) shows the same pattern across               from year to year transfer well, but are correspondingly
+all training years: the off-diagonal transfer entries sit          less able to register change.
+close to the matched diagonal, so a model fitted on one
+year and applied to another loses only a fraction of a
+percentage point in most cases. The diagonal, where                8    Independent Human Valida-
+training and evaluation years coincide, reads 94.30%
+(2018), 93.36% (2019), 94.22% (2020), 93.91% (2021),
+                                                                        tion
+93.76% (2022) and 93.75% (2023).                                   All previous accuracy estimates use the CDL as the
+   Because overall accuracy can hide the behaviour of              training and evaluation reference, not as error-free
+the minority class, we also read the diagonal on the               ground truth. This section introduces an independent
+imbalance-aware metrics. The per-year matched bal-                 human-consensus reference to assess the local agree-
+
+
+                                                              16
+ment of the model and of the CDL on one 2023 block.                proportionally fewer points, roughly 15% of the sample,
+The reference was built by photo-interpretation blind              which we accept so that the reference stays independent
+to the CDL labels, and is therefore independent of the             of the CDL.
+map values being assessed, following the good-practice                Each point is interpreted in EarthLabel, a web-based
+framework of Olofsson et al. [24]. It then asks the                photo-interpretation tool developed for this purpose
+question that only becomes possible once the classifier            [28]. At every point the interpreter inspects a 3 × 3 grid
+exists: how well does the model itself agree with the              of sub-points laid over very-high-resolution imagery
+human reference?                                                   (NAIP aerial imagery, Google satellite imagery and
+                                                                   Sentinel-2), which forces a judgement about the dom-
+8.1    The continuous test block                                   inant land cover in the pixel’s neighbourhood rather
+                                                                   than a single ambiguous click. The interpreted label
+The validation is carried out on the continuous test               therefore represents the dominant land-cover condition
+block in southern Maine introduced in Section 2.5,                 in the immediate neighbourhood of the sampled pixel
+an 11.2 × 8.96 km area that is spatially separate from             rather than an infinitesimal point observation, which
+the scattered training and test patches. We use a                  reduces sensitivity to geolocation errors and boundary
+contiguous block, rather than the dispersed patches,               ambiguity but should be borne in mind when inter-
+for two reasons: it gives a spatially coherent map that            preting disagreement near field edges. For each point
+can be inspected as a whole, and it provides a clean,              the interpreter records the class, a confidence level,
+independent area for the hand interpretation.                      the agreement among the nine sub-points, the image
+   Figure 9 shows the whole block as the AlphaEarth                source used and the time taken. Crucially the inter-
+false-colour, the CDL ground truth and the random-                 preter works blind to the CDL label: if the interpreter
+forest prediction; the predicted cultivated pattern fol-           could see the CDL value, the exercise would risk simply
+lows the ground truth across the entire block. Before              confirming it and the comparison would be circular.
+turning to the human reference it is worth reporting                  The 385 points were interpreted independently by
+how the model does on this block against the CDL                   two people. Before reconciliation the two agree on
+alone, because a single contiguous landscape is a differ-          91.2% of the points, with an inter-rater Cohen’s kappa
+ent test from an average over twenty dispersed patches.            of 0.63, which falls in the substantial band of Landis
+Over the full ∼1.0 million pixels the model agrees with            and Koch [16]. Of the 385 points, 351 are agreed by
+the CDL on 93.3% overall, but the balanced accuracy                both interpreters, and on 27 of those the agreed reading
+is lower, 85.7%, reflecting a non-cultivated recall of             contradicts the CDL, that is, CDL errors confirmed
+97.3% against a cultivated recall of only 74.1%, with a            by two independent readings; the remaining 34 are
+cultivated intersection-over-union of 0.655 and a mean             disagreements, concentrated as expected on visually
+intersection-over-union of 0.789. The overall accuracy is          ambiguous cases near the cultivated boundary such as
+therefore close to that of the scattered patches (93.75%),         fallow fields, pasture and recently disturbed ground.
+but the balanced accuracy is about five points lower               These 34 were reconciled in two stages, deliberately
+than the 90.8% there: a single southern-Maine block,               without recourse to the CDL, which would have rein-
+with its own field shapes and boundary density, is                 troduced the circularity the blind protocol was meant
+harder for the minority class than the dispersed-patch             to avoid. In the first stage 28 were settled by the con-
+average, and most of the difference is in cultivated               fidence levels recorded at the time of interpretation,
+recall. Because the block is a contiguous area, this               taking the more confident reading; the confidence level
+is also the only place where we report the area-based              is used only as this auxiliary reconciliation criterion,
+mean intersection-over-union, since it is not defined on           not as an independent measure of whether a label is
+the scattered reference points used in the rest of this            correct. The remaining 6 were genuine ties, where both
+section.                                                           interpreters had recorded the same confidence, and were
+                                                                   resolved in a second stage by a joint re-examination
+8.2    Reference sample and interpreta-                            of each point using the multi-year imagery time series,
+       tion protocol                                               so that each point is judged on its 2023 state, and
+                                                                   street-view imagery where available. The result is a
+The number of reference points follows the standard                complete consensus reference of 385 points, 324 non-
+sample-size formula [9], n0 = z 2 p(1 − p)/e2 , with z =           cultivated and 61 cultivated, a 15.8% cultivated share
+1.96 for 95% confidence, a target margin of error e =              that matches the block as a whole.
+0.05 and p = 0.5, the proportion that maximises the                   All the agreement figures below are computed on
+required sample and so the most conservative choice                these 385 points only, since that is where the human ref-
+when the true accuracy is unknown. This gives n0 ≈                 erence exists; they are point-level numbers and should
+385, so we draw 385 points as a simple random sample               not be confused with the block-wide, pixel-level accu-
+of the valid pixels of the block, with a fixed seed. We use        racy against the CDL reported in Section 8.1. From
+a simple random sample rather than a class-stratified              the cross-tabulation of each map against the consen-
+one on purpose: stratifying by the CDL class would                 sus we compute the overall agreement with a Wilson
+presuppose the very labels we set out to test and would            95% confidence interval, the per-class user’s and pro-
+tie the reference design to the layer under assessment.            ducer’s accuracies, the balanced accuracy, and Cohen’s
+The cost is that the minority cultivated class receives            kappa κagr = (po − pe )/(1 − pe ), which corrects the raw
+
+
+                                                              17
+Figure 9: The continuous test block (southern Maine, 11.2 × 8.96 km), 2023. Left: the AlphaEarth embedding as a
+principal-component false-colour. Centre: the CDL ground truth. Right: the random-forest prediction. The predicted
+cultivated pattern follows the ground truth across the whole block (pixel-level agreement 93.3%).
+
+
+agreement for the agreement expected by chance.
+
+8.3    Is the reference layer itself trust-
+       worthy?
+Comparing the CDL labels against the consensus refer-
+ence gives an overall agreement of 91.7% (95% confi-
+dence interval 88.5% to 94.1%) with a Cohen’s kappa
+of 0.72 (Table 6). The agreement is high for the non-
+cultivated class (F1 = 0.95) but weaker for cultivated
+land (F1 = 0.77), where the CDL shows a low user’s ac-
+curacy of 69.3%: a notable share of the points the CDL
+                                                                 Figure 10: Per-class producer’s and user’s accuracy
+calls cultivated are read as non-cultivated by the inter-        against the consensus human reference, for the CDL la-
+preters. The CDL is therefore a good but imperfect               bels and for the random-forest predictions. The largest
+reference, with most of its error on the minority culti-         difference is the cultivated user’s accuracy, which rises from
+vated class, which is consistent with the harder-class           69% for the CDL to 86% for the model: the model commits
+pattern seen throughout the classification results.              far fewer cultivated false positives than the CDL it was
+                                                                 trained on.
+8.4    How well does the model agree with
+       the human reference?                                      the human-interpreted class correctly. In other words,
+The most informative comparison is between the                   training on a noisy but mostly-correct reference yields a
+model’s own predictions and the human reference, since           map that is, at these points, closer to human judgement
+it measures the quantity we ultimately care about: how           than the reference itself.
+well the model recovers what a human reads on the
+ground, rather than how well it reproduces the CDL               8.5     Comparison with a fine-tuned seg-
+it was trained on. Sampling the AlphaEarth 2023 em-                      mentation model
+bedding at each of the 385 points and applying the
+chosen random forest gives an overall agreement with             The same consensus reference provides a fair, model-
+the consensus of 95.3% (95% confidence interval 92.7%            agnostic test bed on which to compare different mod-
+to 97.0%) and a Cohen’s kappa of 0.82.                           elling paradigms on identical ground. As a final com-
+   This is the notable result of the paper: the model            parison we set the embedding-based approach against
+agrees with the human reference more closely than the            a fine-tuned segmentation model, TerraMind [14], ap-
+CDL labels it was trained on do, 95.3% against 91.7%             plied to the same continuous test block and evaluated
+and κ = 0.82 against 0.72. The gain is largest exactly           at the same 385 points. The two approaches are very
+where the CDL is weakest, on the cultivated class,               different in spirit: the present method places a light
+where the model’s user’s accuracy is 86% against the             random forest on top of frozen AlphaEarth embeddings
+CDL’s 69% (Figure 10): the model makes far fewer                 and never trains a deep network, whereas TerraMind is
+cultivated false positives than the raw CDL. The model           a large multimodal backbone fine-tuned end-to-end for
+appears to smooth over some CDL pixel-level noise,               the segmentation task. Holding the evaluation fixed
+in that at points where the CDL label is individu-               isolates the effect of the modelling paradigm from any
+ally wrong the AlphaEarth embedding may still re-                difference in the test data.
+semble the true class, allowing the classifier to predict           Table 6 reports both models and the CDL base-
+
+
+                                                            18
+line. The fine-tuned TerraMind reaches 93.5% over-               CDL 12, an exact two-sided p = 0.28, even though its
+all agreement (kappa 0.75, cultivated F1 0.79), which            overall agreement is higher. Among the three maps,
+places it above the CDL baseline (91.7%) but below the           then, only the embedding-based model significantly
+embedding-plus-random-forest approach (95.3%). The               outperforms the CDL reference. All three tests use the
+ordering is consistent across overall accuracy, kappa            exact binomial formulation on the paired predictions
+and the cultivated F1 . The one exception is balanced            over the common photo-interpreted set, at the α = 0.05
+accuracy, where TerraMind (87.5%) sits just below the            level.
+CDL (89.1%): it agrees with the human reference more                This is a single comparison on one test block, inter-
+often overall, but recovers the two classes slightly less        preted by the same two people, so it should be read
+evenly, missing a few more of the cultivated points.             as indicative rather than as a definitive ranking of the
+                                                                 two paradigms. What it does establish is that a light
+8.6    Paired significance testing                               classifier on frozen embeddings is not obviously behind
+                                                                 a large model fine-tuned end-to-end for the task, at a
+The accuracy figures above describe each map on its              small fraction of the training cost.
+own. To ask whether one map is significantly closer to
+the human reference than another, we compare pairs of
+maps with McNemar’s paired test [21]. Because both               9     Discussion
+maps in a pair are evaluated on the same 385 points,
+their accuracies are paired rather than independent, so          9.1    Why a classifier can be closer to the
+the relevant question is not simply whether one overall                 truth than its own training labels
+accuracy is higher, but whether, on the points where
+                                                                 The result that most needs explaining is the one in
+the two maps disagree in correctness, one is right more
+                                                                 Section 8.4: a model trained on the CDL agrees with in-
+often than the other. The test therefore looks only at
+                                                                 dependent human interpretation more closely than the
+these discordant points and ignores the points on which
+                                                                 CDL does. This sounds paradoxical only if one expects
+both maps agree. Under the null hypothesis that the
+                                                                 a classifier to reproduce its labels. What it actually
+two maps are equally accurate, each discordant point
+                                                                 learns is the regularity in the relationship between em-
+is equally likely to favour either map, so the number
+                                                                 bedding and label, and a per-pixel error in the reference
+won by one map follows a binomial distribution with
+                                                                 is, by construction, not a regularity. Where the CDL
+success probability one half. We report the exact two-
+                                                                 misassigns an isolated pixel, that pixel’s embedding
+sided binomial p-value, which is preferred when the
+                                                                 still resembles the class it truly belongs to, because the
+discordant points are few, and read p < 0.05 as evidence
+                                                                 embedding is computed from imagery and not from the
+that the difference is systematic rather than due to
+                                                                 label; the classifier, having fitted the dominant pattern
+chance.
+                                                                 across 8.6 million pixels, therefore predicts the class the
+   The improvement of the model over the CDL is
+                                                                 embedding supports rather than the erroneous label.
+statistically significant (Table 7). The two disagree in
+                                                                 Label noise that is unsystematic averages out during
+correctness on 30 of the 385 points: on 22 the model
+                                                                 fitting, and the fitted model is smoother than the ref-
+is right where the CDL is wrong, and on only 8 the
+                                                                 erence it was fitted to. The effect is visible in exactly
+reverse holds, which gives an exact two-sided p-value
+                                                                 the place the mechanism predicts: the CDL’s weakest
+of 0.016. On these points the model therefore corrects
+                                                                 quantity is its cultivated user’s accuracy (69.3%), that
+significantly more CDL errors than it introduces. This
+                                                                 is, cultivated commission errors, and this is where the
+does not establish that the model is more accurate
+                                                                 model gains most (86%).
+than the CDL everywhere, only that, on the 385 photo-
+                                                                    Two qualifications keep this from being over-read.
+interpreted points, it agrees with the human consensus
+                                                                 The argument holds for noise that is not systematically
+significantly more closely than the CDL does.
+                                                                 aligned with the embedding: a bias the CDL applies
+   The lead over TerraMind, by contrast, is not signif-
+                                                                 consistently to a whole cover type would be learned
+icant. On the same points the two models disagree
+                                                                 rather than smoothed away, and our data cannot dis-
+in correctness on only 17: AlphaEarth with a random
+                                                                 tinguish the two cases. And the evidence is 385 points
+forest is right on 12 of these and TerraMind on 5, giving
+                                                                 on one block, which is enough for the paired test to
+an exact two-sided p-value of 0.14, so we cannot reject
+                                                                 reach significance against the CDL (p = 0.016) but
+the null hypothesis that the two are equally close to
+                                                                 not enough to characterise CDL error across Maine or
+the human reference. On the 385 reference points, the
+                                                                 across years.
+accuracies of AlphaEarth with a random forest and
+of TerraMind are therefore not significantly different,
+whereas AlphaEarth with a random forest is signifi-              9.2    Operational implications
+cantly closer to the human consensus than the CDL.
+                                                                 Read together, the results describe a low-compute
+We conclude that the lightweight approach achieves ac-
+                                                                 prototype workflow rather than a deployment-ready
+curacy in the same observed range as TerraMind on this
+                                                                 statewide product. The user does not train or fine-tune
+local reference, while avoiding downstream fine-tuning
+                                                                 the foundation model; the principal downstream cost is
+of the AlphaEarth foundation model. For completeness,
+                                                                 fitting a standard classifier to downloaded embeddings.
+the third pairing is also not significant: TerraMind wins
+                                                                 The workflow is reproducible, and a balanced pixel
+19 of its 31 discordant points against the CDL and the
+                                                                 sample captures most of the discrimination observed
+
+
+                                                            19
+Table 6: Three maps against the same consensus human reference (385 points of the continuous test block). The confidence
+interval on the overall agreement is the Wilson score interval. The area-based mean intersection-over-union is not reported
+here because the reference is a set of scattered points rather than a contiguous area (Section 8.1).
+
+               Map (vs consensus, 385 pts)               OA          95% CI       κagr   F1 (cult)   Bal. acc.
+               AlphaEarth + random forest               95.3%       92.7–97.0     0.82     0.85       90.6%
+               TerraMind (fine-tuned segmentation)      93.5%        90.6–95.6    0.75     0.79       87.5%
+               CDL (reference baseline)                 91.7%        88.5–94.1    0.72     0.77       89.1%
+
+Table 7: McNemar paired comparisons against the human consensus reference, on the 385 points. Only the discordant
+points, where exactly one of the two maps is correct, enter each test; the concordant points carry no information about
+which map is better. “A wins” counts the discordant points on which map A matches the human reference and map B
+does not. Only the model against the CDL is significant at the 5% level.
+
+           Pair (A vs B)                       A wins     B wins         Discordant      Exact p     Verdict
+           AlphaEarth + RF vs CDL                 22          8              30           0.016      significant
+           AlphaEarth + RF vs TerraMind           12           5             17            0.14      not significant
+           TerraMind vs CDL                       19          12             31            0.28      not significant
+
+
+on the held-out patches. Operational use would in any              9.3    When frozen embeddings may be
+case require validation on a probability-based sample                     preferable to fine-tuning
+of the target area, calibration that accounts for class
+prevalence, area-adjusted accuracy and uncertainty es-             The comparison of Section 8.5 does not show that frozen
+timates, monitoring for year-to-year distribution shifts,          embeddings beat fine-tuning: the difference against
+and evaluation across different agricultural settings.             TerraMind is not statistically significant (p = 0.14), and
+Nevertheless, the present study provides a regional                on a single block interpreted by two people it could not
+baseline from which these operational requirements                 carry that weight even if it were. What it does suggest
+can be developed.                                                  is that the two are in the same range on this task, which
+   The limits of that claim should be stated as plainly.           shifts the question from accuracy to cost. On that axis
+The study covers one state whose land cover is dom-                the frozen route is clearly cheaper, and the conditions
+inated by forest and where cultivated land is sparse               under which it appears preferable are visible in our own
+and spatially fragmented, so the numbers may not                   results: when the task is a coarse, binary distinction
+transfer unchanged to regions with larger continuous               that the representation already encodes, as the 90.2%
+agricultural areas, different crop calendars, or more              nearest-centroid baseline of Section 4.5 indicates; when
+heterogeneous farming systems; the independent evalu-              labels are limited, since a balanced sample of 60,000
+ation of Yang et al. [29] reports exactly this pattern,            pixels is close to sufficient; when a multi-year product
+with stable transfer between years but weaker gener-               is wanted from a single fitting; and when there is no
+alisation across regions, and Ma et al. [19] likewise              capacity to train or serve a deep network. Conversely,
+find limited spatial transferability of these embeddings           the cases where fine-tuning should still be expected to
+relative to purpose-built remote-sensing models. Their             pay are those our design cannot address: tasks needing
+strongest case is worth stating plainly: transferring              finer distinctions than the embedding was trained to
+a county-level soybean yield model from the United                 preserve, tasks where field-level shape and boundary
+States to Argentina, embedding-based models return a               quality matter more than per-pixel agreement, given
+negative coefficient of determination in every year from           where our residual errors sit, and settings where a
+2019 to 2024, between −0.64 and −5.24, against 0.27                modality the embedding does not carry is decisive.
+overall for the remote-sensing baseline. Transfer to a                We note finally that the choice is not only technical.
+genuinely different agricultural setting is not a matter           AlphaEarth is released as embeddings only, with the
+of some lost accuracy but of a model that may fail out-            model itself closed, so fine-tuning it is not an option
+right, which is the risk our own single-state scope leaves         available to a user in any case; TESSERA releases
+untested. The classification is also purely per-pixel, so          both. Which of the two families a practitioner can
+the residual errors concentrate at field boundaries and            adopt is therefore partly a question of what has been
+on small or fragmented parcels rather than over whole              made public.
+fields, and the balanced accuracy on the contiguous
+block (85.7%) is about five points below the dispersed-            9.4    Limitations and scope of inference
+patch average, almost entirely through cultivated recall.
+                                                                   Some limitations have to be considered in analysing
+A product built this way would inherit that behaviour.
+                                                                   these results. First, the study is restricted to Maine,
+                                                                   a forest-dominated state with sparse and fragmented
+                                                                   cultivation, and the agriculture-enriched patch sample
+                                                                   is not intended to be representative of the state as
+                                                                   a whole. Second, the reference labels originate from
+
+
+                                                             20
+a 30 m classified product aligned to a 10 m embed-                paired points (p = 0.0161), while remaining statisti-
+ding grid, which limits the interpretation of pixel-level         cally indistinguishable from a fine-tuned segmentation
+accuracy, particularly near class boundaries. Spatial             model (93.5%, p = 0.14). Within the limits set out in
+autocorrelation among neighbouring pixels further re-             Section 9.4, frozen geospatial embeddings are a com-
+duces the effective number of independent observations,           petitive and inexpensive basis for regional cropland
+although the spatial separation of the test patches lim-          mapping.
+its direct train-test leakage. The temporal experiment               The most immediate extensions follow from those
+evaluates transfer across years at the same locations             limits: a like-for-like comparison with another openly
+within Maine, and should not be interpreted as evidence           released embedding model such as TESSERA on the
+of geographic generalisation. Finally, even though this           same patches and labels [18]; a broader comparison
+is quite common in validation, the independent human              against fine-tuned segmentation, over contiguous tiles
+reference consists of 385 points, of which 61 are culti-          rather than scattered points and retaining the paired
+vated, based on image interpretation rather than field            testing used here; and the addition of light spatial con-
+observation. These limitations constrain the generality           text to the per-pixel classifier, since the residual error
+of the findings, but they do not affect the central result        concentrates at field boundaries and on small parcels.
+that simple classifiers can achieve strong predictive per-        Testing the same workflow across more varied agricul-
+formance from frozen AlphaEarth embeddings within                 tural regions remains the clearest route to establishing
+the evaluated setting.                                            how far a single representation travels.
+
+
+10      Conclusions                                               Data and Code Availability
+We set out to test whether embedding-based geospatial             The full analysis pipeline is openly available under the
+foundation models, and AlphaEarth in particular, can              MIT licence at https://github.com/Black-Lights/
+deliver accurate and label-efficient cropland classifica-         alphaearth-cropland-maine. The repository con-
+tion without training or fine-tuning a deep network. On           tains the ae Python package (data handling, sampling,
+a binary, per-pixel classification of cultivated against          models, ensembles, evaluation, mapping and the em-
+non-cultivated land over Maine, with labels derived               bedding statistics), the notebooks that produce the
+from the USDA Cropland Data Layer and the annual                  figures and tables reported here, and the wrappers that
+embeddings as the only input, a lightweight classifier            reproduce the classification and cross-year runs.
+on the frozen 64-dimensional vectors reaches about                   The AlphaEarth annual embeddings are the
+93.7% overall accuracy and 90.8% balanced accuracy                GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL collection
+on held-out patches, with a macro-averaged F1 of 0.898.           in Google Earth Engine, and the labels are derived
+   The choice of classifier matters little once the embed-        from the USDA Cropland Data Layer (USDA/NASS/CDL)
+ding is fixed: logistic regression (93.48%) sits within           on the same platform by the grouping given in Sec-
+0.3 percentage points of a gradient-boosted ensemble              tion 2.2. The patches were cut with the open Earth
+(93.75%), and a nearest-class-centroid rule, which esti-          Engine toolkit of Montefoschi [22], and the photo-
+mates one labelled centroid per class and fits nothing            interpretation was carried out in EarthLabel [28]. The
+further, already reaches 90.2%. Nor is the task primar-           385-point consensus reference is available from the cor-
+ily limited by the volume of labelled pixels: a balanced          responding author on reasonable request.
+sample of 60,000 recovers most of the accuracy of the
+full pool of roughly 8.6 million, and does so at a higher
+balanced accuracy. The statistical characterisation ac-           Funding
+counts for both findings. The embeddings lie on the
+unit hypersphere and form tightly concentrated angu-              This study was partially carried out within the Space
+lar clusters; every dimension departs from normality,             It Up project funded by the Italian Space Agency, ASI,
+with mild skew rather than heavy tails the dominant               and the Ministry of University and Research, MUR, un-
+feature, so classical Gaussian coordinate-wise tools are          der contract n. 2024-5-E.0 - CUP n. I53D24000060005.
+not the appropriate description; and the class signal
+is spread thinly across many dimensions rather than               Acknowledgements
+held in a few. That is why a linear boundary is nearly
+sufficient, and why, under a criterion of no measurable           The Maine patch dataset was prepared jointly by the
+loss, no dimension can be discarded for free.                     first two authors, using the open Google Earth Engine
+   Two further results complete the picture. The yearly           sampling toolkit of Montefoschi [22], and the photo-
+embeddings are consistent enough that a classifier fit-           interpretation reference was produced by the two of
+ted on 2023 transfers to every year from 2018 to 2023,            them working independently and blind to the refer-
+within the same Maine sampling frame, with little loss.           ence layer. The underlying experimental work is docu-
+And when the CDL is set aside in favour of an indepen-            mented in more detail in the first author’s MSc thesis
+dent two-interpreter consensus on a contiguous block,             at Politecnico di Milano [23].
+the model agrees with the human reference more closely
+(95.3%, κ = 0.82) than the CDL it was trained on does
+(91.7%, κ = 0.72), a difference that is significant on the
+
+
+                                                             21
+Disclaimer                                                             [9] William G. Cochran. Sampling Techniques. John Wiley
+                                                                           & Sons, New York, 3rd edition, 1977.
+The views expressed in this paper are those of the
+authors and do not necessarily reflect the views or                   [10] Jacob Cohen. Statistical Power Analysis for the Behav-
+                                                                           ioral Sciences. Lawrence Erlbaum Associates, Hillsdale,
+policies of the Food and Agriculture Organization of
+                                                                           NJ, 2 edition, 1988.
+the United Nations.
+                                                                      [11] Zhengpeng Feng, Clement Atzberger, Sadiq Jaffer,
+                                                                           Jovana Knezevic, Silja Sormunen, Robin Young, Made-
+References                                                                 line C Lisaius, Markus Immitzer, et al. Tessera: Pre-
+                                                                           computed fair global pixel embeddings for earth rep-
+ [1] Arindam Banerjee, Inderjit S. Dhillon, Joydeep Ghosh,
+                                                                           resentation and analysis. arXiv preprint, 2025. URL
+     and Suvrit Sra. Clustering on the unit hypersphere us-
+                                                                           https://arxiv.org/abs/2506.20380. v5.
+     ing von mises-fisher distributions. Journal of Machine
+     Learning Research, 6:1345–1382, 2005. Provides the               [12] Food and Agriculture Organization of the United Na-
+     closed-form approximation of the vMF concentration                    tions. Land use: Definitions and standards. FAO-
+     estimate.                                                             STAT statistical domain, Food and Agriculture Or-
+                                                                           ganization of the United Nations, 2023. URL https:
+ [2] Iván Felipe Benavides-Martínez, Justin Guthrie,
+                                                                           //www.fao.org/faostat/en/#data/RL. Land use def-
+     Jhon Edwin Arias, Yeison Alberto Garcés-Gómez, An-
+                                                                           initions (cropland, arable land, permanent crops); ac-
+     gela Ines Guzman-Alvis, Cristiam Victoriano Portilla-
+                                                                           cessed 2026.
+     Cabrera, Somnath Mondal, Andrew J. Allyn, and Au-
+     roop R. Ganguly. What on Earth is AlphaEarth?                    [13] Johannes Jakubik, Sujit Roy, C. E. Phillips, Paolo
+     Hierarchical structure and functional interpretability                Fraccaro, Denys Godwin, Bianca Zadrozny, Blair Ed-
+     for global land cover, 2026.                                          wards, et al. Foundation models for generalist geospa-
+                                                                           tial artificial intelligence. arXiv preprint, 2023. URL
+ [3] Florian Betz, Baturalp Arisoy, Magdalena Lauermann,
+                                                                           https://arxiv.org/abs/2310.18660. Prithvi geospa-
+     Gregory Egger, Barbara Belletti, Simone Bizzi, and
+                                                                           tial foundation model (NASA-IBM).
+     Hervé Piégay. Analyzing the potential of geospatial
+     foundation models and earth embeddings for assessing             [14] Johannes Jakubik, Felix Yang, Benedikt Blumenstiel,
+     dynamic riverine processes. EGU General Assembly                      Erik Scheurer, Rocco Sedona, Stefano Maurogiovanni,
+     2026, 2026.                                                           Jente Bosmans, Nikolaos Dionelis, Mikolaj Czerkawski,
+                                                                           Paolo Fraccaro, Valerio Marsocci, Gabriele Cavallaro,
+ [4] Claire Boryan, Zhengwei Yang, Rick Mueller, and
+                                                                           et al. Terramind: Large-scale generative multimodality
+     Mike Craig. Monitoring US agriculture: the US de-
+                                                                           for earth observation. arXiv preprint, 2025. URL
+     partment of agriculture, national agricultural statistics
+                                                                           https://arxiv.org/abs/2504.11171. v4 (ICCV’25).
+     service, cropland data layer program. Geocarto Inter-
+     national, 26(5):341–358, 2011. doi: 10.1080/10106049.            [15] Guolin Ke, Qi Meng, Thomas Finley, Taifeng Wang,
+     2011.562309.                                                          Wei Chen, Weidong Ma, Qiwei Ye, and Tie-Yan Liu.
+                                                                           LightGBM: A highly efficient gradient boosting deci-
+ [5] Mohamed Bourriz, Ahmed Laamrani, Hamd Ait Ab-
+                                                                           sion tree. In Advances in Neural Information Process-
+     delali, François Bourzeix, Ali El-Battay, Abdelhakim
+                                                                           ing Systems, volume 30, pages 3146–3154, 2017.
+     Amazirh, and Abdelghani Chehbouni. How effective
+     are foundation models for crop type mapping using hy-            [16] J. Richard Landis and Gary G. Koch. The measure-
+     perspectral imaging? a comparative study of machine                   ment of observer agreement for categorical data. Bio-
+     learning, deep learning, and geospatial foundation mod-               metrics, 33(1):159–174, 1977.
+     els. In The International Archives of the Photogram-
+     metry, Remote Sensing and Spatial Information Sci-               [17] Wenyuan Li, Shunlin Liang, Keyan Chen, Yongzhe
+     ences, volume XLVIII-4/W17-2025, page 69, 2026. doi:                  Chen, Han Ma, Jianglei Xu, Yichuan Ma, Yuxiang
+     10.5194/isprs-archives-XLVIII-4-W17-2025-69-2026.                     Zhang, Shikang Guan, Husheng Fang, and Zhenwei
+                                                                           Shi. AgriFM: A multi-source temporal remote sensing
+ [6] Leo Breiman. Random forests. Machine Learning, 45                     foundation model for agriculture mapping. Remote
+     (1):5–32, 2001.                                                       Sensing of Environment, 334:115234, 2026. doi: 10.
+                                                                           1016/j.rse.2026.115234.
+ [7] Christopher F. Brown, Michal R. Kazmierski, Valerie J.
+     Pasquarella, William J. Rucklidge, Masha Samsikova,              [18] Madeline C. Lisaius, Srinivasan Keshav, Andrew Blake,
+     Chenhui Zhang, Evan Shelhamer, Estefania Lahera,                      and Clement Atzberger. Embedding-based crop type
+     Olivia Wiles, Simon Ilyushchenko, Noel Gorelick, Li-                  classification in the groundnut basin of Senegal, 2026.
+     hui Lydia Zhang, Sophia Alj, Emily Schechter, Sean
+     Askay, Oliver Guinan, Rebecca Moore, Alexis Bouk-                [19] Yuchi Ma, Yawen Shen, Anu Swatantran, and David B.
+     ouvalas, and Pushmeet Kohli. Alphaearth founda-                       Lobell. Harvesting AlphaEarth: Benchmarking the
+     tions: An embedding field model for accurate and                      geospatial foundation model for agricultural down-
+     efficient global mapping from sparse label data. arXiv                stream tasks. International Journal of Applied Earth
+     preprint, 2025. URL https://arxiv.org/abs/2507.                       Observation and Geoinformation, 2026. doi: 10.1016/j.
+     22291. Google DeepMind.                                               jag.2026.105258. Preprint arXiv:2601.00857.
+
+ [8] Tianqi Chen and Carlos Guestrin. XGBoost: A scal-                [20] Kanti V. Mardia and Peter E. Jupp. Directional Statis-
+     able tree boosting system. In Proceedings of the 22nd                 tics. John Wiley & Sons, Chichester, 2000.
+     ACM SIGKDD International Conference on Knowledge
+     Discovery and Data Mining, pages 785–794, 2016.
+
+
+                                                                 22
+[21] Quinn McNemar. Note on the sampling error of the dif-
+     ference between correlated proportions or percentages.
+     Psychometrika, 12(2):153–157, 1947.
+
+[22] Giovanni Montefoschi.          gfm-thesis:  multi-
+     modal_helpers, a google earth engine toolkit
+     for downloading and sampling multimodal geospa-
+     tial datasets.  GitHub repository, 2026.     URL
+     https://github.com/GioMontefoschi/gfm-thesis.
+     Patch sampling and download tool used to build the
+     shared Maine dataset; accessed 2026-06-13.
+
+[23] Mohammad Ammar Mughees. Binary cropland clas-
+     sification from AlphaEarth embeddings: A geospatial
+     foundation model approach for Maine, USA. MSc the-
+     sis, Politecnico di Milano, Milan, Italy, 2026. School
+     of Civil, Environmental and Land Management Engi-
+     neering.
+
+[24] Pontus Olofsson, Giles M. Foody, Martin Herold,
+     Stephen V. Stehman, Curtis E. Woodcock, and
+     Michael A. Wulder. Good practices for estimating
+     area and assessing accuracy of land change. Re-
+     mote Sensing of Environment, 148:42–57, 2014. doi:
+     10.1016/j.rse.2014.02.015. Good-practice framework
+     for accuracy assessment and area estimation.
+
+[25] Fabian Pedregosa, Gaël Varoquaux, Alexandre Gram-
+     fort, Vincent Michel, Bertrand Thirion, Olivier Grisel,
+     Mathieu Blondel, Peter Prettenhofer, Ron Weiss, Vin-
+     cent Dubourg, Jake Vanderplas, Alexandre Passos,
+     David Cournapeau, Matthieu Brucher, Matthieu Per-
+     rot, and Édouard Duchesnay. Scikit-learn: Machine
+     learning in Python. Journal of Machine Learning Re-
+     search, 12:2825–2830, 2011.
+
+[26] Mashrekur Rahman, Samuel J. Barrett, and Christina
+     Last. Characterizing AlphaEarth embedding geometry
+     for agentic environmental reasoning. Environmental
+     Data Science, 2026. Preprint arXiv:2604.18715.
+
+[27] Gilbert Rotich and Sudeep Sarkar. Evaluating the
+     robustness of foundation models for satellite imagery.
+     IEEE Access, 13, 2025. doi: 10.1109/ACCESS.2025.
+     3581067.
+
+[28] Xiao Tan and Mohammad Ammar Mughees. Earth-
+     Label: a web tool for photo-interpretation of land
+     cover. https://github.com/tanxiaoo/earth-label,
+     2026. Accessed 2026.
+
+[29] Lulu Yang, Yuan Gao, Xiangyang Zhao, Nannan Liang,
+     Ru Ma, Shixiang Xi, Xiao Zhang, and Rui Wang. Eval-
+     uating the performance of alphaearth foundation em-
+     beddings for irrigated cropland mapping across regions
+     and years. Remote Sensing, 18(7):1065, 2026. doi:
+     10.3390/rs18071065. AlphaEarth embeddings + ran-
+     dom forests for irrigated cropland; RF OA 0.95 / 0.93.
+
+[30] Chen Zhang, Purva Marfatia, Hamza Farhan, Lip-
+     ing Di, Li Lin, Haoteng Zhao, Hui Li, Md. Di-
+     darul Islam, and Zhengwei Yang. Enhancing USDA
+     NASS cropland data layer with segment anything
+     model. In 2023 11th International Conference on
+     Agro-Geoinformatics (Agro-Geoinformatics), 2023. doi:
+     10.1109/Agro-Geoinformatics59224.2023.10233404.
+
+[31] Ivan Zvonkov, Gabriel Tseng, Inbal Becker-Reshef, and
+     Hannah Kerner. Cropland mapping using geospatial
+     embeddings, 2025.
+
+
+                                                               23
+

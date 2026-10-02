@@ -1,0 +1,868 @@
+                                               ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+                                                                 Contents lists available at ScienceDirect
+
+
+                                ISPRS Journal of Photogrammetry and Remote Sensing
+                                                      journal homepage: www.elsevier.com/locate/isprsjprs
+
+
+
+
+Improvement in crop mapping from satellite image time series by effectively
+supervising deep neural networks
+Sina Mohammadi ∗, Mariana Belgiu, Alfred Stein
+Faculty of Geo-Information Science and Earth Observation (ITC), University of Twente, P.O. Box 217, 7500 AE Enschede, The Netherlands
+
+
+
+ARTICLE               INFO                              ABSTRACT
+
+Keywords:                                               Deep learning methods have achieved promising results in crop mapping using satellite image time series.
+Crop mapping                                            A challenge still remains on how to better learn discriminative feature representations to detect crop types
+Deep learning                                           when the model is applied to unseen data. To address this challenge and reveal the importance of proper
+Fully convolutional neural networks
+                                                        supervision of deep neural networks in improving performance, we propose to supervise intermediate layers
+Supervised contrastive learning
+                                                        of a designed 3D Fully Convolutional Neural Network (FCN) by employing two middle supervision methods:
+Loss function
+Time series
+                                                        Cross-entropy loss Middle Supervision (CE-MidS) and a novel middle supervision method, namely Supervised
+                                                        Contrastive loss Middle Supervision (SupCon-MidS). This method pulls together features belonging to the same
+                                                        class in embedding space, while pushing apart features from different classes. We demonstrate that SupCon-
+                                                        MidS enhances feature discrimination and clustering throughout the network, thereby improving the network
+                                                        performance. In addition, we employ two output supervision methods, namely F1 loss and Intersection Over
+                                                        Union (IOU) loss. Our experiments on identifying corn, soybean, and the class Other from Landsat image
+                                                        time series in the U.S. corn belt show that the best set-up of our method, namely IOU+SupCon-MidS, is able
+                                                        to outperform the state-of-the-art methods by 𝑚𝐼𝑂𝑈 scores of 3.5% and 0.5% on average when testing its
+                                                        accuracy across a different year (local test) and different regions (spatial test), respectively. Further, adding
+                                                        SupCon-MidS to the output supervision methods improves 𝑚𝐼𝑂𝑈 scores by 1.2% and 7.6% on average in local
+                                                        and spatial tests, respectively. We conclude that proper supervision of deep neural networks plays a significant
+                                                        role in improving crop mapping performance. The code and data are available at: https://github.com/Sina-
+                                                        Mohammadi/CropSupervision.
+
+
+
+1. Introduction                                                                             hand-crafted features. These limitations call for more advanced meth-
+                                                                                            ods that can automatically identify complex patterns in image time
+    Machine learning and deep learning have become predominant                              series (Zhong et al., 2019).
+methods for the classification of satellite image time series, including
+crop mapping (Belgiu and Drăguţ, 2016; Zhong et al., 2019). They
+                                                                                            1.1. Deep learning-based methods for crop type mapping
+benefit from the vast number of high resolution image time series cap-
+tured by Earth observation satellites. Accurate and timely information
+about crop types at different scales is critical for various applications,                     Recently, deep learning-based crop mapping methods have drawn
+including crop yield forecast (Sakamoto et al., 2014), economic model-                      increasing attention due to their promising results (Xu et al., 2020;
+ing (Marsden et al., 2013), water use estimate (Tang et al., 2009), and                     Zhong et al., 2019; Danilla et al., 2017; Ji et al., 2018; Kussul et al.,
+food security (Zhai et al., 2020).                                                          2017). These methods achieve high performance thanks to their ca-
+    Traditional methods for analyzing image time series are mostly                          pability to automatically learn high-level task-specific features from
+based on hand-crafted features using domain knowledge (Xiao et al.,                         the raw data (LeCun et al., 2015). In a recent line of studies on
+2005; Olsson and Eklundh, 1994; Sakamoto et al., 2005; Funk and                             crop mapping using deep learning, images are classified pixel by pixel
+Budde, 2009). Consequently, these methods involve time-consuming                            by means of 1D Convolutional Neural Networks (CNNs) or Recurrent
+feature engineering processes. In addition, their performances are con-                     Neural Networks (RNNs) (Xu et al., 2020, 2021; Pelletier et al., 2019;
+strained by their limited ability to take into account the temporal                         Zhao et al., 2021; Yang et al., 2022). These methods, however, fail
+relationship in image time series and the limited robustness of the                         to consider the spatial relationship between adjacent pixels (Persello
+
+
+  ∗ Corresponding author.
+     E-mail addresses: s.mohammadi@utwente.nl (S. Mohammadi), m.belgiu@utwente.nl (M. Belgiu), a.stein@utwente.nl (A. Stein).
+
+https://doi.org/10.1016/j.isprsjprs.2023.03.007
+Received 3 October 2022; Received in revised form 15 January 2023; Accepted 6 March 2023
+Available online 29 March 2023
+0924-2716/© 2023 The Author(s). Published by Elsevier B.V. on behalf of International Society for Photogrammetry and Remote Sensing, Inc. (ISPRS). This is an
+open access article under the CC BY license (http://creativecommons.org/licenses/by/4.0/).
+S. Mohammadi et al.                                                                                ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+et al., 2019). The spatial information could be exploited by using 2D                 expand the analysis by combining IOU and F1 loss functions with the
+CNNs or 2D Fully Convolutional Neural Networks (FCNs), but this                       middle supervision methods.
+leads to neglecting sequential relationship in time series (Zhong et al.,                 In summary, the goal of this study is to investigate the importance
+2019). In this study, we overcome these limitations by employing a                    of supervision of deep neural networks and effectively leveraging label
+3D FCN, which was successfully investigated in crop mapping by a                      information in improving crop mapping performance. To achieve this
+few previous studies (Ji et al., 2020; Mohammadi et al., 2021). 3D                    goal, the following research questions are addressed:
+convolution operators allow the 3D FCN to learn both spatial and
+                                                                                          • How well does a deep learning model with both output supervi-
+temporal relationships in image time series. Moreover, FCNs are able to
+efficiently generate a crop type segmentation map from an input image                       sion and middle supervision perform compared to a deep learning
+in a single step as opposed to CNNs that classify a single pixel at each                    model with only output supervision?
+processing step.                                                                          • How well does our novel middle supervision method, namely
+                                                                                            SupCon-MidS, perform compared to CE-MidS?
+1.2. Supervising middle layers of deep neural networks                                    • How well do the employed output supervision methods based on
+                                                                                            IOU and F1 measures perform in comparison to the widely used
+    During the past years, FCNs composed of an Encoder-Decoder                              CE loss?
+structure have been widely used for the segmentation of natural im-                      The main contributions of this study are as follows:
+ages (Long et al., 2015; Wang et al., 2019a; Chen et al., 2018). Most
+of these methods used only output supervision to train the network,                       • We investigate the impact of supervising intermediate layers of
+but several studies showed that the segmentation results can be im-                         deep neural networks on improving crop type segmentation by
+proved by supervising intermediate layers (Qin et al., 2019; Hou et al.,                    employing two middle supervision methods.
+2017). To the best of our knowledge, no previous crop mapping study                       • We propose a novel middle supervision method for FCNs, namely
+investigated whether supervising intermediate layers of the deep neural                     SupCon-Mids, to enhance feature discrimination and clustering
+networks can generate more discriminative features of each crop type,                       throughout the network, thereby improving the performance.
+which could further lead to more accurate crop type predictions.                            Using SupCon-Mids can also be potentially beneficial to other seg-
+    In this paper, we present two methods for supervising the middle                        mentation tasks in different applications since it aims to enhance
+layers of our designed 3D FCN (referred to as middle supervision): (i)                      feature discrimination.
+Cross-entropy (CE) loss applied to middle layers that we refer to as                      • We adopt and verify the effectiveness of F1 and IOU loss functions
+Cross-entropy loss Middle Supervision (CE-MidS), and (ii) Supervised                        as replacements for CE loss, which is widely used for output
+Contrastive loss applied to middle layers, referred to as Supervised                        supervision.
+Contrastive loss Middle Supervision (SupCon-MidS).                                        • We open up a new direction for further research on crop type
+    CE-Mids has been used in salient object segmentation in natural                         mapping by drawing attention to the importance of proper super-
+images (Qin et al., 2019; Hou et al., 2017), but not in crop mapping.                       vision of deep neural networks.
+To address some of the well-documented shortcomings of CE loss, such
+as the possibility of poor margins (Elsayed et al., 2018; Liu et al.,                     The study is applied to identify corn, soybean, and the class Other
+2016), we propose a novel middle supervision method, namely SupCon-                   from Landsat image time series in four areas located in the U.S. corn
+Mids. This supervision method is based on SupCon loss, which has been                 belt. Corn is an important staple crop across the globe with a production
+adopted as an output supervision method in a classification problem on                exceeding 1 billion metric tons per year (Ebi et al., 2021). Soybean
+natural images (Khosla et al., 2020). In our study, we adapt SupCon                   is the number one source of protein for animal feed and the second
+loss for semantic segmentation and apply it as a middle supervision                   largest source of vegetable oil (Song et al., 2021). Furthermore, the
+method. Our hypothesis is that SupCon-MidS will help our designed 3D                  soybean expansion has had a massive ecological impact throughout
+FCN generate more discriminative and better-clustered features since it               the world, especially in South America where the soybean harvest area
+pulls features from the same class closer together than features from                 has increased considerably over the years at the expense of tropical
+different classes in different levels (scales) of the decoder.                        forests (Song et al., 2021). Consequently, timely information on corn
+                                                                                      and soybean is crucial for food security (Zhong et al., 2014) and climate
+1.3. Supervising the output of deep neural networks                                   change (Dhaliwal and Williams, 2022).
+                                                                                          The rest of the paper is organized as follows: First, we review the
+    An increasing number of deep learning methods employ CE loss as                   papers related to our work. We then introduce our proposed method.
+the output supervision method to learn the crop types (Xu et al., 2020;               The fourth section presents the data, evaluation metrics, and implemen-
+Danilla et al., 2017; Kussul et al., 2017; Ji et al., 2018; Pelletier et al.,         tation details, followed by the experimental results in section five. The
+2019; Rußwurm and Körner, 2018; Ji et al., 2020). These methods have                  results and future work directions are discussed in section six. Finally,
+achieved good results, but CE loss focuses on per-pixel prediction and                we conclude our study in the last section of the paper.
+awards both true positives and true negatives. This can result in sim-
+plistic solutions of crop field segmentation due to its tendency towards              2. Related work
+labeling more pixels as background if the percentage of positive labels
+decreases. To deal with this limitation, we propose to use alternative                2.1. Traditional methods for classification of image time series
+loss functions that are more suitable for segmentation of crop fields
+than CE loss.                                                                             To analyze image time series, machine learning algorithms such as
+    Given that F1 and Intersection Over Union (IOU) measures are                      Random Forest, Decision Tree, Support Vector Machine, and Multilayer
+more indicative of success for segmentation tasks than pixel-wise ac-                 Perceptron have been used (Khatami et al., 2016; King et al., 2017; Löw
+curacy (Cordts et al., 2016; M Rustowicz et al., 2019), we employ                     et al., 2013; Massey et al., 2017; Shi and Yang, 2016). These algorithms
+two output supervision methods based on these two measures to guide                   do not explicitly take into account the temporal relationship and may
+our model to output more accurate crop type segmentation maps. The                    neglect useful information and patterns available in satellite image time
+employed loss functions do not concern themselves with true negatives,                series. To overcome this problem and incorporate pre-defined tempo-
+making them different from CE loss. In our previous work (Mohammadi                   ral features, Pelletier et al. (2016) used statistical values of spectral
+et al., 2021), we proved the advantage of IOU loss over CE loss for                   bands and vegetation indices for land cover mapping. Other works
+supervising the output of the deep neural network. In this paper, we                  adopted key transition dates and corresponding values obtained from
+
+                                                                                273
+S. Mohammadi et al.                                                                              ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+vegetation index curves like global start and peak points to enhance                CNN, and CNN-LSTM. Garnot and Landrieu (2021) combined spatial
+performance (Brown et al., 2010; Simonneaux et al., 2008; Walker                    convolution and temporal attention to extract rich and adaptive multi-
+et al., 2015). Moreover, pre-defined mathematical models have been                  scale spatiotemporal features from image time series. Garnot et al.
+used to represent vegetation index time series by functions, such as lin-           (2022) combined optical and radar time series by employing multi-
+ear regression (Funk and Budde, 2009), wavelet transform (Sakamoto                  modal temporal attention-based models and showed that it outperforms
+et al., 2005), Fourier transform (Olsson and Eklundh, 1994; Wang et al.,            single-modality models.
+2019b), and Linear Discriminant Analysis (LDA) (Kluger et al., 2021).                  While previous studies proved the potential of the deep learning-
+However, the limited robustness of the hand-crafted features and pre-               based methods for crop type mapping using image time series, none of
+defined models constrain the performance of these traditional methods.              them has assessed the impact of the proper supervision of deep neural
+Moreover, they are time-consuming and rely on domain knowledge and                  networks in improving crop mapping performance.
+human experience (Zhong et al., 2019). To mitigate these problems, a
+more flexible and automated method that can make the most of the                    3. The proposed method
+temporal domain is greatly needed (Xu et al., 2020).
+                                                                                       In this section, we first explain our designed 3D FCN. Next, we
+2.2. Deep learning-based methods for classification of image time series            elaborate on the different loss functions employed to supervise the
+                                                                                    middle layers and the output layer of the network.
+    In recent years, deep learning models have shown outstanding per-
+formance in various computer vision tasks such as image classification,             3.1. 3D fully convolutional neural network
+semantic segmentation, object tracking, and object detection (Szegedy
+et al., 2015; Ma et al., 2021; Wang et al., 2022; Kashiani and Shokouhi,                Our designed 3D FCN architecture (Fig. 1) consists of an encoder-
+2019; Lyu et al., 2021; Sun et al., 2021). These models are able to auto-           decoder structure, and it outputs the segmentation map of crop fields
+matically extract high-level features from high-dimensional images in               from the input images. The 3D FCN is formed by the 3D convolution
+an expert-free end-to-end fashion. They do not require empirical feature            layers that are capable of extracting not only the spatial features but
+design and manually-crafted features (LeCun et al., 2015). In light of              also the temporal features.
+the success of deep learning in different computer vision areas, various                In the encoder of our designed 3D FCN, the features are extracted
+attempts have been made to apply deep learning architectures to the                 at five different levels (scales) with diverse recognition information.
+classification of image time series (Zhong et al., 2019; Pelletier et al.,          Given an input image of size 𝑊 × 𝐻, these feature maps have spatial
+2019; Garnot et al., 2022; Teimouri et al., 2019; Ji et al., 2018, 2020;            sizes of 𝑊 ∕2𝑛 × 𝐻∕2𝑛 with 𝑛 = 0, 1, 2, 3, 4. At lower levels, on account
+Kussul et al., 2017). The three main deep learning architectures used               of smaller receptive field, spatial and local information are captured
+in the classification of image time series are Convolutional Neural Net-            by the encoder. Consequently, global dependencies are not captured
+works (CNNs), Recurrent Neural Networks (RNNs), and self-attention                  at these levels. Conversely, the encoder encodes semantic and global
+networks (or Transformers).                                                         information at higher levels due to larger receptive field, but it lacks
+    CNN is a successful deep learning architecture and has been used                local information. As both low level details and high level global con-
+by several studies for time series classification (Pelletier et al., 2019;          texts are important for accurately generating the segmentation map of
+Ji et al., 2018; Zhong et al., 2019). Pelletier et al. (2019) introduced            crop fields, both levels of information should be exploited. To achieve
+Temporal Convolutional Neural Networks (TempCNNs) and highlighted                   this goal, the features of different levels are merged in the decoder
+the importance of using 1D convolution across the temporal domain                   through concatenation as shown in Fig. 1. In the decoder, by using a
+for the classification of image time series. Ji et al. (2018) adopted               series of upsampling, concatenation, and convolutional layers, the crop
+3D convolution for the first time for crop mapping using image time                 type prediction map is generated.
+series. They suggested that 3D convolution is a suitable choice for
+classification of image time series since it is able to extract both the            3.2. Middle supervision of the 3D FCN
+spatial and temporal features simultaneously.
+    RNN is another class of deep learning architectures that can link                   We employ two middle supervision methods, namely CE-MidS and
+adjacent observations to learn sequential relationship (Werbos, 1990).              SupCon-MidS, which are applied to the middle layers of our proposed
+Several works have used Long Short-Term Memory (LSTM) model,                        3D FCN as shown in Fig. 1. These two middle supervision methods can
+a well-known variant of RNN, for classification of image time series                guide the model through generating more discriminative features at
+(Rußwurm and Korner, 2017; Teimouri et al., 2019; Xu et al., 2020). Xu              middle layers, resulting in more accurate crop type predictions at the
+et al. (2020) developed an attention-based bidirectional LSTM to learn              output of the network.
+generalizable feature representation for corn and soybean mapping                       Cross-entropy loss Middle Supervision (CE-MidS). In this super-
+using Landsat image time series. Turkoglu et al. (2021) proposed a                  vision method, we adopt CE loss function to supervise the middle layers
+hierarchical network architecture based on convolutional, recurrent                 of our designed 3D FCN. More specifically, we use a classification block
+neural network (convRNN), in which joint feature representations of                 (CLB), composed of a convolutional layer with Softmax activation, on
+rare classes (e.g., apples, pears) are learnt at a coarser level (e.g., or-         top of each of the five feature maps with different scales in the decoder
+chard), which results in improving classification performance at the                as depicted in Fig. 1. Then we use CE loss with the resized ground truth
+fine-grained level consisting of 48 crop types.                                     data as the labels to supervise these middle layers. We denote the loss
+    Introduced by Vaswani et al. (2017), Transformers run on all el-                function of CE-MidS as 𝑀𝑖𝑑𝑆
+                                                                                                               𝐶𝐸
+                                                                                                                    , which is defined as:
+ements in parallel and assign attention scores to model the impact
+                                                                                              1 ∑ 1 ∑∑
+of the elements on each other. Transformers are more suitable for                   𝑀𝑖𝑑𝑆 =                   −𝑟 (𝑦 ) ∙ log(ℎ𝜃𝑘 (𝑓𝑖,𝑗,𝑘 ))                        (1)
+                                                                                     𝐶𝐸       𝑀 𝑘∈𝐾 𝑁𝑘 𝑗∈𝐽 𝑖∈𝐼 𝑘 𝑖,𝑗
+capturing long-term temporal dependencies compared to RNNs and
+provide more parallelization since RNNs operate sequence elements                   where 𝑖 ∈ 𝐼 ≡ {1...𝑁𝑘 }, 𝑗 ∈ 𝐽 ≡ {1...𝑀}, and 𝑘 ∈ 𝐾 ≡ {1...𝐿}, with
+one at a time recursively. Rußwurm and Körner (2020) compared deep                  𝑁𝑘 , 𝑀, and 𝐿 denoting the number of feature vectors along the spatial
+learning models on crop mapping and demonstrated that Transformers                  dimension of the 𝑘-th scale in the decoder, number of examples (input
+and RNNs achieve better performance than TempCNNs in dealing with                   patches), and number of scales in the decoder, respectively. Moreover,
+noisy raw Sentinel-2 time series. Li et al. (2020) proposed a CNN-                  𝑟𝑘 (.) is the resize function that converts the spatial size of the ground
+Transformer hybrid approach to perform crop classification using im-                truth to the spatial size of the 𝑘-th scale in the decoder, and the ℎ𝜃𝑘 (.)
+age time series. This approach outperformed RF, SVM, multi-temporal                 function denotes CLB with learnable parameters 𝜃𝑘 for the 𝑘-th scale.
+
+                                                                              274
+S. Mohammadi et al.                                                                                    ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+
+
+Fig. 1. The proposed framework, composed of an Encoder and Decoder and trained using two middle supervision methods and three output supervision methods. We use t-SNE
+to visualize the feature maps generated by an intermediate layer of the 3D FCN.
+
+
+Finally, 𝑦𝑖,𝑗 denotes the one-hot encoded ground truth for the 𝑖-th pixel                CE loss, which is widely used in the crop mapping literature, focuses on
+of the 𝑗-th example, 𝑓𝑖,𝑗,𝑘 denotes the 𝑖-th feature vector along the                    per-pixel prediction and awards both true positives and true negatives.
+spatial dimension of the 𝑗-th example in the 𝑘-th scale, and the ∙ symbol                This can lead to simplistic solutions of crop field segmentation because
+denotes the inner (dot) product.                                                         more pixels are likely to be labeled as background if the percentage
+    Supervised Contrastive loss Middle Supervision (SupCon-MidS).                        of positive labels decreases. IOU and F1 loss functions do not concern
+We adapt SupCon loss (Khosla et al., 2020) for supervising intermediate
+                                                                                         themselves with true negatives and try to directly maximize the IOU
+layers of the 3D FCN using the resized ground truth data as the
+                                                                                         and F1 measures, which are more indicative of success for segmentation
+labels. SupCon-MidS guides the middle layers through generating more
+discriminative and better-clustered features by encouraging feature                      tasks than pixel-wise accuracy.
+representation of the same class to be more similar in comparison to                        The CE loss is defined as:
+feature representation of different classes. SupCon loss improved Triplet                           1 ∑∑
+                                                                                         𝑂𝑢𝑡𝑆
+                                                                                           𝐶𝐸 = 𝑀𝑁              −𝑦𝑞,𝑗 ∙ log 𝑦̂𝑞,𝑗                             (4)
+loss (Weinberger and Saul, 2009) and N-pair loss (Sohn, 2016) by
+                                                                                                        𝑗∈𝐽 𝑞∈𝑄
+allowing to use many positives and many negatives for each anchor.
+    We denote the loss function used for SupCon-MidS as 𝑀𝑖𝑑𝑆      , which               where 𝑞 ∈ 𝑄 ≡ {1...𝑁}, in which 𝑁 denotes the number of pixels, and
+                                                            𝑆𝑢𝑝𝐶𝑜𝑛
+is defined as:                                                                           𝑦̂𝑞,𝑗 is the prediction for the 𝑞-th pixel of the 𝑗-th example generated at
+             1 ∑ ∑∑                                                                      the output of the 3D FCN.
+𝑀𝑖𝑑𝑆
+  𝑆𝑢𝑝𝐶𝑜𝑛 = 𝑀                − log(𝑺 𝑖,𝑗,𝑘 )                            (2)
+                𝑘∈𝐾 𝑗∈𝐽 𝑖∈𝐼                                                                   The IOU loss is defined as:
+                                                                                                    ∑
+where 𝑆𝑖,𝑗,𝑘 is obtained as:                                                             𝑂𝑢𝑡𝑆                                                                   (5)
+                                     (               )                                      𝐼𝑂𝑈 =      (1 − 𝐼𝑂𝑈𝑣 )
+             1        ∑         exp 𝒇 𝑖,𝑗,𝑘 ∙ 𝒇 𝑝 ∕𝜏                                             𝑣∈𝑉
+𝑺 𝑖,𝑗,𝑘 =                   ∑             (               )                 (3)          where 𝑣 ∈ 𝑉 ≡ {1...𝐶}, in which C denotes the number of classes. 𝐼𝑂𝑈𝑣 ,
+          |𝑃𝑗,𝑘 (𝑖)| 𝑝∈𝑃 (𝑖) 𝑎∈𝐴 (𝑖) exp 𝒇 𝑖,𝑗,𝑘 ∙ 𝒇 𝑎 ∕𝜏
+                        𝑗,𝑘      𝑗,𝑘
+                                                                                         which shows the IOU of 𝑣-th class, is obtained as:
+where 𝜏 ∈ + is a scalar temperature parameter, 𝐴(𝑖) ≡ 𝐼 ⧵{𝑖} (in which                                         ∑        𝑣       𝑣
+the index 𝑖 is called the anchor), and 𝑃 (𝑖) ≡ {𝑝 ∈ 𝐴(𝑖) ∶ 𝒚 𝑝 = 𝒚 𝑖 } is the                     1 ∑              𝑞∈𝑄 𝑦̂𝑞,𝑗 ⋅ 𝑦𝑞,𝑗
+                                                                                         𝐼𝑂𝑈𝑣 =        ∑                                                    (6)
+set of indices of all positives distinct from 𝑖, and |𝑃 (𝑖)| is its cardinality.                 𝑀 𝑗∈𝐽 𝑞∈𝑄 [𝑦̂𝑞,𝑗 + 𝑦𝑞,𝑗 − 𝑦̂𝑞,𝑗 ⋅ 𝑦𝑣𝑞,𝑗 ] + 𝜖
+                                                                                                               𝑣      𝑣        𝑣
+
+
+3.3. Output supervision of the 3D FCN                                                    where 𝑦̂𝑣𝑞,𝑗 and 𝑦𝑣𝑞,𝑗 denote the 𝑣-th class prediction value at the output
+                                                                                         and the 𝑣-th class ground truth value respectively for the 𝑞-th pixel
+   To supervise the output of our designed 3D FCN, we use CE loss,                       of the 𝑗-th example. A small constant ,denoted by 𝜖, is used to avoid
+IOU loss, and F1 loss, denoted as 𝑂𝑢𝑡𝑆
+                                   𝐶𝐸
+                                        , 𝑂𝑢𝑡𝑆
+                                           𝐼𝑂𝑈
+                                                , and 𝑂𝑢𝑡𝑆
+                                                       𝐹1
+                                                            , respectively.              division by zero.
+
+                                                                                   275
+S. Mohammadi et al.                                                                                                ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+Table 1
+Statistics of valid pixels and different crop types in different sites and different years.
+                Number of        Validity       Proportion     Proportion     Proportion
+                valid pixels    percentage       of Corn       of Soybean      of Other
+         2015    2,880,946         99.7%          51.6%           30.1%         18.3%
+Site A
+
+
+
+
+         2016    2,859,643         99.0%          55.8%           26.1%         18.1%
+         2017    2,885,211         99.8%          52.0%           30.0%         18.0%
+         2018    2,883,194         99.8%          51.6%           30.6%         17.8%
+         2015    2,833,040         98.0%          41.4%           37.4%         21.2%
+Site B
+
+
+
+
+         2016    2,854,056         98.8%          43.5%           35.4%         21.1%
+         2017    2,739,248         94.8%          42.2%           36.9%         20.9%
+         2018    2,611,813         90.4%          43.1%           37.6%         19.3%
+         2015    2,594,266         89.8%          37.1%           26.2%         36.7%
+Site C
+
+
+
+
+         2016    2,762,543         95.6%          36.5%           26.3%         37.2%
+         2017    1,962,044         67.9%          37.4%           28.5%         34.1%
+         2018    2,712,551         93.9%          35.3%           29.3%         35.4%
+         2015    1,699,073         58.8%          24.3%           23.1%         52.6%
+Site D
+
+
+
+
+         2016    2,740,183         94.8%          22.0%           19.3%         58.7%               Fig. 2. Geography of the Sites A, B, C, and D in the U.S. corn belt. These sites are
+         2017    2,668,841         92.4%          20.0%           22.9%         57.1%               located in IA (Iowa), SD (South Dakota), NE (Nebraska), and IN (Indiana).
+         2018    2,844,635         98.4%          19.2%           22.0%         58.8%
+
+
+                                                                                                    and near-infrared at each observation date. The detailed information
+   The F1 loss is defined as:                                                                       of the bands can be found in the Supplementary material. CDL is
+        ∑                                                                                           generated by the US Department of Agriculture (USDA) on a yearly
+𝑂𝑢𝑡𝑆
+ 𝐹1
+      =    (1 − 𝐹 1𝑣 )                                                                  (7)         basis (Boryan et al., 2011). Thanks to its open data-sharing policy,
+          𝑣∈𝑉
+                                                                                                    CDL has been successfully used to train and validate various supervised
+where 𝐹 1𝑣 , being the F1 of 𝑣-th class, is obtained as:                                            machine learning algorithms for crop type mapping (Lin et al., 2022;
+                    𝑣    𝑣                                                                          Wang et al., 2019b; Wen et al., 2022; Xu et al., 2021).
+         1 ∑ 2 ⋅ 𝑃 𝑗 ⋅ 𝑅𝑗
+𝐹 1𝑣 =                                                                                  (8)             Corn and soybean are the most frequent crop types in the selected
+         𝑀 𝑗∈𝐽 𝑃𝑗𝑣 + 𝑅𝑣𝑗
+                                                                                                    sites. In this study, corn, soybean, and the class Other (i.e., merged
+where 𝑃𝑗𝑣 and 𝑅𝑣𝑗 are the 𝑣-th class Precision and Recall for the 𝑗-th                              class of other land cover/land use types) are defined as the target
+example, obtained as:                                                                               classes. Their proportions are reported in Table 1. We employed the
+      ∑       𝑣      𝑣                                                                              Landsat image time series from April 22 to September 23 of four year
+        𝑞∈𝑄 𝑦̂𝑞,𝑗 ⋅ 𝑦𝑞,𝑗
+𝑃𝑗𝑣 = ∑        𝑣
+                                                                   (9)                              (2015–2018), which covers the growing season of corn and soybean (Xu
+         𝑞∈𝑄 𝑦̂𝑞,𝑗 + 𝜖                                                                              et al., 2020). To pre-process the Landsat images and prepare them for
+      ∑       𝑣      𝑣
+        𝑞∈𝑄 𝑦̂𝑞,𝑗 ⋅ 𝑦𝑞,𝑗                                                                            training and testing the models investigated in this study, we followed
+𝑅𝑣𝑗 = ∑        𝑣
+                                                                  (10)                              the procedure described in Xu et al. (2020) to select the so-called valid
+         𝑞∈𝑄 𝑦𝑞,𝑗 + 𝜖
+                                                                                                    pixels and obtain fixed-length time series. A valid observation is defined
+3.4. Overall loss function                                                                          as a pixel observation that is not labeled filled, shadow, cloudy, or
+                                                                                                    unclear. First, the pixels with less than seven valid observations after
+   To train the 3D FCN, we use both middle supervision and output                                   May 15 were excluded from the dataset since they lack sufficient multi-
+supervision. Therefore, the overall loss function is formulated as:                                 temporal information (as suggested by Xu et al. (2020)). Then linear
+                                                                                                    temporal interpolation was used to fill in the gaps in the valid pixels,
+𝑂𝑣𝑒𝑟𝑎𝑙𝑙 = 𝐿𝑀𝑖𝑑𝑆 + 𝛼𝐿𝑂𝑢𝑡𝑆                                                            (11)           thereby obtaining 23 time steps with seven days interval from 22 April
+                                                                                                    to 23 September. Table 1 shows the statistics of valid pixels. We used
+where 𝛼 is the balance parameter used to balance the middle supervi-
+                                                                                                    the data collected in 2015, 2016, and 2017 for training the models and
+sion loss 𝑀𝑖𝑑𝑆 and the output supervision loss 𝑂𝑢𝑡𝑆 .
+                                                                                                    used the data collected in 2018 for testing the models in both local and
+                                                                                                    spatial tests.
+4. Experiments
+                                                                                                        In this paper, the scenario for training and testing the proposed
+                                                                                                    method follows the scenario introduced in Xu et al. (2020). Xu et al.
+4.1. Study area and data pre-processing
+                                                                                                    (2020) proved the generalization capability of their method in a sce-
+                                                                                                    nario where the data distribution of the source domain and target
+    Our study area is situated in the U.S. corn belt. As shown in                                   domain is not significantly different. This is also the case in our paper
+Fig. 2, we selected four areas with size 1700 px × 1700 px, referred                                since our selected sites, which were also adopted in Xu et al. (2020), are
+to as Site A, Site B, Site C, and Site D, located in the center of                                  located in the same climatic zone. Therefore, the domain shift among
+the footprint of h18v07, h17v07, h16v07, and h22v09, respectively                                   these sites is not large due to similar meteorological factors.
+in the Analysis Ready Data (ARD) grid system. Each site covers 51
+km × 51 km, i.e. 260,100 ha. More information about Landsat ARD                                     4.2. Evaluation metrics
+tile grid system can be found at https://www.usgs.gov/media/images/
+conterminous-us-landsat-analysis-ready-data-ard-tiles.                                                  The performance of the proposed method is evaluated using mean
+    To prepare the data and labels for training, validation, and testing                            Intersection Over Union (𝑚𝐼𝑂𝑈 ), macro-averaged user’s accuracy (𝑈 𝐴),
+the network, we used Landsat ARD (publicly available on USGS’s                                      macro-averaged producer’s accuracy (𝑃 𝐴), and 𝐹 1 score for each of
+EarthExplorer web portal) and the Cropland Data Layer (CDL) (publicly                               the land cover types (corn, soybean, and the class Other), which is
+available on CropScape website portal). ARD combines the Landsat 7                                  compliant with the standards introduced in Stehman and Foody (2019).
+Enhanced Thematic Mapper Plus (ETM+) and Landsat 8 Operational                                          𝑚𝐼𝑂𝑈 , 𝑈 𝐴, 𝑃 𝐴, and 𝐹 1𝑖 are formulated as:
+Land Imager (OLI) products and provides non-spatially overlapping
+                                                                                                               1 ∑
+                                                                                                                   𝐶
+images at a resolution of 30 m. The data contain six optical bands,
+                                                                                                    𝑚𝐼𝑂𝑈 =           𝐼𝑂𝑈𝑖                                                         (12)
+namely red, green, blue, shortwave infrared 1, shortwave infrared 2,                                           𝐶 𝑖=1
+
+                                                                                              276
+S. Mohammadi et al.                                                                                       ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+Table 2
+Comparison of the proposed method with other methods. 𝑚𝐼𝑂𝑈 , 𝑈 𝐴, and 𝑃 𝐴 stand for mean Intersection Over Union, macro-averaged user’s accuracy, and macro-averaged
+producer’s accuracy, respectively. The best results are shown in red. X→Y means that the model is trained on Site X from 2015 to 2017 and tested on Site Y in 2018. All values
+are reported in percentage.
+                      Our method                           DCM                             Transformer                         RF                               MLP
+               mIOU       UA         PA       mIOU         UA         PA        mIOU            UA       PA       mIOU         UA         PA       mIOU         UA         PA
+                                                                                   Local test
+ A→A           90.1      94.8       94.8       85.0        92.1      91.3        84.7         91.5       91.5      84.6       91.4       91.4       84.2       91.9       90.6
+ B→B           90.0      94.4       95.1       85.8        91.8      92.8        85.2         91.5       92.4      85.6       91.6       92.7       82.0       90.0       89.8
+ C→C           81.6      90.4       89.7       80.5        90.0      88.9        80.9         90.0       89.1      80.0       89.5       88.5       78.9       88.9       87.9
+ D→D           87.6      93.4       93.4       83.9        91.3      91.6        80.0         89.5       89.2      76.7       88.1       87.0       75.1       87.5       86.0
+ Mean          87.3      93.3       93.3       83.8        91.3      91.2        82.7         91.1       90.6      81.7       90.2       89.9       80.1       90.0       89.8
+                                                                                  Spatial test
+ A→B           86.7      92.6       93.0       86.4       92.6       92.7        85.6         91.9       92.3      85.4       91.6       92.5       85.1       91.5       92.1
+ A→C           81.0      89.9       89.3       81.9       90.3       89.9        80.2         89.8       88.6      79.6       89.5       88.3       79.4       89.0       88.3
+ A→D           78.7      90.6       86.7       84.8       92.9       90.7        83.8         92.2       90.2      76.4       88.9       85.5       77.6       88.9       86.7
+ B→A           86.1      92.4       92.5       84.1       91.1       91.3        83.6         91.0       90.8      83.9       91.2       90.9       82.8       90.9       89.9
+ B→C           80.1      89.8       88.6       80.5       90.0       88.9        79.8         89.7       88.4      77.5       88.8       86.8       78.4       88.6       87.6
+ B→D           74.4      88.2       84.1       79.1       90.1       87.4        80.6         90.8       88.4      72.4       87.0       83.3       70.3       85.8       81.9
+ C→A           85.4      92.2       91.6       83.5       91.5       90.0        82.6         90.9       89.7      82.9       91.1       89.9       82.6       90.9       89.6
+ C→B           86.1      92.3       92.4       85.0       91.9       91.6        85.1         91.4       92.1      85.0       91.5       92.0       83.7       90.8       91.1
+ C→D           84.7      92.7       91.0       84.1       91.9       91.1        85.1         92.9       91.3      78.6       89.7       87.4       80.5       90.7       88.5
+ D→A           81.7      91.0       88.4       74.9       90.6       82.2        74.4         89.6       82.3      75.8       89.7       83.5       74.7       90.3       82.1
+ D→B           83.5      92.0       89.8       79.3       91.2       86.5        80.0         90.9       87.2      80.9       90.5       88.2       80.9       91.1       87.9
+ D→C           73.7      85.3       85.2       72.0       84.7       84.0        73.5         85.8       84.6      74.1       85.8       84.9       78.2       88.0       87.7
+ Mean          81.8      90.8       89.4       81.3       90.7       88.9        81.2         90.6       88.8      79.4       89.6       87.8       79.5       89.7       87.7
+
+
+
+                                                                                              In the next section, we report the main experimental results of our
+     1 ∑
+           𝐶
+𝑈𝐴 =      𝑃                                                                   (13)         study. Additional tests performed across a very large area, in a different
+     𝐶 𝑖=1 𝑖                                                                               year, and by using various vegetation indices as input variables are
+                                                                                           presented in the Supplementary Material.
+        1 ∑
+           𝐶
+𝑃𝐴 =         𝑅                                                                (14)
+        𝐶 𝑖=1 𝑖
+                                                                                           5. Experimental results
+         𝑃 .𝑅
+𝐹 1𝑖 = 2 𝑖 𝑖                                                                  (15)
+        𝑃𝑖 + 𝑅𝑖                                                                            5.1. Normalized difference vegetation index comparison of different sites
+where 𝐶, 𝑖, 𝐼𝑂𝑈𝑖 , 𝑃𝑖 , and 𝑅𝑖 denote the number of classes, index of
+the class, Intersection Over Union of the 𝑖-th class, Precision of the 𝑖-th                    As seen from the temporal profiles of the Normalized Difference
+class, and Recall of the 𝑖-th class, respectively.                                         Vegetation Index (NDVI) for the four sites in 2018 (Fig. 3), distinguish-
+                                                                                           ing between corn and soybean is a challenge because of their similar
+                                                                                           growth pattern, while the NDVI profiles of the class Other are notably
+4.3. Implementation details
+                                                                                           different from them. The class Other shows a different temporal profile
+                                                                                           with higher NDVI values at the beginning of the growing season and
+    We implemented our method in Tensorflow framework (Abadi et al.,                       lower NDVI values around week 17. Corn and soybean show similar
+2015) using ITC Geospatial Computing Platform, which is equipped                           vegetation cycles with a high overlap of buffer areas (areas that indicate
+with NVIDIA RTX A4000 GPU. The designed 3D FCN takes as input                              standard deviation range) during most weeks of the growing season.
+128 × 128 × 23 × 6 images and outputs 128 × 128 × 3 segmentation                           Corn and soybean, however, have fewer overlaps in buffer areas of
+maps, where 128 × 128, 23, 6, and 3 correspond to the spatial size,                        NDVI values in weeks 9, 10, and 11. This temporal window could be
+number of time steps in time series, number of optical bands, and                          helpful for distinguishing corn from soybean.
+number of classes, respectively.
+    We used the stochastic gradient descent with a momentum coeffi-                        5.2. Performance comparison
+cient 0.9 and an initial learning rate of 0.001, which is divided by 10
+if no improvement in training loss is seen for 10 epochs. 𝜏 was set to                         We compared our method with two deep learning-based methods
+0.05. We split the training data into five folds and used each of them as                  namely, DCM (Xu et al., 2020) and Transformer (Vaswani et al., 2017)
+validation (for early stopping) and the rest for training with batch size                  and two conventional classification methods, namely Random Forest
+1. Therefore, we train the model five times separately using each of                       (RF) and Multilayer Perceptron (MLP). To implement these methods,
+the training and validation data. During training, the validation data                     we use the same settings and hyperparametrs as in Xu et al. (2020). In
+is used for early stopping to save the best performing weights based                       the Ablation analysis section, we show that the best performing set-up
+on validation accuracy in different epochs. This validation method is                      of our method is using IOU loss along with SupCon-MidS (with 𝛼 set
+called early stopping with 5-fold cross-validation, which results in five                  to 12), whose classification results are compared with the classification
+models with best performing weights on validation data. Finally, we use                    results of the other methods in terms of 𝑚𝐼𝑂𝑈 , 𝑈 𝐴, and 𝑃 𝐴 in Table 2.
+the test data to assess the performance of our method by averaging the                     To facilitate easy comparison of the methods, we use mean mIOU
+softmax outputs of the resulting five trained models. To find the best                     (denoted as 𝑚𝐼𝑂𝑈 ), mean 𝑈 𝐴, and mean 𝑃 𝐴 values. We perform both
+value for 𝛼 that results in the best performance, we test eight values of                  local and spatial tests as follows: after training the model on one site
+{0.25, 1, 4, 8, 12, 16, 20, 24} using a validation data split of Site A.                   using images from 2015 to 2017, the model is tested on the same site
+When using CE-MidS along with CE and IOU, our method achieves the                          in 2018 in the local test scenario and across different sites in 2018 in
+highest performance with the value of 20. The value equals 12 when                         the spatial test scenario.
+SupCon-Mids is used along with CE and IOU. The code and data are                               Table 2 shows that in local tests, our method outperforms the other
+available at: https://github.com/Sina-Mohammadi/CropSupervision.                           methods by a relatively large margin achieving a 𝑚𝐼𝑂𝑈 of 87.3%.
+
+                                                                                     277
+S. Mohammadi et al.                                                                                           ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+
+
+                                       Fig. 3. Temporal profiles of the target crops calculated using NDVI for Site A, B, C, and D in 2018.
+
+
+
+
+Fig. 4. The 𝐹 1 scores of different methods for each of the crop types for all sites: (a) local test performance and (b) average spatial test performance. The local test results are
+obtained when the training and test data are from the same site. The average spatial test results are obtained by averaging the F1 scores of the models trained in other sites and
+tested in the target site.
+
+
+Table 3                                                                                          maps for all sites (difference maps). The first column shows a difference
+P-values of two-sample t-test based on 𝑚𝐼𝑂𝑈 scores for the comparison of our method              map with fewer misclassified pixels compared to other columns. This
+to DCM, Transformer, MLP, and RF.
+                                                                                                 is consistent with the obtained 𝑚𝐼𝑂𝑈 scores and shows that the spatial
+                                        Local test                          Spatial test
+                                                                                                 tests are more challenging.
+     DCM                                  <0.05                               0.58
+  Transformer                             <0.05                               0.52
+     MLP                                  <0.05                               <0.05
+                                                                                                 5.3. Ablation analysis
+      RF                                  0.06                                <0.05
+                                                                                                     We employed three output supervision methods (F1, IOU, and CE
+                                                                                                 loss functions) and two middle supervision methods (CE-MidS and
+                                                                                                 SupCon-MidS). To investigate the effectiveness of each loss function
+These scores show the superiority of our method to DCM (𝑚𝐼𝑂𝑈 :                                   and assess to what extent they affect the performance, we apply them
+83.8%), Transformer (𝑚𝐼𝑂𝑈 : 82.7%), RF (𝑚𝐼𝑂𝑈 : 81.7%), and MLP                                   to our 3D FCN in different set-ups (Table 4). The framework in each
+(𝑚𝐼𝑂𝑈 : 80.1%). When testing across different sites, our method outper-                          set-up is investigated for two sites. We train each set-up on Site A
+forms slightly the other methods as well. It obtains a 𝑚𝐼𝑂𝑈 of 81.8%                             and B individually from 2015 to 2017 and test on the same site in
+and outperformed DCM (𝑚𝐼𝑂𝑈 : 81.3%), Transformer (𝑚𝐼𝑂𝑈 : 81.2%),                                 2018. Table 4 shows that both F1 and IOU improve 𝑚𝐼𝑂𝑈 obtained
+RF (𝑚𝐼𝑂𝑈 : 79.4%), and MLP (𝑚𝐼𝑂𝑈 : 79.5%).                                                       by CE by 0.3% and 1.1% on Site A as well as 0.9% and 1.1% on
+    We perform two-sample t-test to investigate whether these im-                                Site B, respectively. Accordingly, the best output supervision method is
+provements are statistically significant. In Table 3, we report p-values                         IOU, which is therefore selected to be used along with the two middle
+of two-sample t-test based on 𝑚𝐼𝑂𝑈 scores. This table shows that                                 supervision methods. To further prove the performance consistency
+our method obtained a significantly higher 𝑚𝐼𝑂𝑈 score than DCM,                                  of the two middle supervision methods, we show that they can also
+Transformer, and MLP in the local test and higher score than MLP and                             achieve good performance when used along with the widely used CE
+RF in the spatial test with a 95% confidence interval. Moreover, we                              loss function. As depicted in Table 4, when CE-Mids is used along with
+show the 𝐹 1 scores for each of the crop types in local and spatial tests                        CE and IOU, 𝑚𝐼𝑂𝑈 improves by 0.9% and 0.6% on Site A, and it
+in Fig. 4. As seen, our proposed method performs better than the other                           improves by 1.4% and 0.7% on Site B, respectively. Moreover, using
+methods.                                                                                         SupCon-Mids along with CE and IOU output supervision resulted in
+    To report detailed prediction results on different test sites, we                            𝑚𝐼𝑂𝑈 increases of 1.6% and 0.8% on Site A as well as 1.6% and 0.9%
+provide confusion matrices of our method trained on site A and tested                            on Site B, respectively (1.2% on average).
+on all sites as an example in Fig. 5. As seen from the diagonal values in                            The results of Table 4 show the strong capability of our adopted loss
+these matrices, our method correctly classifies a large number of pixels.                        functions to improve the performance in crop mapping. More specif-
+Furthermore, in Fig. 6, we show the classification results generated by                          ically, by deviating from the common and widely used loss function
+our method trained on Site A and their comparison to CDL reference                               employed for training the deep neural networks, i.e. CE loss, and by
+
+                                                                                           278
+S. Mohammadi et al.                                                                                           ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+
+
+Fig. 5. The confusion matrices of our method trained in site A from 2015 to 2017 and tested in all sites in 2018. Values in confusion matrices represent the number of samples.
+
+
+
+
+Fig. 6. The predicted maps and difference maps for all sites in 2018 generated by our 3D FCN trained in Site A from 2015 to 2017. The pixels that are in white are excluded
+from the dataset due to the lack of sufficient multi-temporal information.
+
+
+Table 4                                                                                          it is trained on Site B from 2015 to 2017 and tested on Site D in
+Ablation Analysis of our method in different set-ups. The best results are shown in red.
+                                                                                                 2018. Results are shown in Table 5. The middle supervision methods,
+All values are reported in percentage.
+                                                                                                 especially SupCon-Mids, have a larger effect on the performance in
+                                        Site A                          Site B
+                                                                                                 spatial tests compared to local tests (Table 4) and result in a larger
+                             mIOU        UA         PA       mIOU        UA         PA
+                                                                                                 performance boost. More specifically, using SupCon-Mids along with
+          𝐶𝐸                  88.2      94.0       93.4       88.0       93.2      94.0          CE output supervision results in 𝑚𝐼𝑂𝑈 increases of 4.5% and 9.9% in
+          𝐹1                  88.5      94.1       93.7       88.9       93.7      94.5
+         𝐼𝑂𝑈                  89.3      94.6       94.1       89.1       93.9      94.6
+                                                                                                 A→D and B→D, respectively. Furthermore, these increases are equal
+     𝐶𝐸 + 𝐶𝐸-𝑀𝑖𝑑𝑆             89.1      94.2       94.1       89.4       94.0      94.7          to 8.3% and 7.5% when using SupCon-Mids along with IOU output
+   𝐶𝐸 + 𝑆𝑢𝑝𝐶𝑜𝑛-𝑀𝑖𝑑𝑆           89.8      94.5       94.6       89.6       94.1      94.9          supervision. These larger improvements (7.6% on average) show that
+    𝐼𝑂𝑈 + 𝐶𝐸-𝑀𝑖𝑑𝑆             89.9      94.8       94.5       89.8       94.2      95.0          our framework can benefit even more from SupCon-Mids in spatial
+  𝐼𝑂𝑈 + 𝑆𝑢𝑝𝐶𝑜𝑛-𝑀𝑖𝑑𝑆           90.1      94.8       94.8       90.0       94.4      95.1
+                                                                                                 test scenarios, which are more challenging in comparison to local test
+                                                                                                 scenarios.
+                                                                                                     To explore the reasons behind this large performance boost, we
+using IOU in conjunction with the proposed SupCon-Mids, we managed                               computed 𝐹 1 scores of corn, soybean, and the class Other to assess
+to increase 𝑚𝐼𝑂𝑈 from 88.2% to 90.1% in Site A and from 88.0% to                                 the effect of SupCon-Mids on each class individually. Table 5 shows
+90.0% in Site B, respectively.                                                                   that using SupCon-Mids improves the classification results of corn and
+    Investigating the effect of middle supervision on the results                                soybean more than the class Other. This can be explained by the
+of spatial tests. In the following, we aim to investigate the extent of                          phenology of the class Other in the test site (Site D), which is distinct
+performance boost in spatial tests by considering two scenarios. First,                          from the phenology of corn and soybean (Fig. 3). Therefore, the class
+the models in different set-ups of our framework are trained on Site A                           Other is already easier to be classified even only by using CE loss output
+from year 2015 to 2017 and tested on Site D in 2018, while second,                               supervision. In this study, we employ two procedures to quantify to
+
+                                                                                           279
+S. Mohammadi et al.                                                                                       ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+                          Table 5
+                          Investigating the effect of middle supervision on the results of spatial tests. The best results are shown in red. X→Y
+                          means that the model is trained on Site X from 2015 to 2017 and tested on Site Y in 2018. All values are reported
+                          in percentage.
+                                                                          A→D                                              B→D
+                                                     mIOU       F1 Corn      F1 Soy        F1 Oth      mIOU      F1 Corn     F1 Soy       F1 Oth
+                                   𝐶𝐸                 73.3       80.7         77.9          93.8       63.7       68.9           70.5         91.4
+                              𝐶𝐸 + 𝐶𝐸-𝑀𝑖𝑑𝑆            76.0       83.2         81.0          94.0       68.7       74.9           73.7         93.5
+                            𝐶𝐸 + 𝑆𝑢𝑝𝐶𝑜𝑛-𝑀𝑖𝑑𝑆          77.8       84.4         83.7          93.9       73.6       80.6           77.5         94.7
+                                  𝐼𝑂𝑈                 70.8       78.7         74.0          94.1       67.0       73.2           72.3         92.9
+                             𝐼𝑂𝑈 + 𝐶𝐸-𝑀𝑖𝑑𝑆            72.8       80.3         77.1          94.0       70.1       77.0           74.4         93.9
+                           𝐼𝑂𝑈 + 𝑆𝑢𝑝𝐶𝑜𝑛-𝑀𝑖𝑑𝑆          79.1       85.7         84.0          94.6       74.5       81.6           78.3         94.9
+
+
+
+which degree the class Other is more distinguishable than corn and                         Table 6
+                                                                                           The mean Silhouette Coefficient (𝑆𝐶) of features generated by the intermediate layer
+soybean.
+                                                                                           of our 3D FCN and mean Confidence Scores (𝐶𝑆) in different set-ups. X→Y means that
+    The first procedure is based upon Dynamic Time Warping (DTW)                           the model is trained on Site X from 2015 to 2017 and tested on Site Y in 2018.
+(Sakoe and Chiba, 1978), which measures the similarity between two                                                                      A→D                        B→D
+time series by calculating the distance between them. A lower DTW
+                                                                                                                             𝑆𝐶                 𝐶𝑆          𝑆𝐶             𝐶𝑆
+distance corresponds to more similar time series. The DTW distance
+                                                                                                    𝐶𝐸                      0.22               0.86        0.20           0.82
+between corn and soybean equals 0.56, while it equals 3.65 and 3.27
+                                                                                               𝐶𝐸 + 𝐶𝐸-𝑀𝑖𝑑𝑆                 0.25               0.87        0.23           0.85
+between corn and the class Other and between soybean and the class                           𝐶𝐸 + 𝑆𝑢𝑝𝐶𝑜𝑛-𝑀𝑖𝑑𝑆               0.32               0.88        0.34           0.87
+Other, respectively. This shows that corn and soybean are more similar                             𝐼𝑂𝑈                      0.23               0.88        0.23           0.84
+than the other pairs of classes.                                                              𝐼𝑂𝑈 + 𝐶𝐸-𝑀𝑖𝑑𝑆                 0.26               0.88        0.23           0.86
+                                                                                            𝐼𝑂𝑈 + 𝑆𝑢𝑝𝐶𝑜𝑛-𝑀𝑖𝑑𝑆               0.36               0.90        0.34           0.88
+    The second procedure calculates the Silhouette Coefficient
+(Rousseeuw, 1987) by considering pairs of classes. The Silhouette
+Coefficient, ranging from −1 to +1, shows how well the samples are
+clustered. The closer this value is to +1, the better the samples are                      6. Discussion
+clustered. We select 100K samples from each class. When we consider
+corn and soybean, the Silhouette Coefficient equals 0.19 while it equals                       For the first time in crop mapping studies, we investigated the
+0.35 when we consider corn and the class Other as well as soybean                          capability of supervising the intermediate layers of a deep neural net-
+and the class Other. Hence, distinguishing between corn and soybean                        work to increase classification accuracy. Besides showing the benefits of
+is harder than distinguishing class Other from corn and soybean.                           CE-Mids, we demonstrated that our novel middle supervision method,
+    On the basis of these two procedures, we conclude that the class                       namely SupCon-Mids led to a large performance boost, especially when
+Other is easier to be classified than corn and soybean, and that is why                    testing the models across different regions. Furthermore, better classi-
+using only output supervision resulted in a relatively good performance                    fication results were obtained by adopting F1 and IOU loss functions
+in classifying the class Other. However, due to similar phenologies of                     instead of the widely used CE loss function.
+corn and soybean, using only output supervision is not helpful enough                          By supervising a 3D FCN effectively, we managed to outperform
+to guide the network to learn discriminative features from these two                       the state-of-the-art methods, especially when the network trained using
+classes. Therefore, by employing our SupCon-Mids we are able to guide                      several continuous years was used to identify crops across time. Similar
+the network such that features from the same class are pulled closer                       results were reported in Cai et al. (2018), where the classification model
+together than features from different classes, thereby enhancing feature                   trained using many years of data obtained high classification results on
+discrimination.                                                                            the target year. The performance improvements of our method over
+    Investigating the effect of middle supervision on feature clus-                        state-of-the art methods in spatial tests were lower compared to local
+tering. In the following, by conducting a quantitative experiment and                      tests. This could be explained by the differences in crop phenologies
+a visual experiment, we show that using CE-Mids and SupCon-Mids                            across investigated regions (Wang et al., 2019b). These differences
+along with output supervision results in more discriminative and better-                   might become even larger when the model is tested in regions with
+clustered features. As a quantitative measure, we calculate the mean                       completely different meteorological and topographical conditions and
+Silhouette Coefficient (denoted as 𝑆𝐶) of the features generated by                        varying cropping practices (Xu et al., 2020), which result in the domain
+the intermediate layer of our 3D FCN (as shown in Fig. 1) over all                         shift problem. To address this problem, the proposed framework can
+128 × 128 × 23 × 6 samples in Site D (Table 6). Both middle supervision                    be leveraged by implementing domain adaptation methods capable
+methods, especially SupCon-MidS, have beneficial effect on the 𝑆𝐶.                         of reducing the data distribution mismatch and thus enhancing the
+Moreover, we calculate the mean confidence scores (denoted as 𝐶𝑆)                          transferability of trained models on the test regions (Choi et al., 2019;
+by averaging the predicted probabilities corresponding to the correct                      Chen et al., 2019; Xie et al., 2018; Pinheiro, 2018; Ganin and Lem-
+categories (Table 6). The 𝐶𝑆 benefits from both middle supervision                         pitsky, 2015). Moreover, Growing-Degree-Day (GDD) (Zhong et al.,
+methods, which shows that better-clustered features result in more                         2014) could be used to assess the crop intra-variabilities across time
+confident predictions. In addition, we feed three samples of site D to the                 and space and identify the label-rich regions that are more similar to
+3D FCN trained with different set-ups and used the features generated                      a new test region. Since nowadays many crop labels are available (see
+by the intermediate layer (as shown in Fig. 1) for feature clustering                      for example Garnot and Landrieu, 2021 and Weikmann et al., 2021),
+analysis. To visualize the features, we use t-SNE to reduce the original                   the 3D FCN tested in our paper can be used to classify crop types in
+736-dimensional feature space (32 × 23) to two dimensional space. As                       label-scarce environments such as sub-Saharan countries (McCluskey
+seen in Fig. 7, by employing SupCon-MidS, we are able to generate                          et al., 2018; M Rustowicz et al., 2019) by first identifying the most
+more discriminative and better-clustered features in comparison to                         similar label-rich regions and then by incorporating domain adaptation
+CE-MidS.                                                                                   methods to reduce the domain shift and, in this way, to further improve
+    Results of the ablation analysis highlight the impact of proper                        the performance.
+supervision of deep neural networks on improving crop type mapping                             Crop type classification from optical satellite time series is chal-
+performance.                                                                               lenged by the presence of clouds. In our work, we employed the
+
+                                                                                     280
+S. Mohammadi et al.                                                                                       ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+
+
+Fig. 7. Illustration of the benefit of middle supervision for feature learning. We use t-SNE to visualize the features generated by the intermediate layer of our 3D FCN trained
+with different set-ups using three samples (with size 128 × 128 × 23 × 6) of Site D. X→Y means that the model is trained on Site X from 2015 to 2017 and tested on Site Y in
+2018. Our proposed SupCon-Mids results in more discriminative and better-clustered features and improves Silhouette Coefficient (SC).
+
+
+procedure introduced in Xu et al. (2020) to deal with missing data.                         U.S. corn belt where we focused on corn, soybean, and the class Other.
+To further reduce the classification uncertainties caused by the pres-                      The results of the ablation analysis demonstrated that our supervision
+ence of gaps in time series, future studies can be dedicated to either                      methods are beneficial for crop type mapping performance, thereby
+fusing Landsat time series with other products, including MODIS or                          revealing the importance of proper supervision of deep neural networks
+Sentinel-2 (Gao et al., 2017; Schreier et al., 2021) or to incorpo-                         for more accurate crop type mapping. In particular, when we added
+rating image reconstruction methods such as generative adversarial                          SupCon-MidS to the output supervision methods, 𝑚𝐼𝑂𝑈 improved by
+network (GAN) (Zhou et al., 2022) to successfully reconstruct the                           7.6% on average in spatial tests. This increase in performance is the
+images contaminated by clouds.                                                              most important finding of our study, highlighting the significance of
+    Our study focused on the majority crops that dominate the agricul-                      proper supervision of the intermediate layers of deep neural networks.
+tural landscape in the selected study areas while the minority crops                        Moreover, the best set-up of our method, namely IOU+ SupCon-MidS,
+were merged into the other class. Nevertheless, given the ecological                        was able to outperform previous methods by 𝑚𝐼𝑂𝑈 scores of 3.5% and
+and food security relevance of minority crops for agricultural sys-                         0.5% in local and spatial tests, respectively. Our findings, therefore,
+tems (Waldner et al., 2019), new optimization functions capable of                          resulted in an improved selection of loss functions used to train deep
+minimizing the difference in the performance of deep learning networks                      neural networks for crop mapping.
+among rare and dominant crops should be investigated. Future studies
+should also focus on assessing the capability of middle supervision
+                                                                                            Declaration of competing interest
+and of the proposed loss functions to discriminate crops in diverse
+agricultural landscapes where inter-class similarity proved to challenge
+                                                                                                The authors declare that they have no known competing finan-
+existing crop type classification approaches (Gella et al., 2021).
+                                                                                            cial interests or personal relationships that could have appeared to
+7. Conclusion                                                                               influence the work reported in this paper.
+
+
+    In this study, we adopted the middle supervision methods, CE-MidS                       Appendix A. Supplementary data
+and SupCon-MidS, and the output supervision methods, F1 loss and IOU
+loss. This was helpful for our designed 3D FCN to learn more discrim-                           Supplementary material related to this article can be found online
+inative and representative features. Our study area is situated in the                      at https://doi.org/10.1016/j.isprsjprs.2023.03.007.
+
+                                                                                      281
+S. Mohammadi et al.                                                                                                ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+References                                                                                         King, L., Adusei, B., Stehman, S.V., Potapov, P.V., Song, X.-P., Krylov, A., Di Bella, C.,
+                                                                                                       Loveland, T.R., Johnson, D.M., Hansen, M.C., 2017. A multi-resolution approach to
+Abadi, M., Agarwal, A., Barham, P., Brevdo, E., Chen, Z., Citro, C., Corrado, G.S.,                    national-scale cultivated area estimation of soybean. Remote Sens. Environ. 195,
+     Davis, A., Dean, J., Devin, M., Ghemawat, S., Goodfellow, I., Harp, A., Irving, G.,               13–29.
+     Isard, M., Jia, Y., Jozefowicz, R., Kaiser, L., Kudlur, M., Levenberg, J., Mané, D.,          Kluger, D.M., Wang, S., Lobell, D.B., 2021. Two shifts for crop mapping: Leveraging
+     Monga, R., Moore, S., Murray, D., Olah, C., Schuster, M., Shlens, J., Steiner, B.,                aggregate crop statistics to improve satellite-based maps in new regions. Remote
+     Sutskever, I., Talwar, K., Tucker, P., Vanhoucke, V., Vasudevan, V., Viégas, F.,                  Sens. Environ. 262, 112488.
+     Vinyals, O., Warden, P., Wattenberg, M., Wicke, M., Yu, Y., Zheng, X., 2015.                  Kussul, N., Lavreniuk, M., Skakun, S., Shelestov, A., 2017. Deep learning classification
+     TensorFlow: Large-scale machine learning on heterogeneous systems. URL https:                     of land cover and crop types using remote sensing data. IEEE Geosci. Remote Sens.
+     //www.tensorflow.org/. Software available from tensorflow.org.                                    Lett. 14 (5), 778–782.
+Belgiu, M., Drăguţ, L., 2016. Random forest in remote sensing: A review of applications            LeCun, Y., Bengio, Y., Hinton, G., 2015. Deep learning. Nature 521 (7553), 436–444.
+     and future directions. ISPRS J. Photogramm. Remote Sens. 114, 24–31.                          Li, Z., Chen, G., Zhang, T., 2020. A CNN-transformer hybrid approach for crop
+Boryan, C., Yang, Z., Mueller, R., Craig, M., 2011. Monitoring US agriculture: the                     classification using multitemporal multisensor images. IEEE J. Sel. Top. Appl. Earth
+     US department of agriculture, national agricultural statistics service, cropland data             Obs. Remote Sens. 13, 847–858.
+     layer program. Geocarto Int. 26 (5), 341–358.                                                 Lin, C., Zhong, L., Song, X.-P., Dong, J., Lobell, D.B., Jin, Z., 2022. Early-and in-
+Brown, M.E., de Beurs, K., Vrieling, A., 2010. The response of african land surface                    season crop type mapping without current-year ground truth: Generating labels
+                                                                                                       from historical information via a topology-based approach. Remote Sens. Environ.
+     phenology to large scale climate oscillations. Remote Sens. Environ. 114 (10),
+                                                                                                       274, 112994.
+     2286–2296.
+                                                                                                   Liu, W., Wen, Y., Yu, Z., Yang, M., 2016. Large-margin softmax loss for convolutional
+Cai, Y., Guan, K., Peng, J., Wang, S., Seifert, C., Wardlow, B., Li, Z., 2018. A high-
+                                                                                                       neural networks.. In: ICML, Vol. 2. p. 7.
+     performance and in-season classification system of field-level crop types using
+                                                                                                   Long, J., Shelhamer, E., Darrell, T., 2015. Fully convolutional networks for semantic
+     time-series landsat data and a machine learning approach. Remote Sens. Environ.
+                                                                                                       segmentation. In: Proceedings of the IEEE Conference on Computer Vision and
+     210, 35–47.
+                                                                                                       Pattern Recognition. pp. 3431–3440.
+Chen, C., Xie, W., Huang, W., Rong, Y., Ding, X., Huang, Y., Xu, T., Huang, J., 2019.
+                                                                                                   Löw, F., Michel, U., Dech, S., Conrad, C., 2013. Impact of feature selection on the
+     Progressive feature alignment for unsupervised domain adaptation. In: Proceedings
+                                                                                                       accuracy and spatial uncertainty of per-field crop classification using support vector
+     of the IEEE Conference on Computer Vision and Pattern Recognition. pp. 627–636.
+                                                                                                       machines. ISPRS J. Photogramm. Remote Sens. 85, 102–119.
+Chen, L.-C., Zhu, Y., Papandreou, G., Schroff, F., Adam, H., 2018. Encoder-decoder
+                                                                                                   Lyu, Y., Yang, M.Y., Vosselman, G., Xia, G.-S., 2021. Video object detection with
+     with atrous separable convolution for semantic image segmentation. In: ECCV.
+                                                                                                       a convolutional regression tracker. ISPRS J. Photogramm. Remote Sens. 176,
+Choi, J., Jeong, M., Kim, T., Kim, C., 2019. Pseudo-labeling curriculum for unsupervised
+                                                                                                       139–150.
+     domain adaptation. arXiv preprint arXiv:1908.00262.
+                                                                                                   M Rustowicz, R., Cheong, R., Wang, L., Ermon, S., Burke, M., Lobell, D., 2019. Semantic
+Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U.,
+                                                                                                       segmentation of crop type in africa: A novel dataset and analysis of deep learning
+     Roth, S., Schiele, B., 2016. The cityscapes dataset for semantic urban scene
+                                                                                                       methods. In: Proceedings of the IEEE/CVF Conference on Computer Vision and
+     understanding. In: Proceedings of the IEEE Conference on Computer Vision and
+                                                                                                       Pattern Recognition Workshops. pp. 75–82.
+     Pattern Recognition. pp. 3213–3223.
+                                                                                                   Ma, A., Wan, Y., Zhong, Y., Wang, J., Zhang, L., 2021. SceneNet: Remote sensing
+Danilla, C., Persello, C., Tolpekin, V., Bergado, J.R., 2017. Classification of multitem-
+                                                                                                       scene classification deep learning network using multi-objective neural evolution
+     poral SAR images using convolutional neural networks and Markov random fields.
+                                                                                                       architecture search. ISPRS J. Photogramm. Remote Sens. 172, 171–188.
+     In: 2017 IEEE International Geoscience and Remote Sensing Symposium. IGARSS,
+                                                                                                   Marsden, C., Nouvellon, Y., Laclau, J.-P., Corbeels, M., McMurtrie, R.E., Stape, J.L.,
+     IEEE, pp. 2231–2234.
+                                                                                                       Epron, D., Le Maire, G., 2013. Modifying the G’DAY process-based model to
+Dhaliwal, D.S., Williams, M.M., 2022. Evidence of sweet corn yield losses from rising
+                                                                                                       simulate the spatial variability of Eucalyptus plantation growth on deep tropical
+     temperatures. Sci. Rep. 12 (1), 1–6.
+                                                                                                       soils. Forest Ecol. Manag. 301, 112–128.
+Ebi, K.L., Anderson, C.L., Hess, J.J., Kim, S.-H., Loladze, I., Neumann, R.B., Singh, D.,
+                                                                                                   Massey, R., Sankey, T.T., Congalton, R.G., Yadav, K., Thenkabail, P.S., Ozdo-
+     Ziska, L., Wood, R., 2021. Nutritional quality of crops in a high CO2 world:
+                                                                                                       gan, M., Meador, A.J.S., 2017. MODIS phenology-derived, multi-year distribution
+     an agenda for research and technology development. Environ. Res. Lett. 16 (6),
+                                                                                                       of conterminous US crop types. Remote Sens. Environ. 198, 490–503.
+     064045.
+                                                                                                   McCluskey, J.J., Nelson, A.G., Gala, C., 2018. Agricultural and applied economics
+Elsayed, G., Krishnan, D., Mobahi, H., Regan, K., Bengio, S., 2018. Large margin deep                  priorities for solving societal challenges. Appl. Econ. Pers. Policy 40 (1), 1–4.
+     networks for classification. Adv. Neural Inf. Process. Syst. 31.                              Mohammadi, S., Belgiu, M., Stein, A., 2021. 3D fully convolutional neural networks
+Funk, C., Budde, M.E., 2009. Phenologically-tuned MODIS NDVI-based production                          with intersection over union loss for crop mapping from multi-temporal satellite
+     anomaly estimates for Zimbabwe. Remote Sens. Environ. 113 (1), 115–125.                           images. In: 2021 IEEE International Geoscience and Remote Sensing Symposium
+Ganin, Y., Lempitsky, V., 2015. Unsupervised domain adaptation by backpropagation.                     IGARSS. IEEE, pp. 5834–5837.
+     In: International Conference on Machine Learning. PMLR, pp. 1180–1189.                        Olsson, L., Eklundh, L., 1994. Fourier series for analysis of temporal sequences of
+Gao, F., Anderson, M.C., Zhang, X., Yang, Z., Alfieri, J.G., Kustas, W.P., Mueller, R.,                satellite sensor imagery. Int. J. Remote Sens. 15 (18), 3735–3741.
+     Johnson, D.M., Prueger, J.H., 2017. Toward mapping crop progress at field scales              Pelletier, C., Valero, S., Inglada, J., Champion, N., Dedieu, G., 2016. Assessing the
+     through fusion of landsat and MODIS imagery. Remote Sens. Environ. 188, 9–25.                     robustness of random forests to map land cover with high resolution satellite image
+Garnot, V.S.F., Landrieu, L., 2021. Panoptic segmentation of satellite image time series               time series over large areas. Remote Sens. Environ. 187, 156–168.
+     with convolutional temporal attention networks. In: Proceedings of the IEEE/CVF               Pelletier, C., Webb, G.I., Petitjean, F., 2019. Temporal convolutional neural network
+     International Conference on Computer Vision. pp. 4872–4881.                                       for the classification of satellite image time series. Remote Sens. 11 (5), 523.
+Garnot, V.S.F., Landrieu, L., Chehata, N., 2022. Multi-modal temporal attention models             Persello, C., Tolpekin, V., Bergado, J.R., De By, R., 2019. Delineation of agricultural
+     for crop mapping from satellite time series. ISPRS J. Photogramm. Remote Sens.                    fields in smallholder farms from satellite images using fully convolutional networks
+     187, 294–305.                                                                                     and combinatorial grouping. Remote Sens. Environ. 231, 111253.
+Gella, G.W., Bijker, W., Belgiu, M., 2021. Mapping crop types in complex farming areas             Pinheiro, P.O., 2018. Unsupervised domain adaptation with similarity learning. In:
+     using SAR imagery with dynamic time warping. ISPRS J. Photogramm. Remote                          Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition.
+     Sens. 175, 171–183.                                                                               pp. 8004–8013.
+Hou, Q., Cheng, M.-M., Hu, X., Borji, A., Tu, Z., Torr, P.H., 2017. Deeply supervised              Qin, X., Zhang, Z., Huang, C., Gao, C., Dehghan, M., Jagersand, M., 2019. Bas-
+     salient object detection with short connections. In: Proceedings of the IEEE                      net: Boundary-aware salient object detection. In: Proceedings of the IEEE/CVF
+     Conference on Computer Vision and Pattern Recognition. pp. 3203–3212.                             Conference on Computer Vision and Pattern Recognition. pp. 7479–7489.
+Ji, S., Zhang, C., Xu, A., Shi, Y., Duan, Y., 2018. 3D convolutional neural networks               Rousseeuw, P.J., 1987. Silhouettes: a graphical aid to the interpretation and validation
+     for crop classification with multi-temporal remote sensing images. Remote Sens. 10                of cluster analysis. J. Comput. Appl. Math. 20, 53–65.
+     (1), 75.                                                                                      Rußwurm, M., Korner, M., 2017. Temporal vegetation modelling using long short-term
+Ji, S., Zhang, Z., Zhang, C., Wei, S., Lu, M., Duan, Y., 2020. Learning discriminative                 memory networks for crop identification from medium-resolution multi-spectral
+     spatiotemporal features for precise crop classification from multi-temporal satellite             satellite images. In: Proceedings of the IEEE Conference on Computer Vision and
+     images. Int. J. Remote Sens. 41 (8), 3162–3174.                                                   Pattern Recognition Workshops. pp. 11–19.
+Kashiani, H., Shokouhi, S.B., 2019. Visual object tracking based on adaptive siamese               Rußwurm, M., Körner, M., 2018. Multi-temporal land cover classification with
+     and motion estimation network. Image Vis. Comput. 83, 17–28.                                      sequential recurrent encoders. ISPRS Int. J. Geo-Inf. 7 (4), 129.
+Khatami, R., Mountrakis, G., Stehman, S.V., 2016. A meta-analysis of remote sensing                Rußwurm, M., Körner, M., 2020. Self-attention for raw optical satellite time series
+     research on supervised pixel-based land-cover image classification processes: Gen-                classification. ISPRS J. Photogramm. Remote Sens. 169, 421–435.
+     eral guidelines for practitioners and future research. Remote Sens. Environ. 177,             Sakamoto, T., Gitelson, A.A., Arkebauer, T.J., 2014. Near real-time prediction of US
+     89–100.                                                                                           corn yields based on time-series MODIS data. Remote Sens. Environ. 147, 219–231.
+Khosla, P., Teterwak, P., Wang, C., Sarna, A., Tian, Y., Isola, P., Maschinot, A.,                 Sakamoto, T., Yokozawa, M., Toritani, H., Shibayama, M., Ishitsuka, N., Ohno, H.,
+     Liu, C., Krishnan, D., 2020. Supervised contrastive learning. arXiv preprint arXiv:               2005. A crop phenology detection method using time-series MODIS data. Remote
+     2004.11362.                                                                                       Sens. Environ. 96 (3–4), 366–374.
+
+
+                                                                                             282
+S. Mohammadi et al.                                                                                               ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023) 272–283
+
+
+Sakoe, H., Chiba, S., 1978. Dynamic programming algorithm optimization for spoken                Wang, Q., Gao, J., Li, X., 2019a. Weakly supervised adversarial domain adaptation
+    word recognition. IEEE Trans. Acoust. Speech Signal Process. 26 (1), 43–49.                      for semantic segmentation in urban scenes. IEEE Trans. Image Process. 28 (9),
+Schreier, J., Ghazaryan, G., Dubovyk, O., 2021. Crop-specific phenomapping by fusing                 4376–4386.
+    landsat and sentinel data with MODIS time series. Eur. J. Remote Sens. 54 (sup1),            Wang, L., Li, R., Zhang, C., Fang, S., Duan, C., Meng, X., Atkinson, P.M., 2022.
+    47–58.                                                                                           UNetFormer: A UNet-like transformer for efficient semantic segmentation of re-
+Shi, D., Yang, X., 2016. An assessment of algorithmic parameters affecting image                     mote sensing urban scene imagery. ISPRS J. Photogramm. Remote Sens. 190,
+    classification accuracy by random forests. Photogramm. Eng. Remote Sens. 82 (6),                 196–214.
+    407–417.                                                                                     Weikmann, G., Paris, C., Bruzzone, L., 2021. Timesen2crop: A million labeled samples
+Simonneaux, V., Duchemin, B., Helson, D., Er-Raki, S., Olioso, A., Chehbouni, A.,                    dataset of sentinel 2 image time series for crop-type classification. IEEE J. Sel. Top.
+    2008. The use of high-resolution image time series for crop classification and                   Appl. Earth Obs. Remote Sens. 14, 4699–4708.
+    evapotranspiration estimate over an irrigated area in central Morocco. Int. J.               Weinberger, K.Q., Saul, L.K., 2009. Distance metric learning for large margin nearest
+    Remote Sens. 29 (1), 95–116.                                                                     neighbor classification. J. Mach. Learn. Res. 10 (2).
+Sohn, K., 2016. Improved deep metric learning with multi-class n-pair loss objective.            Wen, Y., Li, X., Mu, H., Zhong, L., Chen, H., Zeng, Y., Miao, S., Su, W., Gong, P., Li, B.,
+    Adv. Neural Inf. Process. Syst. 29.                                                              et al., 2022. Mapping corn dynamics using limited but representative samples with
+Song, X.-P., Hansen, M.C., Potapov, P., Adusei, B., Pickering, J., Adami, M., Lima, A.,              adaptive strategies. ISPRS J. Photogramm. Remote Sens. 190, 252–266.
+    Zalles, V., Stehman, S.V., Di Bella, C.M., et al., 2021. Massive soybean expansion           Werbos, P.J., 1990. Backpropagation through time: what it does and how to do it.
+    in south america since 2000 and implications for conservation. Nature Sustain. 4                 Proc. IEEE 78 (10), 1550–1560.
+    (9), 784–792.
+                                                                                                 Xiao, X., Boles, S., Liu, J., Zhuang, D., Frolking, S., Li, C., Salas, W., Moore, III, B., 2005.
+Stehman, S.V., Foody, G.M., 2019. Key issues in rigorous accuracy assessment of land
+                                                                                                     Mapping paddy rice agriculture in southern China using multi-temporal MODIS
+    cover products. Remote Sens. Environ. 231, 111199.
+                                                                                                     images. Remote Sens. Environ. 95 (4), 480–492.
+Sun, X., Wang, P., Wang, C., Liu, Y., Fu, K., 2021. PBNet: Part-based convolutional
+                                                                                                 Xie, S., Zheng, Z., Chen, L., Chen, C., 2018. Learning semantic representations for
+    neural network for complex composite object detection in remote sensing imagery.
+                                                                                                     unsupervised domain adaptation. In: International Conference on Machine Learning.
+    ISPRS J. Photogramm. Remote Sens. 173, 50–65.
+                                                                                                     pp. 5423–5432.
+Szegedy, C., Liu, W., Jia, Y., Sermanet, P., Reed, S., Anguelov, D., Erhan, D., Van-
+                                                                                                 Xu, J., Yang, J., Xiong, X., Li, H., Huang, J., Ting, K., Ying, Y., Lin, T., 2021. Towards
+    houcke, V., Rabinovich, A., 2015. Going deeper with convolutions. In: Proceedings
+                                                                                                     interpreting multi-temporal deep learning models in crop mapping. Remote Sens.
+    of the IEEE Conference on Computer Vision and Pattern Recognition. pp. 1–9.
+                                                                                                     Environ. 264, 112599.
+Tang, Q., Peterson, S., Cuenca, R.H., Hagimoto, Y., Lettenmaier, D.P., 2009. Satellite-
+                                                                                                 Xu, J., Zhu, Y., Zhong, R., Lin, Z., Xu, J., Jiang, H., Huang, J., Li, H., Lin, T., 2020.
+    based near-real-time estimation of irrigated crop water consumption. J. Geophys.
+    Res.: Atmos. 114 (D5).                                                                           DeepCropMapping: A multi-temporal deep learning approach with improved spatial
+Teimouri, N., Dyrmann, M., Jørgensen, R.N., 2019. A novel spatio-temporal FCN-LSTM                   generalizability for dynamic corn and soybean mapping. Remote Sens. Environ.
+    network for recognizing various crop types using multi-temporal radar images.                    247, 111946.
+    Remote Sens. 11 (8), 990.                                                                    Yang, B., Guo, J., Liu, J., Ye, X., 2022. PPCE: A practical loss for crop mapping using
+Turkoglu, M.O., D’Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler, K.,                   phenological prior. IEEE Geosci. Remote Sens. Lett..
+    Wegner, J.D., 2021. Crop mapping from image time series: Deep learning with                  Zhai, Y., Wang, N., Zhang, L., Hao, L., Hao, C., 2020. Automatic crop classification
+    multi-scale label hierarchies. Remote Sens. Environ. 264, 112603.                                in northeastern China by improved nonlinear dimensionality reduction for satellite
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł.,             image time series. Remote Sens. 12 (17), 2726.
+    Polosukhin, I., 2017. Attention is all you need. In: Advances in Neural Information          Zhao, H., Duan, S., Liu, J., Sun, L., Reymondin, L., 2021. Evaluation of five deep
+    Processing Systems. pp. 5998–6008.                                                               learning models for crop type mapping using sentinel-2 time series images with
+Waldner, F., Chen, Y., Lawes, R., Hochman, Z., 2019. Needle in a haystack: Mapping                   missing information. Remote Sens. 13 (14), 2790.
+    rare and infrequent crops using satellite imagery and data balancing methods.                Zhong, L., Gong, P., Biging, G.S., 2014. Efficient corn and soybean mapping with
+    Remote Sens. Environ. 233, 111375.                                                               temporal extendability: A multi-year experiment using landsat imagery. Remote
+Walker, J., De Beurs, K., Henebry, G., 2015. Land surface phenology along urban to                   Sens. Environ. 140, 1–13.
+    rural gradients in the US great plains. Remote Sens. Environ. 165, 42–52.                    Zhong, L., Hu, L., Zhou, H., 2019. Deep learning based multi-temporal crop
+Wang, S., Azzari, G., Lobell, D.B., 2019b. Crop type mapping without field-level                     classification. Remote Sens. Environ. 221, 430–443.
+    labels: Random forest transfer and unsupervised clustering techniques. Remote Sens.          Zhou, J., Luo, X., Rong, W., Xu, H., 2022. Cloud removal for optical remote sensing
+    Environ. 222, 303–317.                                                                           imagery using distortion coding network combined with compound loss functions.
+                                                                                                     Remote Sens. 14 (14), 3452.
+
+
+
+
+                                                                                           283
+

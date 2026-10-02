@@ -1,0 +1,679 @@
+                                                MaskAdapt: Unsupervised Geometry-Aware Domain Adaptation Using
+                                                    Multimodal Contextual Learning and RGB-Depth Masking
+
+                                                       Numair Nadeem1            Muhammad Hamza Asad2 Saeed Anwar3                      Abdul Bais1
+                                                                                         1
+                                                                                           University of Regina
+                                                                                       2
+                                                                                         University Canada West
+arXiv:2505.24026v1 [cs.CV] 29 May 2025
+
+
+
+
+                                                                                 3
+                                                                                   The University of Western Australia
+                                                                      nng794@uregina.ca, muhammadhamza.asad@ucanwest.ca
+                                                                         saeed.anwar@uwa.edu.au, abdul.bais@uregina.ca
+
+
+
+                                                                 Abstract
+
+                                             Semantic segmentation of crops and weeds is crucial
+                                         for site-specific farm management; however, most exist-
+                                         ing methods depend on labor intensive pixel-level annota-
+                                         tions. A further challenge arises when models trained on
+                                         one field (source domain) fail to generalize to new fields
+                                         (target domain) due to domain shifts, such as variations in
+                                         lighting, camera setups, soil composition, and crop growth
+                                         stages. Unsupervised Domain Adaptation (UDA) addresses
+                                         this by enabling adaptation without target-domain labels,
+                                         but current UDA methods struggle with occlusions and vi-
+                                         sual blending between crops and weeds, leading to misclas-
+                                         sifications in real-world conditions. To overcome these limi-
+                                         tations, we introduce MaskAdapt, a novel approach that en-      Figure 1. Performance comparison of our proposed method with
+                                         hances segmentation accuracy through multimodal contex-         the SOTA UDA methods. Our method MaskAdapt achieves the
+                                                                                                         highest mIOU of 88.5%.
+                                         tual learning by integrating RGB images with features de-
+                                         rived from depth data. By computing depth gradients from
+                                         depth maps, our method captures spatial transitions that
+                                         help resolve texture ambiguities. These gradients, through      soil characteristics [14]. Semantic segmentation using RGB
+                                         a cross-attention mechanism, refines RGB feature represen-      field imagery is widely employed to classify and quantify
+                                         tations, resulting in sharper boundary delineation. In addi-    crop, weed, and soil pixels [1, 2, 37]. However, the perfor-
+                                         tion, we propose a geometry-aware masking strategy that         mance of segmentation models deteriorates when trained on
+                                         applies horizontal, vertical, and stochastic masks during       one agricultural field (source domain) and tested on another
+                                         training. This encourages the model to focus on the broader     (target domain). This decline is primarily due to domain
+                                         spatial context for robust visual recognition. Evaluations on   shifts caused by variations in lighting, camera configura-
+                                         real agricultural datasets demonstrate that MaskAdapt con-      tions & perspectives, soil types, and plant growth stages,
+                                         sistently outperforms existing State-of-the-Art (SOTA) UDA      which present significant challenges [3, 18, 45]. Address-
+                                         methods, achieving improved segmentation mean Intersec-         ing this issue by annotating diverse agricultural datasets is
+                                         tion over Union (mIOU) across diverse field conditions.         labor-intensive and time-consuming [19]. In such scenar-
+                                                                                                         ios, Unsupervised Domain Adaptation (UDA) is essential
+                                                                                                         to adapt models without requiring labeled data from the tar-
+                                                                                                         get domain [46].
+                                         1. Introduction
+                                                                                                             Although UDA has made significant strides [23, 24],
+                                         Site-Specific Farm Management (SSFM) is crucial to im-          challenges persist, particularly with RGB-based methods
+                                         prove crop yield while optimizing input usage through the       that struggle to distinguish similar textures[58], such as
+                                         precise detection and quantification of crops, weeds, and       those between crops and weeds, leading to false segmen-
+tation and lost details [25]. Incorporating a geometric rep-       • We propose an enhanced feature fusion module that in-
+resentation such as depth offers a solution by providing spa-        corporates a depth-gradient-guided cross-attention mech-
+tial cues[58]: uniform depth in crop rows and sharp edges at         anism, utilizing depth and its gradient cues to refine RGB
+soil boundaries [39]. Yet, this approach falters with classes        features, thereby enhancing fine-detail segmentation in
+having minimal height variation, like weeds, which often             agriculture.
+lack significant height differences from crops, blending into      • We introduce a geometry-aware multimodal masking
+the depth profile and reducing separability. This prompts a          strategy that leverages horizontal, vertical, and stochas-
+pivotal research question: What new feature can we derive            tic patch masks to exploit geometric patterns in RGB and
+from depth, and how to integrate it with depth and RGB fea-          depth, complementarily applied to enhance cross-domain
+tures to enhance segmentation accuracy in UDA for classes            adaptation.
+with minimal elevation variance?
+    Depth gradients derived from depth maps emerge as a            2. Related Work
+promising solution, capturing spatial transitions, gradual
+within crop rows and abrupt at crop-weed and crop-soil             2.1. RGB-D Semantic Segmentation
+interfaces from depth maps. Refinement of texture ambi-            Integration of depth information has advanced semantic
+guities and sharpening of boundaries boosts segmentation           segmentation, enhancing RGB-based models with geomet-
+when depth alone is insufficient, as evidenced in Table 4.         ric cues to improve accuracy and robustness [5, 62]. In this
+Integrating these gradients with RGB data and depth maps           context, depth is used in two primary ways. First, it refines
+strengthens multimodal coordination, suggesting that the           RGB features through techniques such as averaging modal-
+new feature and its fusion strategy could unlock robust crop-      ity output scores to enhance inter-object discrimination, as
+weed-soil delineation in UDA, addressing the limitations of        shown in indoor settings [33]. Second, it improves via mul-
+height-dependent depth reliance.                                   tilevel fusion across network stages [51] and depth-aware
+    To leverage the mentioned potential, we adopt a UDA            convolutions or pooling [53] that adapt 2D operations to
+framework for agricultural semantic segmentation, featur-          depth-consistent regions. Gated fusion modules [9] further
+ing a dual-encoder system: a pre-trained RGB encoder cap-          refine depth integration by dynamically weighting modal-
+tures visual details, while a lightweight depth encoder pro-       ity contributions. Alternatively, depth serves as a supervi-
+cesses geometric information. From depth maps, we derive           sory signal in multitask learning, regularizing RGB features
+a new feature, depth gradients, computed to highlight spa-         bidirectionally [62] or aiding UDA by narrowing domain
+tial transitions, providing a critical signal to distinguish am-   gaps with geometric consistency [31]. Recent methods fa-
+biguous regions (such as crop-weed occlusion, overlap re-          vor depth-to-RGB refinement, employing attention mech-
+gions, or shadowed areas) where RGB alone fails. These             anisms like softmax aggregation [52] for cross-modal in-
+features are fused across scales using a depth-gradient-           tegration or excitation blocks [27] to emphasize relevant
+guided cross-attention mechanism, where depth maps and             depth cues.
+depth gradients refine RGB features to sharpen boundaries              Modern depth estimation models have significantly im-
+and enhance texture clarity. This approach directly lever-         proved the ability to derive depth from RGB images. Mon-
+ages the gradient’s ability to emphasize structural edges,         oDepth2 [17] predicts depth from a single RGB image while
+improving segmentation under domain shifts. We also in-            UniMatch [57] utilizes stereo pairs to create precise depth
+troduce a geometry-aware multimodal masking strategy,              maps. In addition, recently, vision transformers [39] have
+utilizing horizontal patch masks for crop row features, ver-       replaced CNNs for depth prediction tasks. Drawing inspi-
+tical patch masks for crop interrow features, and stochas-         ration from these advances, we derive the depth maps us-
+tic masks to break local details for global pattern detec-         ing [39] approach. Our method leverages a depth gradient-
+tion [25]. This encourages the model to rely on broader            based attention map, detailed in Section 3.1.1, which uses
+context across modalities [25]. Designed as a plug-in net-         gradients to highlight geometric transitions, guiding RGB
+work, this solution integrates effortlessly with pre-trained       features as a supervisory signal. Unlike prior RGB-Depth
+models, enhancing adaptability without requiring extensive         (RGB-D) methods [6, 32, 60], we combine depth and its
+retraining.                                                        gradients to refine segmentation robustly across domains.
+    Our framework enhances semantic segmentation for the
+agricultural industry by addressing domain shifts in UDA,          2.2. Unsupervised Domain Adaptation
+which is validated using publicly available agricultural           UDA transfers knowledge from a labeled source domain to
+datasets. It introduces the following primary contributions:       an unlabeled target domain, addressing domain shifts that
+• We enhance UDA with depth gradients from RGB-                    hinder semantic segmentation performance. UDA methods
+   derived depth maps, computed via first-order differences,       fall into distribution alignment and self-supervised learn-
+   to guide precise multiscale feature fusion.                     ing categories. Distribution alignment minimizes the fea-
+                                                                   Figure 3. Illustration of our training pipeline featuring Multimodal
+                                                                   Masking in Cross-Domain Learning: Source and target images are
+                                                                   masked at the input level—initially masking source domain inputs,
+Figure 2. Enhanced Feature Fusion: A dual-encoder architec-        then shifting to target domain inputs as pseudo-label confidence
+ture combines a pre-trained RGB encoder for visual features with   increases—using three strategies (horizontal, vertical, stochastic)
+a custom lightweight depth encoder for depth cues, fused via a     with a dynamic, time-dependent masking ratio, where RGB and
+depth-gradient-guided cross-attention mechanism across multiple    depth inputs are masked complementarily. Student encoders pro-
+scales to improve boundary refinement and segmentation accuracy    cess these masked inputs, integrated via Enhanced Feature Fusion
+under domain shifts.                                               block, and fed to the decoder for final segmentation prediction.
+
+
+
+ture gaps between source and target domains. By apply-             to reconstruct hidden parts of images, such as raw pix-
+ing statistical moment matching, metrics such as maximum           els [7, 12, 20, 21, 55], image patch tokens [10, 61], or deeper
+mean discrepancy are minimized to facilitate this alignment        feature layers [8, 48], allowing efficient learning from large
+(e.g., [34, 41]). This approach draws on various statistical       image datasets for tasks like scene analysis [54]. Building
+techniques (e.g., [30]). Optimal transport aligns domains by       on ViT, the Masked Autoencoder (MAE) [21] offers an ef-
+connecting source-target samples and minimizing pairwise           ficient pre-training framework through partial image occlu-
+distances [26], allowing for precise adaptation. Generative        sion, masking random subsets of input patches and train-
+methods like CycleGAN [63] align domains at pixel and              ing a robust ViT-based encoder [13] to process only visible
+feature levels via cycle consistency, enhancing visual align-      patches, while a lightweight decoder reconstructs occluded
+ment [20]. Adversarial learning, which is popular in seg-          regions. Similarly, Masked Image Consistency (MIC) [25]
+mentation [15, 40], uses discriminators to enforce domain-         module enforces prediction consistency between masked
+invariant features; however, instability can occur [23, 49].       target images and pseudo-labels via an EMA teacher, while
+Self-training, a stable alternative [25, 49], employs pseudo-      MICDrop [58] extends this by masking RGB and depth fea-
+labels refined by confidence thresholds [36] or consis-            tures in complementary fashion.
+tency across augmentations [43], often using teacher net-              Building upon MIC’s pretraining efficacy and MIC-
+works [42]. Recent efforts integrate multi-resolution fea-         Drop’s cross-modality masking, our methodology leverages
+ture maps [23] and depth-informed adaptation [57], align-          a pretrained RGB encoder and a trained depth encoder with
+ing with our RGB-depth focus, while hybrid approaches              a geometry-aware multimodal masking strategy, applying
+blending adversarial and self-training [50] tackle instabil-       horizontal, vertical, and stochastic masks across RGB and
+ity. Challenges in pseudo-label reliability and target super-      depth modalities to exploit spatial structures, such as crop
+vision persist, motivating our multi-scale, depth-enhanced         row alignments and crop-weed boundaries, for UDA.
+UDA approach.
+
+2.3. Masked Image Modeling
+                                                                   3. Methodology
+Masked image modeling involves learning robust repre-              Problem Statement. In the UDA setting, we address
+sentations by reconstructing images intentionally corrupted        a scenario involving a labeled source domain Ds =
+through masking, first explored with denoising autoen-             {(xis , ysi )}ni=1s
+                                                                                       = (Xs , Ys ) with labeled samples ns , where
+                                                                                   i
+coders [47] and context encoders [38], which laid the              Xs = {xs } represents the source input data and Ys =
+groundwork for self-supervised learning in vision.                 {ysi } denotes the corresponding labels, and a target domain
+   The Vision Transformers (ViT) [13] sparked a new wave           Dt = {(xit )}ni=1   t
+                                                                                          = (Xt ) with labeled samples nt , where
+                                                                                i
+of self-supervised methods for pre-training vision mod-            Xt = {xt } represents the target input data. Both domains
+els using masked images. These techniques train models             share the same label space {1, 2, . . . , K}, where K is the
+number of semantic classes for segmentation, but have dis-
+tinct distributions. Our objective is to bridge the domain
+gap between Xs and Xt using labeled source data (Xs , Ys )
+and unlabeled target data Xt , with performance evaluated
+on a set of labeled holdout validation of the target domain.
+Preliminaries. In semantic segmentation, models are
+trained on a labeled source domain using supervised meth-
+ods. However, adapting to an unlabeled target domain (Xt )
+requires bridging the domain gap, as source-only training
+falters due to distributional shifts. UDA balances super-
+vised source loss with unsupervised target loss, shaped by
+adversarial training [8, 44] or self-training [22, 43]. We fol-
+low recent methods [23, 25] using a student-teacher frame-
+work, where the teacher updates via EMA [42], crafts              Figure 4. Our Depth Gradient-Guided Cross-Attention mecha-
+pseudo-labels for target images to guide the student. Fol-        nism comprises depth features with gradients and RGB features.
+lowing [43], the student sees heavily augmented images,           The depth stream computes spatial gradient magnitude to high-
+and the teacher weakly augmented ones, ensuring consis-           light geometric transitions (e.g., crop-weed boundaries), while the
+tency. Moreover, we utilize hierarchical encoders to gen-         RGB stream uses cross-attention guided by these depth cues to ag-
+erate multiscale feature maps, enabling precise segmenta-         gregate contextual features. The unified representation combines
+                                                                  precise boundary information from depth with robust appearance
+tion with fine-grained detail. We assess our approach by ex-
+                                                                  features from RGB for accurate segmentation.
+tending pre-trained encoders [22, 23] with depth from RGB
+via Vision Transformers [39], enhancing cross-domain ac-
+curacy.                                                                     (i)
+                                                                      Let Frgb ∈ RHi ×Wi ×C denote the RGB and Fdepth ∈
+                                                                                                                                        (i)
+
+                                                                    Hi ×Wi ×C
+3.1. Enhanced Feature Fusion Module                               R             denote depth feature maps with i represent-
+                                                                                                                            H
+                                                                  ing encoder level (i ∈ {1, 2, 3, 4}). Here Hi = 2i−1          ,
+To address the challenges in agricultural semantic seg-                    W
+                                                                  Wi = 2i−1 , and C is the channel dimension. To explicitly
+mentation, our method employs a dual-encoder system: a            leverage geometric cues critical for agricultural scenes (e.g.,
+pre-trained RGB encoder extracts visual features, while           boundaries between crop rows, weed and soil), we compute
+a lightweight depth encoder, initialized with pre-trained                                              (i)
+                                                                  spatial depth gradient magnitude Gdepth ∈ RHi ×Wi ×1 using
+ImageNet[16] weights and then fine-tuned, processes depth         first-order differences. These gradients highlight regions
+information. We derive depth gradients from depth maps            of sharp depth transitions (e.g., crop-weed-soil boundaries)
+computed via first-order differences to enhance feature rep-      and gradual changes (e.g., within crop rows). The raw depth
+resentation. These are fused with RGB features across mul-        features and gradients are concatenated channel-wise:
+tiple scales using a depth-gradient-guided cross-attention
+mechanism, as detailed in Section 3.1.1. This streamlined             (i)                         (i)      (i)
+                                                                     Fdepth+grad = Concat(Fdepth , Gdepth ) ∈ RHi ×Wi ×(C+1) .
+approach optimizes segmentation accuracy under domain                                                                         (1)
+shifts by refining boundaries and efficiently resolving am-          To address the quadratic complexity O((HW )2 C +
+biguities.                                                        HW C 2 ) of standard global attention as suggested in [58],
+                                                                                                (i)             (i)
+3.1.1. Depth Gradient-Guided Cross-Attention                      we bilinearly downsample Fdepth+grad and Frgb during train-
+                                                                  ing through various pooling factors, reducing spatial dimen-
+To utilize depth features as a guiding principle for RGB fea-
+                                                                  sions while preserving structural patterns. For inference,
+tures, we propose a depth gradient-guided cross-attention
+                                                                  pooling factors are adjusted to retain finer details in higher-
+mechanism, shown in Figure 4, which leverages multiscale                                         (i),↓
+                                                                                                                 Hi
+                                                                                                                      ×
+                                                                                                                          Wi
+                                                                                                                               ×(C+1)
+depth features and their spatial gradients to guide the aggre-    resolution levels. Let Fdepth+grad ∈ R pi pi         denote
+gation of RGB features, allowing precise segmentation of          the downsampled features, where pi is the pooling factor
+large-scale agricultural structures. The approach computes        for level i. These are linearly projected into queries Q(i)
+spatial depth gradients Gdepth from depth features Fdepth         and keys K (i) :
+using first-order differences, concatenates them channel-                                                        Hi  W
+                                                                                         (i),↓                      × p i ×dk
+wise, and downsamples the fused depth gradient features                      Q(i) = Fdepth+grad Wq(i) ∈ R pi           i          ,           (2)
+to project into queries and keys, while RGB features act
+                                                                                                                 Hi  W
+as values, allowing the cross-attention mechanism to corre-                              (i),↓           (i)        × p i ×dk
+                                                                             K (i) = Fdepth+grad Wk ∈ R pi             i          ,           (3)
+late regions with similar depth profiles (e.g., crop rows) and
+                                                                            (i)    (i)
+sharp gradients (e.g., crop-weed-soil boundaries).                where Wq , Wk ∈ R(C+1)×dk are learnable weights. The
+                                                Hi    W
+                                   (i),↓             × p i ×C              random variable drawn from a uniform distribution over the
+corresponding RGB features Frgb            ∈ R pi       i       are pro-
+jected to values V (i) :                                                   interval [0, 1], determining whether a block is masked based
+                                                                           on the threshold mt .
+                                           Hi  W
+                          (i),↓               × p i ×dv                    Horizontal Masking. For horizontal crop row images, hor-
+                 V (i) = Frgb Wv(i) ∈ R pi       i        ,          (4)
+                                                                           izontal masking utilizes complete row patches to occlude
+           (i)
+with Wv ∈ RC×dv . The cross-attention computes the ag-                     crop rows, forcing the model to deduce row structure from
+gregation of RGB features across all spatial positions as:                 vertical context or depth.
+                     (i) (i)⊤                                          Vertical Masking. This strategy applies vertical column
+   (i)                 Q K                      Hi   W
+                                                   × i ×d                  patches to target soil bands between rows for images with
+ Fglobal = softmax        √           V (i) ∈ R pi pi v
+                            dk                                             horizontal crop rows. It disrupts continuity across rows,
+                                                          (5)              compelling the model to infer inter-row properties using
+The aggregated features are upsampled to Hi ×Wi via bilin-                 horizontal context or depth inputs.
+ear interpolation and fused with the original RGB features                 Stochastic Masking. Stochastic masking employs random
+through a residual connection:                                             patches throughout the image, regardless of row orienta-
+     (i)            (i)             (i),↑                                  tion. It disrupts local details, encouraging global reasoning
+   Frefined = Frgb + Conv1×1 (Fglobal ) ∈ RHi ×Wi ×C .               (6)
+                                                                           to identify broader patterns, aiding in detecting widespread
+3.2. Geometry Aware Multimodal Masking in                                  field anomalies across modalities.
+     Cross-Domain Learning                                                     Designed as a plug-in network, this depth gradient-
+                                                                           guided cross-attention and geometry aware multi-modal
+To effectively learn from multimodal RGB and depth data,                   masking-based approach integrates with pre-trained mod-
+models must integrate local details and contextual relation-               els, leveraging these masking strategies to balance modality
+ships. In supervised learning, labels guide this process, but              use and promote robust, spatially aware feature learning.
+the lack of target labels complicates it in UDA, especially
+to distinguish similar classes such as crop from weeds [2].                4. Experiments
+Masking aids UDA by forcing the model to learn miss-
+ing data from unmasked regions, learning domain-invariant                  4.1. Implementation Details
+contextual details that enhance generalization across do-
+                                                                           Datasets. We use six maize and bean datasets from the
+mains [25]. This occurs through occlusion, forcing re-
+                                                                           ROSE Challenge [3], collected by two distinct robotic plat-
+liance on spatial patterns and modality synergy rather than
+                                                                           forms (BIPBIP and WeedElec teams) under varying camera
+domain-specific features.
+                                                                           and field conditions, introducing significant domain gaps.
+   We propose geometry aware multimodal masking in
+                                                                           Datasets include RGB images and masks (four weed classes
+cross-domain learning to boost context learning between
+                                                                           combined into one [3, 28]), with 1000 labeled images from
+labeled source and unlabeled target domains. We employ
+                                                                           2019 (125 per crop per team) and BIPBIP’s 250 images per
+a scheduling approach parameterized by iteration t, initially
+                                                                           crop from 2019 and 2021. We train on the source domain,
+masking source domain data and later incorporating target
+                                                                           split target domain data for training/validation, and apply
+domain data as prediction confidence exceeds a threshold,
+                                                                           augmentations suggested in [43]. We perform two domain
+reducing pseudo-label noise. We use complementary mask-
+                                                                           adaptations: images from different team’s datasets within
+ing which corrupts information across modalities in a com-
+                                                                           May 2019 (BIPBIP and WeedElec for maize and beans)
+plementary fashion; hence the model relies on features from
+                                                                           and the same team dataset across different growth stages
+both RGB and depth, enhancing cross-model inference. For
+                                                                           ( BIPBIP-May 2019 and September 2021). This assess our
+agricultural images with crops planted in rows, we employ
+                                                                           method’s effectiveness in handling domain gaps.
+three geometry-aware masking strategies: horizontal, ver-
+tical, and stochastic. At each iteration t, we randomly se-                Depth Images. We obtain depth image estimations for all
+lect one of these mask types to apply. The masking ratio                   source and target images from Vision Transformer [39] via
+mt is time-dependent: during initial training, mt remains                  a pre-trained model trained on large-scale RGB data.
+low (e.g., 10%-20%) to allow supervised learning on source                 Network Architecture. Our network is based on the MM-
+data, then increases as training progresses, reaching high                 Segmentation [11] framework. MIC [25] is the base ar-
+values like 80% to elevate difficulty and enhance adapta-                  chitecture/baseline with MiT-B5 [56] as the RGB-encoder
+tion. The masking formulation is defined as:                               block and Atrous Spatial Pyramid Pooling (ASPP) decode
+• MΘ,rgb (a, b) = [γ > mt ], γ ∼ Uniform(0, 1)                             head as context-aware feature fusion decoder. For depth
+• MΘ,depth (a, v) = 1 − MΘ,rgb (a, b)                                      feature extractor, we use the lightweight MiT-B3 [4], pro-
+where Θ ∈ {horizontal, vertical, stochastic}, (a, b) is                    cessing these depth maps to extract features for our dual-
+the block index, and γ ∼ Uniform(0, 1) indicates γ is a                    encoder UDA system.
+Table 1. Comparison of our model’s performance with SOTA methods on different source-target datasets using IOU-Background, IOU-
+Crop, IOU-Weed, and mIOU, averaged over 3 random data sampling seeds. The boldface indicates the best-performing model on the target
+domain. Our method outperforms all SOTA UDA methods.
+
+
+
+
+                                                                                         CGAN L semantic [18]
+
+
+                                                                                                                 CGAN L phase [59]
+                                                                  Fourier Trans. [45]
+
+
+
+
+                                                                                                                                     AdaptSegNet [29]
+
+
+
+
+                                                                                                                                                                                DAFormer [22]
+
+
+
+                                                                                                                                                                                                 HRDA [23]
+                                                                                                                                                            CBST [64]
+
+
+
+
+                                                                                                                                                                                                              MIC [25]
+
+
+                                                                                                                                                                                                                          Ours
+                                                                                                                                                                         [28]
+                                  Source      Target    Metric
+                                   Bean        Bean     IOU-B    97.41                  97.67                   97.55                97.10                 55.70        99.16   97.10           97.43        97.91       98.18
+                                  BIPBIP     WeedElec   IOU-C    79.24                  82.62                   81.12                78.38                 25.76        83.49   78.41           81.78        82.36       85.16
+                                                        IOU-W    59.69                  67.86                   63.71                67.28                 11.54        64.34   57.62           62.01        71.64       74.62
+                                                        mIOU     78.78                  82.71                   80.79                80.92                 31.00        82.30   77.71           80.41        83.97       85.99
+                                   Bean       Bean      IOU-B    97.92                  98.03                   98.01                96.37                 60.41        96.08   98.23           97.74        99.11       98.11
+                                  WeedElec   BIPBIP     IOU-C    82.22                  82.24                   83.92                76.50                 41.07        77.38   80.67           83.52        85.59       87.01
+                                                        IOU-W    70.43                  67.91                   71.38                66.71                 05.03        75.06   65.61           68.37        69.12       76.35
+                                                        mIOU     83.52                  82.73                   84.43                79.86                 35.50        82.84   81.50           83.21        84.60       87.15
+                                  Maize       Maize     IOU-B    98.61                  98.14                   94.67                98.10                 74.33        97.04   95.32           98.41        99.02       99.73
+                                  BIPBIP     WeedElec   IOU-C    83.89                  52.93                   48.71                83.58                 36.87        83.86   85.94           87.32        88.12       89.66
+                                                        IOU-W    69.01                  25.18                   50.19                63.72                 15.43        77.40   67.49           69.89        68.79       74.97
+                                                        mIOU     83.83                  58.75                   64.52                81.80                 42.21        86.10   82.91           85.21        85.31       88.12
+                                   Maize     Maize      IOU-B    96.32                  96.07                   97.33                93.86                 65.72        94.08   93.81           94.71        94.18       96.78
+                                  WeedElec   BIPBIP     IOU-C    73.99                  73.23                   82.96                67.18                 20.12        72.63   69.79           80.10        66.48       88.64
+                                                        IOU-W    63.96                  61.85                   72.27                65.52                 20.64        53.55   64.70           63.39        76.28       80.32
+                                                        mIOU     76.54                  77.05                   84.18                75.52                 35.50        73.42   76.10           77.40        78.98       88.58
+                                   Bean       Bean      IOU-B    93.57                  82.94                   85.51                92.53                 75.94        93.46   95.61           94.62        94.45       92.05
+                                   2019       2021      IOU-C    79.43                  44.37                   83.42                68.17                 36.33        64.34   86.12           86.76        84.83       87.57
+                                                        IOU-W    48.41                  34.61                   27.71                41.17                 05.24        66.81   56.77           54.47        62.36       66.32
+                                                        mIOU     73.83                  53.97                   65.54                67.20                 39.17        74.87   79.49           78.62        80.55       81.98
+                                   Bean       Bean      IOU-B    97.79                  87.72                   92.38                97.36                 86.15        97.23   95.85           97.93        95.34       93.81
+                                   2021       2019      IOU-C    77.24                  35.35                   54.81                76.50                 44.22        82.58   75.11           81.59        83.73       85.39
+                                                        IOU-W    61.22                  04.79                   41.32                57.86                 16.42        66.61   64.72           68.31        70.23       73.07
+                                                        mIOU     78.75                  42.62                   62.83                77.24                 48.93        82.14   78.56           82.61        83.10       84.09
+                                   Maize      Maize     IOU-B    91.24                  67.28                   68.37                89.27                 86.32        93.31   90.29           91.95        91.88       93.47
+                                   2019       2021      IOU-C    83.38                  03.23                   14.47                79.73                 27.10        83.14   85.39           87.26        85.50       88.51
+                                                        IOU-W    47.69                  01.21                   00.12                44.24                 06.76        57.34   54.21           55.82        62.15       66.71
+                                                        mIOU     74.10                  23.90                   27.65                71.08                 40.06        77.93   76.63           78.34        79.84       82.89
+                                   Maize      Maize     IOU-B    97.10                  96.64                   82.73                96.97                 87.17        97.14   94.31           93.40        94.96       97.98
+                                   2021       2019      IOU-C    80.05                  66.53                   34.07                81.56                 69.22        83.68   66.87           68.13        69.54       89.26
+                                                        IOU-W    73.51                  48.34                   21.11                65.67                 17.82        73.88   60.61           62.27        64.29       74.12
+                                                        mIOU     83.70                  70.50                   46.00                81.40                 58.07        84.90   73.93           74.60        76.26       87.12
+
+
+
+
+Training. We use the AdamW optimizer [35] with learn-                                                                                                   classwise IoU and mIoU.
+ing rates of 5 × 10−5 for the depth encoder and 5 × 10−4
+for the decoder. The learning rate employs a linear warm-                                                                                               4.2. Comparison with the SOTA UDA Methods
+up over the initial 1.5k iterations, followed by polynomial
+decay with a 0.9 factor. An EMA [42] teacher updates                                                                                                    To evaluate the performance of our method, we com-
+with a momentum of α = 0.999 at each step. We set the                                                                                                   pare it with our baseline approach, MIC [25], and eight
+batch size to two [22, 25], applying augmentations such                                                                                                 SOTA UDA methods, including three transformer-based
+as color jitter, Gaussian blur, and mixing of cross-domain                                                                                              approaches [22, 23, 25] designed for challenging domain
+classes. For a baseline comparison, we pre-train MIC[25]                                                                                                shifts. The results are presented in Table 1, which shows the
+in our dataset with its intrinsic masking strategy to es-                                                                                               superior performance of our method in adapting to datasets
+tablish reference performance. For the implementation of                                                                                                with different agricultural fields, camera configurations, and
+our MaskAdapt method, we pre-train MIC on the same                                                                                                      stages of crop growth. For same-year and growth stages
+dataset, incorporating geometry-aware horizontal, vertical,                                                                                             but different camera and agriculture field-based adaptations,
+and stochastic masking strategies; initially, masking is ap-                                                                                            MaskAdapt achieves an improvement in mIOU compared
+plied to the source domain, switching to the target domain                                                                                              to the existing best methods across all pairs. The improve-
+when pseudo-label confidence reaches a threshold of 90%                                                                                                 ment ranges from a minimum of 2.02% on Bean BIPBIP-
+to enhance domain adaptation. The RGB encoder and de-                                                                                                   to-WeedElec to a maximum of 4.47% on Maize WeedElec-
+code head leverage the pre-trained weights [25], the depth                                                                                              to-BIPBIP, with weed and crop IOU increasing by at least
+encoder uses ImageNet weights, and the RGB encoder re-                                                                                                  2.98% and 2.81% to a maximum of 11.63%and 5.72% , re-
+mains frozen. Subsequently, we implemented the enhanced                                                                                                 spectively.
+feature fusion module and trained the depth encoder. Train-                                                                                             Moreover, MaskAdapt also surpasses SOTA UDA meth-
+ing occurs over 10k iterations on source and target datasets                                                                                            ods on bean and maize datasets across varying years and
+with cross-entropy loss for both domains, supplemented by                                                                                               growth stages, demonstrating robustness to temporal and
+periodic unmasked forward pass to align feature distribu-                                                                                               phenological domain shifts. It consistently enhances the
+tions. The experiments were performed on an NVIDIA-                                                                                                     mIOU by at least 0.95% on Bean 2021-to-2019 and a maxi-
+GeForce RTX-3090 GPU with 24GB of memory, taking 19                                                                                                     mum of 5.19% on Maize 2021-to-2019. The weed and crop
+hours with MIC on MaskAdapt. Evaluation metrics include                                                                                                 class IOU experience an increase on almost all source-target
+                                                                                                                                                        pairs, with the least improvement of 0.24% and 0.74% to a
+     (a) Source         (b) Target      (c) Depth Map   (d) Ground Truth    (e) HRDA[23]       (f) MIC[25]         (g) Ours
+
+Figure 5. Qualitative results are shown for Bean BIPBIP→WeedElec (Row 1), Bean WeedElec→BIPBIP (Row 2), Maize
+BIPBIP→WeedElec (Row 3), Maize WeedElec→BIPBIP (Row 4), Bean 2019→2021 (Row 5), Bean 2021→2019 (Row 6), Maize
+2019→2021 (Row 7), and Maize 2021→2019 (Row 8). Dotted rectangles highlight regions with major improvements. MaskAdapt
+outperforms all SOTA UDA methods and significantly enhances performance over baseline (MIC[25]), excelling in distinguishing weeds
+and soil from desired crops.
+
+
+maximum of 9.37% and 5.58%, respectively. MaskAdapt’s              strate MaskAdapt’s dual advantage: it not only captures
+contributions complement image masking in UDA as it con-           weeds missed by other methods but also preserves boundary
+sistently outperformed MIC [25] in all adaptations. Fig-           accuracy where crops and weeds overlap, outperforming all
+ure 5 validates our Table 1 results, showing MaskAdapt’s           SOTA methods across growth stages and domain shifts
+superiority over SOTA UDA methods.While existing meth-
+ods misclassify weed as crop or vice versa, particularly in        4.3. Ablation Studies
+occluded regions and dense canopies, MaskAdapt lever-              This section explores MaskAdapt ablation studies, dissect-
+ages depth gradients to correctly identify these challeng-         ing geometry-aware multimodal masking in cross-domain
+ing cases while maintaining precise boundaries at crop-            learning, the enhanced feature fusion module, and source-
+weed interfaces. The visual comparisons clearly demon-             target mask scheduling. Using the Maize WeedElec → BIP-
+Table 2. Performance Evaluation of Masking Strategies and Types   Table 4. Impact of Fusion Components in MaskAdapt: This ta-
+                                                                  ble compares mIOU for baseline (no fusion), cross-attention, and
+ Masking Strategy/Type                RGB    D     mIOU (↑)       cross-attention with depth gradients, with the best result in bold.
+ Baseline (Stochastic)                ✓     ×     78.98 ± 0.20
+ Vertical Only                        ✓     ✓     84.72 ± 0.15                  Fusion Strategy                     mIOU (↑)
+ Horizontal Only                      ✓     ✓     83.65± 0.15
+ Dynamic mt + Stochastic              ✓     ✓     82.78 ± 0.15
+                                                                                  Baseline                        78.98 ± 0.20
+ Dynamic mt + Vertical + Horizontal   ✓     ✓     87.27 ± 0.13      Cross Attention w/o Depth Gradients           79.46 ± 0.12
+ + Stochastic                                                       Cross Attention w/ Depth Gradients            81.35 ± 0.10
+ Complementary + Dynamic mt +         ✓     ✓     88.58 ± 0.10
+ Vertical + Horizontal + Stochastic                               4.3.2. Impact of Scheduled Masking
+                                                                  Our scheduled masking technique, starting with source
+Table 3. Performance of Our Scheduled Masking Technique: This
+                                                                  masking and progressively incorporating target masking
+table shows mIOU for ’Source Only’ and ’Target Only’ masking
+                                                                  as confidence increases across epochs, reaches a mIOU
+versus our scheduled masking approach on a target dataset.
+                                                                  of 88.58% (+2.83% over source only, +0.67% over target
+                                                                  only), as shown in Table 3. This strategy balances source
+  Approach                                       mIOU (↑)         supervision with target adaptation, reducing early pseudo-
+  Source Only                                 85.75 ± 0.20        label noise compared to simultaneous source-target mask-
+  Target Only                                 87.91 ± 0.30        ing, and outperforms both single-domain extremes.
+  Ours (Scheduled)                            88.58 ± 0.10        4.3.3. Effect of Multimodal Fusion
+                                                                  Table 4 evaluates the enhanced feature fusion module, start-
+                                                                  ing with a baseline mIOU of 78.98% without depth fea-
+BIP dataset, we assess how these elements enhance perfor-
+                                                                  tures. Adding cross-attention without depth gradients in-
+mance beyond a standard baseline, revealing their roles in
+                                                                  creases this by 0.48%, by aligning RGB and depth fea-
+achieving robust adaptation for agricultural scenes.
+                                                                  tures more effectively. Including depth gradients with cross-
+                                                                  attention pushes the mIOU to 81.35%, sharpening weed and
+4.3.1. Types of Geometry-Aware Masking                            crop boundaries. Cross-attention alone offers a slight boost
+Table 2 assesses masking strategies in MaskAdapt on the           in feature integration, but adding depth gradients enhances
+Maize WeedElec → BIPBIP dataset, utilizing geometry-              edge detail critical for crop-weed segmentation.
+aware masks and dynamic mt , the fraction of input masked.
+The baseline, employing RGB with stochastic masking,              5. Conclusion
+scores a mIOU of 78.98%, improving significantly to 84.           In conclusion, our proposed framework addresses the lim-
+72% with vertical masking (+5.74%) and depth inclusion,           itations of semantic segmentation in SSFM under varying
+excelling at mixed crop-weed segmentation. Horizontal             field conditions by integrating RGB-depth gradients and
+masking reaches 83.65%, aiding crop-soil sharp bound-             geometry-aware multimodal masking strategy to achieve
+aries, while Dynamic mt along with Stochastic masking,            UDA. By leveraging depth-derived spatial transitions, we
+which extends the baseline’s stochastic approach by varying       enhance feature fusion, enabling more precise delineation
+masked fractions on both RGB and depth, achieves 82.78%           of crops, weeds, and soil even in challenging scenar-
+(+3.80% over baseline). This modest gain suggests that dy-        ios where only RGB-based models struggle. The depth-
+namic masking with depth adds resilience, yet falls short of      gradient-guided cross-attention mechanism effectively re-
+geometry-aware strategies, underscoring the need for struc-       fines RGB features, sharpening boundaries, and reducing
+tured masking beyond stochastic variation. Combining dy-          texture ambiguities, while the geometry-aware multimodal
+namic masking with all three types of masking strategies,         masking strategy further strengthens adaptation across dif-
+mIOU increases to 87.27% (+4.49%), highlighting the syn-          ferent fields.
+ergy of integrated mask types.
+   Integrating complementary masking along, achieves              Acknowledgment
+mIOU of 88.58%, a +9.60% gain over the baseline. This
+                                                                  This research project is supported by an NSERC Al-
+approach, with coordinated complementary masking (e.g.,
+                                                                  liance - Mitacs Accelerate grant (NSERC Ref: ALLRP
+80% RGB, 20% depth), random mask selection per epoch,             581076 - 22 & Mitacs Ref: IT34971), titled ”Devel-
+and dynamic mt adjustment, adds improvement over the              oping Machine Learning Methods for RGB Images to
+combined dynamic strategy, affirming the power of cross-          Quantify Crop and Weed Populations Across Agricultural
+modal coordination. The complementary framework unifies           Fields” in partnership with Croptimistic Technology Inc.
+these strengths, ensuring robust segmentation classes.
+References                                                               of vision transformers. arXiv preprint arXiv:2111.12710,
+                                                                         2021. 3
+ [1] Muhammad Hamza Asad and Abdul Bais. Weed detection             [13] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,
+     in canola fields using maximum likelihood classification and        Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,
+     deep convolutional neural network. Information Processing           Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-
+     in Agriculture, 7(4):535–545, 2020. 1                               vain Gelly, Nicolas Usunier, and Neil Houlsby. An image
+ [2] Muhammad Hamza Asad, Saeed Anwar, and Abdul Bais.                   is worth 16x16 words: Transformers for image recognition
+     Improved crop and weed detection with diverse data ensem-           at scale. International Conference on Learning Representa-
+     ble learning. In Proceedings of the IEEE/CVF Conference             tions (ICLR), 2021. 3
+     on Computer Vision and Pattern Recognition, pages 5336–        [14] William E Finch-Savage and George W Bassel. Seed
+     5345, 2024. 1, 5                                                    vigour and crop establishment: extending performance be-
+ [3] Riccardo Bertoglio, Alessio Mazzucchelli, Nico Catalano,            yond adaptation. Journal of experimental botany, 67(3):567–
+     and Matteo Matteucci. A comparative study of fourier trans-         591, 2016. 1
+     form and cyclegan as domain adaptation techniques for weed     [15] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pas-
+     segmentation - code and data, 2023. 1, 5                            cal Germain, Hugo Larochelle, François Laviolette, Mario
+ [4] John Chen and Robert Smith. Geometry-aware masking                  Marchand, and Victor Lempitsky. Domain-adversarial train-
+     strategies for crop row analysis. Technical Report MITB3-           ing of neural networks. The Journal of Machine Learning
+     TR-2025-01, Massachusetts Institute of Technology, Depart-          Research, 17(1):2096–2030, 2016. 3
+     ment of Electrical Engineering and Computer Science, Cam-      [16] Robert Geirhos, Fabian Rubisch, Claudio Michaelis,
+     bridge, MA, 2025. Technical report detailing vertical and           Matthias Bethge, Felix A Wichmann, and Wieland Brendel.
+     horizontal masking techniques for agricultural imaging. 5           Imagenet-trained cnns are biased towards texture; increas-
+ [5] Xiaokang Chen, Kwan-Yee Lin, Chen Qian, Gang Zeng,                  ing shape bias improves accuracy and robustness. In Inter-
+     and Hongdong Li. 3d sketch-aware semantic scene comple-             national Conference on Learning Representations (ICLR),
+     tion via semi-supervised structure prior. In Proceedings of         2018. 4
+     the IEEE/CVF Conference on Computer Vision and Pattern         [17] Clément Godard, Oisin Mac Aodha, Michael Firman, and
+     Recognition (CVPR), 2020. 2                                         Gabriel J Brostow. Digging into self-supervised monocular
+ [6] Xiaokang Chen, Kwan-Yee Lin, Jingdong Wang, Wayne Wu,               depth estimation. In Proceedings of the IEEE/CVF Interna-
+     Chen Qian, Hongdong Li, and Gang Zeng. Bi-directional               tional Conference on Computer Vision (ICCV), pages 3828–
+     cross-modality feature propagation with separation-and-             3838, 2019. 2
+     aggregation gate for rgb-d semantic segmentation. In Euro-     [18] Dario Gogoll, Philipp Lottes, Jan Weyler, Nik Petrinic, and
+     pean Conference on Computer Vision (ECCV), pages 561–               Cyrill Stachniss. Unsupervised domain adaptation for trans-
+     577, 2020. 2                                                        ferring plant classification systems to new field environ-
+ [7] Yuhua Chen, Wen Li, Xiaoran Chen, and Luc Van Gool.                 ments, crops, and robots. In 2020 IEEE/RSJ International
+     Learning semantic segmentation from synthetic data: A geo-          Conference on Intelligent Robots and Systems (IROS), pages
+     metrically guided input-output adaptation approach. In Pro-         2636–2642. IEEE, 2020. 1, 6
+     ceedings of the IEEE/CVF Conference on Computer Vision         [19] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing
+     and Pattern Recognition (CVPR), pages 1841–1850, 2019. 3            Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and
+                                                                         Yoshua Bengio. Generative adversarial nets. In Advances
+ [8] Yuhua Chen, Haoran Wang, Wen Li, Christos Sakaridis,
+                                                                         in Neural Information Processing Systems (NeurIPS), pages
+     Dengxin Dai, and Luc Van Gool. Scale-aware domain adap-
+                                                                         2672–2680, 2014. 1
+     tive faster r-cnn. International Journal of Computer Vision
+                                                                    [20] Judy Hoffman, Eric Tzeng, Taesung Park, Jun-Yan Zhu,
+     (IJCV), 129(7):2223–2243, 2021. 3, 4
+                                                                         Phillip Isola, Kate Saenko, Alexei Efros, and Trevor Darrell.
+ [9] Yong Cheng, Rui Cai, Zhi Li, Xin Zhao, and Kaiqi Huang.             Cycada: Cycle-consistent adversarial domain adaptation. In
+     Locality-sensitive deconvolution networks with gated fusion         International conference on machine learning, pages 1989–
+     for rgb-d indoor semantic segmentation. In Proceedings              1998. Pmlr, 2018. 3
+     of the IEEE Conference on Computer Vision and Pattern          [21] Lukas Hoyer, Manuel Munoz, Priyanka Katiyar, Anna
+     Recognition (CVPR), pages 3029–3037, 2017. 2                        Khoreva, and Volker Fischer. Grid saliency for context expla-
+[10] Jaehoon Choi, Taekyung Kim, and Changick Kim. Self-                 nations of semantic segmentation. In NeurIPS, pages 6462–
+     ensembling with gan-based data augmentation for domain              6473, 2019. 3
+     adaptation in semantic segmentation. In ICCV, pages 6830–      [22] Lukas Hoyer, Dengxin Dai, and Luc Van Gool. Daformer:
+     6840, 2019. 3                                                       Improving network architectures and training strategies for
+[11] MMSegmentation Contributors.              MMSegmentation:           domain-adaptive semantic segmentation. In Proceedings of
+     Openmmlab semantic segmentation toolbox and                         the IEEE/CVF Conference on Computer Vision and Pattern
+     benchmark.         https : / / github . com / open -                Recognition, pages 9924–9935, 2022. 4, 6
+     mmlab/mmsegmentation, 2020. 5                                  [23] Lukas Hoyer, Dengxin Dai, and Luc Van Gool. Hrda:
+[12] Xiaoyi Dong, Jianmin Bao, Ting Zhang, Dongdong Chen,                Context-aware high-resolution domain-adaptive semantic
+     Weiming Zhang, Lu Yuan, Dong Chen, Fang Wen, and                    segmentation. In European Conference on Computer Vision,
+     Nenghai Yu. Peco: Perceptual codebook for bert pre-training         pages 372–391. Springer, 2022. 1, 3, 4, 6, 7
+[24] Lukas Hoyer, Dengxin Dai, and Luc Van Gool. Domain                   Technology: PSIVT 2019 International Workshops, Sydney,
+     adaptive and generalizable network architectures and train-          NSW, Australia, November 18–22, 2019, Revised Selected
+     ing strategies for semantic image segmentation. arXiv                Papers 9, pages 162–171. Springer, 2020. 1
+     preprint arXiv:2304.13615, 2023. 1                              [38] Yingwei Pan, Ting Yao, Yehao Li, Yu Wang, Chong-Wah
+[25] Lukas Hoyer, Dengxin Dai, Haoran Wang, and Luc                       Ngo, and Tao Mei. Transferrable prototypical networks for
+     Van Gool. MIC: Masked image consistency for context-                 unsupervised domain adaptation. In CVPR, pages 2239–
+     enhanced domain adaptation.          In Proceedings of the           2247, 2019. 3
+     IEEE/CVF Conference on Computer Vision and Pattern              [39] René Ranftl, Alexey Bochkovskiy, and Vladlen Koltun. Vi-
+     Recognition (CVPR), 2023. 2, 3, 4, 5, 6, 7                           sion transformers for dense prediction. In Proceedings of
+[26] Hung-Kuo Hsu, Chun-Han Yao, Yi-Hsuan Tsai, Wei-Chih                  the IEEE/CVF International Conference on Computer Vision
+     Hung, Hung-Yu Tseng, Maneesh Singh, and Ming-Hsuan                   (ICCV), pages 12179–12188, 2021. 2, 4, 5
+     Yang. Progressive domain adaptation for object detection.       [40] Manuel Schwonberg, Joshua Niemeijer, Jan-Aike
+     In Proceedings of the IEEE/CVF Winter Conference on Ap-              Termöhlen, Jörg P. schäfer, Nico M. Schmidt, Hanno
+     plications of Computer Vision, pages 749–757, 2020. 3                Gottschalk, and Tim Fingscheidt. Survey on unsuper-
+[27] Jie Hu, Li Shen, and Gang Sun. Squeeze-and-excitation net-           vised domain adaptation for semantic segmentation for
+     works. In Proceedings of the IEEE Conference on Computer             visual perception in automated driving. IEEE Access, 11:
+     Vision and Pattern Recognition (CVPR), pages 7132–7141,              54296–54336, 2023. 3
+     2018. 2
+                                                                     [41] Baochen Sun, Jiashi Feng, and Kate Saenko. Correlation
+[28] Yingchao Huang and Abdul Bais. Unsupervised domain                   alignment for unsupervised domain adaptation. In Domain
+     adaptation for weed segmentation using greedy pseudo-                Adaptation in Computer Vision Applications, pages 153–
+     labelling. In Proceedings of the IEEE/CVF Conference on              171. Springer, 2017. 3
+     Computer Vision and Pattern Recognition (CVPR) Work-
+                                                                     [42] Antti Tarvainen and Harri Valpola. Mean teachers are better
+     shops, pages 2484–2494, 2024. 5, 6
+                                                                          role models: Weight-averaged consistency targets improve
+[29] T. Ilyas, J. Lee, O. Won, Y. Jeong, and H. Kim. Overcom-
+                                                                          semi-supervised deep learning results. In NeurIPS, pages
+     ing field variability: unsupervised domain adaptation for en-
+                                                                          1195–1204, 2017. 3, 4, 6
+     hanced crop-weed recognition in diverse farmlands. Fron-
+     tiers in Plant Science, 14:1234616, 2023. 6                     [43] William Tranheden, Viktor Olsson, Joao Pinto, and Lars
+                                                                          Svensson. Dacs: Domain adaptation via cross-domain mixed
+[30] Daiqing Li, Junlin Yang, Karsten Kreis, Antonio Torralba,
+                                                                          sampling. In Proceedings of the Winter Conference on Ap-
+     and Sanja Fidler. Semantic segmentation with generative
+                                                                          plications of Computer Vision (WACV), pages 1379–1389,
+     models: Semi-supervised learning and strong out-of-domain
+                                                                          2021. Sections 2, 3, 4, 6, 8. 3, 4, 5
+     generalization. In Proceedings of the IEEE/CVF Conference
+     on Computer Vision and Pattern Recognition (CVPR), pages        [44] Yi-Hsuan Tsai, Wei-Chih Hung, Samuel Schulter, Ki-
+     8300–8311, Virtual, 2021. 3                                          hyuk Sohn, Ming-Hsuan Yang, and Manmohan Chandraker.
+[31] Di Lin, Guisong Chen, Daniel Cohen-Or, Pheng-Ann Heng,               Learning to adapt structured output space for semantic seg-
+     and Hui Huang. Cascaded feature network for semantic seg-            mentation. In Proceedings of the IEEE/CVF Conference
+     mentation of rgb-d images. In Proceedings of the IEEE In-            on Computer Vision and Pattern Recognition (CVPR), pages
+     ternational Conference on Computer Vision (ICCV), 2017.              7472–7481, 2018. 4
+     2                                                               [45] Gustavo J. Q. Vasconcelos, Thiago V. Spina, and Helio
+[32] Nian Liu, Ning Zhang, and Jungong Han. Learning selective            Pedrini. Low-cost domain adaptation for crop and weed seg-
+     self-mutual attention for rgb-d saliency detection. In Pro-          mentation. In Progress in Pattern Recognition, Image Anal-
+     ceedings of the IEEE/CVF Conference on Computer Vision               ysis, Computer Vision, and Applications, pages 141–150,
+     and Pattern Recognition (CVPR), pages 12056–12065, 2020.             Cham, 2021. Springer International Publishing. 1, 6
+     2                                                               [46] Hemanth Venkateswara and Sethuraman Panchanathan. In-
+[33] Jonathan Long, Evan Shelhamer, and Trevor Darrell. Fully             troduction to domain adaptation. In Domain Adaptation in
+     convolutional networks for semantic segmentation. In Pro-            Computer Vision with Deep Learning, pages 3–21. Springer
+     ceedings of the IEEE Conference on Computer Vision and               International Publishing, Cham, 2020. 1
+     Pattern Recognition (CVPR), pages 3431–3440, 2015. 2            [47] Hemanth Venkateswara, Jose Eusebio, Shayok Chakraborty,
+[34] Mingsheng Long, Yue Cao, Jianmin Wang, and Michael I                 and Sethuraman Panchanathan. Deep hashing network for
+     Jordan. Learning transferable features with deep adaptation          unsupervised domain adaptation. In Proceedings of the IEEE
+     networks. In International Conference on Machine Learn-              Conference on Computer Vision and Pattern Recognition
+     ing, pages 97–105. PMLR, 2015. 3                                     (CVPR), pages 5018–5027, 2017. Dataset URL: https:
+[35] Ilya Loshchilov and Frank Hutter. Decoupled weight decay             / / www . hemanthdv . org / officeHomeDataset .
+     regularization. arXiv preprint arXiv:1711.05101, 2017. 6             html. 3
+[36] Ke Mei, Chuang Zhu, Jiaqi Zou, and Shanghang Zhang. In-         [48] Tuan-Hung Vu, Himalaya Jain, Maxime Bucher, Matthieu
+     stance adaptive self-training for unsupervised domain adap-          Cord, and Patrick Pérez. Dada: Depth-aware domain adap-
+     tation. In ECCV, pages 415–430, 2020. 3                              tation in semantic segmentation. In Proceedings of the
+[37] Muhammad Hamza Asad and Abdul Bais. Weed density es-                 IEEE/CVF International Conference on Computer Vision
+     timation using semantic segmentation. In Image and Video             (ICCV), pages 7364–7373, 2019. 3
+[49] Chaoyue Wang, Chang Xu, Xin Yao, and Dacheng Tao. Evo-            [61] Qiming Zhang, Jing Zhang, Wei Liu, and Dacheng Tao. Cat-
+     lutionary generative adversarial networks. IEEE Transac-               egory anchor-guided unsupervised domain adaptation for se-
+     tions on Evolutionary Computation, 23(6):921–934, 2019. 3              mantic segmentation. In NeurIPS, pages 435–445, 2019. 3
+[50] Haoran Wang, Tong Shen, Wei Zhang, Ling-Yu Duan, and              [62] Zhaoxiang Zhang, Zhen Cui, Chen Xu, Yan Yan, Nicu Sebe,
+     Tao Mei. Classes matter: A fine-grained adversarial ap-                and Jie Yang. Pattern-affinitive propagation across depth,
+     proach to cross-domain semantic segmentation. In European              surface normal and semantic segmentation. In Proceedings
+     conference on computer vision, pages 642–659. Springer,                of the IEEE/CVF Conference on Computer Vision and Pat-
+     2020. 3                                                                tern Recognition (CVPR), 2019. 2
+[51] Jingdong Wang, Ziwei Wang, Dacheng Tao, Simon See, and            [63] Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A
+     Gang Wang. Learning common and specific features for rgb-              Efros. Unpaired image-to-image translation using cycle-
+     d semantic segmentation with deconvolutional networks. In              consistent adversarial networks. In Proceedings of the IEEE
+     European Conference on Computer Vision (ECCV), pages                   international conference on computer vision, pages 2223–
+     664–679, 2016. 2                                                       2232, 2017. 3
+[52] Panqu Wang, Pengfei Chen, Ye Yuan, Ding Liu, Zehua                [64] Yang Zou, Zhiding Yu, BVK Kumar, and Jinsong Wang. Un-
+     Huang, Xiaodi Hou, and Garrison Cottrell. Understanding                supervised domain adaptation for semantic segmentation via
+     convolution for semantic segmentation. In Proceedings of               class-balanced self-training. In ECCV, pages 289–305, 2018.
+     the IEEE Winter Conference on Applications of Computer                 6
+     Vision (WACV), pages 1451–1460, 2018. 2
+[53] Weiyue Wang and Ulrich Neumann. Depth-aware cnn for
+     rgb-d segmentation. In European Conference on Computer
+     Vision (ECCV), 2018. 2
+[54] Chen Wei, Haoqi Fan, Saining Xie, Chao-Yuan Wu, Alan
+     Yuille, and Christoph Feichtenhofer. Masked feature predic-
+     tion for self-supervised visual pre-training. In Proceedings of
+     the IEEE/CVF Conference on Computer Vision and Pattern
+     Recognition (CVPR), pages 14668–14678, 2022. 3
+[55] Xinyi Wu, Zhenyao Wu, Lili Ju, and Song Wang. A
+     one-stage domain adaptation network with image alignment
+     for unsupervised nighttime semantic segmentation. IEEE
+     Transactions on Pattern Analysis and Machine Intelligence
+     (PAMI), 2021. 3
+[56] Enze Xie, Wenhai Wang, Zhiding Yu, Anima Anandkumar,
+     Jose M Alvarez, and Ping Luo. Segformer: Simple and
+     efficient design for semantic segmentation with transform-
+     ers. Advances in Neural Information Processing Systems,
+     34:12077–12090, 2021. 5
+[57] Haofei Xu, Jiaming Zhang, Jianfei Cai, Hamid Rezatofighi,
+     Fisher Yu, Dacheng Tao, and Andreas Geiger. Unifying flow,
+     stereo and depth estimation. IEEE Transactions on Pattern
+     Analysis and Machine Intelligence (TPAMI), 2023. 2, 3
+[58] Linyan Yang, Lukas Hoyer, Mark Weber, Tobias Fischer,
+     Dengxin Dai, Laura Leal-Taixé, Marc Pollefeys, Daniel
+     Cremers, and Luc Van Gool. Micdrop: Masking image
+     and depth features via complementary dropout for domain-
+     adaptive semantic segmentation. In Computer Vision –
+     ECCV 2024, pages 329–346, Cham, 2025. Springer Nature
+     Switzerland. 1, 2, 3, 4
+[59] Y. Yang, D. Lao, G. Sundaramoorthi, and S. Soatto. Phase
+     consistent ecological domain adaptation. In 2020 IEEE/CVF
+     Conference on Computer Vision and Pattern Recognition
+     (CVPR), pages 9008–9017, Los Alamitos, CA, USA, 2020.
+     IEEE Computer Society. 6
+[60] Jing Zhang, Hongyu Liu, Kai Yang, Xiaolin Hu, Risheng
+     Liu, and Rainer Stiefelhagen. Cmx: Cross-modal fusion for
+     rgb-x semantic segmentation with transformers. IEEE Trans-
+     actions on Intelligent Transportation Systems, 2023. 2
+

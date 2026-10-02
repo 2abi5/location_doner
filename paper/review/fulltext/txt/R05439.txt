@@ -1,0 +1,1043 @@
+              YI ET AL.: MV-MATCH                                                                                                   1
+arXiv:2409.00903v1 [cs.CV] 2 Sep 2024
+              MV-Match: Multi-View Matching for
+              Domain-Adaptive Identification of Plant
+              Nutrient Deficiencies
+              Jinhui Yi*1                                                             1
+                                                                                          Computer Vision Group
+              jinhui.yi@uni-bonn.de                                                       University of Bonn
+              Yanan Luo*1                                                                 Bonn, Germany
+              yluo@uni-bonn.de                                                        2
+                                                                                          Plant Nutrition Group
+              Marion Deichmann                          2                                 University of Bonn
+              madeic@uni-bonn.de                                                          Bonn, Germany
+                                                                                      3
+              Gabriel Schaaf2                                                             Lamarr Institute for Machine Learning
+              gabriel.schaaf@uni-bonn.de                                                  and Artificial Intelligence
+              Juergen Gall1,3                                                             Germany
+              gall@iai.uni-bonn.de                                                    * indicates equal contribution
+
+
+
+
+                                                                               Abstract
+
+                                            An early, non-invasive, and on-site detection of nutrient deficiencies is critical to
+                                        enable timely actions to prevent major losses of crops caused by lack of nutrients. While
+                                        acquiring labeled data is very expensive, collecting images from multiple views of a
+                                        crop is straightforward. Despite its relevance for practical applications, unsupervised
+                                        domain adaptation where multiple views are available for the labeled source domain as
+                                        well as the unlabeled target domain is an unexplored research area. In this work, we
+                                        thus propose an approach that leverages multiple camera views in the source and target
+                                        domain for unsupervised domain adaptation. We evaluate the proposed approach on two
+                                        nutrient deficiency datasets. The proposed method achieves state-of-the-art results on
+                                        both datasets compared to other unsupervised domain adaptation methods. The dataset
+                                        and source code are available at https://github.com/jh-yi/MV-Match.
+
+
+              1                         Introduction
+              In recent years, nutrient status monitoring has become a popular topic for the precision man-
+              agement of fertilizer in smart farming [2, 25, 28, 34, 40]. An early, non-invasive, and on-site
+              identification of plant nutrient deficiencies is critical to enable timely actions to prevent ma-
+              jor losses of crops caused by lack of nutrients. This can help farmers improve crop yields
+              and prevent excess fertilization with negative environmental consequences, such as nitrous
+              oxide emissions or groundwater pollution. For rapid and non-invasive diagnosis of nutri-
+              ent deficiencies, deep learning methods applied to RGB images have been widely adopted
+              [13, 31, 37, 41, 44, 47, 57]. These approaches, however, do not generalize to genotypes that
+             © 2024. The copyright of this document resides with its authors.
+             It may be distributed unchanged freely in print or electronic forms.
+2                                                                     YI ET AL.: MV-MATCH
+
+have not been observed during training. Furthermore, collecting labeled data is extremely ex-
+pensive since it requires expert knowledge to recognize nutrient deficiency and it is even dif-
+ficult for experts to distinguish plant stress caused by nutrient imbalances from other causes
+like droughts or diseases. Detecting nutrient deficiencies across different genotypes is thus
+a highly relevant application for evaluating and developing unsupervised domain adaptation
+methods [29, 45, 52].
+    Current datasets and approaches for domain adaptation consider only a single view, i.e.,
+each object or scene in the source and target domain have been taken from a single view.
+Multiple views of the same scene, however, provide additional information since it allows
+to learn or discard variability of the appearance that is caused by viewpoint changes and not
+necessarily by changes of the domain. Utilizing this additional information is very practical
+since it is straightforward for many applications like nutrient deficiency detection to collect
+multiple views of the same location both for the source and target domain, in particular if
+the images can be simply taken by a smartphone without the need of any camera calibration
+or expensive camera setup. Despite its practical relevance, unsupervised domain adaptation
+under multi-view scenarios is a widely unexplored research area. An exception is a recent
+work by Lu et al. [23] that addresses domain adaptation for object detection in a surveillance
+setting where the camera views of the target domain overlap. This specific setting, however,
+does not generalize to other tasks where the assumption of overlapping views cannot be
+guaranteed.
+    In this work, we thus investigate the task of unsupervised multi-view domain adaptation.
+In our context, multi-view refers to multiple images of the same scene taken from different
+views, which is different to the multi-view learning approach investigated in Xia et al. [54]
+where views refer to different modalities. To study this challenging task, we collected a
+dataset of images of crops that suffer from different nutrient deficiencies. Each crop has
+been captured over the growing season multiple times and each time from multiple views as
+illustrated in Figure 1. While each view does not necessarily contain exactly the same plant,
+the multiple views contain very closely located plants with the same nutrient status. The im-
+ages are annotated by the date, genotype, and nutrient deficiency. As a second contribution,
+we propose an approach that leverages the multiple views for domain adaptation. The pro-
+posed approach, which we term Multi-View Match (MV-Match), enforces the consistency
+of the predictions among multiple views. In addition, we propose a Similarity-guided View
+Mining (SgVM) mechanism to automatically select the most dissimilar views that contain
+complementary information given a query image.
+    We evaluate our approach on two nutrient deficiency benchmarks and show that our ap-
+proach achieves state-of-the-art performance compared to other unsupervised domain adap-
+tation approaches.
+
+
+2    Related Work
+Plant Nutrient Deficiency. Better matching of the timing and amount of fertilizer inputs
+to plant requirements will improve nutrient use efficiency and crop yields. Driven by tremen-
+dous economic potential, deep learning applied to RGB images is widely adopted for early,
+non-invasive, and on-site monitoring of plant nutrient deficiency in plants [41], including
+rice [37, 44], sugar beet [57], hydroponic basil [13], winter wheat [58], and tomato [47].
+These approaches evaluated various convolutional neural networks (CNNs) on their pro-
+posed datasets [13, 47, 57, 58] or applied an ensemble of CNNs to achieve better perfor-
+YI ET AL.: MV-MATCH                                                                            3
+
+
+
+
+Figure 1: Illustration of our multi-view setting. Related views are expected to share the same
+nutrient status, both in the labeled source and the unlabeled target domain. We do not assume
+that each view contains exactly the same plant, but very closely located plants with the same
+nutrient status, which makes the data capturing in an open field very simple.
+
+
+mance on publicly available datasets [37, 44]. However, they detected plant nutrient defi-
+ciency in images of the same domain as the labeled training data, whereas we aim to identify
+the nutrient status of plants in out-of-domain data.
+
+Unsupervised Domain Adaptation. Unsupervised domain adaptation approaches [29, 45,
+52] aim to adapt a model trained on a labeled source domain to an unlabeled target domain.
+Due to ubiquitous domain shifts in real life, unsupervised domain adaptation approaches
+were proposed for various applications, including image classification [5, 9, 20], semantic
+segmentation [3, 18, 51], and smart farming [1, 10, 24, 33, 36]. Most of these approaches in-
+volve the minimization of discrepancies, adversarial training, or self-training. Methods with
+discrepancy minimization aim to minimize the domain gap by adopting a statistical distance
+function such as maximum mean discrepancy [20, 21], correlation alignment [42, 43], or
+entropy minimization [12, 51]. In adversarial training, encoders and domain discriminators
+are trained to learn domain-invariant inputs [11, 15], features [9, 22], or outputs [35, 48, 51].
+Recently, unsupervised domain adaptation approaches using pseudo-labels were proposed to
+generate artificial supervised signals based on confidence thresholds [26, 61] or pseudo-label
+prototypes [30, 60] for the unlabeled target data. Although unsupervised domain adaptation
+for smart farming [24] is attracting more attention for species recognition [10], disease de-
+tection [1], drought stress [36], and relative water content prediction [33], the exploration of
+unsupervised domain adaptation for identification of plant nutrient deficiency [57] remains
+an open area of investigation. Moreover, leveraging multiple views of a plant or object in the
+source and target domain is an unexplored research area in the field of domain adaptation.
+
+Multi-View Learning Multi-view learning is commonly adopted in 3D reconstruction
+[53], 3D object recognition [32], and perception of 2D images. For 2D images, multi-view
+consistency is a form of consistency regularization in semi-supervised learning, which is of-
+ten applied to ensure consistency over different data augmentations [3, 6, 27] and different
+crops [17, 19]. However, the aforementioned approaches for 2D images only consider multi-
+views as augmented versions of the same image, which inevitably contain local patterns
+4                                                                               YI ET AL.: MV-MATCH
+
+                                                                                       Source Domain
+
+
+
+                0.9     0.2
+
+
+
+
+              0.7       0.1                                      pseudo-label
+                                                                                         Label
+    Similarity-guided View Mining (SgVM)
+
+                                               Model
+
+
+
+                                                                                                    Sample
+              0.8       0.2
+                                                                                                   Strong
+                                                                                             data augmentation
+
+                                                                                                   Weak
+                                                                 pseudo-label                data augmentation
+              0.9       0.3
+                                                                                                 Subsample set
+
+    Similarity-guided View Mining (SgVM)
+                                                                                       Target Domain
+
+
+Figure 2: Proposed approach for unsupervised domain adaptation. Given multiple views of a
+crop in the labeled source domain (top) and the unlabeled target domain (bottom), a random
+query image is sampled from the source and the target domain (center of the green and blue
+box). The Similarity-guided View Mining (SgVM) module then computes the normalized
+mutual information between each query-view pair to select the top n dissimilar views of
+the same crop (red dashed rectangles). From these two sets, we randomly select a second
+image for each query image. We then apply weak or strong data augmentation to the four
+images, i.e., the two query images and their corresponding view pair images, and feed them
+to a shared model for predicting nutrient deficiencies. While the prediction of the query
+image of the source domain is supervised by the ground-truth label, the other predictions are
+enforced to be consistent with the corresponding view pair. For this, the query image with
+weak augmentation is always considered as a reference prediction, both for the source and
+target domain.
+
+
+instead of the holistic appearance of a given object. In this work, we make use of images
+of plants with various camera angles to include different light conditions, viewpoints, and
+crop parts, to incorporate holistic details of diagnosed plants. We enforce consistency among
+these multi-view images instead of augmented images. Concurrent works [23, 54] evaluated
+similar settings for object detection, image classification, and 3D reconstruction, but none of
+them can be applied to the task of nutrient deficiency detection.
+
+
+3        MV-Match
+In this work, we propose an approach for unsupervised multi-view domain adaptation. This
+means that we have multiple views both in the source and the training domain, as illustrated
+in Fig. 1. Such a scenario is highly relevant for applications since capturing multiple views
+of the same crop or object is straightforward whereas annotating images by trained experts
+is often very expensive.
+     Our approach, which is illustrated in Fig. 2, thus aims to leverage the multiple views in
+the source and target domain. While we have labeled images for the source domain, where
+xs,i denotes an image of the source domain and ys,i ∈ {1, 2, · · · ,C} is the corresponding label,
+YI ET AL.: MV-MATCH                                                                                5
+
+the images xt,i of the target domain are unlabeled. In our case, the images of the source and
+target domain contain different genotypes and the goal is to recognize different types of
+nutrient deficiencies in the target domain.
+    As illustrated in Fig. 2, we train a joint model for the source and target domain and aim
+to learn a model that is agnostic to the domain. During training, we select for each batch the
+same number of query images from the source and target domain. For each query image, we
+sample a second image that shows the same crop but from a different view. This step will be
+described in Section 3.2. For a query image of the source domain xs,i , we can directly apply
+the cross-entropy loss using the ground-truth label ys,i :
+                                                           C
+                  Lgt                            wa ) = − ∑ 1(c = ys,i ) log Pxwa (c),
+                   s (xs,i , ys,i ) = H(ys,i , Pxs,i                           s,i
+                                                                                                 (1)
+                                                          c=1
+
+where Px is the prediction of the network for image x and Px (c) is the predicted probability
+for class c. The indicator function 1(c = ys,i ) is 1 for the ground-truth label and 0 otherwise.
+xwa is the weakly augmented version of a given image x, which is a random horizontal flip
+with a probability of 50%.
+    For the other images, we introduce consistency loss functions, which are denoted by
+Lsa2    sa1        sa2
+  s , Lt , and Lt . These loss functions measure the prediction consistency across views
+for the source and the target domain, as illustrated in Fig. 2. We describe them in the next
+section more in detail.
+
+3.1    Multi View Matching
+For each query image of the source or target domain, we have a set of images Ms,i or Mt,i
+that show the same crop but from a different view. In Section 3.2, we will describe how
+these two sets are obtained. For each query image xs,i and xt,i , we randomly select a second
+image from the corresponding set xs, j ∈ Ms,i or xt, j ∈ Mt,i . As illustrated in Fig. 2, we
+apply strong augmentation to the sampled views, which we denote by xs,saj and xt,saj . For
+this, we adopt AutoAugment [7] as strong augmentation, which is described more in detail
+in the supplementary material. For sampled views of the source domain, we compute the
+cross-entropy to enforce that the prediction is the same as for the query image of the source
+domain:
+                       Lsa2                         wa (c) ≥ τ)H(ŷs,i , Pxsa ).
+                        s (xs,i , xs, j ) = 1(max Pxs,i                    s, j
+                                                                                                 (2)
+                                                   c
+For computing the cross-entropy H, we consider in the experiments two cases: a) ŷs,i =
+            wa (c) or b) ŷs,i = Pxwa . While a) generates a hard pseudo-label, b) is a soft labeling
+argmaxc Pxs,i                      s,i
+based on the predicted probabilities of all classes. In the case of a hard pseudo-label, the
+loss is only applied if the prediction on the query image reaches a certain confidence, i.e.,
+        wa (c) ≥ τ.
+maxc Pxs,i
+    For the target images, we define a similar loss function:
+                        Ltsa2 (xt,i , xt, j ) = 1(max Pxt,i
+                                                        wa (c) ≥ τ)H(ŷt,i , Pxsa ),
+                                                                               t, j
+                                                                                                 (3)
+                                                   c
+which enforces that the predictions of the two views of the target domain are consistent. In
+addition, we compute a loss that measures the consistency of the weak and strong augmen-
+tation of the target query image:
+                          Ltsa1 (xt,i ) = 1(max Pxt,i
+                                                  wa (c) ≥ τ)H(ŷt,i , Pxsa ).
+                                                                         t,i
+                                                                                                 (4)
+                                               c
+6                                                                                  YI ET AL.: MV-MATCH
+
+      For training, we combine all four loss terms without any weighting:
+
+                 L = Lgt                  sa2                  sa2                  sa1
+                      s (xs,i , ys,i ) + Ls (xs,i , xs, j ) + Lt (xt,i , xt, j ) + Lt (xt,i )      (5)
+
+The impact of the loss functions except Lgt
+                                         s , which is always needed, is evaluated in the
+experiments.
+
+
+3.2     Similarity-guided View Mining
+For a given query image xs,i or xt,i , we need to select the set of images Ms,i or Mt,i . We first
+select all images that have been taken from the same location as the query image but from a
+different view. Since the nutrient status of the same plant might change over time, we only
+consider images that have been taken on the same day as the query image.
+    In the experiments, we show that it is better to first select a subset of images instead of
+randomly sampling xs, j from Ms,i . To this end, we select a subset of images that are most
+dissimilar to the query image, but that show the same crop as the query image. In this way,
+we select views that are not very similar to the query view.
+    For the selection, we compute the Normalized Mutual Information (NMI) [50] between
+the query image xs,i and all view images xs,k of the same crop as the query image:
+
+                                                     H(xs,i ) − H(xs,i |xs,k )
+                             NMI(xs,i , xs,k ) = 2                             .                   (6)
+                                                      H(xs,i ) + H(xs,k )
+
+where H(xs,i ) is the entropy of image xs,i and H(xs,i |xs,k ) is the conditional entropy. Larger
+NMI(xs,i , xs,k ) indicates higher similarity. For building Ms,i , we select the 5 images xs,k
+with the lowest NMI, i.e., we select the 5 most dissimilar images to the query image. We
+denote the selection as Similarity-guided View Mining (SgVM). We apply SgVM to the
+target images in the same way to obtain Mt,i .
+
+
+4      Experiments
+4.1     Datasets and Metrics
+We evaluate our proposed MV-Match for image classification on two nutrient deficiency
+benchmarks, MiPlo-B [8] and MiPlo-WW. We report the top-1 accuracy on the test set as
+our metric. We also report per-nutrient accuracy as it is critical for nutrient monitoring in
+smart farming. As a network, we use a ResNet50 [14].
+     MiPlo-B. The Mini Plot Barley (MiPlo-B) dataset consists of 18559 images with 6 nutri-
+ent treatments (-N, -P, -K, -B, -S, ctrl) annotated, ranging from 21.06.2022 - 20.07.2022 (16
+dates). It contains two genotypes: Barke (9305 images) and Hanna (9254 images). For each
+genotype, each treatment was repeated 4 times, resulting in 24 containers, each of which has
+a unique ID. Six unique containers with six different nutrient treatments were selected as the
+test set while the other containers as the training set (#train:#test≈75%:25%), trying to avoid
+information leaks due to commonly adopted random sampling, i.e., multi-views of the same
+crop being separated into both training and test set.
+     MiPlo-WW. The Mini Plot Winter Wheat (MiPlo-WW) dataset has 12466 images with
+6 treatments (-N, -P, -K, -B, -S, ctrl) annotated, ranging from 12.05.2023 - 24.05.2023 (13
+YI ET AL.: MV-MATCH                                                                                            7
+
+Table 1: Top-1 Classification Accuracy (%) for adaptation across genotypes: Barley: Barke
+→ Hanna. Oracle indicates the model was trained with full supervision on the Hanna
+training set. Source-Only denotes the results without adaptation. The highest accuracy is
+shown in bold, while the second best is underlined. TPS refers to throughput per second.
+                                        Barley: Barke → Hanna
+           Model
+                           -N     -P      -K     -B     -S    control   AVG    Train Time (min)   TPS (test)
+           Oracle         97.3   78.5    82.1   99.1    9.1    87.1     75.4           -             -
+        Source-Only       95.1   26.0    80.4   84.3   14.8    24.2     54.0           -             -
+         DANN [9]         93.0   36.6    59.0   68.6   24.2    46.0     54.7         215.1          35.0
+         ADDA [49]        83.7   47.1    50.4   79.5   17.4    33.0     51.8         125.4          35.0
+          JAN [21]        87.2   26.1    63.7   70.8   22.9    39.6     51.9          86.6          35.0
+         CDAN [22]        95.2   35.0    41.5   69.8   20.4    44.8     51.3         100.3          35.0
+           BSP [5]        94.5   41.3    68.2   76.0   14.5    57.2     58.8         153.0          35.0
+          AFN [56]        94.7   25.8    73.9   64.1   24.9    68.7     59.0         233.9          35.0
+      Mean Teacher [46]   94.2   32.1    81.8   89.4   11.7    52.5     60.6         266.7          35.0
+       FixMatch [38]      98.2   38.9    83.8   86.4   25.4    53.2     64.6         257.6          35.0
+       FlexMatch [59]     97.2   50.0    89.1   89.4   11.0    58.0     65.9         276.4          35.0
+         Ours+hard        92.7   50.0    86.8   95.3   22.7    68.9     69.6         666.7          35.0
+          Ours+soft       97.0   53.9    75.4   92.8   20.0    64.7     67.4         714.3          35.0
+
+
+
+dates). It contains two genotypes: Julius (6253 images) and Meister (6213 images). The ID
+settings are the same as above.
+    We refer to the supplementary materials for more details about the datasets and experi-
+mental details.
+
+4.2      Comparison to State of the Art
+We present experimental results of our approach compared to different baselines. Source-
+only denotes training only on the source domain without adaptation. DANN [9], ADDA
+[49], JAN [21], and CDAN [22] learn domain-invariant features with adversarial learning:
+DANN jointly trains encoder and discriminator with a gradient reversal layer; ADDA adopts
+separated encoders for source and target domains and alternates training of the encoder and
+discriminator; JAN adopts adversarial training to maximize a joint maximum mean discrep-
+ancy (JMMD); CDAN conditions the adversarial adaptation models on both the features and
+the classifier predictions. BSP [5] avoids deterioration of the feature discriminability after
+adaptation by penalizing the largest singular values. AFN [56] enlarges feature norms to
+enhance the transferability of features. Mean Teacher [46] constructs a teacher model by av-
+eraging model weights of a student model with an exponential moving average and forcing
+the consistency between the predictions of two models. FixMatch [38] takes the predic-
+tions of weakly-augmented unlabeled images as pseudo-labels and their strongly-augmented
+version as predictions to train the model in a supervised manner. FlexMatch [59] extends
+FixMatch by considering adaptive thresholds for different classes at each time step. All ap-
+proaches were trained with the same amount of images, i.e., single-view approaches were
+trained using all views as images but they do not utilize multi-view information. In what
+follows, we show the performance of our model in two plant nutrient deficiency benchmarks
+under different settings, i.e., adaptation across genotypes (smaller domain gap) and across
+cultivars (larger domain gap).
+    Adaptation Across Genotypes: We report in Tables 1 and 2 the performance of adap-
+tation across genotypes in terms of per-nutrient accuracy and average accuracy. The results
+indicate that for both settings of adaptation across genotypes, MV-Match outperforms the
+8                                                                                 YI ET AL.: MV-MATCH
+
+Table 2: Top-1 Classification Accuracy (%) for adaptation across genotypes: Winter
+Wheat: Julius → Meister. Oracle indicates the model was trained with full supervision
+on the Meister training set. Source-Only denotes the results without adaptation. The highest
+accuracy is shown in bold, while the second best is underlined. TPS refers to throughput per
+second.
+                                Winter Wheat: Julius → Meister
+         Model
+                          -N     -P     -K     -B     -S    control   AVG    Train Time (min)   TPS (test)
+         Oracle          98.9   85.4   58.9   81.9   50.2    51.7     71.0           -             -
+      Source-Only       100.0   88.8    5.6   46.6    1.1    61.6     50.5           -             -
+       DANN [9]          99.8   54.9   22.6   52.9   20.5    58.9     51.4         196.7          35.0
+       ADDA [49]         99.0   57.5   50.7   51.3   30.4    44.1     55.7         130.3          35.0
+        JAN [21]         98.9   50.0   26.7   49.6   39.9    58.2     53.9          83.3          35.0
+       CDAN [22]         99.2   44.0   33.7   55.9   29.7    63.9     54.3          95.2          35.0
+         BSP [5]        100.0   59.7   56.3   55.9   49.8    49.4     61.9         144.4          35.0
+        AFN [56]         99.6   67.9   24.8   68.1   19.8    61.6     56.6         199.0          35.0
+    Mean Teacher [46]    99.2   67.9   62.6   72.7   18.6    37.6     59.6         266.7          35.0
+     FixMatch [38]       99.6   75.0   66.7   62.2   25.5    64.6     65.6         279.1          35.0
+     FlexMatch [59]     99.2    72.8   68.1   87.4    3.0    64.6     65.5         239.3          35.0
+       Ours+hard         99.2   59.0   71.1   93.7    4.6    76.4     66.9         588.2          35.0
+        Ours+soft       100.0   60.8   59.3   76.5   29.7    50.6     62.5         555.6          35.0
+
+
+
+
+baseline methods by a large margin. Comparing Oracle and Source-Only, we see that dif-
+ferent genotypes drastically deteriorate the performance without adaptation, especially for
+P deficiency and control in Barley: Hanna → Barke and K deficiency, B deficiency and S
+deficiency in Winter Wheat: Meister → Julius. On adapting the network, most baselines
+based on adversarial learning or discrepancy minimization do not attain large improvements
+over the un-adapted model for both scenarios. Notably, Mean Teacher and FixMatch achieve
+a relatively large improvement. Both approaches adopt consistency regularization, which we
+assume is critical for plant nutrient deficiency. With the proposed multi-view consistency,
+our approach yields consistent and significant performance gains in both adaptation settings.
+MV-Match with hard pseudo-labels outperforms its counterpart with soft pseudo-labels in
+both settings. We furthermore report the training time and throughput per second (TPS) dur-
+ing inference in Tables 1 and 2. While the inference time is the same for all methods since
+they all use the same backbone suitable for real-time processing, our approach requires more
+time for training due to selecting dissimilar views.
+
+     Adaptation Across Cultivars: We also evaluate the methods for adaptation across dif-
+ferent crop species. This setting is extremely challenging because both crops were cultivated
+in different years, where changing environmental conditions as well as abiotic and biotic
+stresses might have affected the growing status of crops. This is reflected in the results in
+Table 3. For many adaptation settings, baseline methods decrease the performance of the
+un-adapted model. Our method consistently boosts the performance across crop species. We
+attribute this robustness against the changing environment to our proposed multi-view match-
+ing, which incorporates holistic visual symptoms for effective identification of plant nutrient
+deficiency. Our model with soft pseudo-labels works better than with hard pseudo-labels.
+This is different to the across genotypes experiments where the domain gaps are smaller.
+This is not unexpected since soft pseudo-labels work better for out-of-domain unlabeled
+data [55]. Note that FixMatch and FlexMatch also achieve promising results in adaptation
+across genotypes, but their performance deteriorates for adaptation across crop species.
+YI ET AL.: MV-MATCH                                                                            9
+
+Table 3: Mean Top-1 Classification Accuracy (%) for adaptation across crop species. Oracle
+indicates the model was trained with full supervision on the target training set. Source-Only
+denotes the results without adaptation. The highest accuracy is shown in bold, while the
+second best is underlined.
+                                 Barley → Winter Wheat              Winter Wheat → Barley
+           Model
+                          B→J      B→M      H→J     H→M     J→B       J→H     M→B      M→H
+           Oracle         73.5      71.0    73.5     71.0    67.9      75.4    67.9     75.4
+        Source-Only       31.9      40.7    27.0     31.7    18.8      13.3    16.3     13.7
+         DANN [9]         40.5      39.4    22.2     19.3    19.0      18.7    23.8     17.6
+         ADDA [49]        30.6      34.4    21.3     24.4    25.2      16.0    21.0     19.8
+          JAN [21]        35.5      40.0    14.4     27.4    19.5      14.6    17.9     16.1
+         CDAN [22]        36.0      34.3    25.7     17.2    21.9      14.0    24.4     18.0
+           BSP [5]        39.9      42.5    30.5     29.6    22.1      16.3    21.0     18.3
+          AFN [56]        38.2      39.6    23.3     20.0    20.9      18.0    22.2     18.5
+      Mean Teacher [46]   30.6      37.6    37.1     40.9    23.3      19.9    26.0     20.4
+       FixMatch [38]      27.9      33.6    29.4     27.8    24.3      19.3    19.6     19.5
+       FlexMatch [59]     26.8      35.4    30.1     34.3    25.1      16.5    21.7     18.9
+         Ours+hard        33.7      33.7    28.9     31.8    20.9      16.8    21.6     16.5
+          Ours+soft       42.2      46.6    34.4     41.2    27.1      23.2    26.0     21.3
+
+
+
+
+4.3   Ablation Study
+
+The results in Table 4 show that forcing consistency between an unlabeled target image with
+its related view significantly boosts the performance, and incorporating such consistency
+for the source image brings extra gain in performance. This validates the effectiveness of
+our proposed multi-view matching mechanism. Note that we only use weak augmentation
+instead of strong augmentation for these results. To further explore the effects of strong
+augmentation in our multi-view setting, we run a series of experiments with various combi-
+nations of loss components, as shown in Table 5. The models that use Lssa2 and Ltsa2 have
+better results as compared to Table 4, indicating the effectiveness of strong augmentation.
+By including Ltsa1 , we observe a decent boost in performance. The combination of Lssa2 , Ltsa2
+and Ltsa1 achieves the highest accuracy of 69.6% on the Barley: B → H benchmark. Such
+a result indicates that complementary information is learned by multi-view matching. More
+ablation studies are in the supplementary material.
+
+
+             Lwa2
+              s       Ltwa2   B→H                        Lsa2
+                                                          s     Ltsa2      Ltsa1   B→H
+                               54.0                                                 54.0
+                          ✓    65.5                                 ✓               67.2
+              ✓           ✓    66.0                         ✓       ✓               68.7
+                                                              ✓                     64.6
+   Table 4: Ablation study on effects of
+                                                       ✓      ✓                     67.3
+   multi-view matching without any strong
+                                                 ✓     ✓      ✓                     69.6
+   augmentation. Lwa2 s   denotes the self-
+   training loss between weakly-augmented Table 5: Ablation study on the impact
+   source image (pseudo-labels) and its of loss functions in the Barley: B → H
+   weakly-augmented related view (predic- benchmark.
+   tions). The same applies to Ltwa2 .
+10                                                                      YI ET AL.: MV-MATCH
+
+
+
+
+                      (a)                                              (b)
+
+Figure 3: Saliency visualization (a) without adaptation and (b) with adaptation. For each
+case, we show the original image, saliency map obtained by guided backpropagation [39],
+and by GradCAM++ [4].
+
+
+4.4    Visualization
+We present an example of saliency visualization using our model before and after adaptation
+on the target dataset in Figure 3. The results show that the model fails to localize pathological
+symptoms caused by potassium deficiency in crops without adapting the model to the target
+domain (Figure 3a). After adaptation, the model successfully classifies the nutrient status by
+focusing on the discriminative pathological symptoms (Figure 3b).
+
+
+5     Conclusion
+In this work, we addressed unsupervised domain adaptation for plant nutrient deficiency de-
+tection. We proposed an approach that utilizes multiple views of crops both in the source and
+target domain. To this end, we enforce consistency between a query image and its strongly-
+augmented related view to incorporate complementary visual symptoms for the identification
+of plant nutrient deficiency. We also proposed a similarity-guided view mining mechanism,
+which ensures that the most dissimilar views are selected. We evaluated our approach on
+two datasets and provided additional ablation studies in the supplementary material. Our
+approach exhibited significantly improved performance compared to other methods in all
+the settings we studied. Despite the achieved major improvements compared to other unsu-
+pervised domain adaptation approaches, domain adaptation for nutrient deficiency detection
+across genotypes or cultivars remains challenging. Extending the approach to a multi-modal
+approach that utilizes data from other sensors, e.g., multi-spectral data, humidity, tempera-
+ture, or chlorophyll fluorescence, is an interesting research direction to enhance the robust-
+ness and generalization abilities.
+
+Acknowledgement This work has been supported by the Deutsche Forschungsgemein-
+schaft (DFG, German Research Foundation) under Germany’s Excellence Strategy - EXC
+2070–390732324 (PhenoRob), GA 1927/9-1 (KI-FOR 5351), and the Chinese Scholarship
+Council (202108440041).
+
+
+References
+ [1] Alwaseela Abdalla, Terry A Wheeler, Jane Dever, Zhe Lin, Joel Arce, and Wenxuan
+     Guo. Assessing fusarium oxysporum disease severity in cotton using unmanned aerial
+YI ET AL.: MV-MATCH                                                                      11
+
+     system images and a hybrid domain adaptation deep learning time series model. Biosys-
+     tems Engineering, 237:220–231, 2024.
+
+ [2] MM Ali, Ahmed Al-Ani, Derek Eamus, and Daniel KY Tan. Leaf nitrogen determi-
+     nation using non-destructive techniques–a review. Journal of Plant Nutrition, 40(7):
+     928–953, 2017.
+
+ [3] Nikita Araslanov and Stefan Roth. Self-supervised augmentation consistency for adapt-
+     ing semantic segmentation. In Proceedings of the IEEE/CVF conference on computer
+     vision and pattern recognition, pages 15384–15394, 2021.
+
+ [4] Aditya Chattopadhay, Anirban Sarkar, Prantik Howlader, and Vineeth N Balasubrama-
+     nian. Grad-cam++: Generalized gradient-based visual explanations for deep convolu-
+     tional networks. In WACV, pages 839–847, 2018.
+
+ [5] Xinyang Chen, Sinan Wang, Mingsheng Long, and Jianmin Wang. Transferability
+     vs. discriminability: Batch spectral penalization for adversarial domain adaptation. In
+     International conference on machine learning, pages 1081–1090. PMLR, 2019.
+
+ [6] Jaehoon Choi, Taekyung Kim, and Changick Kim. Self-ensembling with gan-based
+     data augmentation for domain adaptation in semantic segmentation. In Proceedings of
+     the IEEE/CVF international conference on computer vision, pages 6830–6840, 2019.
+
+ [7] Ekin D Cubuk, Barret Zoph, Dandelion Mane, Vijay Vasudevan, and Quoc V Le.
+     Autoaugment: Learning augmentation strategies from data. In Proceedings of the
+     IEEE/CVF conference on computer vision and pattern recognition, pages 113–123,
+     2019.
+
+ [8] Marion Deichmann, Jinhui Yi, Yeshambel E. Mihiret, Samer Zahra, Corinna Sauer,
+     Hubert Hueging, Jens Léon, Matthias Wissuwa, Juergen Gall, and Gabriel Schaaf.
+     Rgb image-based detection of nutrient deficiencies in barley by deep learning meth-
+     ods. agriRXiv preprint, 2024.
+
+ [9] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain, Hugo Larochelle,
+     François Laviolette, Mario March, and Victor Lempitsky. Domain-adversarial training
+     of neural networks. Journal of machine learning research, 17(59):1–35, 2016.
+
+[10] Dario Gogoll, Philipp Lottes, Jan Weyler, Nik Petrinic, and Cyrill Stachniss. Unsu-
+     pervised domain adaptation for transferring plant classification systems to new field
+     environments, crops, and robots. In IEEE/RSJ International Conference on Intelligent
+     Robots and Systems, pages 2636–2642. IEEE, 2020.
+
+[11] Rui Gong, Wen Li, Yuhua Chen, and Luc Van Gool. Dlow: Domain flow for adaptation
+     and generalization. In Proceedings of the IEEE/CVF conference on computer vision
+     and pattern recognition, pages 2477–2486, 2019.
+
+[12] Yves Grandvalet and Yoshua Bengio. Semi-supervised learning by entropy minimiza-
+     tion. Advances in neural information processing systems, 17, 2004.
+
+[13] Zeki Gul and Sebnem Bora. Exploiting pre-trained convolutional neural networks for
+     the detection of nutrient deficiencies in hydroponic basil. Sensors, 23(12):5407, 2023.
+12                                                                 YI ET AL.: MV-MATCH
+
+[14] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning
+     for image recognition. In Proceedings of the IEEE conference on computer vision and
+     pattern recognition, pages 770–778, 2016.
+
+[15] Judy Hoffman, Eric Tzeng, Taesung Park, Jun-Yan Zhu, Phillip Isola, Kate Saenko,
+     Alexei Efros, and Trevor Darrell. Cycada: Cycle-consistent adversarial domain adap-
+     tation. In International conference on machine learning, pages 1989–1998. Pmlr, 2018.
+[16] Andrew Howard, Mark Sandler, Grace Chu, Liang-Chieh Chen, Bo Chen, Mingxing
+     Tan, Weijun Wang, Yukun Zhu, Ruoming Pang, Vijay Vasudevan, et al. Searching for
+     mobilenetv3. In Proceedings of the IEEE/CVF international conference on computer
+     vision, pages 1314–1324, 2019.
+[17] Lukas Hoyer, Dengxin Dai, and Luc Van Gool. Hrda: Context-aware high-resolution
+     domain-adaptive semantic segmentation. In European conference on computer vision,
+     pages 372–391. Springer, 2022.
+
+[18] Lukas Hoyer, Dengxin Dai, Haoran Wang, and Luc Van Gool. Mic: Masked image
+     consistency for context-enhanced domain adaptation. In Proceedings of the IEEE/CVF
+     conference on computer vision and pattern recognition, pages 11721–11732, 2023.
+[19] Xin Lai, Zhuotao Tian, Li Jiang, Shu Liu, Hengshuang Zhao, Liwei Wang, and Jiaya
+     Jia. Semi-supervised semantic segmentation with directional context-aware consis-
+     tency. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+     Recognition, pages 1205–1214, 2021.
+[20] Mingsheng Long, Yue Cao, Jianmin Wang, and Michael Jordan. Learning transfer-
+     able features with deep adaptation networks. In International conference on machine
+     learning, pages 97–105. PMLR, 2015.
+
+[21] Mingsheng Long, Han Zhu, Jianmin Wang, and Michael I Jordan. Deep transfer learn-
+     ing with joint adaptation networks. In International conference on machine learning,
+     pages 2208–2217. PMLR, 2017.
+[22] Mingsheng Long, Zhangjie Cao, Jianmin Wang, and Michael I Jordan. Conditional
+     adversarial domain adaptation. Advances in neural information processing systems,
+     31, 2018.
+[23] Yan Lu, Zhun Zhong, and Yuanchao Shu. Multi-view domain adaptive object detection
+     on camera networks. In Proceedings of the AAAI Conference on Artificial Intelligence,
+     volume 37, pages 8966–8974, 2023.
+
+[24] Yuchi Ma, Shuo Chen, Stefano Ermon, and David B Lobell. Transfer learning in envi-
+     ronmental remote sensing. Remote Sensing of Environment, 301:113924, 2024.
+[25] ChongYen Mee, Kumar Balasundram Siva, Husni Mohd Hanif Ahmad, et al. Detecting
+     and monitoring plant nutrient stress using remote sensing approaches: a review. Asian
+     Journal of Plant Sciences, 16(1):1–8, 2017.
+
+[26] Ke Mei, Chuang Zhu, Jiaqi Zou, and Shanghang Zhang. Instance adaptive self-training
+     for unsupervised domain adaptation. In European Conference on Computer Vision,
+     pages 415–430, 2020.
+YI ET AL.: MV-MATCH                                                                    13
+
+[27] Luke Melas-Kyriazi and Arjun K Manrai. Pixmatch: Unsupervised domain adaptation
+     via pixelwise consistency training. In Proceedings of the IEEE/CVF Conference on
+     Computer Vision and Pattern Recognition, pages 12435–12445, 2021.
+
+[28] Francisco M Padilla, Marisa Gallardo, M Teresa Peña-Fleitas, Romina De Souza, and
+     Rodney B Thompson. Proximal optical sensors for nitrogen management of vegetable
+     crops: A review. Sensors, 18(7):2083, 2018.
+
+[29] Sinno Jialin Pan and Qiang Yang. A survey on transfer learning. IEEE Transactions
+     on knowledge and data engineering, 22(10):1345–1359, 2009.
+
+[30] Yingwei Pan, Ting Yao, Yehao Li, Yu Wang, Chong-Wah Ngo, and Tao Mei. Trans-
+     ferrable prototypical networks for unsupervised domain adaptation. In Proceedings of
+     the IEEE/CVF conference on computer vision and pattern recognition, pages 2239–
+     2247, 2019.
+
+[31] Ashish Patel, Priya Swaminarayan, and Mukta Patel. Identification of nutrition’s de-
+     ficiency in plant and prediction of nutrition requirement using image processing. In
+     Proceedings of the Second International Conference on Information Management and
+     Machine Intelligence, pages 463–469. Springer, 2021.
+
+[32] Shaohua Qi, Xin Ning, Guowei Yang, Liping Zhang, Peng Long, Weiwei Cai, and Wei-
+     jun Li. Review of multi-view 3d object recognition methods based on deep learning.
+     Displays, 69:102053, 2021.
+
+[33] Tanzeel U Rehman and Jian Jin. Deep adversarial domain adaptation for hyperspectral
+     calibration model transfer among plant phenotyping systems. Biosystems Engineering,
+     224:246–258, 2022.
+
+[34] Victor Rueda-Ayala, Hella Ellen Ahrends, Stefan Siebert, Thomas Gaiser, Hubert
+     Hüging, and Frank Ewert. Impact of nutrient supply on the expression of genetic im-
+     provements of cereals and row crops–a case study using data from a long-term fertil-
+     ization experiment in germany. European journal of agronomy, 96:34–46, 2018.
+
+[35] Kuniaki Saito, Kohei Watanabe, Yoshitaka Ushiku, and Tatsuya Harada. Maximum
+     classifier discrepancy for unsupervised domain adaptation. In Proceedings of the IEEE
+     conference on computer vision and pattern recognition, pages 3723–3732, 2018.
+
+[36] P Schmitter, J Steinrücken, C Römer, A Ballvora, J Léon, U Rascher, and L Plümer.
+     Unsupervised domain adaptation for early detection of drought stress in hyperspectral
+     images. ISPRS journal of photogrammetry and remote sensing, 131:65–76, 2017.
+
+[37] Mayuri Sharma, Keshab Nath, Rupam Kumar Sharma, Chandan Jyoti Kumar, and
+     Ankit Chaudhary. Ensemble averaging of transfer learning models for identification
+     of nutritional deficiency in rice plant. Electronics, 11(1):148, 2022.
+
+[38] Kihyuk Sohn, David Berthelot, Nicholas Carlini, Zizhao Zhang, Han Zhang, Colin A
+     Raffel, Ekin Dogus Cubuk, Alexey Kurakin, and Chun-Liang Li. Fixmatch: Simpli-
+     fying semi-supervised learning with consistency and confidence. Advances in neural
+     information processing systems, 33:596–608, 2020.
+14                                                                    YI ET AL.: MV-MATCH
+
+[39] J Springenberg, Alexey Dosovitskiy, Thomas Brox, and M Riedmiller. Striving for
+     simplicity: The all convolutional net. In ICLR Workshops), 2015.
+[40] Hugo Storm, Sabine Julia Seidel, Lasse Klingbeil, Frank Ewert, Harry Vereecken, Wulf
+     Amelung, Sven Behnke, Maren Bennewitz, Jan Börner, Thomas Döring, et al. Re-
+     search priorities to leverage smart digital technologies for sustainable crop production.
+     European Journal of Agronomy, 156:127178, 2024.
+[41] M Sudhakar and RM Priya. Computer vision based machine learning and deep learn-
+     ing approaches for identification of nutrient deficiency in crops: A survey. Nature
+     Environment and Pollution Technology, 22(3), 2023.
+[42] Baochen Sun and Kate Saenko. Deep coral: Correlation alignment for deep domain
+     adaptation. In ECCV Workshops, pages 443–450. Springer, 2016.
+[43] Baochen Sun, Jiashi Feng, and Kate Saenko. Return of frustratingly easy domain adap-
+     tation. In Proceedings of the AAAI conference on artificial intelligence, volume 30,
+     2016.
+[44] Md Simul Hasan Talukder and Ajay Krishno Sarkar. Nutrients deficiency diagnosis of
+     rice crop by weighted average ensemble learning. Smart Agricultural Technology, 4:
+     100155, 2023.
+
+[45] Muhammad Hassan Tanveer, Zainab Fatima, Shehnila Zardari, and David Guerra-
+     Zubiaga. An in-depth analysis of domain adaptation in computer and robotic vision.
+     Applied Sciences, 13(23):12823, 2023.
+[46] Antti Tarvainen and Harri Valpola. Mean teachers are better role models: Weight-
+     averaged consistency targets improve semi-supervised deep learning results. Advances
+     in neural information processing systems, 30, 2017.
+[47] Trung-Tin Tran, Jae-Won Choi, Thien-Tu Huynh Le, and Jong-Wook Kim. A compar-
+     ative study of deep cnn in forecasting and classifying the macronutrient deficiencies on
+     development of tomato plant. Applied Sciences, 9(8):1601, 2019.
+[48] Yi-Hsuan Tsai, Wei-Chih Hung, Samuel Schulter, Kihyuk Sohn, Ming-Hsuan Yang,
+     and Manmohan Chandraker. Learning to adapt structured output space for semantic
+     segmentation. In Proceedings of the IEEE conference on computer vision and pattern
+     recognition, pages 7472–7481, 2018.
+[49] Eric Tzeng, Judy Hoffman, Kate Saenko, and Trevor Darrell. Adversarial discrimina-
+     tive domain adaptation. In Proceedings of the IEEE conference on computer vision and
+     pattern recognition, pages 7167–7176, 2017.
+[50] Nguyen Xuan Vinh, Julien Epps, and James Bailey. Information theoretic measures for
+     clusterings comparison: Variants, properties, normalization and correction for chance.
+     Journal of Machine Learning Research, 11:2837–2854, 2010.
+
+[51] Tuan-Hung Vu, Himalaya Jain, Maxime Bucher, Matthieu Cord, and Patrick Pérez.
+     Advent: Adversarial entropy minimization for domain adaptation in semantic segmen-
+     tation. In Proceedings of the IEEE/CVF conference on computer vision and pattern
+     recognition, pages 2517–2526, 2019.
+YI ET AL.: MV-MATCH                                                                     15
+
+[52] Mei Wang and Weihong Deng. Deep visual domain adaptation: A survey. Neurocom-
+     puting, 312:135–153, 2018.
+[53] Juhao Wu, Omar Wyman, Yadong Tang, Damiano Pasini, and Wenlong Wang. Multi-
+     view 3d reconstruction based on deep learning: A survey and comparison of methods.
+     Neurocomputing, 582:127553, 2024.
+[54] Haifeng Xia, Pu Wang, and Zhengming Ding. Incomplete multi-view domain adap-
+     tation via channel enhancement and knowledge transfer. In European Conference on
+     Computer Vision, pages 200–217. Springer, 2022.
+
+[55] Qizhe Xie, Minh-Thang Luong, Eduard Hovy, and Quoc V Le. Self-training with noisy
+     student improves imagenet classification. In Proceedings of the IEEE/CVF conference
+     on computer vision and pattern recognition, pages 10687–10698, 2020.
+[56] Ruijia Xu, Guanbin Li, Jihan Yang, and Liang Lin. Larger norm more transferable: An
+     adaptive feature norm approach for unsupervised domain adaptation. In Proceedings of
+     the IEEE/CVF international conference on computer vision, pages 1426–1435, 2019.
+[57] Jinhui Yi, Lukas Krusenbaum, Paula Unger, Hubert Hüging, Sabine J Seidel, Gabriel
+     Schaaf, and Juergen Gall. Deep learning for non-invasive diagnosis of nutrient defi-
+     ciencies in sugar beet using rgb images. Sensors, 20(20):5893, 2020.
+
+[58] Jinhui Yi, Gina Lopez, Sofia Hadir, Jan Weyler, Lasse Klingbeil, Marion Deichmann,
+     Juergen Gall, and Sabine J Seidel. Non-invasive diagnosis of nutrient deficiencies in
+     winter wheat and winter rye using uav-based rgb images. Available at SSRN 4549653,
+     2024.
+[59] Bowen Zhang, Yidong Wang, Wenxin Hou, Hao Wu, Jindong Wang, Manabu Oku-
+     mura, and Takahiro Shinozaki. Flexmatch: Boosting semi-supervised learning with
+     curriculum pseudo labeling. Advances in Neural Information Processing Systems, 34:
+     18408–18419, 2021.
+[60] Pan Zhang, Bo Zhang, Ting Zhang, Dong Chen, Yong Wang, and Fang Wen. Prototyp-
+     ical pseudo label denoising and target structure learning for domain adaptive semantic
+     segmentation. In Proceedings of the IEEE/CVF conference on computer vision and
+     pattern recognition, pages 12414–12424, 2021.
+[61] Yang Zou, Zhiding Yu, BVK Kumar, and Jinsong Wang. Unsupervised domain adapta-
+     tion for semantic segmentation via class-balanced self-training. In Proceedings of the
+     European conference on computer vision, pages 289–305, 2018.
+16                                                                      YI ET AL.: MV-MATCH
+
+6     Supplementary Material
+6.1    The MiPlo Datasets
+The Mini Plot (MiPlo) datasets are large-scale RGB image datasets consisting of high-
+resolution images with multiple types of nutrient treatments annotated by agronomy experts.
+It consists of the Mini Plot Barley (MiPlo-B) dataset from Deichmann et al. [8] and the
+newly collected Mini Plot Winter Wheat (MiPlo-WW) dataset.
+
+Experimental Setup The MiPlot experiments enable controlled trials of nutrient deficien-
+cies under simulated field conditions. The crops (two genotypes) were grown in mineral soil
+in containers (“Big Box”, L x B x H: 111 x 71 x 61 cm, vol.: 535L) and sown in rows in
+a density according to agricultural practice. The soil was a mixture of nutrient-poor loess
+from a 5 meter depth of an opencast pit mine and quartz sand 0.5 – 1 mm. To expose the
+plants to environmental factors, e.g., wind, radiation, and precipitation, the containers were
+positioned in an outdoor area and equipped with a fertigation system of porous drip pipes
+to allow additional water supply and individual fertilization with nutrient solutions per con-
+tainer. To transfer soil microorganisms to the experiments, the containers were inoculated
+with soil slurry from the non-fertilized plot of a long-term fertilizer-field experiment. For
+each genotype, the containers were placed in three rows of ten containers each on a leveled
+concrete platform. The 30 containers were divided into seven treatments (ctrl, -N, -P, -K, -B,
+-S, unfertilized) with four replicates each, as well as two additional containers for invasive
+investigations, in a randomized block design. In this work, 24 containers with six nutrient
+treatments (ctrl, -N, -P, -K, -B, -S) were selected for evaluation, because the containers with
+unfertilized treatment showed distinct patterns, i.e., only pipes.
+
+Image Acquisition Protocol The RGB images in the MiPlo datasets were taken from 24
+containers, each of which was subjected to a type of nutrient treatment. All of the images
+with the size of 7296 × 5472 were captured by a Huawei P20 Pro smartphone with a triple
+camera from Leica under natural lighting conditions. Specifically, the images were taken
+under different conditions in terms of height, viewpoint, light, and weather to reflect realistic
+conditions. As a result, crops within each container have been captured over the growing
+season multiple times and each time from multiple views (20 views on average). Example
+images are shown in Figure 5. The images were annotated by the date, genotype, and six
+nutrient treatments (ctrl, -N, -P, -K, -S, -B), where “-” stands for the omission of the corre-
+sponding nutrient (N: nitrogen, P: phosphorous, K: potassium, B: Boron, S:Sulfur). Plants
+in the control group ‘ctrl’ do not suffer from nutrient deficiencies.
+
+Statistics The statistics of the MiPlo-B dataset [8] and our proposed MiPlo-WW dataset
+are presented in Tables 6, 7, and 8. The Mini Plot Barley (MiPlo-B) dataset consists of
+18559 images with 6 nutrient treatments (-N, -P, -K, -B, -S, ctrl) annotated, ranging from
+21.06.2022 - 20.07.2022 (16 dates). It contains two genotypes: Barke (9305 images) and
+Hanna (9254 images). For each genotype, each treatment was repeated 4 times, resulting
+in 24 containers, each of which has a unique ID. Six unique containers with six different
+nutrient treatments were selected as the test set while the other containers as the training set
+(#train:#test≈75%:25%). The Mini Plot Winter Wheat (MiPlo-WW) dataset has 12466
+images with 6 treatments (-N, -P, -K, -B, -S, ctrl) annotated, ranging from 12.05.2023 -
+YI ET AL.: MV-MATCH                                                                                           17
+
+24.05.2023 (13 dates). It contains two genotypes: Julius (6253 images) and Meister (6213
+images). The ID settings are the same as above. Although most annotations have a similar
+amount of images, there is a small imbalance of the sample distribution among different
+dates.
+
+                              Table 6: Statistics of the MiPlo datasets.
+
+                   Dataset                   #Images (k)        #Class      Dates      #Views        Year
+        MiPlo-B (Barley) [8]                      18.6              6          16          20        2022
+      MiPlo-WW (Winter Wheat)                     12.5              6          13          20        2023
+
+
+
+Table 7: The number of images in the Mini Plot Barley (MiPlo-B) dataset with two geno-
+types: Barke and Hanna. 06/21 denotes 21 June 2022, where 2022 is omitted for simplifica-
+tion. “-” stands for the omission of the corresponding nutrient (N: nitrogen, P: phosphorous,
+K: potassium, B: Boron, S:Sulfur).
+    No.      1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16
+class/date 06/21 06/22 06/23 06/24 06/27 06/29 06/30 07/01 07/04 07/05 07/06 07/07 07/08 07/11 07/19 07/20 Total
+                                                     Barke
+    -N       80   84    80    80 161 160 78           80    80    80 156 80         80 168 60         99 1606
+    -P       80   60    81    79 160 160 60           83    60    80 134 80         80 124 60 100 1481
+    -K       80   80    80    80 163 158 80           80    60    80 152 80         80 148 39         99 1539
+    -B       81   80    81    80 164 140 83           80    80    81 137 80         80 130 58 100 1535
+    -S       80   82    80    80 161 160 83           80    80    80 135 80         80 138 59 100 1558
+    ctrl     80   80    80    80 160 160 82           80    81    80 154 82         80 148 59 100 1586
+   total    481 466 482 479 969 938 466 483 441 481 868 482 480 856 335 598 9305
+                                                     Hanna
+    -N       80   80    80    80 160 140 82           79    80    80 154 80         80 144 59         99 1557
+    -P       80   80    80    80 148 161 60           80    61    80 124 80         80 128 59         99 1481
+    -K       80   80    80    80 160 160 81           80    60    80 152 80         80 154 39 100 1547
+    -B       83   82    81    80 161 140 81           81    80    81 137 80         80 134 59 101 1539
+    -S       80   80    81    80 162 162 81           80    81    80 134 80         80 144 60 100 1565
+    ctrl     80   80    80    82 162 158 84           80    80    80 154 80         80 145 40 100 1565
+   total    483 482 482 482 953 921 469 480 442 481 855 480 480 849 316 599 9254
+
+
+
+
+6.2    Experimental Details
+If not specifically pointed out, the default setting of our model adopts the loss term Lssa2 , Ltsa2
+and Ltsa1 , five subsampled views as well as a threshold of 0.8 for hard pseudo-labels for the
+ablation studies. And the default hyper-parameters in our experiments are as follows: The
+original image was resized to 1344 × 1344 and normalized with a mean value of [0.485,
+0.456, 0.406] and a standard deviation of [0.229, 0.224, 0.225] calculated from ImageNet.
+For weak augmentation, we apply random horizontal flip with a probability of 50%. Fol-
+lowing previous work [38], we adopted RandAugment, a variant of AutoAugment that does
+not need to pre-train the augmentation strategy with labeled data, for strong augmentation.
+We used ResNet-50 as backbone that was pre-trained on ImageNet. We then trained each
+model for 20 epochs with a batch of four samples from the source domain and four samples
+from the target domain at each iteration. We used stochastic gradient descent (SGD) with an
+initial learning rate of 3 × 10−3 , where the momentum and weight decay were set as 0.9 and
+18                                                                 YI ET AL.: MV-MATCH
+
+
+
+
+                                     (a) MiPlo-B (Barke)
+
+
+
+
+                                     (b) MiPlo-B (Hanna)
+Figure 4: Example images. Columns 1-6: -N, -P, -K, -B, -S, ctrl; row 1-3: 21 June 2022, 04
+July 2022, and 20 July 2022.
+YI ET AL.: MV-MATCH                                                                  19
+
+
+
+
+                                   (a) MiPlo-WW (Julius)
+
+
+
+
+                                  (b) MiPlo-WW (Meister)
+Figure 5: Example images. Column 1-6: -N, -P, -K, -B, -S, ctrl; row 1-3: 12 May 2023, 18
+May 2023, and 24 May 2023.
+20                                                                               YI ET AL.: MV-MATCH
+
+Table 8: The number of images in the Mini Plot Winter Wheat (MiPlo-WW) dataset with
+two genotypes: Julius and Meister. 05/12 denotes 12 May 2023, where 2023 is omitted for
+simplification. “-” stands for the omission of the corresponding nutrient (N: nitrogen, P:
+phosphorous, K: potassium, B: Boron, S:Sulfur).
+            No.      1     2     3     4     5     6      7    8     9    10    11    12    13
+        class/date 05/12 05/13 05/14 05/15 05/16 05/17 05/18 05/19 05/20 05/21 05/22 05/23 05/24 Total
+                                                     Julius
+            -N       80   20 145 80         75    80     80   80    81    80    59    78    80 1018
+             -P      80   61    79    80    80    82     83   81    80    80    81    81    83 1031
+            -K       81   20 142 81         82    84     80   80    81    80    78    78    85 1052
+            -B      62    40 140 79         81    87     83   81    81    80    83    82    80 1059
+             -S      81   40 117 81         80    70     80   80    85    80 101 82         80 1057
+            ctrl     81   20 143 80         83    62     84   80    80    80    81    81    81 1036
+           total    465 201 766 481 481 465 490 482 488 480 483 482 489 6253
+                                                    Meister
+            -N       80   20 140 78         80    80     82   83    86    81    77    79    73 1039
+             -P      80   60    78    80    83    80     81   86    80    60    81    71    81 1001
+            -K       80   20 144 87         86    82     83   81    81    80    80    75    80 1059
+            -B      78    40 150 81         81    82     83   80    80    80    81    78    74 1068
+             -S      81   40 120 80         80    82     83   80    81    80    78    79    75 1039
+            ctrl     80   22 122 82         83    63     79   83    80    80    80    78    75 1007
+           total    479 202 754 488 493 469 491 493 488 461 477 460 458 6213
+
+
+
+
+                                                                                lr0
+10−3 , respectively. The learning rate was reduced with schedule lr p = (1+α       p)β
+                                                                                       where p is
+the training progress linearly changing from 0 to 1, lr0 is the initial learning rate, α = 8 and
+β = 0.75 is the decay factor. All of the experiments were conducted with a single NVIDIA
+RTX A6000 with 48GB VRAM. For evaluation, we report the top-1 accuracy metric on the
+test set of the target domain, which denotes whether the predicted category with the highest
+confidence matches the ground truth category.
+
+
+
+
+6.3      Additional Ablation Study
+
+6.3.1     Number of Views
+
+
+To explore how many views are necessary for adaptation in the detection of plant nutrient
+deficiency, we sample a subset of related views by computing the similarity of each query-
+view pair given a query image and select the top n related views that are most dissimilar to
+the query image. To validate the effectiveness of our proposed SgVM mechanism, we also
+report the results by randomly sampling the subset. The results in Table 9 indicate that the
+model with a subset of five related views performs the best, and including more views does
+not improve the performance but might provide noisy signals due to redundant information.
+Notably, model sampling with our proposed SgVM mechanism consistently outperforms its
+counterpart with random sampling.
+YI ET AL.: MV-MATCH                                                                        21
+
+          #Views     SgVM      Random                   τ       B→H       B→M
+             1        65.1      62.5                    0.3      66.0      34.0
+             5        69.6      65.3                    0.5      63.0      31.2
+            10        67.4      64.7                    0.8      69.6      33.7
+            20        66.8      63.3                    0.9      64.4      31.2
+            40        69.1      64.8                    soft     67.4      45.6
+   Table 9: Ablation study on the number        Table 10: Ablation study on threshold τ
+   of views and sampling methods for the        and types of pseudo-labels. B → H in-
+   Barley: B → H benchmark. #Views indi-        dicates smaller domain gap (cross geno-
+   cates the number of related views given a    types), while B → M indicates larger do-
+   query image, SgVM denotes our proposed       main gap (cross cultivars). soft refers
+   Similarity-guided View Mining mecha-         to soft pseudo-labels instead of hard
+   nism, and Random refers to random sam-       pseudo-labels with a pre-defined thresh-
+   pling while constructing the set of views    old τ.
+   for each query image.
+
+
+6.3.2   Hard Pseudo-Label vs. Soft Pseudo-Label
+
+To evaluate the impact of the threshold τ for hard pseudo-labels, as well as to compare hard
+pseudo-labels with soft pseudo-labels, we report the results in Table 10. Comparing B →
+H and B → M adaptation, we see soft pseudo-labels work better than hard pseudo-labels
+when the domain gap is large (B → M), i.e., the adaptation across crop species. In this case,
+increasing the threshold will mask out most of the pseudo-labels since the confidences are in
+general low, while decreasing the threshold will force the model to learn from noisy pseudo-
+labels. If the domain gap is smaller (B → H), the initial confidences are higher and the hard
+pseudo-labels perform better. The choice of hard and soft pseudo-labels thus depends on the
+domain gap, but soft pseudo-labels can always be applied.
+
+
+6.3.3   Supervision of Lssa2
+
+While we compute Lgt                                                               sa2
+                      s based on the ground-truth labels of the source images, Ls is com-
+puted based on the pseudo-labels. In Table 11, we compare the results of computing the
+consistency loss Lsa2
+                  s for source domain images with ground-truth labels or pseudo-labels.
+The results show that it is better to use the pseudo-labels instead of the ground-truth labels
+for each view pair of the query source images, which shows that the gain of Lsa2 s is due to
+measuring the prediction consistency between two views and not simply due to data aug-
+mentation.
+
+                          Supervision       B→H           B→M
+                              label          66.8           35.9
+                          pseudo-label    69.6 (hard)    45.6 (soft)
+                Table 11: Ablation study on the supervision signals of Lsa2
+                                                                        s .
+22                                                                  YI ET AL.: MV-MATCH
+
+Table 12: Top-1 Classification Accuracy (%) for adaptation across genotypes: Barley:
+Barke → Hanna with different backbones. FLOPs stands for floating point operations.
+Oracle indicates the model was trained with full supervision on the Hanna training set.
+Source-Only denotes the results without adaptation. The highest accuracy is shown in bold,
+while the second best is underlined.
+                                           Barley: Barke → Hanna
+                Model
+                               ResNet50   MobileNetV3Large    MobileNetV3Small
+            Parameters (M)       25.6            5.5                 2.5
+              FLOPs (G)          4.09           0.22                0.06
+                Oracle           75.4           70.2                67.7
+             Source-Only         54.0           53.0                48.0
+              DANN [9]           54.7           47.0                41.0
+              ADDA [49]          51.8           39.5                27.8
+               JAN [21]          51.9           49.4                43.2
+              CDAN [22]          51.3           46.3                37.1
+                BSP [5]          58.8           49.3                44.6
+               AFN [56]          59.0           51.3                45.1
+           Mean Teacher [46]     60.6           56.2                48.7
+            FixMatch [38]        64.6           57.5                49.6
+            FlexMatch [59]       65.9           57.1                50.1
+              Ours+hard          69.6           59.6                53.1
+               Ours+soft         67.4           55.4                45.6
+
+
+
+
+6.3.4   Different Backbones
+To explore the performance of smaller backbones with fewer parameters, as they are com-
+monly used for applications with very limited computational resources, we also report the
+results for MobileNetV3 (large and small versions) [16] as backbone. The results in Table
+12 show that our approach outperforms other baselines consistently with ResNet50 [14] as
+well as various efficient MobileNetV3 architectures as backbones.
+
+6.3.5   Confusion Matrices
+We finally show confusion matrices before and after adaptation in Figure 6.
+YI ET AL.: MV-MATCH                                                                      23
+
+
+
+
+    (a) B → H (without adaptation), AVG=54.0%    (b) B → H (MV-Match+hard), AVG=69.6%
+
+
+
+
+    (c) B → J (without adaptation). AVG=31.9%     (d) B → J (MV-Match+soft). AVG=42.2%
+Figure 6: Confusion matrices (x-axis: predicted treatment, y-axis: real treatment) without
+adaptation (a) and our approach (b) for Barley: Barke → Hanna. The confusion matrices
+(c,d) are without adaptation and our approach for Barley → Winter Wheat (B → J). AVG
+denotes average accuracy.
+

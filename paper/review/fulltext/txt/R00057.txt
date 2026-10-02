@@ -1,0 +1,902 @@
+                                                                                                                       TYPE Original Research
+                                                                                                                       PUBLISHED 09 August 2023
+                                                                                                                       DOI 10.3389/fpls.2023.1234616
+
+
+
+
+                                                Overcoming ﬁeld variability:
+OPEN ACCESS                                     unsupervised domain adaptation
+EDITED BY
+Hao Lu,
+Huazhong University of Science and
+                                                for enhanced crop-weed
+Technology, China
+
+REVIEWED BY
+                                                recognition in diverse farmlands
+Yanan Li,
+Wuhan Institute of Technology, China
+Yinglun Li,                                     Talha Ilyas 1,2, Jonghoon Lee 2, Okjae Won 3, Yongchae Jeong 2,4
+Nanjing Agricultural University, China
+                                                and Hyongsuk Kim 2,4*
+*CORRESPONDENCE
+Hyongsuk Kim
+                                                1
+                                                  Division of Electronics and Information Engineering, Jeonbuk National University, Jeonju-si, Republic
+  hskim@jbnu.ac.kr                              of Korea, 2 Core Research Institute of Intelligent Robots, Jeonbuk National University, Jeonju-
+                                                si, Republic of Korea, 3 Production Technology Research Division, National Institute of Crop Science,
+RECEIVED 05 June 2023                           Rural Development Administration, Miryang, Republic of Korea, 4 Division of Electronics Engineering,
+ACCEPTED 06 July 2023                           Jeonbuk National University, Jeonju-si, Republic of Korea
+PUBLISHED 09 August 2023
+
+CITATION
+Ilyas T, Lee J, Won O, Jeong Y and Kim H
+(2023) Overcoming ﬁeld variability:             Recent developments in deep learning-based automatic weeding systems have
+unsupervised domain adaptation for
+enhanced crop-weed recognition in               shown promise for unmanned weed eradication. However, accurately distinguishing
+diverse farmlands.                              between crops and weeds in varying ﬁeld conditions remains a challenge for these
+Front. Plant Sci. 14:1234616.
+                                                systems, as performance deteriorates when applied to new or different ﬁelds due to
+doi: 10.3389/fpls.2023.1234616
+                                                insigniﬁcant changes in low-level statistics and a signiﬁcant gap between training
+COPYRIGHT
+© 2023 Ilyas, Lee, Won, Jeong and Kim. This     and test data distributions. In this study, we propose an approach based on
+is an open-access article distributed under     unsupervised domain adaptation to improve crop-weed recognition in new,
+the terms of the Creative Commons
+                                                unseen ﬁelds. Our system addresses this issue by learning to ignore insigniﬁcant
+Attribution License (CC BY). The use,
+distribution or reproduction in other           changes in low-level statistics that cause a decline in performance when applied to
+forums is permitted, provided the original      new data. The proposed network includes a segmentation module that produces
+author(s) and the copyright owner(s) are
+credited and that the original publication in
+                                                segmentation maps using labeled (training ﬁeld) data while also minimizing entropy
+this journal is cited, in accordance with       using unlabeled (test ﬁeld) data simultaneously, and a discriminator module that
+accepted academic practice. No use,             maximizes the confusion between extracted features from the training and test farm
+distribution or reproduction is permitted
+which does not comply with these terms.         samples. This module uses adversarial optimization to make the segmentation
+                                                network invariant to changes in the ﬁeld environment. We evaluated the proposed
+                                                approach on four different unseen (test) ﬁelds and found consistent improvements in
+                                                performance. These results suggest that the proposed approach can effectively
+                                                handle changes in new ﬁeld environments during real ﬁeld inference.
+
+                                                KEYWORDS
+
+                                                crop-weed recognition, domain adaptation, precision agriculture, artiﬁcial intelligence,
+                                                crop phenotyping, agricultural operations
+
+
+
+
+                                                1 Introduction
+                                                     Deep Learning (DL) techniques have been successful in detecting and recognizing
+                                                objects in images and videos. These techniques are now being applied to agriculture,
+                                                particularly in the automatic detection and classiﬁcation of weeds (Khan et al., 2020). This
+                                                is a difﬁcult problem because weeds and crops often have similar colors (green vs green),
+
+
+Frontiers in Plant Science                                            01                                                                frontiersin.org
+Ilyas et al.                                                                                                               10.3389/fpls.2023.1234616
+
+
+
+
+shapes, and textures (Adhikari et al., 2019; Sarvini et al., 2019).                 Several studies have shown advancements in this area. For
+Weeds are plants that negatively impact crop growth and yields by              example, Tavakoli et al. (2021) utilized marginal loss function in
+competing for resources such as water, sunlight, air, and nutrients.           CNN training for better classiﬁcation. Raja et al. (2019) developed
+They can also interfere with crop growth through the release of                crop signaling for improved detection, and Moazzam et al. (2022)
+chemicals (Patel and Kumbhar, 2016; Iqbal et al., 2019). Effective             used a CNN ensemble for high accuracy detection in sesame ﬁelds.
+weed control is therefore necessary to support crop growth. In                 Gao et al. (2020) explored DL-based object detectors for weed
+addition, what is considered a weed in one setting may be a crop in            detection in sugar beet ﬁelds, while Picon et al. (2022) and Peng
+another. The increasing global population, expected to reach 9                 et al. (2022) investigated synthetic images and RetinaNet
+billion by 2050, will require a 70% increase in agricultural                   adaptations, respectively, for better crop-weed recognition.
+production (Radoglou-Grammatikis et al., 2020). However, the                   However, there remains a challenge with these DL models: they
+agricultural industry will face challenges such as limited                     often produce conﬁdent predictions on the dataset from the source
+cultivation land and the need for more intensive production.                   domain (original farm) but underperform on data from different
+Climate change and water scarcity will also impact productivity.               domains (other farms) due to domain shift (Vu et al., 2019). This is
+Precision agriculture can help address these challenges (Lal, 1991;            further complicated by the high cost of acquiring labeled data for
+Seelan et al., 2003).                                                          each new domain, especially for semantic segmentation where each
+     Farmers must use various strategies to control weeds, including           pixel must be labeled (Tranheden et al., 2021).
+preventative measures (manual weeding), cultural techniques like                    Recent research has explored unsupervised domain adaptation
+ﬁeld hygiene (low weed seed bank), mechanical methods like                     (UDA) to improve the adaptability of crop-weed segmentation
+mowing and tilling, biological methods like using natural enemies              systems. Gogoll et al. (2020) devised a method utilizing cycle
+of weeds (insects or grazing animals), and chemical methods such               GANs to regenerate source data in the target domain style while
+as herbicide application (Tu et al., 2001; Melander et al., 2005).             maintaining semantic and structural object consistency. The result
+Automated weed control systems, which can reduce labor costs and               was a considerable enhancement in the generalization capabilities of
+minimize herbicide use, have become desirable as labor costs have              fully convolutional networks (FCNs), resulting in around a 10%
+increased and concerns about health and the environment have                   increase in the mIOU metric on two different source-target
+grown (Durmuş et al., 2015; Nicolopoulou-Stamati et al., 2016).               domain pairs.
+Moreover, due to a lack of interest among younger people in joining                 Similarly, Kendler et al. (2022) tackled the issue of low-level
+the agriculture industry, there is a shortage of labor (Sarvini et al.,        variability in plant disease recognition training data. By dividing
+2019). This shortage, combined with the need for efﬁcient and cost-            images into multiple patches, they increased dataset diversity and
+effective weed control, has made automated weeding methods more                improved CNN generalizability without needing environmental
+necessary than ever before (Lameski et al., 2018).                             modiﬁcation. This resulted in a 20% improvement in
+     On other hand automated weed detection systems follow a series            classiﬁcation accuracy over the baseline. For corn yield prediction
+of steps to identify and classify weeds in images. These steps include         across different regions, Ma et al. (2021) presented a CNN training
+acquiring images, pre-processing them, extracting features, and                strategy based on unsupervised adaptive domain adversarial
+detecting and classifying weeds (Pantazi et al., 2016; Parra et al.,           training. Li et al. (2021) proposed an intermediate domain
+2020). Deep learning approaches have been successful in achieving              approach to decrease the domain gap in maize residue
+accurate results in recognizing crops and weeds in real-world                  segmentation. However, the application of this approach may be
+conditions (Li and Tang, 2018). The key challenge in these systems             limited as the intermediate domain is problem-speciﬁc.
+is distinguishing between crops and weeds (Khan et al., 2020;                       Our approach is based on the idea that the classiﬁcation of a
+Matloob et al., 2020). These systems typically use fully                       plant as a crop or weed should not depend on the farm
+convolutional networks (FCNs) to perform semantic segmentation,                environment, soil type, the speciﬁc sensor (camera) used, or other
+which involves labeling each pixel in an image with a speciﬁc class            low-level sources of variability. These sources of variability are
+(such as crop or weed) (Parra et al., 2020; Coleman et al., 2022).             uninformative for crop-weed recognition, but can signiﬁcantly
+     One of the main challenges in developing an automatic weed                affect the predictions of CNNs.
+management system is accurately detecting and recognizing weeds                     In this paper our aim is to reduce the domain gap between the
+in crops. This can be difﬁcult because weeds and crops often have              extracted features, from source and target domain, via adversarially
+similar colors, textures, and shapes, and may appear differently at            optimized deep feature alignment and entropy minimization.
+different growth stages (Sarvini et al., 2019; Khan et al., 2020; Ilyas        Additionally, we introduce a novel regularization technique to
+et al., 2022). Other challenges include occlusion, variations in color         improve the convergence of CNNs. In contrast to previous UDA
+and texture due to lighting and illumination, and the presence of              works, we also explore the effectiveness of few-shot training strategy
+motion blur and noise in images (Sa et al., 2016). The species of              in the context of UDA, called few-shot supervised domain
+weeds can also vary based on geographical location, crop variety,              adaptation (SDA). Few-shot SDA involves ﬁne-tuning the model
+weather conditions, and soil type (Kriticos et al., 2006). All of these        on a small amount of labeled data from the target domain to
+factors can make it difﬁcult to classify plants accurately.                    improve its performance on that domain. The main advantage of
+
+
+
+
+Frontiers in Plant Science                                                02                                                           frontiersin.org
+Ilyas et al.                                                                                                                    10.3389/fpls.2023.1234616
+
+
+
+
+few-shot SDA is that it can be used to quickly adapt a model to a                crop and various types of weeds, but for the purposes of the crop-
+new domain with minimal labeled data.                                            weed recognition task, we have grouped all the weeds into a single
+   Our main contributions can be summarized as follows:                          category. Table 1 summarized the characteristics of the dataset.
+
+      • A deep adversarial optimized framework for UDA and few-
+        shot SDA.                                                                2.2 Field data distribution
+      • Augmentation scheduling strategy for improved
+        regularization and convergence.                                               In order to make our dataset suitable for domain adaptation, such
+      • A versatile dataset for ﬁne-grained crop-weed recognition                as the representation shown in Figure 2, we considered the case of
+        collected from ﬁve different ﬁelds with different setups.                data collected at ﬁve different locations and ﬁelds, designated as FA,
+                                                                                 FB, FC, FD, and FS, as shown in Figure 1. This is a speciﬁc example of
+                                                                                 domain adaptation across various scenarios, in which we aim to build
+                                                                                 a more robust system by transferring the visual characteristics from
+2 Materials                                                                      one ﬁeld to another. In this case, we assume that the conditions of
+                                                                                 each ﬁeld are different, meaning that each ﬁeld may have a different
+2.1 Dataset construction                                                         weed density, seeding system, image acquisition system, and crop
+                                                                                 size. The visual characteristics of the ﬁelds used for data collection are
+    Our proposed approach was tested on a bean ﬁeld dataset
+                                                                                 displayed in Figures 1, 2 illustrates the visual attributes of various
+collected over the past one and a half years at ﬁve different locations
+                                                                                 seeding bed systems across different ﬁelds.
+and farms in South Korea using different image acquisition
+platforms. The dataset includes a number of variations in real-
+ﬁeld conditions such as the ﬁeld seeding bed (Gebrekidan, 2003),
+environment, weed density, plant scales, and sizes. To evaluate the              2.3 Source and target datasets
+performance of our approach, we selected ﬁve farms with different
+conditions and data variations as shown in Figure 1 and Table 1.                     In order to create the source and target datasets for unsupervised
+    Beans are a crop that help improve soil health through nitrogen              domain adaptation (UDA) in our experiments, we designated the
+ﬁxation, adding nitrogen back into the soil. Because of this ability,            ﬁeld with the largest number of data available i.e., FS as the source
+beans are often included in crop rotation plans, as nitrogen is an               ﬁeld, and all the other ﬁelds (FA, FB, FC, FD) as the target ﬁelds. Based
+essential nutrient for growing strong and productive plants (Aschi               on this grouping, we consider the following combinations across the
+et al., 2017). In countries like South Korea, where only 20% of the              ﬁve ﬁelds for evaluation: S→S, S→A, S→B, S→C, S→D. We train the
+land is suitable for cultivation, it is especially important to use crops        network using data from the source domain (FS) and test it against all
+that can improve soil health. The collected dataset includes a bean              the target domain datasets (FA, FB, FC, FD).
+
+
+
+
+    FIGURE 1
+    Representative images from different ﬁelds to collect data. The source domain (Field S) data is collected using handheld cameras in the form of
+    images and are labelled by human annotators. Whereas the target domain data (Field A, B, C and D) is collected from various ﬁelds with a camera
+    mounted on a moving platform in form of videos.
+
+
+
+
+Frontiers in Plant Science                                                  03                                                              frontiersin.org
+Ilyas et al.                                                                                                                       10.3389/fpls.2023.1234616
+
+
+
+
+TABLE 1 Characteristics of Crop-Weed Recognition Datasets for
+unsupervised domain adaptation.
+                                                                                    3.1 Problem deﬁnition
+
+               No. of     Vegetation          Image Acquisi-        Seeding              For better generalization we cast our problem as few-shot SDA
+ Field
+               Images      Density             tion Platform        System          because UDA can be simply deﬁned as zero-shot SDA. Under these
+ S             1893       Varying             Stationary           Flat Bed
+                                                                                    setting consider we are given a labelled soured dataset Ds =
+                                                                                    f(xis , yis )gNi=1 , where Ds ⊆fFs g and N is the total number of images
+ A             202        Medium Dense        Moving               Ridge Bed
+                                                                                    in DS. Similarly, we have target domain datasets, Dt = f(xit , yit )gM
+                                                                                                                                                         i=1 ,
+                                                                                                                                                           t
+
+
+ B             79         Dense               Moving               Ridge Bed        from which we can only access j labelled images, here j ϵ {0,1,2,…,
+ C             199        Sparce              Moving               Flat Bed
+                                                                                    Mt} and Mt being the total number of images in t-th target domain
+                                                                                    dataset, and Ds ⊂ fFA , FB , FC , FD g. Here xi ∈ RHW3 is RGB-
+ D             157        Medium Dense        Moving               Ridge Bed
+                                                                                    image and yi ∈ RHW is its corresponding label. We deﬁne j-shot
+                                                                                    SDA as randomly selecting j labelled images from each target
+3 Methodology                                                                       domain datasets and using them for ﬁnetuning the network. The
+                                                                                    case of 0-shot SDA (j=0) is equivalent to unsupervised domain
+     Here, we present our methodology for deep feature adaptation in                adaptation (UDA). For experiments we only consider j = 0,1,3,Mt. A
+context of UDA for crop-weed segmentation in unconstrained real-                    graphical illustration that demonstrates the distinctions between
+ﬁeld environments. We also compare UDA approach with few-shot                       UDA and few-shot SDA is displayed in Figure 3.
+SDA for completeness. This section consists of the following sub-
+sections: (i) clearly deﬁning the problem statement, (ii) introducing the
+architecture of the full framework, (iii) explaining the augmentation
+                                                                                    3.2 Augmentation scheduling
+scheduling strategy which improves the performance of our
+framework, (iv) deﬁning the learning objectives (loss functions), and
+                                                                                        In conventional data augmentation strategies employed for
+(v) providing implementation details.
+                                                                                    training deep neural networks, a constant probability is applied
+                                                                                    for data augmentation, which often comprises a mixture of
+                                                                                    geometric and noise transformations. However, our proposed
+                                                                                    method diverges from this practice by progressively increasing the
+                                                                                    frequency of data augmentation as training advances, with each
+                                                                                    type of augmentation treated distinctly. The concept of increasing
+                                                                                    the augmentation probability ﬁnds parallels in the training of PA-
+                                                                                    GANs (Zhang and Khoreva, 2019), where both the generator and
+                                                                                    discriminator of a GAN grow progressively. Starting at low
+                                                                                    resolution, layers are incrementally added to enhance the
+                                                                                    resolution over time, thereby enabling the model to initially learn
+                                                                                    coarse-level structures, and then gradually learn ﬁne-level details as
+       A                                  C
+                                                                                    training continues.
+                                                                                        In contrast, the proposed technique involves adjusting the
+                                                                                    intensity or probability of data augmentation over time, but does
+                                                                                    not involve changing the architecture of the model itself over the
+                                                                                    course of training. In the augmentation scheduling of GANs, the
+                                                                                    emphasis is on enhancing the stability and efﬁcacy of training
+                                                                                    through gradual growth of the model’s structure. Conversely,
+                                          D                                         augmentation scheduling focuses on presenting the model with
+                                                                                    an increasingly diverse and challenging array of training samples
+                                                                                    over time. While both techniques involve a form of progressive or
+                                                                                    scheduled change during training, they target different aspects of
+                                                                                    the training process. The augmentation scheduling technique is
+                                                                                    primarily about the model, while the augmentation scheduling
+                                                                                    technique is about the data.
+       B                                  E                                             Here we divide different augmentations into three categories
+                                                                                    depending on their characteristics:
+     FIGURE 2
+     Representation of ﬁeld seeding bed systems depending on the
+     chosen planting method. Different planting methods can lead to                      • Geometric augmentations (G), augmentations which effect
+     varying crop yields for different crops. (A) Flat seed bed, (B) seeding
+                                                                                           the entire image-label pair (xs,ys).
+     bed with ridges and furrows, (C) plantation on ﬂat seeding bed, (D)
+     plantation on ridges and (E) plantation on furrows.                                 • Noise (distortion) augmentation (D), which only effect the
+                                                                                           original image (xs) and labels (ys) remain unchanged.
+
+
+
+Frontiers in Plant Science                                                     04                                                              frontiersin.org
+Ilyas et al.                                                                                                                        10.3389/fpls.2023.1234616
+
+
+
+
+                      A                                                            B
+
+    FIGURE 3
+    A graphical representation illustrating differences between UDA and few-shot SDA. In UDA (A), there a relatively large number of unlabeled target
+    domain data is available for use during training. In few-shot SDA (B), only a small number of labeled samples (typically one or two) are available for
+    training. The ﬁgure shows an example of 1-shot SDA as only one labelled sample is provided.
+
+
+
+
+      • Collage Augmentation (C) (Chiang et al., 2019), which                          3.3 Network architecture
+        generate a collage of multiple image-label pairs (xis , yis ) in
+        the dataset. Mathematically it can be expressed as,                                The proposed framework for addressing the problem of domain
+                                                                                       shift between source and target domains is depicted in Figure 8. It
+                      (xic , yic ) = C(f(xis , yis )gM
+                                                     i=1 , wc , hc , bc )   (1)
+                                                                                       consists of two subnetworks segmentation network and the
+     where, C represents the function to generate a collage image-                     discriminator network:
+label pair (xic , yic ) having width wc and height hc, of M images with                    Segmentation Network - The segmentation network (j), having
+bc being the border width (in pixels) between images.                                  learnable parameters w, consists of two main parts: an encoder and a
+     In the early training epochs, we only use the original images                     decoder. The encoder is made up of a stem convolution block and four
+(identity augmentation, i.e., id = 1) so that the network can easily and               stages of feature extraction. The stem block consists of two 7x7
+quickly learn simple representations. We only augment the source                       convolutions with a stride of 2. The subsequent four stages are
+domain images. Then, we gradually increase the probability of using                    composed of ConvNext blocks (Liu et al., 2022), with the number of
+the other augmentations, starting with geometric augmentations and                     channels in each block being Nch∈{192, 384, 768, 1536}, in that order.
+eventually using all augmentations with speciﬁed probabilities (i.e., a,               Each block is repeated Ns times at each stage, with Ns∈{3, 3, 27, 3}.
+b, g > 0). These stronger regularizations make learning more difﬁcult                      The decoder also has four stages. The ﬁrst stage uses an ASPP
+for the CNN and improve its robustness. The probability weights for                    (Chen et al., 2018) module to extract multiscale features from the
+each type of augmentation can be considered as hyperparameters (i.e.,                  output of the encoder. The second stage is an upsampling module.
+a for G, b for D, and g for C). The pseudo code for the augmentation                   In the third stage, the encoder’s second stage features are
+scheduling process is shown in Figure 4, and Algorithm 1 Figure 5                      concatenated with the output of the second stage of the decoder
+summarizes the procedure for integrating augmentation scheduling                       through a skip connection (Ronneberger et al., 2015;
+into the proposed training loop of the framework. It is straightforward                Badrinarayanan et al., 2017) and are then reﬁned by a dense
+to adapt this to a standard training loop. Line graph in Figure 6 shows                attention module (DAM) (Ilyas et al., 2021). To control the ﬂow
+how the probability of each type of augmentation changes with training                 of useful information between the encoder and decoder, the
+epochs for a speciﬁed set of hyperparameters. A few examples of data                   encoder’s feature maps are passed through a gating function (G),
+samples that have been augmented using the augmentation scheduling                     to reduce the number of feature maps and suppress low-level
+algorithm are presented in Figure 7.                                                   information, before being added via a skip connection. This can
+
+
+
+Frontiers in Plant Science                                                        05                                                             frontiersin.org
+Ilyas et al.                                                                                                                       10.3389/fpls.2023.1234616
+
+
+
+
+    FIGURE 4
+    Pseudo code of Augmentation scheduling algorithm.
+
+
+
+
+be represented mathematically as, G(x) = fr11 (x), where f is a 1x1         by instance normalization and a LeakyReLU activation with a
+convolutional ﬁlter with r channels.                                         negative slope of 0.2.
+    Discriminator Network - PatchGAN (Isola et al., 2017) is used
+as a fully convolutional discriminator (q) to classify whether
+incoming image features are form source domain or target                     3.4 Learning objective
+domain. By evaluating smaller patches of the output features
+rather than the full feature map as a whole allows the PatchGAN                  Given the augmented source domain labelled pair (xic , yic ) the
+to capture ﬁne-grained details in the original image and make more           segmentation network (j w ) predicts a K-dimensional soft
+informed decisions. Our framework uses two discriminators for                segmentation map pi = jw (xic ), where pi ∈ RHWK and K is the
+deep feature alignment between the source and target domain                  number of classes present in the dataset. Here each K-dimensional
+features, with one aligning the decoder features (qv, having                 (pixel-wise) vector is a probability distribution over classes. The
+learnable parameters v) and the other aligning the encoder                   segmentation network is trained by minimizing the following cross-
+features (qvaux , having learnable parameters vaux). It was found to         entropy loss between the ground truth (yic ) and the predicted
+be more effective than using only one discriminator at the end of the        probability map (pi), given by equation 2.
+decoder. Both discriminators (q) consist of ﬁve layers having ﬁlter
+                                                                                                                   1 N c
+                                                                                                                   No
+size of 4x4 and a stride of 2, with the number of channels in each                         Lseg (xic , yic ) = −         〈 yi : log(jw (xic )) 〉              (2)
+layer being {64,128,256,512,1}. Each convolutional layer is followed                                                 i=0
+
+
+
+
+    FIGURE 5
+    Training algorithm for proposed framework.
+
+
+
+
+Frontiers in Plant Science                                              06                                                                         frontiersin.org
+Ilyas et al.                                                                                                                       10.3389/fpls.2023.1234616
+
+
+
+
+                                                                                 (w) in same way as source domain samples can be used. So, following
+                                                                                 [28] here we use entropy minimization approach to maximize
+                                                                                 prediction certainty (lowering surprise) on target domain samples.
+                                                                                 Given a target domain input (xit ) we generate and entropy map (ei),
+                                                                                 where ei ∈ RHW shows independent pixel-wise entropies of
+                                                                                 summation of network’s predictions p i (on target domain),
+                                                                                 normalized between [0,1] range. An example of entropy map is
+                                                                                 shown in Figure 8 and mathematically expressed by equation 3.
+
+                                                                                                             1    K
+                                                                                                                 oj (xi ) : log(j (xi ))
+                                                                                                                     w t         w t
+                                                                                                 ei = −                                                    (3)
+                                                                                                          log(K) k=0
+
+                                                                                     However, minimizing entropy directly is ineffective in low
+                                                                                 entropy regions (Yang and Soatto, 2020). So, we utilize robust
+                                                                                 entropy minimization, modiﬁed via carbonnier penalty function
+                                                                                 which penalizes high entropy predictions more than low entropy
+    FIGURE 6
+                                                                                 predictions when h > 0.5. Utilizing this modiﬁed entropy loss (Lent)
+    Line graph representing the changes in probabilities for each type of
+    augmentation with training epochs for a speciﬁed set of                      we update the network’s parameters by equation 4.
+    hyperparameters, i.e., a=0.2, b=0.3, g=0.4 and laug=20.
+                                                                                                                     1 N 2
+                                                                                                                     No
+                                                                                                   Lent (xit ) = (         ei + 0:00012 )h                 (4)
+                                                                                                                       i=0
+    For target domain samples (xit ) as annotation (yit ) are not
+                                                                                     Given the class probability distributions generated from the
+available, hence these samples can’t be used to learn the parameters
+                                                                                 features output by third stage of encoder and ﬁnal stage of decoder,
+                                                                                 represented as piaux and pi respectively. These distributions are then
+                                                                                 passed on to their corresponding discriminators, denoted as qvaux
+                                                                                 and qv respectively. The goal of these discriminators is to produce
+                                                                                 domain classiﬁcation outputs, with a value of 1 indicating the
+                                                                                 source domain and 0 indicating the target domain. Both
+                                                                                 discriminators are trained using the cross-entropy loss (Lce). The
+                                                                                 overall objective for the ﬁnal discriminator can be expressed as
+                                                                                 equation 5.
+
+                                                                                                 Ld = Lce (qv (xic ), 1) + Lce (qv (xit ), 0)              (5)
+
+                                                                                     Similarly, an equation can be written for the auxiliary
+                                                                                 discriminator (Ldaux ), resulting in the total discriminator loss.
+
+                                                                                                           LD = Ld + laux Ldaux                            (6)
+
+                                                                                    Now, the adversarial objective for training segmentation
+                                                                                 network can be written as,
+
+                                                                                                          Ladv = Lce (qv (xit ), 1)                        (7)
+
+                                                                                     Both the segmentation and discriminator networks are jointly
+                                                                                 trained in each iteration. During training, the supervised
+                                                                                 segmentation loss for source domain samples and unsupervised
+                                                                                 entropy loss for target domain samples are jointly optimized. The
+                                                                                 adversarial loss trains the segmentation network to deceive the
+                                                                                 discriminator by maximizing the probability of target predictions
+                                                                                 being considered as source predictions. This is achieved by
+                                                                                 minimizing the cross-entropy loss between the discriminator’s
+    FIGURE 7                                                                     predictions for target images and the label of the source domain,
+    Augmentation scheduling in action: images are augmented using
+    various combinations of augmentations at different training epochs.
+                                                                                 which is 1. Therefore, the total loss becomes,
+    Black boxes depict identity augmentation, green boxes depict
+    geometric (G) augmentation, purple boxes depict noise (D)                                     Ltotal = Lseg + lent Lent + ladv Ladv                    (8)
+    augmentation, red boxes depict the collage (C) augmentation, and
+    the dashed black boxes represent the application of all
+                                                                                    In the few-shot SDA scenario, where we have j labelled images
+    augmentations simultaneously.                                                from the target domain, which are used to ﬁne-tune our model. In
+                                                                                 addition to the entropy minimization loss described in equation 4,
+
+
+Frontiers in Plant Science                                                  07                                                                  frontiersin.org
+Ilyas et al.                                                                                                                        10.3389/fpls.2023.1234616
+
+
+
+
+    FIGURE 8
+    Architecture of proposed framework for UDA in crop-weed segmentation. DS and D^s represent the source domain and augmented source domain
+    datasets respectively. During encoder-decoder training, the pink arrows depict the ﬂow of forward and backward gradients for input from the source
+    domain, while the purple arrows represent input from the target domain. The discriminators are kept frozen during this training step. The green arrows
+    show the ﬂow while the discriminators are being trained. At this stage, the encoder-decoder network is kept frozen.
+
+
+
+we also incorporate a cross-entropy loss similar to equation 2 for                       For training the segmentation network, we employed the SGD
+these j examples. Let’s denote these labeled examples from the target                optimizer with a weight decay of 5x10 -4 . For training the
+domain as Dt = f(xit , yit )gM
+                             i=1 where i ranges from 1 to j. The
+                               t
+                                                                                     discriminators, we used the Adam optimizer with a momentum
+additional cross-entropy loss for these samples can be expressed as:                 value of 0.9 and 0.99. We used a cosine decay policy for the
+                                                                                     segmentation network, with a learning rate of 0.001 and warm
+                                         j
+                  ^ seg (xit , yit ) = − 1 〈 yit : log(jw (xit )) 〉                  start for the ﬁrst 1000 iterations. For the discriminators, we used a
+                                         jo
+                  L                                                       (9)
+                                          i=0                                        polynomial decay policy with an initial learning rate of 10-4. A
+   Therefore, in the case of j-shot SDA, the total loss would be                     detailed list of the hyperparameter settings for the augmentation
+updated to:                                                                          scheduling and loss function weights can be found in Table 2.
+
+                                    ^ seg + lent Lent + ladv Ladv
+               Ltotal = Lseg + lseg L                                    (10)
+             ^ seg corresponds to the supervised segmentation loss for the
+                                                                                     4 Results and discussion
+     where L
+j labeled target domain samples, and lseg is a weight hyperparameter to                  The performance of the proposed method for crop-weed
+balance this new term. The model is then jointly optimized for the                   recognition in bean ﬁelds was evaluated using the same ﬁeld data
+supervised segmentation loss on both source domain and j labeled                     distribution and source and target data splits described in Section 2.
+target domain samples, unsupervised entropy loss for the remaining                   To thoroughly evaluate the proposed method, we employed widely
+unlabeled target domain samples, and adversarial loss.                               used semantic segmentation frameworks, including DeepLab-v3+
+     In this way, we effectively use the limited labeled data available              and PSPNet (Zhao et al., 2017), with ResNet-101 (He et al., 2016),
+in the target domain to guide the model’s adaptation process, while                  Xception-71 (Chollet, 2017), and ConvNext-L backbones as
+still leveraging the entropy minimization approach for the                           baselines. The results of our proposed method were compared
+unlabeled target domain data.                                                        with these baselines under the same operating conditions.
+
+                                                                                     TABLE 2 Hyperparameter settings for proposed framework.
+
+
+3.5 Implementation details                                                             Hyperparameter          Value         Hyperparameter           Value
+                                                                                                a                0.3                  h                 2.0
+    In our implementation we used the PyTorch toolbox and a
+                                                                                                b                0.3                 laux               0.4
+single NVIDIA RTX-3090 GPU, which has 24GB of memory. The
+source dataset, which contains a large number of images, was split                              g                0.3                 lent               0.5
+
+into a 80% train-validation set and a 20% test set. The target datasets                        laug               20                 ladv               0.4
+were split into a 70% training set (used only in the case of supervised
+                                                                                               lseg               2
+training for comparison) and a 30% test set.
+
+
+Frontiers in Plant Science                                                      08                                                               frontiersin.org
+Ilyas et al.                                                                                                             10.3389/fpls.2023.1234616
+
+
+
+
+     Firstly, we compared the performance of the proposed                      Tables 3, 4, with and without augmentation scheduling. Overall, we
+framework with traditional segmentation models and other recent                observed a signiﬁcant improvement in the mIOU score for bean-
+unsupervised domain adaptation (UDA) methods. The results                      weed recognition compared to STO methods (as seen in Table 3’s
+indicated that our proposed method performed competitively                     top four rows). Our proposed deep feature alignment method
+with these models. Furthermore, we demonstrated how the use of                 without augmentation scheduling performed better on average
+augmentation scheduling further improved the performance of our                than previous STO and UDA methods. As shown in Figure 9,
+network. We also conducted ablation experiments to highlight the               using proposed deep feature alignment method resulted in a
+improvement in results achieved by using augmentation scheduling               noticeable improvement in performance compared to using only
+in comparison to vanilla augmentation.                                         STO. Additionally, incorporating augmentation scheduling further
+     Lastly, we compared the results of our proposed UDA method                increased the performance of all models. Speciﬁcally, our proposed
+under both few-shot self-supervised domain adaptation (SDA) and                segmentation model that uses both deep feature alignment and
+fully supervised settings. The results showed that our proposed                augmentation scheduling outperformed previous best STO models
+method performed well under both settings and yielded promising                by 8% and previous best UDA methods by 7%. The performance
+results. We evaluate the effectiveness of the proposed framework as            gap was even greater on target ﬁelds FA and FD, with
+well as compare it with other networks utilizing the Intersection-             improvements of 5.42% and 8.1% respectively.
+over-Union (IoU) metric, deﬁned by equation 11.
+
+                                 1 N yi ∩​ pi                                  4.3 Few-shot supervised domin adaptation
+                                 No
+                        mIoU =             ​                      (11)
+                                   i=0 yi ∪ pi
+
+   where yi and pi represent the ground-truth and predicted                        In this section, we compared our approach with other
+segments, respectively.                                                        conventional few-shot SDA and fully supervised methods. The
+                                                                               results are summarized in Table 4. All experiments were
+                                                                               conducted under the same conditions. For the fully supervised
+4.1 Source training only                                                       training, all models were trained using training splits of both the
+                                                                               target and source dataset as described in subsection 3.5
+    In the ﬁrst experiment, we trained semantic segmentation                   (Implementation Details). Under these conditions, our proposed
+architectures in a simple supervised fashion on the source ﬁeld                segmentation network showed an improvement of 3% in the mIOU
+(FS) dataset and compared their performance. In this experiment,               score compared to the DeepLabv3+ model, indicating its superior
+all models were trained on the source ﬁeld dataset and results are             feature extraction ability. For the few-shot SDA experiments, the
+reported on its test split (S→S), as shown in Table 3. PSPNet                  model’s parameters were ﬁne-tuned using a small number of labeled
+showed the worst performance among all other models when using                 samples from the target domain. As shown in Table 5, using only
+the same backbone (ResNet-101), while DeepLab-v3+ with                         one labeled sample (1-shot), our model achieved an accuracy that
+Xception-71 backbone performed better than PSPNet.                             was almost similar to that of the fully supervised model (80.53% vs
+Additionally, integrating the proposed modiﬁed decoder into the                83.6%). Additionally, our proposed method consistently
+best-performing model (DeepLab-v3+ with ResNet-101) further                    outperformed other SDA methods throughout the few-shot
+boosted performance. It is worth noting that no data                           experiments. As seen in Table 5, our method exceeded the best-
+augmentation was used in these experiments.                                    performing few-shot SDA methods by 2.5% (0-shot), 3.0% (1-shot),
+    Under the source training only (STO) setting, we also tested the           and 2.2% (3-shot) for bean-weed recognition. Figure 10 compares
+segmentation performance of only source-trained models on other                the visualization results, demonstrating that our method showed
+target domain ﬁelds (i.e., FA, FB, FC, FD). The results are reported in        signiﬁcant improvements in recognizing crops and weeds.
+Table 3 under columns S→T, where T∈{A, B, C, D}. It can be seen
+from the table that, even though using better segmentation
+architectures resulted in considerably better performance on the               4.4 Vanilla vs. scheduled augmentation
+FS dataset, the results on the target domain ﬁelds did not improve
+and even got worse in some cases (e.g., the mIOU of ﬁeld A and C                   In these experiments, we verify the superior performance of the
+decreased when using DeepLab-v3+ (ResNet-101) and proposed                     proposed augmentation scheduling over vanilla augmentation, and
+decoder). This demonstrates the need for unsupervised domain                   the results are summarized in Tables 4, 6. For these experiments we
+adaptation (UDA) approaches in the ﬁeld of precision agriculture.              use proposed framework under UDA (0-shot SDA) settings. We
+                                                                               experimented with different augmentation probabilities and found
+                                                                               that augmenting 30% of all samples during each epoch produced
+4.2 Unsupervised domain adaptation                                             the best results. Starting from the baseline (no augmentations), we
+                                                                               ﬁrst performed random geometric augmentations (G) and observed
+     In our unsupervised domain adaptation experiments, we used                performance improvement. Then, we performed noise (D) and
+the same data pairs as in previous experiments. We applied the                 collage (C) augmentations one by one to see further improvements.
+augmentation scheduling algorithm with the hyperparameter values               A signiﬁcant increase in performance, 55.36% (baseline) to 71.28%,
+listed in Table 2. The results of these experiments are shown in               can be seen when using collage augmentation (C), indicating that
+
+
+Frontiers in Plant Science                                                09                                                         frontiersin.org
+Ilyas et al.                                                                                                                     10.3389/fpls.2023.1234616
+
+
+
+
+TABLE 3 A comparison of the experimental results on a crop-weed segmentation dataset between traditional semantic segmentation and UDA
+methods with the use of Vanilla Augmentation.
+
+
+                                                                                                               mIOU (%)
+ Backbone                   Framework                 Method
+                                                                                  S→S          S→A     S→B          S→C           S→D            Average
+ ResNet-101                 PSPNet                    –                           74.05        66.34   56.83        38.62         52.88          53.66
+
+ Xception-71                DeepLab V3+               –                           78.7         67.63   59.19        43.05         47.68          56.13
+
+ ResNet-101                 DeepLab V3+               –                           79.57        68.9    59.34        40.43         54.34          57.75
+
+ ResNet-101                 Proposed                  –                           80.02        68.53   58.88        41.35         53.7           57.36
+
+ ResNet-101                 DeepLab V3+               Vu et al., (2019)           80.95        63.66   55.62        52.31         47.62          54.80
+
+ ResNet-101                 DeepLab V3+               Tsai et al. (2018)          75.94        75.57   65.23        45.65         66.7           63.28
+
+ ResNet-101                 DeepLab V3+               Proposed                    79.55        74.1    62.6         49.56         64.48          62.18
+
+ ConvNext-L                 Proposed                  Proposed                    79.93        75.67   68.54        52.36         63.34          64.97
+
+Bold and underlined values represent best and second-best values, respectively.
+
+
+
+TABLE 4 A comparison of the experimental results on a crop-weed segmentation dataset between traditional semantic segmentation and UDA
+methods with the use of Augmentation scheduling.
+
+
+                                                                                                               mIOU (%)
+ Backbone                   Framework                 Method
+                                                                                  S→S          S→A     S→B          S→C           S→D            Average
+ ResNet-101                 PSPNet                    –                           78.31        77.07   67.36        47.39         62.33          63.53
+
+ Xception-71                DeepLab V3+               –                           82.5         78.16   62.05        48.49         63.46          63.04
+
+ ResNet-101                 DeepLab V3+               –                           84.81        75.75   69.85        56.88         60.69          65.79
+
+ ResNet-101                 DeepLab V3+               Vu et al. (2019)            83.99        80.6    73.4         60.86         71.7           71.39
+
+ ResNet-101                 DeepLab V3+               Tsai et al. (2018)          79.8         78.75   70.8         50.67         79.98          70.05
+
+ ResNet-101                 DeepLab V3+               Proposed                    83.97        84.2    73.52        61.71         74.7           73.53
+
+ ConvNext-L                 Proposed                  Proposed                    88.5         91.02   83.11        60.3          81.1           78.88
+
+Bold and underlined values represent best and second-best values, respectively.
+
+
+
+
+                        A                                                                 B
+
+
+
+
+                                                            C
+
+
+
+
+    FIGURE 9
+    Training and loss curves for cross domain adaptation. (A) learning curve for mIOU score on source domains validation set. (B) learning curve for
+    mIOU score averaged over all target domain test sets. (C) Segmentation network’s loss curves. Best viewed in color.
+
+
+
+
+Frontiers in Plant Science                                                                10                                                  frontiersin.org
+Ilyas et al.                                                                                                                             10.3389/fpls.2023.1234616
+
+
+
+
+TABLE 5 Comparison of mIOU scores for few-shot SDA models with varying values of k against fully supervised models.
+
+
+                                                                                                                             mIOU (%)
+  Backbone               Framework                 Method                      Strategy
+                                                                                                     S→S     S→A     S→B         S→C       S→D         Average
+  ResNet-101             DeepLab V3+               Vu et al. (2019)            0-shot                83.99   80.6    73.4        60.86     71.7        71.39
+
+  ResNet-101             DeepLab V3+               Tsai et al. (2018)          (UDA)                 79.8    78.75   70.8        50.67     79.98       70.05
+
+  ConvNext-L             Proposed                  Proposed                                          88.5    91.02   83.11       60.3      81.1        78.88
+
+  ResNet-101             DeepLab V3+               Vu et al. (2019)            1-shot                86.13   88.71   83.59       58.89     75.05       76.56
+
+  ResNet-101             DeepLab V3+               Tsai et al. (2018)          (SDA)                 76.49   85.01   73.02       61.59     74.9        73.63
+
+  ConvNext-L             Proposed                  Proposed                                          88.7    92.53   84.25       62.5      80.87       80.53
+
+  ResNet-101             DeepLab V3+               Vu et al. (2019)            3-shot                88.57   89.66   84.17       60.69     78.62       78.28
+
+  ResNet-101             DeepLab V3+               Tsai et al. (2018)          (SDA)                 77.36   86.07   75.49       62.99     76.31       75.19
+
+  ConvNext-L             Proposed                  Proposed                                          89.01   92.67   85.6        62.9      82.43       81.4
+
+  ResNet-101             DeepLab V3+               –                           Fully                 90.56   93.25   83.5        61.56     83.42       80.43
+
+  ConvNext-L             Proposed                  –                           supervised            91.62   95.24   85.48       68.67     85.39       83.69
+
+Bold and best results. Underlined values represent best results in their respective settings.
+
+
+
+
+    FIGURE 10
+    Segmentation results on datasets from the target domain under UDA setting. The results include the baseline method, DeepLabv3+ with the UDA
+    algorithms from Vu et al., (2019) and Tsai et al. (2018), and the proposed method with and without augmentation scheduling. The ground truths are also
+    displayed for comparison. Each target ﬁeld (A–D) has two columns, with each column representing a different testing ﬁeld with varying farm
+    environments such as weed density, seeding bed types, plant sizes, and camera viewing angles. Boxes highlight the crops being misclassiﬁed as weeds.
+
+
+
+
+Frontiers in Plant Science                                                                      11                                                  frontiersin.org
+Ilyas et al.                                                                                                                            10.3389/fpls.2023.1234616
+
+
+
+
+TABLE 6 Effect of augmentation scheduling on performance of proposed UDA framework.
+
+
+                                                                    mIOU (%)
+ Strategy                         Augmentation
+                                                                    S→S           S→A                S→B             S→C              S→D              Average
+ Baseline                         –                                 73.9          68.36              56.86           42.33            53.91            55.36
+
+                                  Geometric (G)                     74.37         82.3               70.59           55.98            72.67            70.39
+
+                                  Noise/Dist. (D)                   77.59         78.49              74.63           55.83            73.42            70.59
+
+ Vanilla (0.3)                    Collage (C)                       80.35         84.7               71.33           53.91            75.19            71.28
+
+                                  G+D                               81.03         74.9               66.14           53.55            65.67            65.06
+
+                                  G+D+C                             79.93         75.67              68.54           52.36            63.34            64.97
+
+                                  G+D                               82.59         83.57              75.85           57.75            78.36            73.88
+ Progressive (0.3)
+                                  G+D+C                             88.5          91.02              83.11           60.3             81.1             78.88
+
+Bold and underlined values represent best and second-best values, respectively.
+
+
+
+
+the collage augmentation improves the network’s generalization on                         5 Visual analysis
+other domains as well. Next, we combined these augmentations at a
+constant probability (0.3) throughout the training process. It can be                          The qualitative results of the proposed method are illustrated in
+seen from Table 2 that performing all augmentations in                                    Figure 10. The ﬁgures present some examples of the system’s
+combination considerably improved the framework’s performance                             qualitative performance on the testing dataset from the target and
+compared to the baseline.                                                                 source domains. The system is capable of identifying crops and weeds
+     However, when using all augmentations at once throughout the                         effectively across different ﬁelds, even with varying densities of weeds
+training process (i.e., G+D+C), the network’s performance drops as                        and different seeding systems. Our approach is robust in addressing the
+compared to when only using G+D. We believe this is because the                           recognition of crops (beans) and weeds, even in complex target
+augmentations are quite strong from the start of training, making it                      (unseen) ﬁeld environments used for domain adaptation. The
+difﬁcult for the network to learn important distinguishing features.                      underlying reason behind this performance is the utilization of deep
+To overcome this, we deployed the proposed augmentation                                   feature alignment and augmentation scheduling algorithm which
+scheduling strategy, which fully activates each augmentation after                        allows the system to incorporate more robust features and context
+a certain number of epochs (set by the user as a hyperparameter), so                      information, leading to more stable and reliable segmentation results.
+that the network can easily and quickly learn simple representations
+at the start of training. At the end of training, when all
+augmentations are fully activated, these stronger regularizations                         6 Conclusion
+make learning more difﬁcult for the CNN and improve
+its robustness.                                                                               In this research, we presented an approach for unsupervised
+     As can be seen in Table 6, even without using collage                                domain adaptation for crop-weed recognition in an unseen ﬁeld
+augmentation, the augmentation scheduling algorithm improves                              environment. The main challenge in creating an automatic weed
+the average mIOU by almost 9% compared to vanilla G+D+C.                                  management system is the varying visual appearance of weeds based
+When using all three types of augmentation with progressive                               on factors such as lighting, weather, soil, and seeding bed type. We
+strategy, the results improvement is almost 14% as compared to                            proposed to address this problem by minimizing the entropy of the
+the vanilla augmentation strategy and about a 22% increase when                           network on target domain dataset and aligning the features of both
+using no augmentation at all.                                                             domains through deep feature alignment. Our proposed
+                                                                                          framework, which is trained in an end-to-end fashion, consists of
+                                                                                          two main components: a segmentation network for feature
+4.5 Training and loss curves                                                              extraction and robust entropy minimization and a discriminator
+across domains                                                                            network for adversarial training to generate target domain features
+                                                                                          as close as possible to the source domain. Additionally, we proposed
+    In Figure 9, the graphs illustrate the training loss (source                          the use of a augmentation scheduling strategy that starts with weak
+domain only) and accuracy curves for the proposed domain                                  augmentations for quick adaptation to the source domain dataset
+adaptation for the source domain and average of all the target                            and gradually increases to stronger augmentations for improved
+domains. The system successfully adapted from one domain to the                           robustness and generalizability. We also demonstrated that the use
+other and was able to effectively recognize both crops and weeds                          of collage augmentation improves performance on target domains
+across various seeding bed systems.                                                       even further. Our extensive evaluation across four different ﬁelds
+
+
+
+Frontiers in Plant Science                                                          12                                                              frontiersin.org
+Ilyas et al.                                                                                                                                                    10.3389/fpls.2023.1234616
+
+
+
+
+with various environments and plant seeding systems showed an                                         Funding
+overall performance gain of approximately 10% mIOU on average
+compared to the baseline. Furthermore, using just one image for                                           This work was supported in part by the Agricultural Science and
+ﬁne-tuning in a few-shot SDA setting, our network achieved almost                                     Technology Development Cooperation Research Program
+similar performance to that of a fully supervised network, i.e.,                                      (PJ015720) and Basic Science Research Program through the
+80.53% vs 83.6%. A potential direction for future research would                                      National Research Foundation of Korea (NRF) funded by the
+be to explore the adaptation of the model for recognition of multiple                                 Ministry of Education (NRF-2019R1A6A1A09031717 and
+crops and weeds.                                                                                      NRF-2019R1A2C1011297).
+
+
+Data availability statement
+                                                                                                      Conﬂict of interest
+    The original contributions presented in the study are publicly
+available. This data can be found here: https://github.com/Mr-                                            The authors declare that the research was conducted in the
+TalhaIlyas/ARUFE.                                                                                     absence of any commercial or ﬁnancial relationships that could be
+                                                                                                      construed as a potential conﬂict of interest.
+
+Author contributions
+                                                                                                      Publisher’s note
+    TI and HK did conceptualization, investigation, methodology,
+validation, formal analysis. TI wrote the original draft and then                                         All claims expressed in this article are solely those of the authors
+revised. TI and HK supervised, reviewed and edited manuscript. HK,                                    and do not necessarily represent those of their afﬁliated
+YJ and OW secured funding. TI and JL collected and labelled data,                                     organizations, or those of the publisher, the editors and the
+performed investigation and visualization. All authors discussed the                                  reviewers. Any product that may be evaluated in this article, or
+results and contributed to the ﬁnal manuscript. All authors                                           claim that may be made by its manufacturer, is not guaranteed or
+contributed to the article and approved the submitted version.                                        endorsed by the publisher.
+
+
+
+
+References
+   Adhikari, S. P., Yang, H., and Kim, H. (2019). Learning semantic graphics using                    ﬁeld environments, crops, and robots,” in 2020 IEEE/RSJ International Conference on
+convolutional encoder–decoder network for autonomous weeding in paddy. Front.                         Intelligent Robots and Systems (IROS). Las Vegas, NV, USA. 2636–2642. IEEE.
+Plant Sci. 10, 1404. doi: 10.3389/fpls.2019.01404                                                     doi: 10.1109/IROS45743.2020.9341277
+   Aschi, A., Aubert, M., Riah-Anglet, W., Nélieu, S., Dubois, C., Akpa-Vinceslas, M., et al.           He, K., Zhang, X., Ren, S., and Sun, J. (2016). Deep residual learning for image
+(2017). Introduction of Faba bean in crop rotation: Impacts on soil chemical and biological           recognition. In Proceedings of the IEEE conference on computer vision and pattern
+characteristics. Appl. Soil Ecol. 120, 219–228. doi: 10.1016/j.apsoil.2017.08.003                     recognition (pp. 770–778).
+  Badrinarayanan, V., Kendall, A., and Cipolla, R. (2017). Segnet: A deep                                Ilyas, T., Jin, H., Siddique, M. I., Lee, S. J., Kim, H., and Chua, L. (2022). DIANA: A
+convolutional encoder-decoder architecture for image segmentation. IEEE Trans.                        deep learning-based paprika plant disease and pest phenotyping system with disease
+Pattern Anal. Mach. Intell. 39, 2481–2495. doi: 10.1109/TPAMI.2016.2644615                            severity analysis. Front. Plant Sci. 3862. doi: 10.3389/fpls.2022.983625
+  Chen, L.-C., Zhu, Y., Papandreou, G., Schroff, F., and Adam, H. (2018). “Encoder-                      Ilyas, T., Umraiz, M., Khan, A., and Kim, H. (2021). DAM: Hierarchical adaptive
+decoder with atrous separable convolution for semantic image segmentation,” in                        feature selection using convolution encoder decoder network for strawberry
+Proceedings of the European conference on computer vision (ECCV)), Munich,                            segmentation. Front. Plant Sci. 12, 591333. doi: 10.3389/fpls.2021.591333
+Germany. 801–818.                                                                                        Iqbal, N., Manalil, S., Chauhan, B. S., and Adkins, S. W. (2019). Investigation of
+   Chiang, H.-A., Chiang, C.-S., and Shih, C.-S. (2019). Using collaged data augmentation to          alternate herbicides for effective weed management in glyphosate-tolerant cotton. Arch.
+train deep neural net with few data. In Proceedings of Medical Imaging with Deep Learning.            Agron. Soil Sci. 65 (13), 1885–1899. doi: 10.1080/03650340.2019.1579904
+London, England. OpenReview.net. doi: 10.1145/3400286.3418244                                           Isola, P., Zhu, J.-Y., Zhou, T., and Efros, A. A. (2017). “Image-to-image translation
+   Chollet, F. (2017). Xception: Deep learning with depthwise separable convolutions.                 with conditional adversarial networks,” in Proceedings of the IEEE conference on
+In Proceedings of the IEEE conference on computer vision and pattern recognition (pp.                 computer vision and pattern recognition. Honolulu, HI, USA. 1125–1134. IEEE.
+1251–1258).                                                                                           doi: 10.1109/CVPR.2017.632
+  Coleman, G., Salter, W., and Walsh, M. (2022). OpenWeedLocator (OWL): an open-                         Kendler, S., Aharoni, R., Young, S., Sela, H., Kis-Papo, T., Fahima, T., et al. (2022).
+source, low-cost device for fallow weed detection. Sci. Rep. 12, 1–12. doi: 10.1038/                  Detection of crop diseases using enhanced variability imagery data and convolutional neural
+s41598-021-03858-9                                                                                    networks. Comput. Electron. Agric. 193, 106732. doi: 10.1016/j.compag.2022.106732
+   Durmuş, H., Güneş, E. O., Kırcı, M., and Üstündağ , B. B. (2015). “The design of                   Khan, A., Ilyas, T., Umraiz, M., Mannan, Z. I., and Kim, H. (2020). Ced-net: crops
+general purpose autonomous agricultural mobile-robot:” AGROBO,” in 2015 Fourth                        and weeds segmentation for smart farming using a small cascaded encoder-decoder
+International Conference on Agro-Geoinformatics (Agro-geoinformatics). Istanbul,                      architecture. Electronics 9, 1602. doi: 10.3390/electronics9101602
+Turkey. 49–53. IEEE.                                                                                    Kriticos, D. J., Alexander, N. S., and Kolomeitz, S. M. (2006). Predicting the potential
+  Gao, J., French, A. P., Pound, M. P., He, Y., Pridmore, T. P., and Pieters, J. G. (2020).           geographic distribution of weeds in 2080. Weed Sci. Soc. Victoria Melbourne Aust., 27–34.
+Deep convolutional neural networks for image-based Convolvulus sepium detection in                       Lal, R. (1991). Soil structure and sustainability. J. Sustain. Agric. 1, 67–92. doi:
+sugar beet ﬁelds. Plant Methods 16, 1–12. doi: 10.1186/s13007-020-00570-z                             10.1300/J064v01n04_06
+   Gebrekidan, H. (2003). Grain yield response of sorghum (Sorghum bicolor) to tied                     Lameski, P., Zdravevski, E., and Kulakov, A. (2018). Review of Automated Weed
+ridges and planting methods on Entisols and Vertisols of Alemaya area, Eastern                        Control Approaches: An Environmental Impact Perspective. In: S. Kalajdziski and N.
+Ethiopian highlands. J. Agric. Rural Dev. Tropics Subtropics (JARTS) 104, 113–128.                    Ackovska (eds) ICT Innovations 2018. Engineering and Life Sciences. ICT 2018.
+  Gogoll, D., Lottes, P., Weyler, J., Petrinic, N., and Stachniss, C. (2020).                         Communications in Computer and Information Science. (Cham: Springer), vol 940.
+“Unsupervised domain adaptation for transferring plant classiﬁcation systems to new                   doi: 10.1007/978-3-030-00825-3_12
+
+
+
+
+Frontiers in Plant Science                                                                       13                                                                            frontiersin.org
+Ilyas et al.                                                                                                                                                     10.3389/fpls.2023.1234616
+
+
+
+
+   Li, L., Li, J., Lv, C., Yuan, Y., and Zhao, B. (2021). Maize residue segmentation using            Raja, R., Slaughter, D. C., Fennimore, S. A., Nguyen, T. T., Vuong, V. L., Sinha, N.,
+Siamese domain transfer network. Comput. Electron. Agric. 187, 106261. doi: 10.1016/               et al. (2019). Crop signalling: A novel crop recognition technique for robotic weed
+j.compag.2021.106261                                                                               control. Biosyst. Eng. 187, 278–291. doi: 10.1016/j.biosystemseng.2019.09.011
+  Li, J., and Tang, L. (2018). Crop recognition under weedy conditions based on 3D                    Ronneberger, O., Fischer, P., and Brox, T. (2015). U-Net: Convolutional Networks
+imaging for robotic weed control. J. Field Robotics 35, 596–611. doi: 10.1002/                     for Biomedical Image Segmentation. In: N. Navab, J. Hornegger, W. Wells and A.
+rob.21763                                                                                          Frangi (eds) Medical Image Computing and Computer-Assisted Intervention –
+  Liu, Z., Mao, H., Wu, C.-Y., Feichtenhofer, C., Darrell, T., and Xie, S. (2022). “A              MICCAI 2015. MICCAI 2015. Lecture Notes in Computer Science. (Cham:
+convnet for the 2020s,” in Proceedings of the IEEE/CVF Conference on Computer Vision               Springer), vol 9351. doi: 10.1007/978-3-319-24574-4_28
+and Pattern Recognition. New Orleans, LA, USA. 11976–11986. IEEE. doi: 10.1109/                       Sa, I., Ge, Z., Dayoub, F., Upcroft, B., Perez, T., and Mccool, C. (2016). Deepfruits: A fruit
+CVPR52688.2022.01167                                                                               detection system using deep neural networks. sensors 16, 1222. doi: 10.3390/s16081222
+  Ma, Y., Zhang, Z., Yang, H. L., and Yang, Z. (2021). An adaptive adversarial domain                Sarvini, T., Sneha, T., Gs, S. G., Sushmitha, S., and Kumaraswamy, R. (2019).
+adaptation approach for corn yield prediction. Comput. Electron. Agric. 187, 106314.               “Performance comparison of weed detection algorithms,” in 2019 International
+doi: 10.1016/j.compag.2021.106314                                                                  Conference on Communication and Signal Processing (ICCSP). Chennai, India. IEEE.
+  Matloob, A., Safdar, M. E., Abbas, T., Aslam, F., Khaliq, A., Tanveer, A., et al. (2020).        0843–0847. doi: 10.1109/ICCSP.2019.8698094
+Challenges and prospects for weed management in Pakistan: A review. Crop Prot. 134,                  Seelan, S. K., Laguette, S., Casady, G. M., and Seielstad, G. A. (2003). Remote sensing
+104724. doi: 10.1016/j.cropro.2019.01.030                                                          applications for precision agriculture: A learning community approach. Remote Sens.
+   Melander, B., Rasmussen, I. A., and Bàrberi, P. (2005). Integrating physical and                Environ. 88, 157–169. doi: 10.1016/j.rse.2003.04.007
+cultural methods of weed control—examples from European research. Weed Sci. 53,                       Tavakoli, H., Alirezazadeh, P., Hedayatipour, A., Nasib, A. B., and Landwehr, N.
+369–381. doi: 10.1614/WS-04-136R                                                                   (2021). Leaf image-based classiﬁcation of some common bean cultivars using
+   Moazzam, S. I., Khan, U. S., Qureshi, W. S., Tiwana, M. I., Rashid, N., Hamza, A.,              discriminative convolutional neural networks. Comput. Electron. Agric. 181, 105935.
+et al. (2022). Patch-wise weed coarse segmentation mask from aerial imagery of sesame              doi: 10.1016/j.compag.2020.105935
+crop. Comput. Electron. Agric. 203, 107458. doi: 10.1016/j.compag.2022.107458                        Tranheden, W., Olsson, V., Pinto, J., and Svensson, L. (2021). “Dacs: Domain
+   Nicolopoulou-Stamati, P., Maipas, S., Kotampasi, C., Stamatis, P., and Hens, L.                 adaptation via cross-domain mixed sampling,” in Proceedings of the IEEE/CVF Winter
+(2016). Chemical pesticides and human health: the urgent need for a new concept in                 Conference on Applications of Computer Vision, HI, USA. IEEE. 1379–1389.
+agriculture. Front. Public Health 4, 148. doi: 10.3389/fpubh.2016.00148                            doi: 10.1109/WACV48630.2021.00142
+
+   Pantazi, X.-E., Moshou, D., and Bravo, C. (2016). Active learning system for weed                  Tsai, Y.-H., Hung, W.-C., Schulter, S., Sohn, K., Yang, M.-H., and Chandraker, M.
+species recognition based on hyperspectral sensing. Biosyst. Eng. 146, 193–202. doi:               (2018). “Learning to adapt structured output space for semantic segmentation,” in
+10.1016/j.biosystemseng.2016.01.014                                                                Proceedings of the IEEE conference on computer vision and pattern recognition. Salt Lake
+                                                                                                   City, UT, USA. 7472–7481. IEEE.
+   Parra, L., Marin, J., Yousﬁ, S., Rincó n, G., Mauri, P. V., and Lloret, J. (2020). Edge
+detection for weed recognition in lawns. Comput. Electron. Agric. 176, 105684. doi:                   Tu, M., Hurd, C., and Randall, J. M. (2001). Weed control methods handbook: tools &
+10.1016/j.compag.2020.105684                                                                       techniques for use in natural areas. All U.S. Government Documents (Utah Regional
+                                                                                                   Depository). Paper 533. Available at: https://digitalcommons.usu.edu/govdocs/533
+   Patel, D., and Kumbhar, B. (2016). Weed and its management: A major threats to
+crop economy. J. Pharm. Sci. Biosci. Res. 6, 453–758.                                                Vu, T.-H., Jain, H., Bucher, M., Cord, M., and Pé rez, P. (2019). “Advent: Adversarial
+                                                                                                   entropy minimization for domain adaptation in semantic segmentation,” in
+   Peng, H., Li, Z., Zhou, Z., and Shao, Y. (2022). Weed detection in paddy ﬁeld using             Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+an improved RetinaNet network. Comput. Electron. Agric. 199, 107179. doi: 10.1016/                 Recognition. 2517–2526. doi: 10.1109/CVPR.2019.00262
+j.compag.2022.107179
+                                                                                                      Yang, Y., and Soatto, S. (2020). “Fda: Fourier domain adaptation for semantic segmentation,”
+  Picon, A., San-Emeterio, M. G., Bereciartua-Perez, A., Klukas, C., Eggers, T., and               in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. Seattle,
+Navarra-Mestre, R. (2022). Deep learning-based segmentation of multiple species of                 WA, USA. IEEE. 4085–4095. doi: 10.1109/CVPR42600.2020.00414
+weeds and corn crop using synthetic and real image datasets. Comput. Electron. Agric.
+194, 106719. doi: 10.1016/j.compag.2022.106719                                                       Zhang, D., and Khoreva, A. (2019). Progressive Augmentation of GANs. In 33rd
+  Radoglou-Grammatikis, P., Sarigiannidis, P., Lagkas, T., and Moscholios, I. (2020). A            Conference on Neural Information Processing Systems (NeurIPS), Vancouver, Canada.
+compilation of UAV applications for precision agriculture. Comput. Networks 172,                      Zhao, H., Shi, J., Qi, X., Wang, X., and Jia, J. (2017). Pyramid scene parsing network. In
+107148. doi: 10.1016/j.comnet.2020.107148                                                          Proceedings of the IEEE conference on computer vision and pattern recognition (pp. 2881–2890).
+
+
+
+
+Frontiers in Plant Science                                                                    14                                                                                 frontiersin.org
+

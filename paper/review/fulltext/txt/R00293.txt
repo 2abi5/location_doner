@@ -1,0 +1,1000 @@
+                                     This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version
+                                     may no longer be accessible.
+                                     Digital Object Identifier 10.48550/arXiv.2401.07398
+
+
+
+
+                                     Cross Domain Early Crop Mapping using
+                                     CropSTGAN
+                                     YIQUN WANG1 , HUI HUANG1 , and Radu STATE1
+                                     1
+                                      Services and Data Management Research Group (SEDAN), The Interdisciplinary Centre for Security, Reliability and Trust (SnT), University of Luxembourg,
+                                     Luxembourg. (e-mail: yiqun.wang@uni.lu, hui.huang@uni.lu, radu.state@uni.lu)
+arXiv:2401.07398v2 [cs.CV] 18 Apr 2024
+
+
+
+
+                                          ABSTRACT Driven by abundant satellite imagery, machine learning-based approaches have recently been
+                                          promoted to generate high-resolution crop cultivation maps to support many agricultural applications.
+                                          One of the major challenges faced by these approaches is the limited availability of ground truth labels.
+                                          In the absence of ground truth, existing work usually adopts the "direct transfer strategy" that trains a
+                                          classifier using historical labels collected from other regions and then applies the trained model to the
+                                          target region. Unfortunately, the spectral features of crops exhibit inter-region and inter-annual variability
+                                          due to changes in soil composition, climate conditions, and crop progress, the resultant models perform
+                                          poorly on new and unseen regions or years. Despite recent efforts, such as the application of the deep
+                                          adaptation neural network (DANN) model structure in the deep adaptation crop classification network
+                                          (DACCN), to tackle the above cross-domain challenges, their effectiveness diminishes significantly when
+                                          there is a large dissimilarity between the source and target regions. This paper introduces the Crop Mapping
+                                          Spectral-temporal Generative Adversarial Neural Network (CropSTGAN), a novel solution for cross-domain
+                                          challenges, that doesn’t require target domain labels. CropSTGAN learns to transform the target domain’s
+                                          spectral features to those of the source domain, effectively bridging large dissimilarities. Additionally, it
+                                          employs an identity loss to maintain the intrinsic local structure of the data. Comprehensive experiments
+                                          across various regions and years demonstrate the benefits and effectiveness of the proposed approach.
+                                          In experiments, CropSTGAN is benchmarked against various state-of-the-art (SOTA) methods. Notably,
+                                          CropSTGAN significantly outperforms these methods in scenarios with large data distribution dissimilarities
+                                          between the target and source domains.
+
+
+                                          INDEX TERMS Early Crop Mapping, Multispectral Image Data, Cross Domain, Domain Adaptation,
+                                          CropSTGAN, Cropland Data Layer.
+
+
+                                         I. INTRODUCTION                                                                           as labels, to train and validate the classification model. The
+                                                                                                                                   ground truth can be obtained from surveys as first-hand labels
+
+                                     E     ARLY crop mapping, i.e. determining the cultivation
+                                           regions of crops before their harvest season, is the fun-
+                                     damental building block for agricultural planning, resource
+                                                                                                                                   [5], [6], or use public datasets, such as the United States
+                                                                                                                                   Department of Agriculture (USDA)’s Cropland Data Layer
+                                                                                                                                   (CDL), as weak labels for model training [7]. Different DL
+                                     allocation, crop insurance, risk management [1], [2] and many                                 architectures, such as convolutional neural networks (CNNs),
+                                     other agricultural applications. Since the spectral features of                               Temporal Convolutional Neural Network (TempCNN) [8],
+                                     vegetation are determined by their structure, leaf biochem-                                   deep autoencoders and recurrent neural networks with long
+                                     istry and phonological stages [3], time-series analysis on                                    short-term memory (LSTM), are explored for crop mapping
+                                     multi-spectral images captured by satellites is the dominant                                  tasks [9]–[11]. The results suggest DL approaches outperform
+                                     approach for land cover classifications. With the rapid growth                                conventional support vector machine (SVM) and tree-based
+                                     in data volume and increasing accessibility of satellite im-                                  models in providing semantic information on the input im-
+                                     agery, deep learning (DL) based remote sensing has been                                       ages.
+                                     promoted in recent years to produce high-resolution, high-
+                                     accuracy crop cultivation maps [4]. This class of approaches                                    Unfortunately, obtaining appropriate ground truth for an
+                                     relies on a large amount of ground truth data, also known                                     arbitrary region is challenging. Public crop-type ground truth
+
+                                     VOLUME 11, 2023                                                                                                                                           1
+                                                                    Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+datasets, such as CDL, provide reliable and timely refer-          variations (Wang, 2021). The DACCN study [19], address-
+ences for model training. However, these datasets are only         ing cross-country issues for the first time in crop mapping
+available for a few countries and are usually released after       experiments, selected sub-areas from Heilongjiang Province
+harvest season. The collecting process can be costly, labour-      and Jilin Province, China as target domains, with four sub-
+intensive, and sometimes unfeasible, especially in underde-        areas from different states in the USA as source domains. This
+veloped countries. In the absence of ground truth, existing        cross-country setup introduced significantly larger environ-
+work usually adopts the "direct transfer strategy" that trains a   mental variations compared to the previous studies. Addition-
+classifier first using available labelled data for other regions   ally, the study included cross-year experiments in the USA.
+and then applies the trained model to the target region [12],      Notably, DACCN’s performance metrics were significantly
+[13]. However, spectral features of crops have both inter-         lower for cross-country issues than for cross-year experi-
+region variability and inter-annual variability due to changes     ments, indicating a reduction in efficiency due to substantial
+in soil composition, climate conditions, and crop progress         discrepancies in data distribution across countries. In other
+[14]. These variability collectively contribute to the distri-     words, although these approaches adeptly tackle the issue
+bution shift between the training data (source domain) and         of missing labels and diminish the detrimental impacts of
+the test data (target domain), called the cross-domain issue.      domain shifts, their efficacy is constrained by relevantly sub-
+Consequently, the direct transfer strategy often leads to poor     stantial discrepancies in data distribution across the domains.
+performance on new and unseen regions and years as it                 To address this domain shift challenge encountered in early
+compromises an implicit assumption of the machine learning-        crop mapping endeavors under relevantly substantial discrep-
+based crop mapping approaches: the labelled training data          ancies in data distribution across the domains, this paper
+from the source domain and the data from the target region         introduces the Crop Mapping Spectral-temporal Generative
+are independent and identically distributed (i.i.d), or at least   Adversarial Neural Network (CropSTGAN) framework. The
+come from similar distributions.                                   system’s primary goal is to identify a specified crop variety,
+   To address this cross-domain issue, including cross-region      such as corn, within a target area lacking labelled data. To
+and cross-year issues, various methods have been developed         fulfil this aim, the CropSTGAN framework employs an unsu-
+aiming to enhance the model’s ability on unseen domains.           pervised domain adaptation (UDA) strategy, a technique for
+One effective approach involves training the model by incor-       adapting a model from a source domain with labelled data to
+porating multi-year data and the respective phonological met-      an unlabelled target domain. The innovative method learns a
+rics as the major inputs [15]. This method helps the model to      function that transforms the spectral characteristics features
+capture the temporal variations in spectral patterns for target    of the target area to the source domain while retaining their
+crops caused by changing environmental and climate condi-          local structure. For instance, the spectral features of corn in
+tions. Their methodology augments the model’s proficiency          the target domain may diverge from those in the source do-
+in generalizing across diverse years within a singular region      main. The CropSTGAN framework first transforms the target
+for which multi-annual ground truth data exists. However, the      domain’s spectral features to resemble those of the source
+predicament of cross-regional issue remains unaddressed.           domain, thereby minimizing the discrepancies in feature pat-
+   To mitigate the challenges associated with both inter-          terns between the transformed target data and the original
+regional and inter-annual cross-domain issues, methodologies       source data, all the while maintaining the distinguishability
+such as Domain Adversarial Neural Networks (DANN) [16]             of corn and other land cover types within the target region.
+and their derivatives, including Self-Training with Domain         This process enables the straightforward application of a crop
+Adversarial Network (STDAN) [17], Phenology Alignment              mapping model, trained within the source domain, to the
+Network (PAN) [18], and Deep Adaptation Crop Classifi-             target domain without diminishing its precision.
+cation Network (DACCN) [19], have been deployed. These                From the highest level, the proposed CropSTGAN sys-
+approaches endeavour to delineate invariant features from          tem consists of three key components: the pre-processor, the
+data across both target and source domains, leveraging these       CropSTGAN domain mapper, and the TempCNN crop map-
+features for enhanced accuracy in crop classification map-         per. The pre-processor module employs linear interpolation to
+pings. However, these methodologies hinge on the presuppo-         fill gaps due to cloud coverage in the Multi-Spectral Images
+sition that the data distributions between the target and source   (MSI), ensuring a complete time series. The CropSTGAN
+domains exhibit relatively minor disparities. Furthermore, all     domain mapper, a modification of the CycleGAN architecture
+these methodologies operate under the assumption that the          [20], is designed with a specific structure to capture the tem-
+crop types are identical in both the source and target domains.    poral features from the time-series MSI data and transform
+In the STDAN study [17], two case studies comprising four          time-series MSI data points from the target domain to the
+areas from Gangwon Province and Gyeongsang Province,               source domain. The CropSTGAN consists of two generator
+Korea were selected. These areas, while not geographically         networks and two discriminator networks. The generators
+distant, exhibit slight environmental differences. Similarly,      learn to transform data points from one domain to another
+the PAN study [18] chose three areas from Sichuan Province,        domain, while the discriminators distinguish between the
+Hubei Province, and Anhui Province in China, all positioned        transformed data points provided by the generators and the
+at similar longitudes, also leading to minor environmental         original data points. Finally, the TempCNN crop mapper, a
+2                                                                                                                           VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+CNN-based model shared structure with the CropSTGAN                       duced, allowing the knowledge learned from a source domain,
+discriminators, can be directly applied to the transformed                where labelled samples are abundant, to be directly applied
+target data to accurately determine the cultivation locations             to the target domain [12], [25]. It involves training models on
+of the specified target crop on the target domain. To evaluate            regions with abundant labelled samples and directly applying
+the distinct architecture of the CropSTGAN domain mapper,                 them to other regions or years. This approach assumes that
+comparative experiments were undertaken utilizing a simpler,              the knowledge learned from the source domain is applicable
+analogous structure named CropTGAN, alongside bench-                      to the target domain. While direct transfer can be a simple and
+marking against several state-of-the-art (SOTA) methodolo-                effective method, it may encounter a cross-domain problem
+gies, including TempCNN and STDAN. The empirical find-                    when it comes to effectively capturing and comprehending the
+ings corroborated that the CropSTGAN architecture enhances                intricate relationships and variations in crop patterns across
+crop mapping accuracy under the relevantly substantial dis-               different regions and years.
+crepancies in data distribution across the domains.                          To address the cross-year issue, training the model with
+   Our contributions can be summarized as follows:                        multi-year crop data proves to be a valuable adaptation
+   • Propose the CropSTGAN framework, consisting of a                     method. Recent studies, including [15], emphasize the impor-
+      pre-processor, a CropSTGAN domain mapper, and a                     tance of incorporating multi-year crop data from a specific
+      TempCNN crop mapper, to address the cross-domain                    region as it enhances the model’s understanding of temporal
+      issue due to the inter-region and inter-year variations             patterns, variations, and trends within that geographic con-
+      in remote sensing-based early crop mapping under sub-               text. This approach enhances the accuracy and reliability of
+      stantial discrepancies in data distribution across the do-          crop classification by considering inter-annual climate vari-
+      mains.                                                              ations and capturing the unique characteristics of the region.
+   • Design the CropSTGAN domain mapper to capture the                    Leveraging region-specific multi-year data enables the model
+      temporal and spectral features from the time-series MSI             to become more robust to phenology shifts, ensuring consis-
+      data and learn to transform the target domain data into             tent performance across different years. Training on multi-
+      the source domain.                                                  year crop data from the same region serves as an effective
+   • Conduct cross-region and cross-year experiments in the               adaptation technique, resulting in more precise and depend-
+      study areas from the USA and China to evaluate the                  able crop mapping outcomes within a particular geographic
+      CropSTGAN framework. The results demonstrate supe-                  area. A key drawback of the multi-year crop data training
+      rior performance compared to CropTGAN and several                   method is its high reliance on labelled data. To effectively
+      SOTA methods, such as TempCNN and STDAN, con-                       train deep learning models, a large number of accurately
+      firming the effectiveness and accuracy of the CropST-               labelled samples are needed. However, collecting such a vast
+      GAN framework for cross-domain early crop mapping.                  amount of labelled data from diverse regions and years is a
+   The rest of this paper is organised as follows. Section II             challenging task. The process is time-consuming, costly, and
+describes related works. Section III presents the data and                often impractical due to the effort and resources required.
+study areas. The methodology is described in Section IV. Ex-              Moreover, it fails to address the issue of the cross-region
+periment setup and results are presented in Section V. Finally,           issue.
+the discussion and conclusions are presented in Section VI.                  To tackle the challenges of cross-year and cross-region
+                                                                          adaptability, current methods adopt two main strategies:
+II. RELATED WORKS                                                            From a sample perspective, fine-tuning pre-trained models
+Remote sensing-based crop-type mapping has undergone sig-                 with a few high-quality target domain samples is a common
+nificant advancements with the adoption of machine learning               practice. This method adapts the original model to the new
+methods. Traditionally, techniques such as SVM and random                 data distribution. For example, [26] improved deep models for
+forest (RF) have been widely utilized for crop classification             nationwide land cover classification using high-confidence
+using remote sensing data [21]–[23]. However, the advent of               pseudo-labels. Similarly, [27] involved annotating new target
+deep learning has brought about a revolution in this field by             domain samples to refine RF classifiers via active learning.
+leveraging their ability to automatically extract meaningful              However, this technique often necessitates labelling samples,
+representations from data.                                                which is not feasible for large-scale studies.
+   Deep learning models, such as LSTM networks and CNNs,                     From a feature perspective, in the field of Unsupervised
+have exhibited impressive performance in crop type mapping                Domain Adaptation (UDA), earlier studies have developed
+using remote sensing imagery [9], [11], [24]. They excel                  DANN-based methods to align samples from various regions
+at capturing temporal and spatial characteristics, enabling               into a unified feature space, minimizing disparities in deep
+accurate classification of various crop types. By training on             features. For instance, [17] introduced the STDAN, a novel
+labelled crop datasets, these models can learn complex re-                unsupervised domain adaptation framework for crop type
+lationships between spectral, spatial, and temporal features,             classification. Moreover, the DACCN [18] and the PAN [19],
+leading to improved accuracy in distinguishing crop types.                extended the loss function using the Maximum Mean Dis-
+   To locate the target crop in the target domain without                 crepancy (MMD) and the Multiple Kernel variant of Max-
+ground truth data, direct transfer techniques have been intro-            imum Mean Discrepancy (MK-MMD), achieving improved
+VOLUME 11, 2023                                                                                                                        3
+                                                                     Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+accuracy compared to CNN and LSTM methods without
+domain adaptation. These methods often presuppose minor                                             Temporal Curves for Different Crops
+difference between the target and source domain data distri-
+                                                                                                     Other Crops
+butions. However, when these differences are substantial, the                              0.8       Corn
+effectiveness diminishes.
+
+
+
+
+                                                                         Mean NDVI Value
+   This paper introduces the CropSTGAN framework, de-                                      0.6
+signed to tackle the challenge of cross-domain early crop
+mapping without the need for labelled data from the target                                 0.4
+domain, even when there are significant differences between
+the data distributions of the target and source domains. Unlike                            0.2
+DANN-variant methods that focus on extracting invariant
+                                                                                                 150 160 170 180 190 200 210 220 230
+features, CropSTGAN transforms unlabeled target domain                                                         Day of Year
+data into the source domain. The CropSTGAN system com-
+                                                                                                                   (a)
+prises three main components: a pre-processor, a CropST-
+GAN domain mapper, and a TempCNN crop mapper. The
+                                                                                                    Temporal Curves for Different Crops
+domain mapper, a key part of CropSTGAN, transforms time-                                             Other Crops
+                                                                                           0.8       Corn
+series MSI data prepared by the pre-processor from the target
+
+
+
+
+                                                                         Mean NDVI Value
+domain into the source domain. Subsequently, a TempCNN                                     0.6
+crop mapper, pre-trained with labelled data from the source
+domain, processes this transformed data to produce the crop                                0.4
+mapping results for the target domain. As far as our knowl-
+edge extends, we are the pioneering contributors to tackling                               0.2
+the cross-domain issue in early crop mapping through the
+utilization of a model based on GAN combined with specially                                      150 160 170 180 190 200 210 220 230
+                                                                                                               Day of Year
+designed identity losses.
+                                                                                                                   (b)
+III. DATA AND STUDY AREAS                                                                           Temporal Curves for Different Crops
+A. STUDY AREA                                                                                        Other Crops
+                                                                                           0.8       Corn
+                                                                         Mean NDVI Value
+
+
+
+
+                                                                                           0.6
+
+                                                                                           0.4
+
+                                                                                           0.2
+                                                                                                 150 160 170 180 190 200 210 220 230
+                                                                                                               Day of Year
+                                                                                                                   (c)
+              (a)                             (b)
+                                                                                                    Temporal Curves for Different Crops
+FIGURE 1: The Study Areas. (a) Jackson County, Minnesota,                                            Other Crops
+USA. (b) The Study Area (from 44.97◦ N to 45.14◦ N latitude                                0.8       Corn
+                                                                        Mean NDVI Value
+
+
+
+
+and from 125.49◦ W to 125.86◦ W longitude), Jilin Province,
+China.                                                                                     0.6
+
+   This paper chose corn as the example crop to demonstrate                                0.4
+the cross-domain capability of the proposed approach. The
+                                                                                           0.2
+objective is to map corn cultivation locations in a target
+domain using models trained by labelled data from a source                                       150 160 170 180 190 200 210 220 230
+domain. The target and source domains could differ in their                                                    Day of Year
+geographic locations (i.e., cross-region) or be in the same                                                        (d)
+region in different years (i.e., cross-year). Note that, the pro-
+                                                                    FIGURE 2: The Average Time-series NDVI of Corn for
+posed approach can be applied to other types of crops. Toward
+                                                                    the Source Domain and Target Domain. (a) Jackson County,
+this end, the study areas include the two regions: Jackon
+                                                                    2019. (b) Jackson County, 2020. (c) Jackson County, 2021.
+County of the USA, and one study area from Jilin Province,
+                                                                    (d) The study area of China, 2019.
+China. For a visual depiction of the geographical locations of
+these areas, please refer to Figure 1.
+4                                                                                                                                         VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+TABLE 1: The environmental conditions of the source do-
+main and the target domains. "SA" represents the Study Area.
+"T" represents the yearly average temperature. "P" stands for
+the average hourly precipitation. "E" signifies the average
+hourly evaporation. "R" indicates the surface net solar radi-
+ation.
+     SA           Year     T(K)     P(mm/h)     E(mm/h)      R(kJ/m^2)    FIGURE 3: The Crop Calendar for Corn. The red lines repre-
+  Jackson         2019    289.02      2.60       -1.01        4688.12     sent the average dates.
+  Jackson         2020    289.93      1.48       -1.11        5118.46
+  Jackson         2021    290.76      1.06       -1.06        5245.53
+ SA in China      2019    290.03      1.99       -1.99       12542.54
+                                                                             As described, our primary objective is to locate the specific
+                                                                          crop (corn) with cross-domain problems at an earlier growth
+                                                                          stage. As a result, the time series remote sensing data should
+   The study areas are characterized by unique environmental
+                                                                          start after the planting period and conclude before the onset
+conditions such as temperature, precipitation, elevation, and
+                                                                          of the crop harvest period. Referring to Figure 3, it can be
+solar radiation, which also vary over years. Table 1 presents
+                                                                          observed that the corn harvesting season typically starts in
+the environmental metrics for these areas. Additionally, the
+                                                                          early September in the USA and begins in early October in
+corn cropping schedules differ among the regions, as depicted
+                                                                          China. Planting, on the other hand, starts at the beginning of
+in Figure 3. These variations influence corn growth, resulting
+                                                                          April in the USA, and in mid-April in Jilin Province, China.
+in distinct MSI feature patterns of the same crop across the
+                                                                          As a result, the date of our annual collection of remote sensing
+different areas and time periods. Figures 2(a), 2(b), and 2(c)
+                                                                          data spans from May 1st to July 30th, encompassing a total
+show the average NDVI values curves for the early growth
+                                                                          of nine-time points with a ten-day observation window.
+stages of corn and other crops in Jackson County from 2019
+to 2021. Figure 2(d) presents the curves in the study area of                Additionally, this work employs the Dynamic World
+China. The corn growth NDVI patterns in Jackson County                    dataset [29]. It is a high-resolution 10m near-real-time (NRT)
+vary across the different years. Additionally, a clear distinc-           Land Use/Land Cover (LULC) dataset and features class
+tion is evident between the NDVI values in Jackson County                 probabilities and label data for nine distinct categories, in-
+and those in the Chinese study area.                                      cluding cropland. It is utilized to identify and select areas
+                                                                          of cropland, enabling us to maintain a concentrated analysis
+                                                                          solely within these regions.
+B. REFERENCE DATA
+The CDL is used as the ground truth for the source domain.                IV. METHODOLOGY
+The CDL [7], a crop-specific land cover raster map dataset                A. PROBLEM STATEMENT
+available for the entire conterminous U.S. land area (CONUS)              Let X denote the time series remote sensing input data
+at 30 m resolution provided by the USDA, regularly provides               and Y denote the ground truth labels. Each sample x can
+information on the annual temporal and spatial distribution of            be expressed as a temporal form [x1 , x2 , ..., xt ], where xi
+corn, as well as the area dedicated to its cultivation. However,          represents input at time i. xi can be further expanded as
+for the target domain, official ground reference data for China           [xi1 , xi2 , ..., xib ], containing multi-spectral bands information
+is currently unavailable. Fortunately, [6] published maps of              from band 1 to band b. Each ground truth label, denoted as y,
+corn and soybean with a spatial resolution of 10 meters for               is represented as a binary number, which corresponds to the
+Northeast China from 2017 to 2019. As a result, the 2019 crop             categories of corn and other crops. Let Xt denote the time
+maps from [6] are regarded as the ground truth reference for              series input target data, Xs denote the time series input source
+the study area in China.                                                  data, and Ys denote the GT for Xs . Each sample xs has a
+                                                                          corresponding ys .
+C. REMOTE SENSING DATA                                                       Our objective is to identify target crops to get target labels
+The remote sensing data in this work are MSI images captured              Yt in the target domain during their early growth stages,
+by the Sentinel-2 satellites, which have been widely used for             utilizing labelled source domain data (Xs , Ys ) and unlabelled
+many agricultural applications in the community [9], [28].                target domain data (Xt ). This approach addresses challenges
+Sentinel-2 provides high-resolution MSI images (up to 10m)                related to the cross-domain issue and the large data distribu-
+with a revisit time of 5 days, allowing for frequent monitoring           tion discrepancies issue.
+of crop growth and changes. Its wide spectral coverage, in-
+cluding visible, near-infrared, and shortwave infrared bands,             B. SYSTEM OVERVIEW
+enables accurate assessment of vegetation health, crop type               The architecture of our CropSTGAN framework is depicted
+identification, and mapping. In this study, 6 bands, including            in Figure 4, showcasing both the training and mapping
+B2 (Blue), B3 (Green), B4 (Red), B8 (Near-Infrared), B11                  dataflows. This system includes three main components:
+(Shortwave Infrared 1) and B12 (Shortwave Infrared 2), are                the pre-processor, the CropSTGAN domain mapper, and the
+used to map the target crop in early seasons.                             TempCNN crop mapper. During training, the pre-processor
+VOLUME 11, 2023                                                                                                                             5
+                                                                     Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+
+                                  FIGURE 4: The Architecture of the CropSTGAN Framework.
+
+
+enhances MSI images quality by filling gaps through linear
+interpolation, ensuring complete MSI image series Xs and
+Xt for both source and target domains. The CropSTGAN
+domain mapper, trained with randomly sampled data from
+these MSI images, enables the transfer of time-series remote
+sensing data between domains: Xt → Xs and Xs → Xt .
+The TempCNN crop mapper is then trained on labelled source
+domain data (Xs , Ys ) to identify the target crop in the source
+domain at an early stage.
+   For mapping, the process begins with the pre-processor
+supplying the target domain MSI image series Xt . These
+images are then transformed by the CropSTGAN domain
+                                                          ′
+mapper from the target to the source domain as Xs . The
+trained TempCNN crop mapper uses these transformed im-
+        ′
+ages Xs to locate the target crop Yt in the target domain.
+This system design ensures accurate and reliable early-stage
+crop mapping in the target domain, particularly useful when
+labelled data is scarce or nonexistent, thereby overcoming the
+challenges of cross-domain mapping.
+
+C. PRE-PROCESSOR
+The pre-processor aims at providing complete time-series
+MSI data by filling gaps between MSI images due to cloud
+cover, atmospheric interference, or sensor limitations. The
+processing pipeline is outlined in Figure 5.
+   The procedure illustrated in the figure begins with the
+collection of MSI images covering the entire targeted study
+                                                                         FIGURE 5: The Architecture of the Pre-processor.
+areas, sourced from the Sentinel-2 Dataset at consistent 10-
+day intervals. The primary objective is to detect the target crop
+at an early growth stage, addressing cross-domain challenges.
+Therefore, the selected time series of remote sensing data          spans from May 1st to July 30th, starting post-planting and
+6                                                                                                                            VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+                                                                          TABLE 2: The Generator Structure. Each encoder layer con-
+                                                                          sists of an instance normalization layer, an activation layer
+                                                                          and a pooling layer. Each decoder layer consists of an instance
+                                                                          normalization layer, an activation layer and an upsampling
+                                                                          layer.
+                                                                                Layer      Input Shape    Output Shape    Activation
+                                                                                 Input         9×6            9×6              -
+                                                                               Encoder 1       9×6          9×1×4         LeakyReLU
+                                                                               Encoder 2     9×1×4          7×1×8         LeakyReLU
+                                                                               Encoder 3     7×1×8          5×1×16        LeakyReLU
+                                                                               Encoder 4     5×1×16         3×1×32        LeakyReLU
+                                                                               Decoder 4     3×1×32         5×1×16        LeakyReLU
+                                                                               Decoder 3     5×1×16         7×1×8         LeakyReLU
+                                                                               Decoder 2     7×1×8          9×1×4         LeakyReLU
+                                                                               Decoder 1     9×1×4          9×6×4         LeakyReLU
+                                                                                Output       9×6×4            9×6           ReLU
+                                  (a)
+                                                                          TABLE 3: The Discriminator/Crop Mapper Structure. The
+                                                                          last layer of the Discriminator uses ReLU as its activation
+                                                                          function, while the Classifier employs Softmax.
+                                                                              Layer     Input Shape   Output Shape      Activation
+                                                                               Input       9×6            9×6                -
+                                                                              Conv 1       9×6          9×1×8           LeakyReLU
+                                                                              Conv 2      9×1×8         7×1×8           LeakyReLU
+                                                                              Conv 3      7×1×8         5×1×8           LeakyReLU
+                                                                              Conv 4      5×1×8         3×1×8           LeakyReLU
+                                                                              Flatten     3×1×8            24                -
+                                                                                FC1         24              4             ReLU
+                                                                              Output         4              1         ReLU or Softmax
+
+
+
+                                  (b)                                     1) The Generators and Discriminators Structures
+                                                                          The domain mapper is referred as CropSTGAN, which stands
+FIGURE 6: The CropSTGAN Domain Mapper Structure. (a)
+                                                                          for Crop Mapping Spectral-temporal Generative Adversarial
+Cycle 1: The training process involves data flowing from the
+                                                                          Network. CropSTGAN domain mapper serves as the key
+target domain to the source domain and then back to the target
+                          ′                                               component in our framework for transforming time-series
+domain. The notation Xs represents the transformed target
+                       ′                                                  remote sensing data points between different domains. As
+domain data, while Xt denotes the data transformed back to
+                                                                          shown in Figure 6, the domain mapper consists of two gener-
+the target domain. (b) Cycle 2: The training process involves
+                                                                          ator networks, G and F, and two discriminator networks, DX
+data flowing from the source domain to the target domain and
+                                                  ′                       and DY . In the training process, the generators and discrimi-
+then back to the source domain. The notation Xt represents
+                                                ′                         nators play distinct roles. The generators’ primary task is to
+the transformed source domain data, while Xs denotes the                                                                                  ′
+                                                                          transform the data from one domain to another: G : Xt → Xs
+data transformed back to the source domain.                                                  ′
+                                                                          and F : Xs → Xt , while the discriminator’s main objective
+                                                                          is to differentiate between real and transformed data. As
+                                                                          the training progresses, both networks improve iteratively
+concluding pre-harvest, resulting in nine image sets. To refine           until an equilibrium is reached where the generator generates
+the focus on agricultural lands, the method employs a crop-               highly realistic data and the discriminator cannot reliably
+land mask from the Dynamic World dataset during the crop’s                distinguish between real and fake samples. For example,
+growing season, adjusting it to a uniform 30-meter resolution.            when the discriminator Ds can not distinguish whether the
+                                                                                               ′
+This step ensures the exclusion of non-agricultural areas, con-           transformed data Xs generated by the generator G is from the
+centrating the analysis on crop areas within the nine groups of           source domain or not, it means that the generator G has been
+MSI images. For each set, cloud detection is performed using              well-trained.
+Sentinel Hub’s tool, filtering out cloud-covered areas. The                  The generator and discriminator structures are depicted in
+process averages the values of cloud-free images to produce a             Table 2 and Table 3, respectively. Each generator consists
+composite MSI image with a clear 30-meter resolution. This                of four encoders and four decoders. Its first encoder layer,
+approach yields nine high-quality, cloud-free time-series MSI             equipped with 4 filters with a 3 kernel size, captures temporal
+images, each comprising six bands and maintaining a 30-                   features across all 6 spectral bands. Subsequent encoders use
+meter spatial resolution.                                                 the same kernel size but increase filter counts to 8, 16, and 32,
+                                                                          respectively. The decoders, designed to mirror the encoders,
+D. CROPSTGAN DOMAIN MAPPER                                                reverse the encoding process, thereby reconstructing the orig-
+VOLUME 11, 2023                                                                                                                          7
+                                                                     Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+TABLE 4: The Generator Structure of CropTGAN. Each                       domain and then reverted back to the source domain:
+                                                                                      ′      ′
+encoder layer consists of an instance normalization layer,               F : Xs → Xt → Xs
+an activation layer and a pooling layer. Each decoder layer
+                                                                      To ensure the creation of effective generators, the losses for
+consists of an instance normalization layer, an activation layer
+                                                                    both training processes are established as follows:
+and an upsampling layer.
+      Layer      Input Shape    Output Shape    Activation          Adversarial Loss
+       Input         9×6            9×6              -
+                                                                    This loss function is inspired by GANs and encourages the
+     Encoder 1       9×6           9×6×4        LeakyReLU
+     Encoder 2      9×6×4          7×6×8        LeakyReLU           generator to produce transformed data from one domain that
+     Encoder 3      7×6×8         5×6×16        LeakyReLU           is indistinguishable from real data in the other domain. It
+     Encoder 4     5×6×16         3×6×32        LeakyReLU           is computed by the discriminator network, which aims to
+     Decoder 4     3×6×32         5×6×16        LeakyReLU
+     Decoder 3     5×6×16          7×6×8        LeakyReLU           classify the generated data as fake while the generator aims
+     Decoder 2      7×6×8          9×6×4        LeakyReLU           to fool the discriminator by generating realistic data (source
+     Decoder 1      9×6×4          9×6×4        LeakyReLU           domain data).
+      Output        9×6×4           9×6           ReLU
+
+TABLE 5: The Discriminator/Crop Mapper Structure of                  Ladv1 (G, Ds , Xt , Xs ) =Exs ∼pdata (xs ) [log Ds (xs )]+
+                                                                                                                                         (1)
+CropTGAN. The last layer of the Discriminator uses ReLU as                                      Ext ∼pdata (xt ) [1 − log Ds (G(xt ))]
+its activation function, while the Classifier employs Softmax.
+    Layer     Input Shape   Output Shape      Activation             Ladv2 (F, Dt , Xs , Xt ) =Ext ∼pdata (xt ) [log Dt (xt )]+
+     Input       9×6            9×6                -                                                                                     (2)
+    Conv 1       9×6          9×6×8           LeakyReLU                                         Exs ∼pdata (xs ) [1 − log Dt (G(xs ))]
+    Conv 2      9×6×8         7×6×8           LeakyReLU
+    Conv 3      7×6×8         5×6×8           LeakyReLU             Cycle Consistency Loss
+    Conv 4      5×6×8         3×6×8           LeakyReLU
+    Flatten     3×6×8           144                -                The cycle consistency loss ensures that the transformed data
+      FC1         144            4              ReLU                from one domain to another domain and back to the origi-
+    Output         4             1          ReLU or Softmax         nal domain is consistent with the original data. It measures
+                                                                    the difference between the original input data and the data
+                                                                    reconstructed after going through both generator mappings.
+inal input features.                                                Through the minimization of this loss, the preservation of
+   The discriminator shares a similar design with the genera-       crucial features during the transformation process is enforced.
+tor’s encoder, with the distinction that its convolution layers
+uniformly utilize 8 filters. It then incorporates a flatten layer
+and a fully connected layer, with dimensions of 24 and 4,              Lcyc1 (G, F, Xt ) = Ext ∼pdata (xt ) [||xt − F(G(xt ))||1 ]       (3)
+respectively. Its final layer is a fully connected layer with
+a single output, aimed at distinguishing between the trans-
+formed target domain data and the source domain data.                  Lcyc2 (F, G, Xs ) = Exs ∼pdata (xs ) [||xs − G(F(xs ))||1 ]       (4)
+   To assess the distinctive architecture of the CropSTGAN
+domain mapper, we conducted comparative experiments with            Identity Loss
+a simpler yet analogous model named CropTGAN. This                  The identity loss encourages the generator to preserve the
+model features encoders with identical filter counts and sizes      identity of the input data. It computes the difference between
+as those in CropSTGAN. The primary distinction between the          the generator output and the input data. The objective of
+generators and discriminators of the two models lies in the         minimizing this loss is to ensure that the generator does not
+configuration of the first layers. Specifically, the CropTGAN       make unnecessary alterations to the data and maintains its
+generator and discriminator independently extract features          essential characteristics.
+from the temporal dimension on each band in their respective
+first encoder and convolutional layers. The details of the                   Lid1 (G, Xt ) = Ext ∼pdata (xt ) [||G(xt ) − xt ||1 ]       (5)
+generators and discriminators are documented in Table 4 and
+Table 5.
+                                                                             Lid2 (F, Xs ) = Exs ∼pdata (xs ) [||F(xs ) − xs ||1 ]       (6)
+2) Losses
+                                                                    Total Loss
+As shown in Figure 6, there are two cycle training processes:
+                                                                    The total loss is a combination of these losses, weighted by
+  • In the first cycle training process (Cycle 1), data from the    respective coefficients:
+     target domain is first transformed to the source domain
+     and then reverted back to the target domain: G : Xt →           Ltotal =α(Ladv1 (G, Ds , Xt , Xs ) + Ladv2 (F, Dt , Xs , Xt ))+
+       ′       ′
+     Xs → Xt and                                                              β(Lcyc1 (G, F, Xt ) + Lcyc2 (F, G, Xs ))+
+  • In the second cycle training process (Cycle 2), data                      σ(Lid1 (G, Xt ) + Lid2 (F, Xs ))
+     from the source domain is first transformed to the target                                                                           (7)
+8                                                                                                                            VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+, where α, β, σ are the weight parameters. The total loss can                •   The second series of experiments explores cross-region
+be expressed as a minimax function:                                              scenarios, incorporating a study area in China and Jack-
+                                                                                 son County. When Jackson County 2019 serves as the
+              min max Ltotal (G, F, Dt , Ds , Xt , Xs )              (8)         source domain, the target domain is the study area in
+                  G,F Dt ,Ds
+                                                                                 China 2019. Conversely, when the study area in China
+, where the generator seeks to minimize the loss while the dis-                  2019 is the source domain, Jackson County 2019 be-
+criminator aims to maximize it to achieve high-quality time-                     comes the target domain. The discrepancies in data dis-
+series MSI data transformation while maintaining consistency                     tribution across the domains are relatively large.
+and identity preservation.
+                                                                              To evaluate the distinct architecture of the CropSTGAN
+Training stop criteria based on the Total Loss                             domain mapper, comparative experiments were undertaken
+The total loss is employed as an evaluation metric. After                  utilizing a simpler, analogous structure named CropTGAN.
+the GropSTGAN network has reached a stable state for the                   Within this framework, both the discriminators’ and gener-
+training process after several training epochs, the model is               ators’ encoders share the same filter numbers and sizes as
+selected associated with the smallest total loss. This particular          those in CropSTGAN but focus solely on extracting features
+model is then designated as our well-trained model. This                   from the temporal dimension. Additionally, we benchmarked
+approach allows us to tackle the absence of paired datasets for            the CropSTGAN framework against various SOTA methods,
+evaluation in CropSTGAN and obtain an objective measure of                 including TempCNN and STDAN.
+the model’s performance.
+                                                                           B. TRAINING SETUP
+E. TEMPCNN CROP MAPPER                                                     In each experiment, 200, 000 data points are randomly sam-
+The TempCNN crop mapper denoted as C, structured simi-                     pled from both the source and target domains, resulting in
+larly to the CropSTGAN domain mapper’s discriminators Dx                   a total of 400, 000 data points. The TempCNN is trained
+and Dy as outlined in Table 3, is trained solely with labelled             using 70% of randomly selected labelled data from the source
+source domain data (Xs , Ys ). The binary cross-entropy loss:              domain. The remaining 30% is divided equally into validation
+                X                                                          and test datasets. To train the CropSTGAN model, all the sam-
+Lclass (C) = −     (ys log(C(xs )) + (1 − ys ) log(1 − C(xs )))            pled data from the target domain and the source domain are
+                      s
+                                                             (9)           used. During training, a batch size of 64 is used. All Methods’
+, is used as the training loss for the TempCNN crop mapper.                training persisted until the completion of 500 epochs or upon
+Its purpose is to locate the target crop within the source                 convergence, as determined by an early stopping criterion
+domain. However, applying this mapper directly in the target               set at 50 epochs. For optimization, the Adaptive Moment
+domain often leads to subpar results due to discrepancies in               Estimation (Adam) optimizer is employed with a learning rate
+the variation of data distribution between the domains. To                 of 0.005 and an exponential decay rate of 0.9 for the first
+address this issue, the target domain’s MSI data must first be             moment estimates.
+transformed to the source domain using the domain mapper’s                    Every method was repeatedly trained on each subset from
+generator. As illustrated in the right portion of Figure 4, this           scratch 3 times with the same training configuration. Notably,
+transformed data is then processed by the TempCNN crop                     the TempCNN model was only trained once and served as
+mapper to generate mapping results:                                        the crop mapper for the CropSTGAN, resulting in a single
+                                                                           TempCNN outcome for each test. Moreover, in the Crop-
+                               Yt = C(G(Xt ))                      (10)    STGAN and CropTGAN framework training processes, it’s
+                                                                           worth noting that the coefficients of the total loss function in
+This integrated approach ensures accurate and reliable early
+                                                                           the first set of experiments are set to α = 1, β = 10, σ = 5.
+crop mapping in the target domain, even in the absence of the
+                                                                           For the second set of experiments, they are set to α = 1, β =
+target domain ground truth data.
+                                                                           20, σ = 10. The choice of coefficients in our total loss
+                                                                           function is based on practical experience and is designed to
+V. EXPERIMENT SETUP AND RESULTS
+                                                                           ensure the stability and effectiveness of the CropSTGAN and
+A. EXPERIMENT SETUP                                                        CropTGAN training processes.
+This work designs two sets of experiments to comprehen-
+sively evaluate the cross-domain performance of the proposed
+                                                                           C. EVALUATION METRICS
+CropSTGAN method:
+                                                                           To assess the performance of the binary corn crop mapping,
+   • The first set of experiments investigates the cross-year
+                                                                           the following metrics are used:
+     scenario, where Jackson County from 2020 to 2021 is
+     considered as the target domain, and Jackson County in
+     2019 serves as the source domain. The discrepancies in                Overall Accuracy (OA)
+     data distribution between these domains are relatively                represents the proportion of all correctly classified items to
+     slight.                                                               the total number of items in the dataset.
+VOLUME 11, 2023                                                                                                                          9
+                                                                         Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+TABLE 6: Cross-Year Experiment Metrics Comparison: Targeting Jackson County 2020. The best metrics are indicated in bold,
+while the second-best metrics of the baseline methods are underlined.
+                          CropSTGAN                    CropTGAN                    STDAN                         TempCNN
+                   OA          F1   Kappa       OA         F1   Kappa      OA         F1      Kappa       OA         F1   Kappa
+          S1     0.9300      0.9311 0.8596    0.9167     0.9142 0.8339   0.9389     0.9386    0.8769    0.6162     0.4304 0.2623
+          S2     0.9220      0.9218 0.8441    0.8921     0.8920 0.7843   0.9289     0.9285    0.8565       -          -      -
+          S3     0.9266      0.9274 0.8530    0.8861     0.8828 0.7728   0.9248     0.9249    0.8498       -          -      -
+          Avg    0.9262      0.9268 0.8522    0.8983     0.8963 0.7970   0.9309     0.9307    0.8611    0.6162     0.4304 0.2623
+
+TABLE 7: Cross-Year Experiment Metrics Comparison: Targeting Jackson County 2021. The best metrics are indicated in bold,
+while the second-best metrics of the baseline methods are underlined.
+                          CropSTGAN                    CropTGAN                    STDAN                         TempCNN
+                   OA          F1   Kappa       OA         F1   Kappa      OA         F1      Kappa       OA         F1   Kappa
+          S1     0.9212      0.9219 0.8421    0.8884     0.8814 0.7785   0.9199     0.9197    0.8391    0.5789     0.3249 0.1868
+          S2     0.9182      0.9194 0.8360    0.8837     0.8934 0.7653   0.9006     0.9002    0.8000       -          -      -
+          S3     0.9198      0.9208 0.8393    0.9057     0.8985 0.8124   0.9167     0.9163    0.8322       -          -      -
+          Avg    0.9197      0.9207 0.8391    0.8926     0.8911 0.7854   0.9124     0.9121    0.8238    0.5789     0.3249 0.1868
+
+
+
+
+           (a)                         (b)                        (c)                          (d)                           (e)
+
+
+
+
+                                        (f)                        (g)                          (h)                           (i)
+FIGURE 7: Corn Crop Mapping Results Comparison with Jackson County 2020 as the Target Domain. (a) displays the ground
+truth. The crop mapping results are depicted in (b) for CropSTGAN, (c) for CropTGAN, (d) for STDAN, and (e) for TempCNN.
+In this visualization, green denotes corn, and white represents other types. The corresponding error images are illustrated in
+panels (f) and (i) for CropSTGAN, CropTGAN, STDAN, and TempCNN, respectively. Red highlights the misclassified pixels,
+and white represents correctly classified pixels.
+
+
+
+
+           (a)                         (b)                        (c)                          (d)                           (e)
+
+
+
+
+                                        (f)                        (g)                          (h)                           (i)
+           FIGURE 8: Corn Crop Mapping Results Comparison with Jackson County 2021 as the Target Domain.
+
+
+
+10                                                                                                                                  VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+TABLE 8: Cross-Region Experiment Metrics Comparison: Targeting China 2019. The best metrics are indicated in bold, while
+the second-best metrics of the baseline methods are underlined.
+                             CropSTGAN                     CropTGAN                        STDAN                       TempCNN
+                      OA          F1   Kappa        OA         F1   Kappa           OA        F1     Kappa      OA         F1   Kappa
+            S1      0.8694      0.8762 0.7401     0.8228     0.7961 0.6483        0.7839    0.7289   0.5622   0.6268     0.5232 0.2435
+            S2      0.8447      0.8239 0.6874     0.7933     0.7533 0.5903        0.7480    0.6732   0.4888      -          -      -
+            S3      0.8331      0.8061 0.6634     0.7971     0.7578 0.5978        0.7090    0.6084   0.4084      -          -      -
+            Avg     0.8491      0.8354 0.6970     0.8044     0.7691 0.6121        0.7470    0.6702   0.4865   0.6268     0.5232 0.2435
+
+TABLE 9: Cross-Region Experiment Metrics Comparison: Targeting Jackson County 2019. The best metrics are indicated in
+bold, while the second-best metrics of the baseline methods are underlined.
+                             CropSTGAN                     CropTGAN                        STDAN                       TempCNN
+                      OA          F1   Kappa        OA         F1   Kappa           OA        F1     Kappa      OA         F1   Kappa
+            S1      0.8303      0.8181 0.6630     0.7881     0.7899 0.5815        0.7655    0.7651   0.5286   0.6662     0.6905 0.3282
+            S2      0.8303      0.8188 0.6627     0.7806     0.8013 0.5569        0.7568    0.7744   0.5106      -          -      -
+            S3      0.8190      0.8330 0.6347     0.7914     0.7970 0.5821        0.7216    0.6883   0.4534      -          -      -
+            Avg     0.8265      0.8233 0.6535     0.7867     0.7961 0.5735        0.7480    0.7426   0.4975   0.6662     0.6905 0.3282
+
+
+
+
+              (a)                          (b)                            (c)                         (d)                        (e)
+
+
+
+
+                                            (f)                           (g)                         (h)                        (i)
+        FIGURE 9: Corn Crop Mapping Results Comparison with the Study Area of China 2019 as the Target Domain.
+
+
+
+
+              (a)                          (b)                            (c)                         (d)                        (e)
+
+
+
+
+                                            (f)                           (g)                         (h)                        (i)
+             FIGURE 10: Corn Crop Mapping Results Comparison with Jackson County 2019 as the Target Domain.
+
+
+F1 Score                                                                        The Kappa coefficient
+
+is a single metric that combines precision and recall to provide                measures the agreement between the predicted and observed
+an overall measure of a model’s accuracy in classification                      classifications, taking into account the agreement that would
+tasks. It balances the trade-off between correctly identifying                  occur by chance alone.
+positive instances and minimizing false positives and false
+negatives.
+VOLUME 11, 2023                                                                                                                           11
+                                                                             Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+
+            80        source_corn                                                           source_corn
+                      target_corn                                                75         target_corn
+            60        transformed_target_corn                                               transformed_target_corn
+                                                                                 50
+            40
+                                                                                 25
+            20
+     Dim2
+
+
+
+
+                                                                          Dim2
+                                                                                  0
+             0
+
+            20                                                                   25
+
+            40                                                                   50
+
+            60                                                                   75
+
+                 80   60   40    20    0       20        40    60    80               80    60      40        20       0        20    40    60
+                                      Dim1                                                                     Dim1
+                                      (a)                                                                      (b)
+FIGURE 11: The t-SNE Visualization of Corn Data Points for the Cross-Year Experiments: Comparison between Target Domain
+Data, Transformed Target Domain Data, and Source Domain Data. (a) Jackson County 2020 as the target domain. (b) Jackson
+County 2021 as the target domain.
+
+
+
+
+                      source_corn                                                80         source_corn
+            60        target_corn                                                           target_corn
+                      transformed_target_corn                                    60         transformed_target_corn
+            40
+                                                                                 40
+            20                                                                   20
+     Dim2
+
+
+
+
+                                                                          Dim2
+
+
+
+
+             0                                                                    0
+
+            20                                                                   20
+
+            40                                                                   40
+
+            60                                                                   60
+
+                      75   50    25        0        25        50    75                 75      50        25        0       25        50    75
+                                      Dim1                                                                     Dim1
+                                      (a)                                                                      (b)
+FIGURE 12: The t-SNE Visualization of Corn Data Points for the Cross-Domain Experiments: Comparison between Target
+Domain Data, Transformed Target Domain Data, and Source Domain Data. (a) The study area of China as the target domain.
+(b) Jackson County 2019 as the target domain.
+
+
+
+12                                                                                                                                               VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+D. RESULTS                                                                The green points denote the transformed corn cropland MSI
+Tables 6 and 7 present the results for the first set of cross-            data points from the target domain to the source domain, em-
+year experiments. Tables 8 and 9 present the results for                  ploying our proposed method. Finally, the blue points indicate
+the second set of cross-region experiments. Across two sets               the original corn cropland MSI data points extracted from the
+of experiments, our CropSTGAN method demonstrates the                     source domain. Upon analyzing the t-SNE visualization, it is
+highest average metrics, except for the cross-year experiment             evident that the distribution of corn cropland MSI data points
+targeting Jackson County 2020.                                            between the source and target domains differs. This disparity
+   In the first set of experiments targeting Jackson County               highlights the presence of a domain shift, which poses chal-
+2020, the CropSTGAN achieved remarkable results, securing                 lenges for accurate crop mapping under the target domains.
+second place with an average OA of 92.62%, an F1 score of                 However, the application of our CropSTGAN domain mapper
+92.68%, and a Kappa coefficient of 85.22%. These results                  resulted in an improvement in the similarity between the
+represent significant improvements over TempCNN, with in-                 data distribution of the transformed target domain data (green
+creases of +31.00% in OA, +49.64% in F1, and +58.99%                      points) and the source domain data (blue points), compared to
+in Kappa. Additionally, CropSTGAN outperformed CropT-                     the similarity between the original target domain data (orange
+GAN, underscoring the effectiveness of its unique structure.              points) and the source domain data (blue points). This resem-
+However, it was slightly outpaced by the STDAN, which took                blance enables the TempCNN crop mapper, trained on the
+first place with an OA of 93.09%, an F1 score of 93.07%, and              source domain, to effectively process the transformed remote
+a Kappa of 86.11%. When Jackson County 2021 plays as the                  sensing data obtained from the target domain. It coincides
+target domain, CropSTGAN outperforms STDAN, leading by                    with our excellent crop mapping results for these years and
+a slight margin with an increase of +0.73% in OA, +0.86%                  this county.
+in F1 Score, and +1.53% in Kappa Coefficient. Meanwhile,
+CropTGAN ranks third, significantly surpassing TempCNN                    VI. DISCUSSION
+in performance. Figures 7 and 8 display the visualization of              A. ANALYSIS OF CROP MAPPING RESULTS
+cross-year experimental results and their error images using              In the cross-year experiments, CropSTGAN and STGAN
+CropSTGAN, CropTGAN, STDAN, and TempCNN.                                  showed similar performance, indicating that CropSTGAN ef-
+   In the second set of experiments, CropSTGAN outper-                    fectively addresses the inter-annual cross-domain challenge,
+formed all, securing the top spot, followed by CropTGAN                   comparable to the state-of-the-art (SOTA) method. In cross-
+in both tests. Specifically, when targeting the study area of             region experiments, CropSTGAN achieved better results than
+China, CropSTGAN achieved an OA of 84.91%, an F1 score                    STGAN. As evident from Figure 2, the NDVI discrepancy is
+of 83.54%, and a Kappa coefficient of 69.70%. These metrics               more pronounced in cross-region experiments than in cross-
+are markedly higher than those of STDAN, showing increases                year ones. Under the significant differences in data distribu-
+of 10.21% in OA, 16.52% in F1, and 21.05% in Kappa. Con-                  tion, CropSTGAN outperforms STGAN, benefiting from the
+versely, with China as the source domain and Jackson County               identity loss.
+2019 as the target domain, CropSTGAN reached an OA of                        Moreover, CropSTGAN outperformed CropTGAN for all
+82.65%, an F1 score of 82.33%, and a Kappa coefficient of                 experiments, suggesting the effectiveness of the CropST-
+65.35%, surpassing STDAN by 7.85% in OA, 8.07% in F1,                     GAN domain mapper structure. Additionally, the results from
+and 15.6% in Kappa. Additionally, CropTGAN, CropGAN,                      cross-domain methods were significantly better than those
+and STDAN all performed better than TempCNN, which only                   obtained by directly applying a CNN-based crop classifier,
+managed an OA of 66.62%, an F1 score of 69.05%, and a                     trained on the source domain, to the target domain.
+Kappa coefficient of 32.82%. Figures 9 and 10 present the
+results and error images from cross-region experiments.                   B. ADVANTAGES OF CROPSTGAN
+                                                                          Most existing crop mapping related studies rely heavily on a
+E. THE T-SNE VISUALIZATION                                                large number of local labelled data for modeling and making
+To assess the effectiveness of our CropSTGAN method in                    predictions, and thus tedious and costly sample collection
+addressing the domain shift problem, t-distributed stochas-               needs to be carried out extensively and frequently. The shar-
+tic neighbour embedding (t-SNE) [30] is utilized for the                  ing of collected labelled samples is an effective way to address
+visualization to analyze the distribution of the target data,             the dilemma of ground truth sampling. However, due to the
+transformed target data, and source domain data of the target             differences in climate conditions across regions and years,
+crop. By using t-SNE, the data points are projected into a two-           trained crop classification models may lose their validity
+dimensional space while preserving their local relationships.             when applied to new domains. Therefore, the CropSTGAN
+Figure 11 and 12 show the t-SNE visualization that illustrates            was developed to address the distribution discrepancy existed
+the distribution of corn data points for the cross-year and               between the source and target domains, that is, cross-domain
+cross-region experiments.                                                 issue.
+   In the visualization, the orange points represent MSI data                In order to address this issue, most SOTA methods, like
+points of corn cropland sourced from the target domain, of-               STDAN, strive to extract invariant features across target and
+fering a glimpse into the data distribution within that domain.           source domains to tackle cross-domain challenges. However,
+VOLUME 11, 2023                                                                                                                        13
+                                                                                        Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+their effectiveness is often limited by significant differences                        [6] N. You, J. Dong, J. Huang, G. Du, G. Zhang, Y. He, T. Yang, Y. Di, and
+in data distribution between these domains. In contrast, our                               X. Xiao, ‘‘The 10-m crop type maps in northeast china during 2017–2019,’’
+                                                                                           Scientific data, vol. 8, no. 1, p. 41, 2021.
+CropSTGAN demonstrates superior performance in scenar-                                 [7] C. Boryan, Z. Yang, R. Mueller, and M. Craig, ‘‘Monitoring us agriculture:
+ios with large data distribution disparities, as evidenced by                              the us department of agriculture, national agricultural statistics service,
+our experimental results.                                                                  cropland data layer program,’’ Geocarto International, vol. 26, no. 5, pp.
+                                                                                           341–358, 2011.
+                                                                                       [8] C. Pelletier, G. I. Webb, and F. Petitjean, ‘‘Temporal convolutional neural
+C. LIMITATIONS OF CROPSTGAN                                                                network for the classification of satellite image time series,’’ Remote
+However, it is important to acknowledge the limitations of                                 Sensing, vol. 11, no. 5, p. 523, 2019.
+                                                                                       [9] Y. Wang, Z. Zhang, L. Feng, Y. Ma, and Q. Du, ‘‘A new attention-based
+our work. One limitation of our CropSTGAN work is the                                      cnn approach for crop mapping using time series sentinel-2 images,’’
+underlying assumption that the primary crops in the target do-                             Computers and electronics in agriculture, vol. 184, p. 106090, 2021.
+main and the source domain are consistent. This assumption,                           [10] M. Hamidi, A. Safari, and S. Homayouni, ‘‘An auto-encoder based classi-
+                                                                                           fier for crop mapping from multitemporal multispectral imagery,’’ Interna-
+which implies uniformity in the dominant crop types, may not                               tional Journal of Remote Sensing, vol. 42, no. 3, pp. 986–1016, 2021.
+always hold true in practice, particularly when considering di-                       [11] H. Crisóstomo de Castro Filho, O. Abílio de Carvalho Júnior, O. L.
+verse agricultural practices across different regions. In future                           Ferreira de Carvalho, P. Pozzobon de Bem, R. dos Santos de Moura,
+                                                                                           A. Olino de Albuquerque, C. Rosa Silva, P. H. Guimaraes Ferreira,
+research, addressing this limitation and developing methods                                R. Fontes Guimarães, and R. A. Trancoso Gomes, ‘‘Rice crop detection
+that can accommodate variations in primary crop types across                               using lstm, bi-lstm, and machine learning models from sentinel-1 time
+domains will be a valuable direction for enhancing the robust-                             series,’’ Remote Sensing, vol. 12, no. 16, p. 2655, 2020.
+                                                                                      [12] P. Hao, L. Di, C. Zhang, and L. Guo, ‘‘Transfer learning for crop classifi-
+ness and applicability of our approach.                                                    cation with cropland data layer data (cdl) as training samples,’’ Science of
+                                                                                           The Total Environment, vol. 733, p. 138869, 2020.
+VII. CONCLUSIONS                                                                      [13] S. Ge, J. Zhang, Y. Pan, Z. Yang, and S. Zhu, ‘‘Transferable deep learning
+                                                                                           model based on the phenological matching principle for mapping crop
+In conclusion, we introduced the CropSTGAN framework,                                      extent,’’ International Journal of Applied Earth Observation and Geoin-
+which integrates a pre-processor, a domain mapper, and a                                   formation, vol. 102, p. 102451, 2021.
+TempCNN crop mapper, specifically designed to overcome                                [14] V. S. Konduri, J. Kumar, W. W. Hargrove, F. M. Hoffman, and A. R.
+                                                                                           Ganguly, ‘‘Mapping crops within the growing season across the united
+the challenges of cross-domain early crop mapping caused by                                states,’’ Remote Sensing of Environment, vol. 251, p. 112048, 2020.
+inter-region and inter-year variations. Notably, the framework                        [15] L. Zhong, P. Gong, and G. S. Biging, ‘‘Efficient corn and soybean map-
+is versatile, enabling not only crop mapping but also the clas-                            ping with temporal extendability: A multi-year experiment using landsat
+                                                                                           imagery,’’ Remote Sensing of Environment, vol. 140, pp. 1–13, 2014.
+sification of various land cover types. The CropSTGAN do-                             [16] H. Ajakan, P. Germain, H. Larochelle, F. Laviolette, and M. Marchand,
+main mapper is designed to extract both temporal and spectral                              ‘‘Domain-adversarial neural networks,’’ arXiv preprint arXiv:1412.4446,
+features from time-series MSI data, effectively transforming                               2014.
+                                                                                      [17] G.-H. Kwak and N.-W. Park, ‘‘Unsupervised domain adaptation with ad-
+target domain data to the source domain. The TempCNN crop                                  versarial self-training for crop classification using remote sensing images,’’
+mapper, trained by the labelled source domain data, takes the                              Remote Sensing, vol. 14, no. 18, p. 4639, 2022.
+transformed target domain data as input to locate the target                          [18] Z. Wang, H. Zhang, W. He, and L. Zhang, ‘‘Phenology alignment network:
+                                                                                           A novel framework for cross-regional time series crop classification,’’ in
+crop for the target domain.                                                                Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+   Our comprehensive evaluation, conducted across various                                  Recognition. American Association for Artificial Intelligence, June 2021,
+regions in the USA and China and spanning different years,                                 pp. 2940–2949.
+                                                                                      [19] Y. Wang, L. Feng, Z. Zhang, and F. Tian, ‘‘An unsupervised domain adap-
+demonstrates the CropSTGAN framework’s superior perfor-                                    tation deep learning method for spatial and temporal transferable crop type
+mance. It outperforms several baseline and SOTA methods,                                   mapping using sentinel-2 imagery,’’ ISPRS Journal of Photogrammetry
+including TempCNN and STDAN, thereby validating its ef-                                    and Remote Sensing, vol. 199, pp. 102–117, 2023.
+                                                                                      [20] J. Zhu, T. Park, P. Isola, and A. A. Efros, ‘‘Unpaired image-to-image
+fectiveness and accuracy in cross-domain early crop map-                                   translation using cycle-consistent adversarial networks,’’ in Proceedings
+ping scenarios, even with large data distribution disparities                              of the IEEE international conference on computer vision, 2017, pp. 2223–
+between the target domain and source domain.                                               2232.
+                                                                                      [21] B. Zheng, S. W. Myint, P. S. Thenkabail, and R. M. Aggarwal, ‘‘A support
+                                                                                           vector machine to identify irrigated crop types using time-series landsat
+REFERENCES                                                                                 ndvi data,’’ International Journal of Applied Earth Observation and Geoin-
+ [1] F. Waldner, S. Fritz, A. Di Gregorio, and P. Defourny, ‘‘Mapping priorities           formation, vol. 34, pp. 103–112, 2015.
+     to focus cropland mapping activities: Fitness assessment of existing global,     [22] P. Hao, Y. Zhan, L. Wang, Z. Niu, and M. Shakir, ‘‘Feature selection of
+     regional and national cropland maps,’’ Remote Sensing, vol. 7, no. 6, pp.             time series modis data for early crop classification using random forest: A
+     7959–7986, 2015.                                                                      case study in kansas, usa,’’ Remote Sensing, vol. 7, no. 5, pp. 5347–5369,
+ [2] C. Singha and K. C. Swain, ‘‘Land suitability evaluation criteria for agri-           2015.
+     cultural crop selection: A review,’’ Agricultural reviews, vol. 37, no. 2, pp.   [23] R. Saini and S. K. Ghosh, ‘‘Crop classification on single date sentinel-2 im-
+     125–132, 2016.                                                                        agery using random forest and suppor vector machine,’’ The International
+ [3] J. Xue, B. Su et al., ‘‘Significant remote sensing vegetation indices: A              Archives of the Photogrammetry, Remote Sensing and Spatial Information
+     review of developments and applications,’’ Journal of sensors, vol. 2017,             Sciences, vol. 42, pp. 683–688, 2018.
+     2017.                                                                            [24] Z. Sun, L. Di, and H. Fang, ‘‘Using long short-term memory recurrent
+ [4] A. Joshi, B. Pradhan, S. Gite, and S. Chakraborty, ‘‘Remote-sensing data              neural network in land cover classification on landsat and cropland data
+     and deep-learning techniques in crop mapping and yield prediction: A                  layer time series,’’ International journal of remote sensing, vol. 40, no. 2,
+     systematic review,’’ Remote Sensing, vol. 15, no. 8, p. 2014, 2023.                   pp. 593–614, 2019.
+ [5] L. Zhang, Z. Liu, D. Liu, Q. Xiong, N. Yang, T. Ren, C. Zhang, X. Zhang,         [25] A. Nowakowski, J. Mrziglod, D. Spiller, R. Bonifacio, I. Ferrari, P. P. Math-
+     and S. Li, ‘‘Crop mapping based on historical samples and new train-                  ieu, M. Garcia-Herranz, and D.-H. Kim, ‘‘Crop type mapping by using
+     ing samples generation in heilongjiang province, china,’’ Sustainability,             transfer learning,’’ International Journal of Applied Earth Observation and
+     vol. 11, no. 18, p. 5052, 2019.                                                       Geoinformation, vol. 98, p. 102313, 2021.
+
+14                                                                                                                                                      VOLUME 11, 2023
+Author et al.: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS
+
+
+
+[26] X.-Y. Tong, G.-S. Xia, Q. Lu, H. Shen, S. Li, S. You, and L. Zhang,
+     ‘‘Land-cover classification with high-resolution remote sensing images
+     using transferable deep models,’’ Remote Sensing of Environment, vol. 237,
+     p. 111322, 2020.
+[27] Y. Hamrouni, E. Paillassa, V. Chéret, C. Monteil, and D. Sheeren, ‘‘From
+     local to global: A transfer learning-based approach for mapping poplar
+     plantations at national scale using sentinel-2,’’ ISPRS Journal of Pho-
+     togrammetry and Remote Sensing, vol. 171, pp. 76–100, 2021.
+[28] L. Blickensdörfer, M. Schwieder, D. Pflugmacher, C. Nendel, S. Erasmi,
+     and P. Hostert, ‘‘Mapping of crop types and crop sequences with combined
+     time series of sentinel-1, sentinel-2 and landsat 8 data for germany,’’
+     Remote sensing of environment, vol. 269, p. 112831, 2022.
+[29] C. F. Brown, S. P. Brumby, B. Guzder-Williams, T. Birch, S. B.
+     Hyde, J. Mazzariello, W. Czerwinski, V. J. Pasquarella, R. Haertel,
+     S. Ilyushchenko et al., ‘‘Dynamic world, near real-time global 10 m land
+     use land cover mapping,’’ Scientific Data, vol. 9, no. 1, p. 251, 2022.
+[30] L. Van der Maaten and G. Hinton, ‘‘Visualizing data using t-sne.’’ Journal
+     of machine learning research, vol. 9, no. 11, 2008.
+
+
+
+
+                          YIQUN WANG received the M.Sc. degree from
+                          the Karlsruhe Institute of Technology, Karlsruhe,
+                          Germany, in 2020. He is currently a Ph.D. Candi-
+                          date with the Interdisciplinary Centre on Security
+                          Reliability and Trust, University of Luxembourg,
+                          Luxembourg City, Luxembourg. His research in-
+                          terests are in remote sensing, computer vision, and
+                          deep learning.
+
+
+
+
+                          HUI HUANG received the M.Sc. degree in com-
+                          puting science from the University of Glasgow,
+                          Glasgow, U.K., in 2013, and the Ph.D. degree
+                          from the University of New South Wales, Sydney,
+                          NSW, Australia, in 2018. He is currently a Re-
+                          search Associate with the Interdisciplinary Centre
+                          on Security Reliability and Trust, University of
+                          Luxembourg, Luxembourg City, Luxembourg. His
+                          research interests include V2X communications,
+                          autonomous driving, and intelligent transportation
+systems.
+
+
+
+
+                        SECOND B. AUTHOR adu STATEadu STATER
+                        received the M.Sc. degree from the Johns Hopkins
+                        University, Baltimore, MD, USA, and the Ph.D.
+                        degree and a HDR from the University of Lor-
+                        raine, Nancy, France. He is a Professor with the
+                        Interdisciplinary Center on Security and Trust in
+                        Luxembourg. He was a Professor at the University
+                        of Lorraine and a Senior Researcher at INRIA
+                        Nancy, Grand Est. Having authored more than 100
+                        papers, his research interests cover network and
+system security and management.
+
+
+
+
+VOLUME 11, 2023                                                                   15
+

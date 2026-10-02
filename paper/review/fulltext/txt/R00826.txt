@@ -1,0 +1,563 @@
+                                         Activation Regression for Continuous Domain Generalization with Applications
+                                                                     to Crop Classification
+
+                                             Samar Khanna                    Bram Wallace                   Kavita Bala                   Bharath Hariharan
+                                           Stanford University                Salesforce                 Cornell University               Cornell University
+                                           sak296@cornell.edu             bw462@cornell.edu              kb@cs.cornell.edu           bharathh@cs.cornell.edu
+arXiv:2204.07030v1 [cs.CV] 14 Apr 2022
+
+
+
+
+                                                                 Abstract                                  form inference on itself is available during training time
+                                                                                                           [20, 22, 27, 33]. These methods, while effective in certain
+                                             Geographic variance in satellite imagery impacts the          scenarios, can suffer from prohibitive computational cost.
+                                         ability of machine learning models to generalise to new re-          A desired technique might instead be to leverage the
+                                         gions. In this paper, we model geographic generalisation in       extra information associated with a datapoint at inference
+                                         medium resolution Landsat-8 satellite imagery as a contin-        time, in a generalization setting, where only a single for-
+                                         uous domain adaptation problem, demonstrating how mod-            ward pass of the network is performed. For example, Multi-
+                                         els generalise better with appropriate domain knowledge.          source Domain Adversarial Networks (MDANs) train a net-
+                                         We develop a dataset spatially distributed across the en-         work to yield a feature space where domain membership is
+                                         tire continental United States, providing macroscopic in-         unrecoverable [15, 34]. In essence, the goal is to achieve
+                                         sight into the effects of geography on crop classification        features which are agnostic to all information except their
+                                         in multi-spectral and temporally distributed satellite im-        defined class membership. This is logical when domains
+                                         agery. Our method demonstrates improved generalisabil-            are few and categorically defined as in the studied fields
+                                         ity from 1) passing geographically correlated climate vari-       of domain adaptation/generalization, but in the limit of in-
+                                         ables along with the satellite data to a Transformer model        creasingly numerous incrementally different domains both
+                                         and 2) regressing on the model features to reconstruct these      the intuition and mathematical machinery fall apart.
+                                         domain variables. Combined, we provide a novel perspec-              Consider the problem of geographic generalization,
+                                         tive on geographic generalisation in satellite imagery and        where some classification task is desired to perform in any
+                                         a simple-yet-effective approach to leverage domain knowl-         given location. While the differences between locations
+                                         edge. Code is available at: https://github.com/                   may typically be trivial at small scales, the generalization
+                                         samar-khanna/cropmap                                              gap grows to be large in a primarily continuous manner.
+                                                                                                           Categorizing the globe into arbitrary bins as domains would
+                                                                                                           not only break this reality, but also rely on a combination
+                                         1. Introduction                                                   of hand-crafted reasoning and/or hyperparameter selection.
+                                                                                                           Instead, a notion of continuous domains can be employed;
+                                             In a typical machine learning classification application,     the domain changes encountered will be of a densely pop-
+                                         there are few guarantees of what knowledge is available at        ulated range and at inference time the domains will be an
+                                         inference time. While it may be assumed that the data point       extrapolation of those included in the training data. In such
+                                         on which one wishes to perform inference is within a pre-         a setting, the question arises whether domain-masking fa-
+                                         described distribution, a new data point is typically consid-     vored by approaches like MDAN is indeed the right ap-
+                                         ered in isolation, with any additional descriptors primarily      proach. Within a continuously varying domain, knowledge
+                                         being categorical in nature (such as discrete domains in the      of a point’s domain may instead provide valuable knowl-
+                                         problem of domain generalization).                                edge and allow a model to adapt execution based on the
+                                             To profit from increased information during inference,        recognition of familiar or unfamiliar settings. We consider
+                                         one school of thought advocates calculating gradients on the      this problem in the context of land-use crop classification.
+                                         provided information. Such approaches include test-time              Agriculture is performed through the world [18]. What
+                                         training (typically done in a self-supervised manner), semi-      crops one might observe in a given part of the world can
+                                         supervised learning (when the target domain/distribution          depend on a number of factors: atmospheric, geologic, eco-
+                                         is available), or transductive learning (in the case of an        nomic, etc [6]. At an extremely basic level, the United
+                                         even stronger assumption that the data we want to per-            States Department of Agriculture (USDA) hardiness zones
+delineate regions by the minimum temperatures throughout           countries could highlight potential food shortages months
+the year, helping to advise which plants can survive in cer-       before they would otherwise be realized. This prob-
+tain regions [6]. For example, succulents such as aloe can-        lem presents a different type of domain generalization,
+not survive in cold regions, while many leafy greens such          which we term continuous domain generalization (CDG).
+as cabbage can endure freezing temperatures. Other factors         CDG presents intriguing technical aspects, particularly how
+(such as soil, elevation) matter as well, but climate is one of    to leverage associated information efficiently at inference
+the chief determinants to know what might be planted [17].         time. In this setting, we present a method to incorpo-
+    Domain generalization is a logical way to frame this set-      rate climate information to improve geographic generaliza-
+ting, given how land-use and crop labels are typically col-        tion across continously varying domains using a technique
+lected and organized. Many highly developed areas of the           we dub Activation Regression for Continuous Domain
+world conduct large-scale publicly available surveys cat-          Generalization, or ARCDoG.
+alogging large-scale land-use. Examples of such surveys
+include the USDA Cropland Data Layer or Canada AAFC                2. Related Work & Background
+Crop Inventory [9,14]. Such censuses yield dense (30m res-
+olution) annotations with fine-grain crop information across       2.1. Domain Generalization
+the entire country. In these cases, in-domain classification
+                                                                       Domain generalization (DG) is the problem of training
+itself is unnecessary as the labels have already been col-
+                                                                   neural networks that generalize to domains that contain the
+lected. So by its nature, for crop classification to be use-
+                                                                   same content as the training data with different statistical
+ful there typically must be some sort of domain shift. This
+                                                                   properties [35]. Examples of domain generalization in com-
+could result from:
+                                                                   puter vision include PACS (generalization between photos,
+   • Year-to-year generalization: enabling early prediction        art, cartoons, and sketches), Office-Home (between art, cli-
+     on the subsequent years crops. This scenario is of lim-       part, product, and real-world), and Digits (between hand-
+     ited use depending on the timing of the annual census.        writing and signs) [35]. Methods broadly fall into two
+                                                                   categories: those that train individual domain-specific net-
+   • Interpolative generalization: if the labels obtained are      work modules and those where all parameters are shared.
+     sparse, then filling in the regions between them might        The latter category includes approaches such as Episodic
+     be of interest. This is an unusual case that does not         Training for Domain Generalization and MetaReg, where
+     present itself in typical datasets.                           episodic/meta-learning approaches are employed to train
+                                                                   each domain’s subnetwork to operate on each other do-
+   • Geographical extrapolation: this is the scenario that we
+                                                                   mains [8, 23]. This family of methods is poorly defined
+     consider of the highest interest. Given labels for one
+                                                                   for Continuous DG, as it encounters the previously noted
+     geographic region but not another, domain generaliza-
+                                                                   problems associated with arbitrary categorical divisions.
+     tion can be performed. This comes with an inherent
+                                                                       Of more applicability is the set of methods that learn a
+     domain shift, which can partially be characterized by
+                                                                   single unified representation across all domains; these of-
+     climate data.
+                                                                   fer greater promise to our problem setting. One such sub-
+    Land-use classification is typically done via aerial (satel-   class of techniques employs self-supervised losses on the
+lite) imagery. This presents interesting avenues of explo-         target domain to regularize the feature space. An exam-
+ration, as there is a massive abundance of available satel-        ple of such a method is JiGen, which employs the Jigsaw
+lite and geospatial data which can easily be reconciled and        self-supervised loss to learn how to generalize in a self-
+aligned with a given set of aerial images. This is a key           supervised manner [10]. This subclass again is less apli-
+deviation from the typical generalization settings. Topo-          cable to aerial imagery and self-supervision is under stud-
+graphical, climatic, air quality, and hydrology maps are just      ied, with initial forays such as Tile2Vec being much less
+a sparse sampling of the available geospatial data avail-          applicable to the data we are working with as described in
+able; this is in addition to the wide variety of imaging de-       Sec. 3 [19]. Additionally, such methods by design target
+vices such as LandSat, Sentinel, MODIS, and NAIP satel-            specific domains to generalize to, instead of providing true
+lites [2–5]. For a given geographical point, there is a vast       generalization (this is true of most semi-supervised settings,
+amount of potentially relevant data available, much more           with transductive learning carrying these assumptions to the
+than could be expected in a typical benchmark setting. In          extreme of training on the unlabeled datapoints we will ul-
+this work, we particularly focus on the impact of climate          timately attempt to classify).
+information.                                                           A group of methods that offers much promise, however,
+    A solution to the problem of geographically-generalizing       is that of adversarial adaptation, the primary works being
+in-season crop classification would greatly enhance global         Domain Adversarial Neural Networks and Multi-Domain
+food security as crop yield predictions in food-insecure           Adversarial Networks (DANN and MDAN respectively),
+with MDAN being the multi-domain extension of DANN
+[15, 34]. In MDAN, a classifier is trained across all source
+domains to perform classification while yielding a feature
+space where the domain of a datapoint is unrecoverable. A
+simplified version of MDAN is as follows, consider a fea-
+ture extractor θ, classification heads (linear or multi-layer
+                                                        (k)
+perceptrons, MLPs) φclass and φdomain , and data xi be-
+          th                   th
+ing the i datapoint of the k domain with corresponding
+         (k)
+labels yi drawn from datasets X and Y . Let Lcls denote a
+classification loss, typically cross-entropy and ~e(k) the k th
+standard basis vector. The (simplified) training objective of
+MDAN is:
+             
+                                 (k)    (k)
+  min       E Lcls (φclass (θ(xi )), yi )−
+θ,φclass X,Y
+                           h                                i 
+                                               (k)
+                c · min Lcls (φdomain (θ(xi )), ~e(k) )
+                   φdomain
+                                                             (1)
+where c is a weighting hyperparameter. Here the objective
+is to maintain good classification accuracy while compet-
+ing against an adversarially trained network attempting to
+discriminate the individual source domains from their as-           Figure 1. Landsat 8 band B6 (Shortwave Infrared 1) visualised
+sociated features. While the categorical delineation of do-         across the US across three different timepoints. Here timepoint 0
+mains does not lend itself to CDG, we present ARCDoG in             is the first snapshot in April, timepoint 4 is the first snapshot in
+Sec. 3 which adapts MDAN to the continuous setting us-              June, and timepoint 7 is the last snapshot in July.
+ing a closed-form linear regression in lieu of the adversarial
+network φdomain .
+                                                                    frequency typically sample pixels on the order of 30 meters
+2.2. Machine Learning on Satellite Data                             by 30 meters. Generally, there is a tradeoff between tem-
+                                                                    poral and spatial resolution, for example the National Agri-
+    Satellite imagery has recently seen increasing interest
+                                                                    culture Imagery Program (NAIP) acquires data with 1 meter
+from the machine learning community, with benchmarks
+                                                                    resolution, but on a 3-year cycle [4]. For large-scale classi-
+such as BigEarthNet, DeepGlobe, and UC Merced Landuse
+                                                                    fication problems, temporal resolution becomes of utmost
+being introduced to measure progress on classification tasks
+                                                                    importance [29], especially since stochastic cloud cover
+in a similar manner to that of research on the ImageNet
+                                                                    can render any given satellite capture unusable. Moreover,
+benchmark or CIFAR-10/100 [12, 21, 24, 26, 31]. While
+                                                                    transformer architectures have shown their efficacy on tem-
+such benchmarks have encouraged rapid iterative develop-
+                                                                    poral satellite data [25]. Therefore, lower spatial resolution
+ment in the broader field of computer vision, the problem of
+                                                                    data is operated on in a collated timeseries, rather than a
+benchmark versus in-the-wild application performance are
+                                                                    static image as is often considered in computer vision. For
+accentuated for aerial imagery. One aspect of this problem
+                                                                    classification tasks where the property of interest can have
+is curation: image datasets are typically highly curated with
+                                                                    pixel-scale variations, this sequence is of a single pixel lo-
+images being drawn from a very narrow distribution and
+                                                                    cation, forming a multivariate timeseries.
+having limited content; such models are then often brittle in
+practice. In the application of satellite imagery, typically in-    2.3. Satellite Data
+ference will be performed across a large contiguous swath
+of land, in which a model must handle all data, not just a             Part of the recent interest in remote sensing stems from
+relevant curated subset. Another aspect of the difficulty in        the abundance of geospatial data available in addition to
+a satellite imagery benchmark is the availability of satellite      standard imagery, such as ozone measurements, night light
+imagery. The whole globe is visible by satellites, mean-            intensities, elevation maps, daily weather history, and more
+ing that problems must be formulated carefully to maintain          [1]. We employ three particular data sources in this work.
+relevance across training-validation-testing splits (see our
+specific discussion regarding crop classification in Sec. 1).       USGS Landsat 8 Surface Reflectance Tier 1 The Land-
+    Satellite “imagery” is often in fact limited in spatial reso-   sat mission has been conducted by the USDA and NASA
+lution. Publically available instruments with high temporal         for almost 50 years with the goal of acquiring large quanti-
+                                                                      Band ID       Wavelength             Band Name
+                                                                         B1       0.435-0.451µm            Ultra Blue
+                                                                         B2       0.452-0.512µm               Blue
+                                                                         B3       0.533-0.590µm              Green
+                                                                         B4       0.636-0.673µm               Red
+                                                                         B5       0.851-0.879µm         Near Infraread
+                                                                         B6       1.566-1.651µm       Shortwave Infrared 1
+                                                                         B7       2.107-2.294µm       Shortwave Infrared 2
+                                                                         B10      10.60-11.19µm          Temperature
+                                                                         B11      11.50-12.51µm          Temperature
+
+                                                                                Table 1. Spectral bands of LandSat-8
+
+
+
+
+Figure 2. 18 most common Cropland Data Layer (CDL) classes.
+
+
+
+
+                                                                     Figure 4. Some of the WorldClim BIO variables visualised.
+
+
+
+                                                                   quency is critical to prevent pixels from being obscured by
+                                                                   clouds in all captures. As we are trying to perform crop
+                                                                   classification within the growing season, high temporal fre-
+                                                                   quency is even more important. In this work, we sample im-
+                                                                   agery bi-monthly from April to August. This window cap-
+     Figure 3. Histogram of crop class counts across the US        tures the entirety of the growing season in much of the US
+                                                                   while still allowing for pre-harvest prediction. An exam-
+                                                                   ple timeseries of images for the near-infrared channel (B5)
+ties of detailed satellite images for varied scientific use [2].   is shown in Fig. 1, note the variations across time, missing
+Landsat 8 is a satellite launched in February 2013 which           patches caused by cloud cover, and diagonal striping from
+collects 9 hyperspectral bands of surface reflectance, de-         separate Landsat collection passes.
+tailed in Tab. 1. The temporal resolution of Landsat 8 is
+relatively high, it captures the entire globe of imagery ev-
+ery 16 days, this comes with a spatial resolution tradeoff,        USDA Cropland Data Layers (CDL) Since 2008, the
+                                                          2
+however. The spatial resolution of Landsat is 900m    pixel , or
+                                                                   USDA has created a crop-specific landuse map of the en-
+30m × 30m. Given the lack of discernible visual features,          tire continental US annually at a resolution of 900m2 /pixel
+recognizing crops and classifying land-use is therefore a          (same as Landsat) [9]. These annotations heavily rely
+challenging non-textural problem.                                  on on-the-ground censusing, as well as human labeling of
+    The reason we use this data, however, is the aforemen-         satellite images. There are over 100 classes included, with
+tioned problem of cloud cover. There are very few high-            the large majority being fine-grained species of crops. A
+temporal-frequency data sources available, and high fre-           visualization is shown in Fig. 2.
+WorldClim BIO Variables V1 This dataset is a collec-              crossing the boundary of a generalization region, it diverges
+tion of bioclimatic variables averaged over 30 years [13].        increasingly as the distance grows with unpredictable pat-
+Spatial resolution is approximately 900m × 900m, while            terns emerging. As seen in Fig. 3, most of the class labels
+this is much lower than the other data layers incorporated,       are non-crop classes (eg: shrubland, forest, etc.) and are
+the relatively smooth nature of climate variations means          distributed across wide portions of the US Fig. 2. These
+that WorldClim can be upsampled with little consequence.          classes are weakly correlated with geographic location, and
+There are 19 different quantities reported, consisting of a       therefore might serve to confuse the model. Moreover, since
+variety of temperature/precipitation averages and spreads as      our goal is to predict crop classes, we modify our dataset
+well as relations between the two. See [13] for a complete        to only include datapoints belonging to a set of 25 curated
+description of bands and Fig. 4 for several visualized bands      crop classes, discarding all other data points. Additionally,
+across the continental USA.                                       we see in Fig. 3 that the crop distribution varies widely be-
+                                                                  tween generalization regions as well. This problem of con-
+2.4. Closed-form Linear Regression in Machine                     tinuous domain generalization presents an intriguing setup,
+     Learning                                                     which we demonstrate a tool for in the following section.
+   Our work uses backpropagation through closed-form
+least-squares linear regression via the pseudoinverse [16].
+                                                                  3.2. ARCDoG: Activation Regression for Continu-
+The pseudoinverse of a full-rank matrix A is
+                                                                        ous Domain Generalization
+                                                                      Recall the MDAN objective in Eq. (1) where the goal
+                     A+ = (A∗ A)−1 A∗                      (2)
+                                                                  is to optimize classification performance while simultane-
+Assuming invertibility (which while a strong assumption           ously obfuscating the source domains of representations.
+is generally true for neural network activations albeit with      Note that if c ≤ 0, then the auxiliary objective would en-
+poor conditioning), this construction is numerically stable       courage classifiability of the source domains. In our setting,
+as the inversion is of a Hermitian matrix. Given a linear sys-    the domain is characterized not by a categorical definition
+tem Ax = b, x = A+ b is an optimal solution with residual         with one-hot associations, but by the climate variables at a
+b − AA+ b. There are other instances of closed-form lin-          location which form a vector which we denote as z~i ∈ R19 .
+ear regression being employed in deep learning literature,        Since this quantity is a real-valued vector instead of a bi-
+such as Feature Reconstruction Networks [30]. The Maxi-           nary classification target, a regression instead of classifica-
+mal Coding Rate Reduction loss can be used analogously in         tion loss is appropriate.
+a classification setting [32].                                        Adversarial training is notoriously unstable [11]. As
+                                                                  such, we choose to calculate the ”adversarial“ loss, in a
+3. Method                                                         closed-form parameter-free manner. Specifically, consider
+                                                                  the loss term
+  We describe our data generation process in 3.1, the opti-                       
+mization objective in 3.2, and training/testing details in 3.3.                        h                               i
+                                                                                                            (k)    (k)
+                                                                           min      E Lcls (φdomain (θ(xi )), ~e )            (3)
+                                                                         φdomain   X,Y
+3.1. Data
+   We sample the continental US across a grid of spatial          which measures the separability of representations by
+resolution 1 mile, this results in a sparse grid of approxi-      source domain. To measure this quantity, a head MLP
+mately 3 million coordinates. At each point, Landsat 8 im-        φdomain must be trained with a competing goal to that of
+agery, Bioclim Variables, and CDL are sampled (the latter         φclass and thus requiring tradeoffs in the learning of θ. If
+two once, the former over the span of April to August re-         the domains were parametrized continuously instead of cat-
+sulting in 8 timepoints of 9 channels each). We partition this    egorically, by a vector ~v (k) , then this loss could be adapted
+grid across the median latitude and longitude into 4 quad-        to use mean-squared error (MSE) loss as:
+rants, as shown in Fig. 5.                                                         h
+                                                                                                               (k)
+                                                                                                                          i
+                                                                                                                      (k)
+   These quadrants serve to partition the domains we use                min      E M SE(φdomain (θ(xi )), v )                  (4)
+                                                                      φdomain   X,Y
+to measure our method’s domain generalization capability.
+Each quadrant can serve as a target domain, with the source       As we do not delineate source domains, we shall discard
+domain being the other three sections of the map. This 3-         the domain indexing k going forward and let v~i describe the
+to-1 generalization allows for four different evaluations of      descriptor of the domain for the ith datapoint.
+a method in leave-one-out style. Note how the generaliza-            When φclass is an MLP or similarly analytically complex
+tion gap is indeed continuous as previously described, we         neural network, then it must be learned through gradient de-
+cement this notion in Fig. 5 where a heatmap shows the            scent in conjunction with the other networks to approximate
+nearest neighbor matches to all points in each generaliza-        minφdomain If φdomain is a linear regression model, how-
+tion quadrant. While the climate is locally constant while        ever, then the calculation of the minimum is much simpler
+Figure 5. 1-nearest neighbour climate features for each of the 4 regions. The top row colours each point in the testing domain region with
+the colour of the most similar feature vector from the other 3 training regions. The bottom row plots a heat-map of the raw distance to the
+nearest feature from the 3 training regions (red is further, blue is closer). The features are the normalised climate variables.
+
+
+
+
+     (a) Region 0 (South West)          (b) Region 1 (North West)           (c) Region 2 (South East)          (d) Region 3 (North East)
+
+
+
+
+     (e) Region 0 (South West)           (f) Region 1 (North West)          (g) Region 2 (South East)          (h) Region 3 (North East)
+
+Figure 6. 1-nearest neighbour features for each of the 4 regions. In each figure, we colour each point in the testing domain region with the
+colour of the most similar feature vector from the other 3 training regions. The top row uses feature vectors are from the final layer of the
+baseline Transformer model without climate variables as input, and the bottom row uses feature vectors from the Transformer model with
+climate variables as input. Euclidean distance was used for kNN. For the benefit of visualisation, all grid points of the training quadrants
+were input to the transformer, not just those corresponding to the designated crop classes. See 3.1 for details.
+
+
+as it exists in closed-form solution across a single batch.              Φ ∈ Rf ×19 be the linear regressor matrix and using the
+Specifically, given a batch of indices of size m, {ij }m
+                                                       j=1 let
+                  m
+Θ = θ(xij )T j=1 ∈ Rm×f denote the features of the
+                                  m
+batch and the climates as V = viTj           ∈ Rm×19 where
+                                           j=1
+f is the feature dimensionality output by θ. Then letting
+Figure 7. Method described in section Sec. 3. The grid of pixels is sampled at roughly 1609m ∼ 1 pixel across the lower 48 states of the
+continental US. V is a climate descriptor for each location on the grid, copied over for each of the 8 time points across April-July (2 per
+month). We consider 9 spectral channels of Landsat, see Tab. 1. The loss is a combination of the typical classification cross entropy loss
+and MSE of closed-form linear regression of the climate descriptor from the final representation Eq. (8).
+
+
+pseudoinverse as described in Sec. 2.4                                  Models are trained on three source domains at a time with
+                                                                        10% of the training data being used for loss validation. An
+               min [M SE(φdomain (Θ), V )] =                   (5)
+             φdomain                                                    Adam optimizer with initial learning rate of 1e − 3 and
+                       min [M SE(ΘΦ, V )] =                    (6)      learning rate reduction on plateau schedule is used with a
+                        Φ                                               factor of 0.1 and patience of 5 epochs (the criterion being
+                       M SE(ΘΘ+ V, V )                         (7)      minimization of validation loss). Upon the 3rd reduction,
+                                                                        training is terminated and early stopping is employed (the
+enabling closed-form calculation of the second term of the
+                                                                        best version of the model with respect to validation loss is
+loss.
+                                                                        reloaded and used). Cross entropy loss is used for classifi-
+   Reincluding the classification loss term and accounting
+                                                                        cation. The MSE loss of the second term is normalized by
+for our continuous setting, we arrive at the loss we employ
+                                                                        the norm of V , resulting in a loss term of
+for ARCDoG:
+                            
+                                               (k)    (k)                                       ||V − ΘΘ+ V ||2
+ LARCDoG = min           E Lcls (φclass (θ(xi )), yi )−                                                                                (9)
+               θ,φclass X,Y                                                                          ||V ||2
+                                                    
+                              c · M SE(ΘΘ+ V, V )                       this modification helps the two loss terms of LARCDoG to
+                                                               (8)      be on the same scale. A batch size of 4096 is used.
+                                                                           We note that while training of our model is more expen-
+Observe that c > 0 encourages the climate V to be                       sive, compared to a baseline of a vanilla supervised trans-
+unrecoverable from the features Θ while c < 0 guides the                former there are no extra parameters and at inference time
+climate to be recoverable. This ARCDoG loss ports the in-               computational cost is unaffected.
+tuition of MDAN into the continuous domain realm, while
+doing away with the difficulties of adversarial training by             4. Results
+employing a simple linear φdomain .
+                                                                           Our main experiment trains the transformer model on 3
+3.3. Details
+                                                                        of the input quadrants and tests it on the held-out 4th quad-
+    The landsat data input into our model is a timeseries of            rant. The results are in table 2. We also investigate the im-
+8 points with 9 channels each resulting in xi ∈ R8×9 , in               pact of the different types of climate variables in the model’s
+some experiments we incorporate the climate as input as                 performance. The WorldClim BIO variables are roughly di-
+well, appending ~vi ∈ R19 to each timepoint resulting in                vided among those related to temperature (bio01-bio11)
+x0i ∈ R8×28 .                                                           and precipitation (bio12-bio19). We ablate the tempera-
+    For θ, a transformer architecture inspired by [25] is em-           ture and precipitation variables, separately, as inputs to the
+ployed on single pixel vectors 7, φclass is a linear head [28].         model, and these results are recorded in table 3.
+         Method          0           1           2           3           3 6h seems to match most strongly to points very close to
+                                                                         its border, with relatively fewer matches from different parts
+         Baseline     0.386       0.335       0.484       0.526          of the US. This hints at why its performance is an outlier;
+          c = −1      0.402       0.382       0.572       0.503          it’s geographical and climactic properties differ from those
+        c = −0.1      0.406       0.381       0.560       0.490          other regions, and thus domain variables (i.e. climate) ap-
+           c=0        0.421       0.386       0.571       0.480          pear to be insufficient to generalise. Moreover, the climate
+        c = 0.001     0.413       0.394       0.578       0.475          transformer in the bottom row associates points from the
+         c = 0.01     0.420       0.391       0.600       0.468          Pacific Northwest with those in the South East in 6f and 6g.
+          c = 0.1     0.412       0.391       0.575       0.473          This analysis suggests the presence of similar geographic
+           c=1        0.409       0.386       0.555       0.477          and climactic regions in disparate parts of the US that might
+                                                                         be amenable to growing similar types of crops.
+Table 2. Mean accuracy results. Each column denotes the test
+                                                                             In table 3, we see that the temperature variables are more
+region IDs, after the Transformer model was trained on all other
+regions. In each row (except the baseline), the model was inputted
+                                                                         important to regions 0 and 2, while the precipitation vari-
+the 9 spectral channels as well as the 19 climate variables. The         ables are more important to regions 1 and 3. These results
+baseline was given only the 9 spectral channels. The value c de-         seem to follow lines of latitude, where regions 0 and 2 form
+termines the strength of the correlation enforced in the LARCDoG         the Southern half, and regions 1 and 3 the Northern half of
+loss 8. Each number is the result of averaging over 5 trials.            the US. Even then, it is somewhat surprising that the model
+                                                                         does better with only one set of variables (temperature only
+                                                                         in regions 0 and 2, and precipitation only in region 3) than
+         Method               0           1           2           3      with both, demonstrating that the model is suboptimally ex-
+       Baseline              0.386       0.335       0.484       0.526   ploiting correlations in the spectral channels of the input.
+   All climate input         0.421       0.386       0.571       0.480
+   Temperature only          0.429       0.347       0.574       0.526   6. Conclusion
+   Precipitation only        0.368       0.360       0.500       0.556
+                                                                             In this work we demonstrate the possibility of
+Table 3. Mean accuracy results. Each column denotes the test
+                                                                         continuous-variable domain generalisation in machine
+region IDs, after the Transformer model was trained on all other         learning, applied to satellite imagery. The incorporation of
+regions. Each result is with a regression weight of c = 0. Each          a regression term to correlate domain variables with model
+number in the table is the result of averaging over 5 trials.            outputs yields a simple method of domain generalisation.
+                                                                         We demonstrate large-scale generalisation by breaking the
+                                                                         traditional pipeline of treating satellite imagery as “images”
+5. Discussion                                                            and instead as a grid of continually distributed feature-rich
+                                                                         data points. Further research can investigate learning the
+   From the results in table 2, we see a strong benefit to               strength of correlation dynamically, as it may be optimal
+inputting climate variables in regions 0, 1, and 2. We see               to correlate some portions of the input while de-correlating
+roughly 4%, 5%, and 11% improvement in accuracy                          others. Moreover, recent work in self-supervised methods
+comparing the baseline Transformer to the best accuracy                  for satellite imagery [7] is relevant to the question of gen-
+achieved by ARCDoG in regions 0, 1, and 2, respectively.                 eralising to out-of-domain tasks and distributions, and may
+Region 3 is an outlier, and using climate variables seems to             work in tandem with domain generalisation.
+be detrimental to performance. Moreover, other than for re-                  In terms of applications to satellite imagery, further in-
+gion 3, a slightly positive correlation weight appears to help           vestigation into higher resolution imagery could improve
+the model, whereas for region 3, de-correlating the climate              model performance on the task of crop classification. More-
+variables from the input seems beneficial (where not using               over, work needs to be done to investigate an optimal archi-
+climate input appears best).                                             tecture for large-scale satellite imagery. Even as the Trans-
+   In Fig. 6, we see how correlating the climate variables               former model demonstrates strong performance, investigat-
+provides the transformer a leg up over simply inputting                  ing how to leverage spatial, temporal, and spectral variance
+satellite data. The nearest features of the transformer in fig-          in the input coherently is an open question.
+ures 6a, 6b, 6c, 6d are much noisier and less smooth than                    ARCDoG provides a glimpse into devising unique ma-
+those of the transformer with climate variables in 6e, 6f, 6g,           chine learning solutions for remote sensing. Reframing the
+6h. In both rows, we note that the model learns to associate             problem of crop classification into one of domain generali-
+points from the source regions to those in the target regions            sation, we demonstrate that much can be learned about both
+primarily based on longitude. This roughly mirrors what                  the machine learning tools and the task to which they are
+we see in figure 5, where the domain variables are them-                 applied. We hope this work spurs further research into nu-
+selves associated mostly on longitude. We note that region               anced applications of computer vision for satellite imagery.
+References                                                                   Marchand, and Victor Lempitsky. Domain adversarial train-
+                                                                             ing of neural networks. The journal of machine learning
+ [1] Earth             engine            dataset             catalog.        research, 17(1):2096–2030, 2016. 1, 3
+     https://developers.google.com/earth-engine/datasets/.              [16] TNE Greville. Some applications of the pseudoinverse of a
+     Accessed: Nov. 10 2021. 3                                               matrix. SIAM review, 2(1):15–22, 1960. 5
+ [2] Landsat missions: Landsat 8. https://www.usgs.gov/core-            [17] Qi Hu and Gregory Buyanovsky. Climate effects on corn
+     science-systems/nli/landsat/landsat-8. Accessed: Nov. 10                yield in missouri. Journal of Applied Meteorology and Cli-
+     2021. 2, 4                                                              matology, 42(11):1626–1635, 2003. 2
+ [3] Moderate       resolution      imaging       spectroradiometer.    [18] Sarah Janssen. The World Almanac and book of facts 2020.
+     https://modis.gsfc.nasa.gov/. Accessed: Nov. 10 2021.                   Simon and Schuster, 2019. 1
+     2                                                                  [19] Neal Jean, Sherrie Wang, Anshul Samar, George Azzari,
+ [4] Naip imagery.             https://www.fsa.usda.gov/programs-            David Lobell, and Stefano Ermon. Tile2vec: Unsupervised
+     and-services/aerial-photography/imagery-programs/naip-                  representation learning for spatially distributed data. In Pro-
+     imagery/. Accessed: Nov. 10 2021. 2, 3                                  ceedings of the AAAI Conference on Artificial Intelligence,
+ [5] Sentinel             missions:                      Sentinel-2.         volume 33, pages 3967–3974, 2019. 2
+     https://sentinel.esa.int/web/sentinel/missions/sentinel-2.         [20] Thorsten Joachims. Transductive learning via spectral graph
+     Accessed: Nov. 10 2021. 2                                               partitioning. In Proceedings of the 20th International Con-
+ [6] U.s. forest service. 1, 2                                               ference on Machine Learning (ICML-03), pages 290–297,
+ [7] Kumar Ayush, Burak Uzkent, Chenlin Meng, Kumar Tan-                     2003. 1
+     may, Marshall Burke, David B. Lobell, and Stefano Er-              [21] Alex Krizhevsky et al. Learning multiple layers of features
+     mon. Geography-aware self-supervised learning. CoRR,                    from tiny images. Technical report, Citeseer, 2009. 3
+     abs/2011.09980, 2020. 8                                            [22] Dong-Hyun Lee. Pseudo-label: The simple and efficient
+ [8] Yogesh Balaji, Swami Sankaranarayanan, and Rama Chel-                   semi-supervised learning method for deep neural networks.
+     lappa. Metareg: Towards domain generalization using meta-               1
+     regularization. Advances in Neural Information Processing          [23] Da Li, Jianshu Zhang, Yongxin Yang, Cong Liu, Yi-Zhe
+     Systems, 31:998–1008, 2018. 2                                           Song, and Timothy M Hospedales. Episodic training for do-
+                                                                             main generalization. In Proceedings of the IEEE/CVF Inter-
+ [9] Claire Boryan, Zhengwei Yang, Rick Mueller, and Mike
+                                                                             national Conference on Computer Vision, pages 1446–1455,
+     Craig. Monitoring us agriculture: the us department of
+                                                                             2019. 2
+     agriculture, national agricultural statistics service, cropland
+                                                                        [24] Olga Russakovsky, Jia Deng, Hao Su, Jonathan Krause, San-
+     data layer program. Geocarto International, 26(5):341–358,
+                                                                             jeev Satheesh, Sean Ma, Zhiheng Huang, Andrej Karpathy,
+     2011. 2, 4
+                                                                             Aditya Khosla, Michael Bernstein, et al. Imagenet large
+[10] Fabio M Carlucci, Antonio D’Innocente, Silvia Bucci, Bar-
+                                                                             scale visual recognition challenge. International journal of
+     bara Caputo, and Tatiana Tommasi. Domain generalization
+                                                                             computer vision, 115(3):211–252, 2015. 3
+     by solving jigsaw puzzles. In Proceedings of the IEEE/CVF
+                                                                        [25] Marc Rußwurm and Marco Körner. Self-attention for
+     Conference on Computer Vision and Pattern Recognition,
+                                                                             raw optical satellite time series classification.        CoRR,
+     pages 2229–2238, 2019. 2
+                                                                             abs/1910.10536, 2019. 3, 7
+[11] Antonia Creswell, Tom White, Vincent Dumoulin, Kai                 [26] Gencer Sumbul, Marcela Charfuelan, Begüm Demir, and
+     Arulkumaran, Biswa Sengupta, and Anil A Bharath. Gener-                 Volker Markl. Bigearthnet: A large-scale benchmark archive
+     ative adversarial networks: An overview. IEEE Signal Pro-               for remote sensing image understanding. 3
+     cessing Magazine, 35(1):53–65, 2018. 5
+                                                                        [27] Yu Sun, Xiaolong Wang, Liu Zhuang, John Miller, Moritz
+[12] Ilke Demir, Krzysztof Koperski, David Lindenbaum, Guan                  Hardt, and Alexei A. Efros. Test-time training with self-
+     Pang, Jing Huang, Saikat Basu, Forest Hughes, Devis Tuia,               supervision for generalization under distribution shifts. In
+     and Ramesh Raskar. Deepglobe 2018: A challenge to parse                 ICML, 2020. 1
+     the earth through satellite images. In Proceedings of the          [28] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+     IEEE Conference on Computer Vision and Pattern Recog-                   reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+     nition Workshops, pages 172–181, 2018. 3                                Polosukhin. Attention is all you need. In Advances in neural
+[13] Stephen E Fick and Robert J Hijmans. Worldclim 2: new                   information processing systems, pages 5998–6008, 2017. 7
+     1-km spatial resolution climate surfaces for global land ar-       [29] Lucija Viskovic, Ivana Nizetic Kosovic, and Toni Mastelic.
+     eas. International journal of climatology, 37(12):4302–                 Crop classification using multi-spectral and multitemporal
+     4315, 2017. 5                                                           satellite imagery with machine learning. In 2019 Inter-
+[14] T Fisette, P Rollin, Z Aly, L Campbell, B Daneshfar, P Fi-              national Conference on Software, Telecommunications and
+     lyer, A Smith, A Davidson, J Shang, and I Jarvis. Aafc an-              Computer Networks (SoftCOM), pages 1–5, 2019. 3
+     nual crop inventory. In 2013 Second International Confer-          [30] Davis Wertheimer, Luming Tang, and Bharath Hariharan.
+     ence on Agro-Geoinformatics (Agro-Geoinformatics), pages                Few-shot classification with feature map reconstruction net-
+     270–274. IEEE, 2013. 2                                                  works. In Proceedings of the IEEE/CVF Conference on
+[15] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pas-                    Computer Vision and Pattern Recognition, pages 8012–
+     cal Germain, Hugo Larochelle, François Laviolette, Mario               8021, 2021. 5
+[31] Yi Yang and Shawn Newsam. Bag-of-visual-words and spa-
+     tial extensions for land-use classification. In Proceedings of
+     the 18th SIGSPATIAL international conference on advances
+     in geographic information systems, pages 270–279. ACM,
+     2010. 3
+[32] Yaodong Yu, Kwan Ho Ryan Chan, Chong You, Chaobing
+     Song, and Yi Ma. Learning diverse and discriminative repre-
+     sentations via the principle of maximal coding rate reduction,
+     2020. 5
+[33] Xiaohua Zhai, Avital Oliver, Alexander Kolesnikov, and Lu-
+     cas Beyer. S4l: Self-supervised semi-supervised learning. In
+     Proceedings of the IEEE international conference on com-
+     puter vision, pages 1476–1485, 2019. 1
+[34] Han Zhao, Shanghang Zhang, Guanhang Wu, José MF
+     Moura, Joao P Costeira, and Geoffrey J Gordon. Adversar-
+     ial multiple source domain adaptation. Advances in neural
+     information processing systems, 31:8559–8570, 2018. 1, 3
+[35] Kaiyang Zhou, Ziwei Liu, Yu Qiao, Tao Xiang, and
+     Chen Change Loy. Domain generalization: A survey. arXiv
+     preprint arXiv:2103.02503, 2021. 2
+A. Appendix
+   A few additional details about training and the Trans-
+former architecture are mentioned here.
+A.1. Data
+   As mentioned in Sec. 3.1, we selected data points from
+25 crop classes, discarding all others. The 25 classes were:
+
+Corn, Soybeans, Rice, Alfalfa, Grapes,
+Almonds, Pecans, Peanuts, Walnuts,
+Potatoes, Oats, Cotton, Dry beans,
+Sugarbeets, Winter Wheat, Spring
+Wheat, Durum Wheat, Sorghum, Canola,
+Barley, Sunflower, Pop or Orn Corn,
+Other Hay-Non Alfalfa, Woody Wetlands,
+Fallow-Idle Cropland
+
+   These classes consist of some of most prevalent crop
+classes, excluding land-cover classes such as shrubland,
+pasture, developed space, water etc which are not relevant
+to climate indicators.
+
+A.2. Transformer Architecture
+    The Transformer was implemented in PyTorch. The
+source code used is available here.
+    We first pass the input through a layer norm, a convolu-
+tional feature extractor, and then to the Transformer layers.
+The convolutional feature extractor consists of a sequence
+of 2 blocks, where each block is a 1d convolutional layer
+followed by a ReLU. The feature extractor maps the 28 (or
+9, in the case of the baseline) input channels to an interme-
+diate feature dimension of 64. Another layer normalisation
+is applied, before passing the features to a positional encod-
+ing layer (on the temporal dimension), and then to a Trans-
+former encoder with 2 encoder layers, each with 2 attention
+heads, dropout, ReLU, and a feedforward dimension of 256.
+Another layer normalisation is used, before the outputs for
+each of the 8 time points are max pooled and passed through
+a final 1d convolutional layer with 25 channels, for classifi-
+cation. The features used for Fig. 6 are from the output of
+the max pool layer.
+

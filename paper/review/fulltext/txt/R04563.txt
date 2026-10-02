@@ -1,0 +1,1596 @@
+                                             Perturbation-Aware Diffusion-Guided Hybrid Segmentation for Robust
+                                                      and Annotation-Efficient Plant Stress Phenotyping
+                                                                              Gurbhit Chaurakotia , Soumyashree Karb,∗
+                                                   a
+                                                  Department of Electrical Engineering, National Institute of Technology Delhi, New Delhi, 110036, India
+                                         b
+                                             Centre of Studies in Resources Engineering, Indian Institute of Technology Bombay, Powai, Mumbai, 400076, India
+
+
+
+
+                                Abstract
+                                Semantic segmentation in agricultural imagery is often evaluated under in-domain protocols, yet prac-
+                                tical deployment requires robustness to appearance perturbations, limited annotations, and cross-
+                                domain shift. This paper presents a diffusion-guided hybrid segmentation framework in which U-Net,
+                                DeepLabV3+, and SegFormer backbones generate coarse masks that are refined by Denoising Diffusion
+arXiv:2607.23680v1 [cs.CV] 26 Jul 2026
+
+
+
+
+                                Probabilistic Models (DDPM), latent diffusion, or semantic-guided diffusion. The framework is eval-
+                                uated through a 3×3 architectural screening study on PlantSegV3, followed by boundary-constrained
+                                optimization, perturbation-guided retraining, low-data evaluation, constrained hyperparameter screen-
+                                ing, and controlled cross-domain adaptation. On PlantSegV3, the best selected hybrid model achieves
+                                71.83% refined mean Intersection-over-Union (mIoU) and 26.10% refined Boundary-F1, and the se-
+                                lected models remain stable under substantially reduced supervision, demonstrating strong annotation
+                                efficiency. Perturbation analysis identifies grayscale conversion, fog, coarse dropout, and shadow as the
+                                most disruptive appearance shifts, and the resulting augmentation policy substantially improves ro-
+                                bustness during retraining. The adapted models further show effective transfer to external agricultural
+                                datasets under limited target supervision, indicating that diffusion refinement and boundary-aware
+                                optimization provide transferable structural priors. Overall, the results show that carefully matched
+                                backbone–refiner pairings, combined with perturbation-aware retraining, can improve structural delin-
+                                eation and robustness under realistic resource and distribution constraints.
+                                Keywords: Diffusion refinement, Semantic segmentation, Annotation-efficient segmentation,
+                                Perturbation-aware modeling, Domain invariance
+
+
+                                1. Introduction                                                       and large appearance variability across crops,
+                                                                                                      acquisition devices, and field conditions (Song
+                                   Semantic segmentation is a key step in plant                       et al., 2025). These factors make stress seg-
+                                phenotyping (Karthik et al., 2022) as it en-                          mentation substantially harder than benchmark
+                                ables pixel-level delineation and quantification                      performance alone suggests.       A model that
+                                of affected tissue, which is further used for                         performs well in one dataset split may degrade
+                                downstream applications such as estimating                            sharply when the imaging conditions change
+                                lesion extent, spatial spread, disease burden and                     or when only a small amount of labeled data
+                                structural degradation (Qin et al., 2025; Kumar                       is available. For this reason, robustness under
+                                and Kar, 2026). In practical agricultural settings,                   perturbation and cross-domain shift is treated as
+                                however, images are affected by illumination                          a primary design objective in this study.
+                                changes, occlusion, blur, cluttered backgrounds,
+                                                                                                      A second, equally important issue is compu-
+                                             ∗
+                                                 Corresponding author. Email: soumyakar@iitb.ac.in
+tational efficiency. In many applied agricultural          object boundaries.        SegFormer represents a
+workflows, segmentation models must be devel-              transformer-based alternative (Xie et al., 2021).
+oped and evaluated under limited hardware and              It uses a hierarchically structured encoder with
+training budgets rather than through exhaustive            a lightweight Multi-Layer Perceptron (MLP) de-
+large-scale optimization.    This is especially            coder, avoids positional encoding, and has shown
+relevant when experiments are performed on                 strong robustness when the test resolution differs
+local resources, where the available Graphics              from the training resolution. Together, these
+Processing Unit (GPU) memory and runtime                   three backbones cover local-detail, multi-scale-
+constrain the number of architectures, training            context, and global-attention design choices,
+epochs, and hyperparameter configurations that             making them a suitable basis for architectural
+can be explored (Assunção et al., 2022). In this           screening under a fixed training budget.
+work, the entire model selection and retraining            In parallel with advances in segmentation
+pipeline is designed around such constraints.              architectures, diffusion models have recently
+The limited training budget is used as a realistic         emerged as powerful generative and refinement
+setting for testing whether diffusion-guided               mechanisms for vision tasks (Alimisis et al.,
+refinement can still provide measurable gains              2025; Yang et al., 2023). In segmentation, they
+under resource-constrained conditions.                     are increasingly explored as a way to improve
+                                                           structural coherence, suppress spurious predic-
+Recent plant segmentation studies have im-                 tions, and refine coarse masks (Wang et al., 2025;
+proved in-domain performance by comparing                  Yaseen et al., 2026; Liu et al., 2026) However,
+Convolutional Neural Network (CNN), trans-                 most existing formulations treat diffusion as a
+former, and hybrid backbones on benchmark                  segmentation framework (Fang et al., 2025) or as
+datasets (Jiang et al., 2024; Polly and Devi, 2024;        a mask-prior modelling mechanism (Zhang et al.,
+Agustian et al., 2026). These works demon-                 2024b; Le et al., 2024), rather than as a carefully
+strate that modern architectures can produce               constrained refiner for plant imagery. This leaves
+high-quality masks for diseased regions, but most          open the question of which diffusion formula-
+are still evaluated under fixed training protocols         tion best complements a given segmentation
+and within the same domain. As a result, they              backbone, whether the resulting gains are stable
+provide limited insight into whether the learned           across training regimes, and whether diffusion
+masks remain useful under appearance shift,                refinement remains useful when training must be
+reduced supervision, or constrained training               done under limited computational resources.
+budgets. In plant phenotyping, this limitation             In this study, we compare three diffusion
+is important because the final goal is not only            paradigms with different computational and
+accurate segmentation on a benchmark, but also             conditioning assumptions. Denoising Diffusion
+reliable delineation of affected region in realistic       Probabilistic Model (DDPM) is the canonical
+field settings.                                            pixel-space denoising diffusion formulation and
+To avoid biasing the study toward a single                 serves as the simplest stochastic refinement base-
+inductive prior, we compare three representative           line (Ho et al., 2020). As presented by Rombach
+segmentation backbones that span comple-                   et al. (2022), latent diffusion moves the denoising
+mentary design paradigms. U-Net, originally                process into a learned latent space, substantially
+proposed by Ronneberger et al. (2015) is a sym-            reducing computational cost while preserving
+metric encoder–decoder with skip connections,              controllability through conditioning.       Recent
+originally designed to achieve precise localization        semantically guided diffusion work shows that
+from limited annotated data. Chen et al. (2018)            conditioning denoising on semantic priors can
+introduced DeepLabV3+, which combines atrous               improve segmentation robustness and efficiency
+spatial pyramid pooling with a lightweight de-             (Liu et al., 2023), motivating our semantic-guided
+coder to merge multi-scale context and sharpen             refiner for plant imagery. Taken together, these
+                                                       2
+refiners let us test whether gains come from              masks, particularly when the target structure
+diffusion itself, from latent-space efficiency, or        is small, irregular, or visually heterogeneous.
+from semantic conditioning.                               Third, existing studies rarely connect architec-
+It is also evident from existing literature that          tural screening, boundary-aware optimization,
+agricultural segmentation models frequently               perturbation analysis, controlled adaptation, and
+encounter performance degradation when tested             resource-aware model selection within a single
+under shifts in lighting, background complexity,          unified framework. Consequently, there is still
+sensor properties, or scene composition (Shi              no clear answer to which backbone-refiner com-
+et al., 2025; Song et al., 2025; Shafay et al.,           binations are most stable, which perturbations
+2025). Such shifts can reduce boundary fidelity           matter most, how much performance can be
+and increase false positives or false negatives,          recovered under limited target supervision, and
+especially for small or fragmented diseased               how well such a pipeline can be executed under
+regions. Robustness therefore cannot be in-               practical hardware constraints.
+ferred from a single in-domain score (Magistri              The main contributions of this paper are as fol-
+et al., 2023). A meaningful evaluation must               lows:
+also include perturbation sensitivity, recovery
+under augmentation-guided retraining, and                   • We propose a diffusion-guided hybrid seg-
+behavior under reduced supervision(Wei et al.,                mentation framework for stress phenotyp-
+2025). In this context, robustness is not only                ing in plant imagery, in which coarse
+a generalization problem but also a practical                 masks generated by discriminative backbones
+requirement for deploying segmentation systems                are refined by DDPM, latent diffusion, or
+in the field (Tran et al., 2025). Cross-domain                semantic-guided diffusion.
+transfer is especially challenging in plant imagery
+because datasets often differ in crop type, visual          • We introduce a staged evaluation proto-
+structure, annotation protocol, and foreground                col that combines architectural screening,
+complexity (Magistri et al., 2023). Few-shot                  boundary-constrained optimization, pertur-
+adaptation can partially recover performance,                 bation sensitivity analysis, augmentation-
+but the extent of recovery depends on the source              guided retraining, low-data evaluation, and
+representation and the adaptation regime (Ge                  cross-domain transfer.
+et al., 2025; de Andrade Porto et al., 2023). A
+                                                            • We show that the proposed pipeline can be
+good segmentation model should therefore not
+                                                              trained and selected under strict resource
+only transfer reasonably well to a new dataset,
+                                                              constraints on a local RTX 4050 6 Giga-
+but should also adapt efficiently when only a
+                                                              bytes (GB) Video Random Access Memory
+small amount of target supervision becomes
+                                                              (VRAM) GPU, using short screening runs to
+available.    This makes domain adaptation a
+                                                              identify promising backbone-refiner pairs be-
+natural extension of robustness analysis, particu-
+                                                              fore deeper evaluation.
+larly when the source model itself is trained and
+selected under constrained resources.                       • We demonstrate that diffusion refinement
+                                                              improves structural consistency when the
+Despite these advances, three gaps remain.                    backbone-refiner pairing is appropriate,
+First, most plant segmentation studies optimize               while boundary-aware optimization fur-
+for benchmark accuracy rather than robustness                 ther strengthens contour fidelity without
+under perturbation, constrained training, and                 destabilizing overlap-based performance.
+domain shift (Tran et al., 2025; Wu et al.,
+2023; Magistri et al., 2023). Second, diffusion-            • We show that the selected models remain sta-
+based segmentation is still underexplored as a                ble under reduced supervision and that con-
+refinement mechanism for stress-related plant                 trolled target adaptation can recover a sub-
+                                                      3
+    stantial portion of the performance lost under         (Jia et al., 2026). Third, the same selected mod-
+    direct transfer.                                       els are evaluated under reduced supervision to ex-
+                                                           amine label efficiency (Baranchuk et al., 2021).
+  • We further show that constrained training              Fourth, a perturbation sensitivity analysis is car-
+    does not prevent useful model selection; in-           ried out to identify the most disruptive appear-
+    stead, it provides a realistic setting for eval-       ance shifts and to derive an augmentation pol-
+    uating which architectural choices are gen-            icy from the observed failure modes (Prabhakaran
+    uinely robust and compute-efficient.                   et al., 2019). Fifth, the selected models are
+                                                           retrained using this augmentation policy under
+   The remainder of the paper is organized as fol-         both full-data and reduced-data settings to ex-
+lows. Section 2 describes the datasets, framework,         amine robustness recovery. Sixth, constrained hy-
+and training strategy. Section 3 presents the              perparameter screening is carried out around the
+screening, optimization, robustness, and transfer          validated retraining regime (Wang et al., 2021).
+results. Section 4 discusses the implications, lim-        Seventh, the source-trained checkpoints are trans-
+itations, and practical relevance of the proposed          ferred to external datasets and adapted under
+approach. Section 5 concludes the paper.                   controlled low-shot supervision to assess cross-
+                                                           domain generalization (Rafi et al., 2024).
+                                                              Throughout the pipeline, both quantitative and
+2. Methodology
+                                                           qualitative outputs are recorded for the coarse
+                                                           prediction and the diffusion-refined output. Per-
+2.1. Experimental Setup
+                                                           formance is assessed using mean Intersection-
+   The proposed study is designed as a staged              over-Union (mIoU), Dice score, pixel accuracy,
+evaluation pipeline for stress-related plant seg-          and Boundary-F1. For each model, the refined
+mentation under limited computational resources.           prediction is treated as the primary output, while
+The central objective is to determine whether              the coarse prediction is retained as the internal
+diffusion-guided refinement can improve the                baseline. This allows the study to quantify not
+structural quality of coarse segmentation masks            only absolute performance, but also the refine-
+produced by discriminative backbones, and                  ment gain introduced by the diffusion module.
+whether such gains persist under constrained
+training, perturbation, and cross-domain transfer.         2.2. Datasets Used
+All source-domain experiments are conducted on               As summarized in Table 1, three datasets are
+PlantSegV3 dataset (Wei et al., 2026), where the           used in this study, which cover complementary
+model search is intentionally restricted to a small        transfer settings rather than a single homoge-
+number of backbone-refiner combinations and a              neous benchmark. PlantSegV3 (Figure 1) is used
+short screening schedule in order to reflect real-         as the source-domain benchmark for architec-
+istic hardware limits. In particular, the full ar-         tural screening, boundary-aware optimization,
+chitecture grid is first screened using a compact          low-data evaluation, perturbation-guided retrain-
+training budget on a local RTX 4050 6 GB GPU,              ing, and constrained hyperparameter screening.
+after which only the most promising configura-             The dataset provides in-the-wild plant disease
+tions are retained for deeper optimization and ro-         segmentation masks and is large enough to
+bustness analysis.                                         support controlled comparison among hybrid
+   The evaluation protocol is organized into seven         segmentation configurations(Wei et al., 2026) In
+stages. First, a 3x3 architectural screening study         the original PlantSeg description, the dataset
+is performed on the source dataset using a com-            contains 7,774 diseased images across 34 host
+mon optimization objective. Second, the selected           plants and 69 disease types, with 115 unique
+configurations are retrained using a boundary-             plant-disease cases and a standard 70/10/20
+constrained objective to improve contour fidelity          train/validation/test split. The annotation pro-
+                                                       4
+Figure 1: Qualitative segmentation samples from the       Figure 3: Qualitative segmentation samples from the CW-
+PlantSegV3 dataset.                                       FID dataset.
+
+
+                                                          to assess whether the learned refinement behavior
+                                                          generalizes to another structured agricultural
+                                                          segmentation setting.      The original CWFID
+                                                          dataset contains 60 top-down field images, with
+                                                          162 crop plants and 332 weed plants, and the
+                                                          benchmark split uses 20 images for training and
+                                                          40 for testing. Each image is annotated with a
+                                                          vegetation mask and crop/weed labels (Haug and
+Figure 2: Qualitative segmentation samples from the       Ostermann, 2015).
+NWRD dataset.                                                Figures 1–3 illustrate the visual differences in
+                                                          foreground density, annotation structure, and
+cess uses pixel-level masks, and the dataset was          background complexity. PlantSegV3 provides in-
+curated specifically to support realistic disease         the-wild plant disease masks, NWRD captures
+segmentation under field conditions. The source           high-resolution rust segmentation under a differ-
+benchmark in this work uses the PlantSegV3                ent acquisition context, and CWFID introduces
+train/validation split reported in the manuscript,        structured crop-weed scenes with a different an-
+containing 7,916 training image-mask pairs and            notation ontology.
+1,247 validation pairs.
+                                                          2.3. Diffusion-Guided     Hybrid     Segmentation
+                                                               Framework
+NUST Wheat Rust Disease dataset (NWRD)
+(Figure 2) is used as an external transfer                   The proposed framework follows a coarse-to-
+benchmark for disease-related localization and            refined design. Given an input image X ∈
+segmentation under a different acquisition con-           RH×W ×3 , a discriminative backbone first produces
+text (Anwar et al., 2023). The dataset contains           a coarse prediction map, which is then refined by
+100 high-resolution wheat-rust images, and the            a diffusion-based module. Let fb (·) denote the
+original benchmark reports 4000x6016 imagery              backbone and fr (·) denote the refiner. The coarse
+that is divided into 224x224 patches to reduce            prediction is written as
+memory and computation. Because the rust
+                                                                              Pc = fb (X),                   (1)
+class is strongly imbalanced, the original study
+uses a 0.85/0.05/0.10 train/validation/test split         and the refined prediction is written as
+together with augmentation and downsampling
+to balance the training set.                                               Pr = fr (X, Pc , C),              (2)
+
+Crop/Weed Field Image Dataset (CWFID)                     where C denotes the conditioning signal used by
+(Figure 3) is used as a second transfer benchmark         the diffusion refiner. Depending on the configura-
+                                                      5
+                               Table 1: Summary of datasets used in this work.
+
+                                              Benchmark Split
+Dataset      Role in paper        Images                             Annotation type         Main challenge
+                                             (Train/Val/Test)
+
+PlantSegV3 Source benchmark         7,774       0.70/0.10/0.20       Pixel-wise disease      In-the-wild plant
+                                                                     masks                   disease
+                                                                                             segmentation
+NWRD         Transfer benchmark      100        0.85/0.05/0.10       Binary rust masks       High-resolution,
+                                                                                             imbalanced,
+                                                                                             patch-based images
+CWFID        Transfer benchmark      60          0.66/–/0.33         Crop/weed               Small-scale
+                                                                     semantic masks          agricultural field
+                                                                                             scenes with
+                                                                                             semantic
+                                                                                             label-space shift
+
+
+tion, C may correspond to coarse logits, seman-           2.4. Training Strategy
+tic guidance, or a compact representation derived            The training strategy is organized into pro-
+from the backbone output.                                 gressively stricter stages, as summarized in Al-
+                                                          gorithm 1. In Stage 1, all nine backbone-refiner
+   Three backbone families are considered: U-             combinations are screened under a fixed opti-
+Net, DeepLabV3+, and SegFormer. These ar-                 mization objective. The same loss function is
+chitectures represent complementary segmenta-             used for every configuration to ensure that dif-
+tion paradigms spanning local detail preservation,        ferences in performance are driven by architecture
+multi-scale context aggregation, and transformer-         rather than by training recipe. The Stage-1 objec-
+based global representation learning (Chen et al.,        tive combines cross-entropy and Dice loss (Yeung
+2018; Xie et al., 2021; Ronneberger et al., 2015).        et al., 2022):
+Three refinement strategies are paired with each
+backbone: DDPM, latent diffusion, and semantic-                      Lstage1 = λce Lce + λdice Ldice .        (3)
+guided diffusion (Ho et al., 2020; Rombach et al.,
+2022; Liu et al., 2023). The combination of three         This stage is intentionally short and serves as a
+backbones and three refiners produces a 3x3 de-           computationally efficient filter for identifying sta-
+sign space of nine hybrid configurations.                 ble hybrid models from the diverse candidate con-
+                                                          figurations presented in Table 2. These configu-
+   The role of diffusion in this framework is de-         rations encompass distinct paradigms of diffusion
+liberately restricted to refinement. It is not used       refinement integrated across three standard back-
+as a standalone segmentation predictor. Instead,          bone architectures. The output of this stage is not
+the diffusion module acts as a structural cor-            the final conclusion, but a ranking of candidate
+rection mechanism that aims to improve bound-             configurations based on validation performance,
+ary continuity, suppress spurious activations, and        refinement gain, and convergence stability.
+preserve coherent mask topology. This design                 In Stage 2, the top-performing configurations
+makes the comparison across backbone-refiner              are retrained using a boundary-sensitive objec-
+pairs more interpretable, because the backbone            tive. This stage is intended to improve contour
+remains responsible for the initial semantic local-       fidelity without sacrificing the region-level quality
+ization while the diffusion branch focuses on re-         achieved during screening. The selected models
+finement.                                                 are optimized further only after Stage-1 screen-
+                                                      6
+Figure 4: Overview of the proposed diffusion-guided hybrid segmentation framework. The figure summarizes the coarse-
+to-refined prediction pipeline, the 3×3 backbone–refiner screening space, and the subsequent evaluation stages for ro-
+bustness, low-data learning, and cross-domain adaptation.
+
+
+ing has identified which backbone-refiner pairs are             In Stage 6, a constrained hyperparameter
+worth deeper refinement.                                      screening is performed around the validated re-
+   In Stage 3, the selected models are evaluated              training regime. Rather than exploring a large
+under reduced supervision to examine label ef-                search space, the tuning is restricted to a narrow
+ficiency. The training subsets are progressively              set of optimization parameters so that the overall
+reduced so that the effect of annotation scarcity             pipeline remains resource-aware.
+can be isolated from the effect of architectural                In Stage 7, the source-domain checkpoints
+change. This stage is important for assessing                 are transferred to the external benchmarks and
+whether the selected hybrid architectures preserve            adapted under controlled supervision. This final
+performance when supervision is limited.                      stage tests whether the source-domain refinement
+   In Stage 4, the selected models are subjected              behavior can be recovered or preserved under do-
+to perturbation-guided analysis. The perturba-                main shift.
+tion ranking obtained in this stage is then used to
+define the augmentation policy for retraining.                2.5. Boundary-Constrained Optimization
+   In Stage 5, the selected models are retrained                 Boundary-constrained optimization is applied
+using the perturbation-derived augmentation pol-              to the selected Stage-1 models to strengthen
+icy. The retraining proceeds on PlantSegV3 only,              structural delineation. This stage is motivated
+while the validation split remains clean, so that             by the observation that overlap-based metrics
+robustness is learned from source-domain failure              alone do not sufficiently capture the quality of
+modes rather than from target labels.                         thin, irregular, or fragmented regions. To address
+                                                          7
+Table 2: Summary of model scenarios used in the comparative evaluation. A tick indicates the presence of a component
+and a cross indicates its absence. DDPM, LDM (Latent Diffusion Model), and Semantic-Guided Diffusion (SGD) denote
+mask-space diffusion, latent diffusion, and semantic-guided diffusion, respectively. All nine configurations are screened
+with a weighted composite objective combining weighted cross-entropy and weighted Dice loss, as shown in the last
+column.
+
+ID Model category         Code Name                 Local detail Multi-scale context Global context Iterative denoising Latent compression Semantic conditioning Loss
+
+                          1-1   U-Net + DDPM            ✓               ✗                 ✗                ✓                  ✗                     ✗           LWCE+WDice
+ 1   U-Net hybrids        1-2   U-Net + LDM             ✓               ✗                 ✗                ✓                  ✓                     ✗           LWCE+WDice
+                          1-3   U-Net + SGD             ✓               ✗                 ✗                ✓                  ✗                     ✓           LWCE+WDice
+
+                          2-1   DeepLabV3+ + DDPM       ✓               ✓                 ✗                ✓                  ✗                     ✗           LWCE+WDice
+ 2   DeepLabV3+ hybrids   2-2   DeepLabV3+ + LDM        ✓               ✓                 ✗                ✓                  ✓                     ✗           LWCE+WDice
+                          2-3   DeepLabV3+ + SGD        ✓               ✓                 ✗                ✓                  ✗                     ✓           LWCE+WDice
+
+                          3-1   SegFormer + DDPM        ✗               ✓                 ✓                ✓                  ✗                     ✗           LWCE+WDice
+ 3   SegFormer hybrids    3-2   SegFormer + LDM         ✗               ✓                 ✓                ✓                  ✓                     ✗           LWCE+WDice
+                          3-3   SegFormer + SGD         ✗               ✓                 ✓                ✓                  ✗                     ✓           LWCE+WDice
+
+
+
+
+this, the objective combines three complementary                                         The low-data experiment is important for two
+terms:                                                                                reasons. First, it tests whether the diffusion re-
+                                                                                      finer and the boundary-aware objective remain
+     Lbco = λ1 Ldice + λ2 Lboundary + λ3 Llovasz .                          (4)       stable when the model sees fewer annotated ex-
+                                                                                      amples. Second, it provides evidence for whether
+The Dice term encourages overlap, the boundary                                        the proposed framework can support practical de-
+term penalizes contour mismatch, and the Lovasz                                       ployment scenarios in which extensive annotation
+component improves region-level optimization un-                                      is not feasible. Performance is reported using the
+der imbalanced foreground structure. In imple-                                        same metrics as in the full-data setting so that the
+mentation, the boundary term is computed from                                         effect of reduced supervision can be compared di-
+gradient-aligned differences between the predicted                                    rectly with the source-domain baseline.
+mask and the ground truth mask, so that the net-
+work is explicitly penalized when the predicted                                       2.7. Perturbation Sensitivity Analysis
+boundary deviates from the reference boundary                                            To identify which appearance changes most
+(Terven et al., 2025). The selected checkpoints                                       strongly affect segmentation quality, a pertur-
+are chosen by minimum validation loss under                                           bation sensitivity analysis is performed on the
+the composite objective, with refined mIoU and                                        source-domain model. The analysis includes
+Boundary-F1 used as secondary indicators of sta-                                      grayscale conversion, fog, coarse dropout, shadow,
+bility. This stage is important because it allows                                     Gaussian noise, blur, motion blur, brightness
+the diffusion refiner to be evaluated not only as                                     shifts, contrast shifts, gamma shifts, affine trans-
+a coarse denoiser, but as a structural correction                                     formations, perspective distortion, and elastic de-
+mechanism that is sensitive to contour quality.                                       formation. Each perturbation is applied indepen-
+                                                                                      dently in a deterministic evaluation setting, and
+2.6. Low-Data Evaluation under Reduced Super-                                         the resulting refined prediction is compared with
+     vision                                                                           the clean baseline (Tavera et al., 2022). For each
+   After boundary-constrained optimization, the                                       perturbation, the drop in mIoU and Boundary-
+selected models are evaluated under progressively                                     F1 relative to the clean condition is measured.
+reduced supervision. Smaller labeled subsets are                                      The perturbations are then ranked by severity,
+sampled in a nested manner from the training set,                                     allowing the training pipeline to identify which
+while the validation split is kept fixed. This design                                 distortions are most damaging to structural seg-
+isolates the effect of label scarcity and allows the                                  mentation. This ranking is used to derive the
+study to determine whether the selected hybrid                                        augmentation policy for the next stage. In this
+architectures preserve performance when supervi-                                      way, the retraining process becomes failure-mode
+sion is limited (Fawakherji et al., 2026).                                            driven rather than manually tuned.
+                                                                                  8
+Figure 5: Architectures of the three selected hybrid segmentation configurations used in this study: (a) U-Net + semantic-
+guided diffusion, (b) DeepLabV3+ + DDPM, and (c) DeepLabV3+ + semantic-guided diffusion. Each subfigure shows
+the backbone encoder, the prediction head, and the corresponding diffusion-based refinement branch.
+
+
+2.8. Augmentation-Guided Retraining                             under a small local hardware budget, the retrain-
+   The perturbation ranking is converted into an                ing schedule is intentionally compact. The goal
+augmentation policy that is used for retraining                 is not to maximize training duration, but to test
+the selected models on PlantSegV3. The pol-                     whether a carefully selected augmentation policy
+icy is deliberately structured in two phases. The               can improve robustness without requiring large-
+first phase applies mild geometric and photomet-                scale compute.
+ric variation to maintain stability while avoiding
+excessive regularization. The second phase intro-
+                                                                2.9. Constrained Hyperparameter Screening
+duces stronger perturbations that reflect the most
+severe failure modes identified in the sensitivity
+analysis. This includes appearance shifts such as                  Hyperparameter tuning is conducted in a con-
+shadowing, haze, blur, noise, contrast variation,               strained manner. Rather than performing ex-
+and partial occlusion.                                          haustive search over large grids, a compact set
+   Retraining is performed only on the source do-               of hyperparameters is used to identify stable op-
+main, while the validation split remains clean.                 erating points for the selected models.
+This design ensures that the augmentation pol-                     The constrained screening philosophy is consis-
+icy is learned as a robustness mechanism rather                 tent with the overall goal of the paper: to evalu-
+than as a substitute for target supervision. The                ate whether diffusion-guided segmentation can re-
+same boundary-constrained loss used in Stage 2                  main effective under practical training limits (Ra-
+is retained during this retraining stage so that                iaan et al., 2024). Accordingly, hyperparameters
+structural fidelity and overlap quality are opti-               are treated as fixed experimental settings after se-
+mized jointly. Because the models are trained                   lection, not as a separate optimization target.
+                                                            9
+Algorithm 1 Staged evaluation of the proposed                 ered once a small amount of target supervision
+diffusion-guided hybrid segmentation framework                becomes available? In this setting, the emphasis
+Require: Source dataset Ds , backbone set B, refiner          is not on exhaustive domain adaptation engineer-
+    set R, low-shot fractions F, perturbation set T ,         ing, but on controlled recovery of structural qual-
+    target datasets Dt                                        ity. This makes the adaptation study directly rel-
+Ensure: Selected checkpoints and performance sum-             evant to field deployment, where annotated target
+    maries                                                    data are often scarce and expensive to obtain.
+ 1: Stage 1: Architectural screening.                            Overall, the methodology is deliberately
+ 2: Train all (b, r) ∈ B × R on Ds using Lstage1 and
+                                                              resource-aware,       robustness-oriented,     and
+    rank by validation mIoU and Boundary-F1.
+                                                              evaluation-driven. The study is designed to
+ 3: Retain the top-K configurations.
+                                                              answer not only which backbone-refiner combina-
+ 4: Stage 2: Boundary-constrained optimiza-
+    tion.
+                                                              tion performs best, but also which combinations
+ 5: Retrain the selected configurations using Lbco and        are stable, which perturbations matter most, and
+    keep the best checkpoint per model.                       how well the resulting pipeline can operate under
+ 6: Stage 3: Low-data evaluation.                             realistic training constraints.
+ 7: Evaluate the selected models on nested fractions
+    F of Ds .                                                 2.11. Evaluation Metrics and Optimization Ob-
+ 8: Stage 4: Perturbation sensitivity analysis.                     jective
+ 9: Measure performance drops under T and derive
+    the augmentation policy A.                                   The proposed framework is evaluated using a
+10: Stage 5: Augmentation-guided retraining.                  complementary set of region-based, boundary-
+11: Retrain the selected models on Ds using A and             based, and pixel-wise metrics. This is necessary
+    the boundary-aware objective.                             because stress segmentation quality is not deter-
+12: Stage 6:        Constrained hyperparameter                mined only by the amount of overlap between the
+    screening.                                                predicted and reference masks, but also by how
+13: Tune a compact neighborhood around the vali-              well the model preserves thin structures, irregular
+    dated retraining regime.                                  boundaries, and small disconnected regions. Ac-
+14: Stage 7: Cross-domain transfer.                           cordingly, mean Intersection-over-Union (mIoU)
+15: Adapt the selected checkpoints to each Dt ∈ Dt            and Dice score quantify region-level agreement,
+    under low-shot supervision.
+                                                              Boundary-F1 measures contour fidelity, and pixel
+16: return Selected checkpoints and evaluation re-
+                                                              accuracy reports the fraction of correctly labeled
+    sults
+                                                              pixels over the full image (Mohammadi et al.,
+                                                              2025; Mohamed et al., 2021; Bokhovkin and Bur-
+2.10. Cross-Domain Generalization and Con-                    naev, 2019). Beyond delineation, these metrics
+      trolled Adaptation                                      provide pixel-level quantification of the affected
+                                                              region, allowing the model to be evaluated in
+   Finally, the selected source-domain checkpoints
+                                                              terms of how much of the target structure is cor-
+are transferred to NWRD and CWFID to study
+                                                              rectly recovered rather than only whether the dis-
+cross-domain generalization (Rafi et al., 2024).
+                                                              ease is detected at the image level.
+Direct transfer is first evaluated without target-
+                                                                 Let Y and Ŷ denote the ground-truth and pre-
+side fine-tuning. This zero-shot evaluation mea-
+                                                              dicted masks, respectively, and let C be the num-
+sures how much of the learned structural bias re-
+                                                              ber of classes. For class c, let T Pc , F Pc , and F Nc
+mains intact when the model is exposed to a new
+                                                              denote the true positives, false positives, and false
+domain. The same checkpoints are then adapted
+                                                              negatives. The class-wise Intersection-over-Union
+using small labeled target subsets under a con-
+                                                              is defined as
+trolled low-shot protocol. The adaptation pro-
+tocol is designed to answer a practical question:                                         T Pc
+how much of the lost performance can be recov-                            IoUc =                        .        (5)
+                                                                                   T Pc + F P c + F N c
+                                                         10
+The mean Intersection-over-Union is then com-               requires sharp delineation, but it also means BF1
+puted as                                                    is often lower than mIoU or Dice for thin and
+                        C−1
+                      1 X                                   fragmented stress regions. Boundary-sensitive
+            mIoU =          IoUc .         (6)              evaluation studies have shown that such metrics
+                     C c=0
+                                                            reveal contour errors that standard mask-overlap
+  The Dice coefficient is defined as                        scores can overlook, while tolerant segmentation
+                           2T Pc                            metrics explicitly use the tolerance radius to
+          Dicec =                       ,       (7)         define acceptable boundary deviations (Mohamed
+                    2T Pc + F Pc + F Nc
+                                                            et al., 2021; Bokhovkin and Burnaev, 2019).
+with the macro-averaged Dice score given by
+                            C−1                             During training, the selected models are op-
+                      1 X
+               Dice =       Dicec .             (8)         timized with a composite objective that combines
+                      C c=0                                 weighted cross-entropy, Dice loss, boundary
+  Pixel accuracy is computed as                             loss, and Lovász loss. Weighted cross-entropy
+                                                            addresses class imbalance by penalizing misclas-
+                  1 X
+                        N                                   sification of minority foreground pixels more
+             PA =       I(ŷi = yi ) ,          (9)         strongly, Dice loss improves overlap under skewed
+                  N i=1
+                                                            foreground-background ratios, boundary loss ex-
+where N is the total number of pixels and I(·) is           plicitly encourages sharper contours, and Lovász
+the indicator function.                                     loss serves as a differentiable surrogate aligned
+   To assess boundary quality, we extract the               with IoU optimization. The overall objective is
+boundary map B(·) of a mask using morphologi-               written as
+cal erosion and define a dilated boundary opera-
+                                                             Ltotal = λwce Lwce + λdice Ldice
+tor δ(·) for tolerance matching. Boundary preci-                                                                (11)
+sion and boundary recall are then computed from                       + λboundary Lboundary + λlovasz Llovasz .
+the overlap between the predicted and ground-
+truth boundaries, and their harmonic mean gives                This composite formulation is used through-
+Boundary-F1:                                                out the staged evaluation pipeline, with the loss
+                                                            weights kept fixed after selection so that the ob-
+                        2 · P b · Rb                        served differences in performance arise primarily
+                BF1 =                ,         (10)
+                         Pb + R b                           from the architecture, refinement strategy, and
+where Pb and Rb are the boundary precision                  training regime rather than from the optimization
+and boundary recall, respectively. In this work,            recipe.
+BF1 is reported because it is more sensitive than
+overlap-based scores to contour sharpness and               3. Results and Discussion
+boundary leakage, which are especially important
+for fragmented stress regions.                                 This section evaluates the proposed diffusion-
+                                                            guided hybrid framework in the same order as the
+Boundary-F1 is computed with a one-pixel                    methodology: architectural screening, boundary-
+tolerance band around the ground-truth contour.             constrained optimization, low-data evaluation,
+A boundary prediction is therefore counted as               perturbation sensitivity analysis, augmentation-
+correct only when it lies within this narrow                guided retraining, constrained hyperparameter
+neighborhood, which makes the metric intention-             screening, and cross-domain transfer. The results
+ally strict. As a result, small contour shifts, tiny        show that diffusion refinement is most useful when
+holes, or minor boundary leakage can reduce the             it is treated as a structural correction stage rather
+score even when the overlap-based metrics re-               than as a replacement for the segmentation back-
+main high. This is desirable when the application           bone. They also show that the proposed pipeline
+                                                       11
+remains effective under a compact training bud-
+get, which is important because all source-domain
+experiments are conducted under practical com-
+pute constraints.
+
+3.1. Architectural Screening on PlantSegV3
+   The initial 3x3 screening study identifies clear
+architecture-dependent behavior under the shared
+Stage-1 objective. Among the nine backbone–
+refiner combinations, DeepLabV3+ + DDPM
+achieves the strongest validation performance
+with a refined mIoU of 0.7043, followed closely
+by U-Net + semantic-guided diffusion at 0.7026
+and U-Net + DDPM at 0.6998. DeepLabV3+ +                     Figure 6: Qualitative comparison of coarse and diffusion-
+semantic-guided diffusion yielded the most sub-              refined predictions, where the same input sample is tested
+stantial positive refinement deltas among all com-           across different models to facilitate direct comparison of
+petitive models, producing an mIoU improve-                  refinement behavior. Quantitative screening results are
+                                                             reported in Table 3.
+ment of +0.0128 and a Boundary-F1 increase of
++0.0120 over its coarse backbone predictions. In
+contrast, both latent-diffusion variants fail to pro-        framework; rather, it indicates that diffusion pri-
+vide a consistent improvement over the corre-                ors must be matched carefully to the backbone
+sponding coarse predictions, and the SegFormer               representation and the available training budget.
+branch remains substantially weaker, with refined            Table 3 reports the coarse and refined valida-
+mIoU values in the 0.5049–0.5195 range.                      tion metrics for all nine backbone-refiner com-
+   The coarse-versus-refined comparison is impor-            binations, whereas Figure 6 shows representa-
+tant because the framework is designed around                tive coarse-to-refined predictions and Figure 7
+refinement rather than replacement. In the best-             summarizes the distribution of validation met-
+performing configurations, diffusion produces a              rics across the screened configurations. Taken to-
+measurable but modest improvement over the                   gether, these results show that the effect of diffu-
+backbone output. DeepLabV3+ + DDPM im-                       sion refinement is architecture-dependent rather
+proves from 0.6918 coarse mIoU to 0.7043 refined             than uniform across all pairings.
+mIoU and increases Boundary-F1 from 0.0644                      Out of the nine evaluated backbone-refiner
+to 0.0755. U-Net + semantic-guided diffusion                 combinations, we selected DeepLabV3+ with
+shows a similar gain, improving from 0.6900 to               DDPM, U-Net with semantic-guided diffusion,
+0.7026 in mIoU and from 0.0750 to 0.0797 in                  and DeepLabV3+ with semantic-guided diffusion
+Boundary-F1. These gains confirm that the dif-               as our primary architectures. The full 3×3 design
+fusion branch adds useful structural correction              space is summarized in Table 2, while the layer-
+when the backbone–refiner pairing is appropriate.            level layouts of the three selected backbone-refiner
+   Overall, the screening stage suggests three               configurations are shown in Figure 5. The figure
+practical conclusions. First, the convolutional              is included to clarify how the backbone, predic-
+backbones are more stable than the transformer               tion head, and diffusion-based refiner interact in
+branch under the current short-screening regime.             each retained model.
+Second, DDPM and semantic-guided diffusion
+are the most reliable refiners in this setting.              3.2. Boundary-Constrained Optimization for
+Third, latent diffusion is not consistently ben-                  Structural Delineation
+eficial when training is intentionally brief and               After screening, the selected configurations are
+compute-limited. This is not a failure of the                retrained using the boundary-constrained objec-
+                                                        12
+                                                                                                                                                                                                           +0.0110
+
+
+
+
+                                                                                                                                                                                                                                +0.0141
+                                                                                                                                                                                                           +0.0037
+                                                                                                                                                                                                           +0.0151
+                                                                                                                                                                                                                                +0.0175
+                                                                                                                                                                                                                                +0.0075
+
+
+                                                                                                                                                                                                                                                     +0.0106
+                                                                                                                                                                                                                                                     -0.0034
+                                                                                                                                                                                                                                                     -0.0049
+                                                                                                                                                                                            ∆
+                                                                                                                                                            Pixel Accuracy
+                                                                                                                                                                                          Coarse Refined
+                                                                                                                                                                                                           0.9023
+                                                                                                                                                                                                           0.8998
+                                                                                                                                                                                                           0.8981
+                                                                                                                                                                                                                                0.8981
+                                                                                                                                                                                                                                0.9013
+                                                                                                                                                                                                                                0.8958
+                                                                                                                                                                                                                                                     0.7888
+                                                                                                                                                                                                                                                     0.8030
+                                                                                                                                                                                                                                                     0.8077
+Table 3: Stage-1 3x3 screening on PlantSegV3. For each configuration, the best validation epoch within the 5-epoch screening run is reported. Qualitative
+
+
+
+
+                                                                                                                                                                                                           -0.0011 0.8913
+                                                                                                                                                                                                           -0.0040 0.8961
+                                                                                                                                                                                                           +0.0086 0.8830
+                                                                                                                                                                                                                                +0.0076 0.8806
+                                                                                                                                                                                                                                -0.0041 0.8937
+                                                                                                                                                                                                                                +0.0078 0.8816
+                                                                                                                                                                                                                                                     -0.0007 0.7783
+                                                                                                                                                                                                                                                     +0.0363 0.8064
+                                                                                                                                                                                                                                                     +0.0237 0.8127
+                                                                                                                                                                                            ∆
+                                                                                                                                                                                          Coarse Refined
+                                                                                                                                                            Dice
+
+
+                                                                                                                                                                                                           0.7825
+                                                                                                                                                                                                           0.7833
+                                                                                                                                                                                                           0.7885
+                                                                                                                                                                                                                                0.7896
+                                                                                                                                                                                                                                0.7808
+                                                                                                                                                                                                                                0.7852
+                                                                                                                                                                                                                                                     0.6056
+                                                                                                                                                                                                                                                     0.6200
+                                                                                                                                                                                                                                                     0.6130
+                                                                                                                                                                                                           +0.0000 0.7836
+                                                                                                                                                                                                           -0.0022 0.7874
+                                                                                                                                                                                                           +0.0047 0.7800
+                                                                                                                                                                                                                                +0.0111 0.7820
+                                                                                                                                                                                                                                +0.0018 0.7849
+                                                                                                                                                                                                                                +0.0120 0.7773
+                                                                                                                                                                                                                                                     +0.0029 0.6064
+                                                                                                                                                                                                                                                     +0.0073 0.5837
+                                                                                                                                                                                                                                                     +0.0044 0.5892            Figure 7: Performance comparison of all screened hybrid
+                                                                                                                                                                                                                                                                               configurations on the PlantSegV3 dataset. Box plots il-
+                                                                                                                                                                                                                                                                               lustrate the distribution of validation metrics for the nine
+                                                                                                                                                                                                                                                                               backbone-refiner combinations. Panel (a) displays refined
+                                                                                                                                                                                            ∆
+
+
+
+
+                                                                                                                                                                                                                                                                               mIoU, panel (b) shows refined Boundary-F1, panel (c)
+                                                                                                                                                            Boundary F1
+
+
+
+
+                                                                                                                                                                                                                                                                               presents the Dice coefficient, and panel (d) illustrates Pixel
+                                                                                                                                                                                                                                                                               Accuracy. Colors denote the base architecture group, and
+                                                                                                                                                                                          Coarse Refined
+                                                                                                                                                                                                           0.0761
+                                                                                                                                                                                                           0.0783
+                                                                                                                                                                                                           0.0797
+                                                                                                                                                                                                                                0.0755
+                                                                                                                                                                                                                                0.0723
+                                                                                                                                                                                                                                0.0695
+                                                                                                                                                                                                                                                     0.0299
+                                                                                                                                                                                                                                                     0.0312
+                                                                                                                                                                                                                                                     0.0289
+
+
+
+
+                                                                                                                                                                                                                                                                               the x-axis codes correspond to the specific configurations
+                                                                                                                                                                                                                                                                               detailed in Table 3.
+                                                                                                                                                                                                           +0.0028 0.0761
+
+                                                                                                                                                                                                           +0.0126 0.0750
+                                                                                                                                                                                                                                +0.0126 0.0644
+                                                                                                                                                                                                                                -0.0007 0.0706
+                                                                                                                                                                                                                                +0.0128 0.0574
+                                                                                                                                                                                                                                                     +0.0030 0.0270
+                                                                                                                                                                                                           -0.0029 0.0805
+
+
+
+
+                                                                                                                                                                                                                                                     +0.0273 0.0239
+                                                                                                                                                                                                                                                     +0.0165 0.0244
+
+
+
+
+                                                                                                                                                                                                                                                                               tive composed of Dice, boundary alignment, and
+                                                                                                                                                                                                                                                                               Lovasz terms. This stage improves structural
+                                                                                                                                                                                                                                                                               delineation without destabilizing the region-level
+                                                                                                                                                                                                                                                                               segmentation quality obtained during screen-
+                                                                                                                                                                                            ∆
+
+
+
+
+                                                                                                                                                                                                                                                                               ing. The optimized checkpoints remain tightly
+                                                                                                                                                                                                                                                                               grouped in performance, with refined mIoU values
+                                                                                                                                                            mIoU
+                                                                                                                                                                                          Coarse Refined
+
+
+
+
+                                                                                                                                                                                                                                                                               of 0.7114 for DeepLabV3+ + DDPM, 0.7052 for
+                                                                                                                                                                                                           0.6998
+                                                                                                                                                                                                           0.6988
+                                                                                                                                                                                                           0.7026
+                                                                                                                                                                                                                                0.7043
+                                                                                                                                                                                                                                0.6980
+                                                                                                                                                                                                                                0.6984
+                                                                                                                                                                                                                                                     0.5049
+                                                                                                                                                                                                                                                     0.5195
+                                                                                                                                                                                                                                                     0.5164
+comparison of coarse and refined masks reported in Figure 6.
+
+
+
+
+                                                                                                                                                                                                                                                                               DeepLabV3+ + semantic-guided diffusion, and
+                                                                                                                                                                                                                                                                               0.7099 for U-Net + semantic-guided diffusion.
+                                                                                                                                                                                                                                                                                  Table 4 quantifies the effect of boundary-
+                                                                                                                                                                                                                       0.6969
+                                                                                                                                                                                                           Latent Diff 0.7016
+                                                                                                                                                                                                            Semantic 0.6900
+                                                                                                                                                                                                                                            0.6918
+                                                                                                                                                                                                                                Latent Diff 0.6986
+                                                                                                                                                                                                                                 Semantic 0.6856
+                                                                                                                                                                                                                                                                 0.5019
+                                                                                                                                                                                                                                                     Latent Diff 0.4922
+                                                                                                                                                                                                                                                      Semantic 0.4999
+
+
+
+
+                                                                                                                                                                                                                                                                               constrained optimization relative to the Stage-
+                                                                                                                                                                                                                                                                               1 checkpoints, and Figure 8 provides the corre-
+                                                                                                                                                                                                                                                                               sponding qualitative examples. The main im-
+                                                                                                                                                                      Refiner
+
+
+                                                                                                                                                                                                             DDPM
+
+
+
+                                                                                                                                                                                                                                  DDPM
+
+
+
+                                                                                                                                                                                                                                                       DDPM
+
+
+
+
+                                                                                                                                                                                                                                                                               provement is not in overlap alone, but in contour
+                                                                                                                                                                                                                                                                               fidelity, which is exactly the behavior expected
+                                                                                                                                                                                                                                                                               from a boundary-aware objective. DeepLabV3+
+                                                                                                                                                                                                                                                                               + DDPM increases Boundary-F1 from 0.0755 at
+                                                                                                                                                                      Code Architecture
+
+
+
+
+                                                                                                                                                                                                                                DeepLabV3+
+                                                                                                                                                                                                                                DeepLabV3+
+                                                                                                                                                                                                                                DeepLabV3+
+
+
+
+
+                                                                                                                                                                                                                                                                               screening to 0.2194 after boundary-aware opti-
+                                                                                                                                                                                                                                                                               mization. DeepLabV3+ + semantic-guided dif-
+                                                                                                                                                                                                                                                     SegFormer
+                                                                                                                                                                                                                                                     SegFormer
+                                                                                                                                                                                                                                                     SegFormer
+
+
+
+
+                                                                                                                                                                                                                                                                               fusion rises from 0.0695 to 0.2195, and U-Net +
+                                                                                                                                                                                                           UNet
+                                                                                                                                                                                                           UNet
+                                                                                                                                                                                                           UNet
+
+
+
+
+                                                                                                                                                                                                                                                                               semantic-guided diffusion improves from 0.0797
+                                                                                                                                                                                                                                                                               to 0.2490. These gains are much larger than
+                                                                                                                                                                                                                                                                               the changes in mIoU, which indicates that the
+                                                                                                                                                                                                                                                                               boundary-aware loss primarily sharpens contour
+                                                                                                                                                                                                           1-1
+                                                                                                                                                                                                           1-2
+                                                                                                                                                                                                           1-3
+                                                                                                                                                                                                                                2-1
+                                                                                                                                                                                                                                2-2
+                                                                                                                                                                                                                                2-3
+                                                                                                                                                                                                                                                     3-1
+                                                                                                                                                                                                                                                     3-2
+                                                                                                                                                                                                                                                     3-3
+
+
+
+
+                                                                                                                                                                                                                                                                               fidelity rather than simply increasing overlap.
+                                                                                                                                                                                                                                                                          13
+Table 4: Effect of boundary-constrained optimization relative to the Stage-1 screening checkpoint. Qualitative compar-
+ison is reported in Figure 8.
+
+Model                             Screening mIoU Optimized mIoU ∆ mIoU Screening BF1 Optimized BF1            ∆ BF1
+DeepLabV3+ + DDPM                     0.7043           0.7114         +0.0071     0.0755         0.2194      +0.1439
+DeepLabV3+ + Semantic-Guided          0.6984           0.7052         +0.0068     0.0695         0.2195      +0.1500
+U-Net + Semantic-Guided               0.7026           0.7099         +0.0073     0.0797         0.2490      +0.1693
+
+
+                                                                show small improvements in refined mIoU and
+                                                                Boundary-F1. For example, the observed gains
+                                                                relative to the full-data control remain positive
+                                                                across all three selected hybrids, with the low-
+                                                                data deltas staying in a narrow range rather
+                                                                than collapsing under scarce supervision. Ta-
+                                                                ble 5 reports the low-data supervision results
+                                                                for the selected hybrid architectures, while Fig-
+                                                                ure 9 visualizes the progression across annota-
+                                                                tion fractions. This stability is not due to ar-
+Figure 8: Qualitative comparison of boundary-constrained
+                                                                chitecture alone. When the same 10% supervi-
+optimization on representative PlantSegV3 validation
+samples for the three selected hybrid models. Effect on         sion setting is repeated with randomly initialized
+performance metrics is reported in Table 4.                     encoders, the performance drops sharply com-
+                                                                pared with the pretrained counterparts. The pre-
+                                                                trained versions achieve refined mIoU values of
+This behavior is desirable for stress-related plant             0.7151 for DeepLabV3+ + DDPM, 0.7140 for
+segmentation, where the target regions are often                U-Net + semantic-guided diffusion, and 0.7090
+thin, fragmented, and visually ambiguous (Singh                 for DeepLabV3+ + semantic-guided diffusion,
+et al., 2018).                                                  whereas the corresponding randomly initialized
+   Among the selected hybrids, DeepLabV3+                       models fall to 0.5058, 0.5199, and 0.5097, respec-
++ DDPM retains the strongest overlap perfor-                    tively. The mean gain from pretraining is there-
+mance, whereas U-Net + semantic-guided dif-                     fore substantial. This confirms that the strong
+fusion produces the best boundary localization.                 low-data behavior is primarily driven by the
+DeepLabV3+ + semantic-guided diffusion pro-                     combination of transfer learning and boundary-
+vides a balanced intermediate behavior. The opti-               aware optimization, not by the architectural form
+mized models therefore support the interpretation               alone (He et al., 2025). This result also moti-
+that the refiner interacts with the backbone rep-               vates a study on the appearance diversity of the
+resentation in a model-specific way, rather than                PlantSegV3 dataset. In the presence of recurring
+acting as a generic post-processing block.                      appearance patterns and substantial structural
+                                                                redundancy, even reduced subsets still preserve
+3.3. Low-Data Evaluation under Reduced Super-                   much of the effective source-domain distribution.
+     vision                                                     In this scenario, the selected hybrids therefore do
+   The selected models are then evaluated under                 not require exhaustive annotation to remain use-
+progressively reduced annotation budgets. The                   ful. Instead, they benefit from a compact but
+results show that performance remains remark-                   representative supervision set together with pre-
+ably stable even when supervision is reduced well               trained visual priors and a boundary-sensitive ob-
+below the full-data regime. Across the reduced-                 jective. This is further explored in subsection
+data settings, the models remain close to the                   3.8.1.
+reference condition, and several settings even
+                                                           14
+Table 5: Low-data supervision results for the selected hybrid architectures. The 100% setting serves as the full-data
+control, while 75%, 50%, 25%, and 10% correspond to nested fine-tuning subsets. Best checkpoints are selected using
+minimum validation loss.
+
+ Model                                 Fraction Samples Refined mIoU Refined Dice Refined BF1 Pixel Acc
+ DeepLabV3+ + DDPM                     100%          7916            0.7114        0.7935        0.2194        0.9039
+ DeepLabV3+ + DDPM                     75%           5937            0.7167        0.7973        0.2267        0.9072
+ DeepLabV3+ + DDPM                     50%           3958            0.7135        0.7944        0.2278        0.9044
+ DeepLabV3+ + DDPM                     25%           1979            0.7138        0.7944        0.2240        0.9061
+ DeepLabV3+ + DDPM                     10%            792            0.7151        0.7963        0.2283        0.9060
+ U-Net + Semantic-Guided               100%          7916            0.7099        0.7908        0.2490        0.9063
+ U-Net + Semantic-Guided               75%           5937            0.7169        0.7971        0.2618        0.9057
+ U-Net + Semantic-Guided               50%           3958            0.7153        0.7960        0.2586        0.9044
+ U-Net + Semantic-Guided               25%           1979            0.7156        0.7962        0.2548        0.9061
+ U-Net + Semantic-Guided               10%            792            0.7140        0.7948        0.2548        0.9057
+ DeepLabV3+ + Semantic-Guided          100%          7916            0.7052        0.7860        0.2195        0.9028
+ DeepLabV3+ + Semantic-Guided          75%           5937            0.7133        0.7931        0.2321        0.9064
+ DeepLabV3+ + Semantic-Guided          50%           3958            0.7150        0.7955        0.2318        0.9055
+ DeepLabV3+ + Semantic-Guided          25%           1979            0.7108        0.7918        0.2251        0.9061
+ DeepLabV3+ + Semantic-Guided          10%            792            0.7090        0.7898        0.2250        0.9039
+
+
+                                                                 evidence of the sharp degradation often ex-
+                                                                 pected in low-data regimes.        More interest-
+                                                                 ingly, some configurations exhibit slight gains
+                                                                 over the full-data reference, indicating that the
+                                                                 boundary-constrained objective acts as a bene-
+                                                                 ficial regularizer rather than a mechanism that
+                                                                 depends strongly on large-scale supervision. For
+                                                                 DeepLabV3+ + DDPM, refined mIoU increases
+                                                                 from 0.7114 under full supervision to 0.7151 at
+                                                                 10%, while Boundary-F1 also rises from 0.2194
+                                                                 to 0.2283. U-Net + Semantic-Guided shows
+                                                                 the strongest boundary behavior overall, reaching
+                                                                 Boundary-F1 = 0.2586 at 50% while maintain-
+                                                                 ing refined mIoU above 0.715 across all reduced-
+                                                                 data settings. DeepLabV3+ + Semantic-Guided
+Figure 9: Performance of the selected hybrid segmenta-           remains similarly robust, with refined mIoU im-
+tion architectures under progressively reduced annotation
+budgets. (a) Refined mIoU and (b) Refined Boundary-
+                                                                 proving to 0.7150 at 50% and staying close to
+F1 obtained using 100%, 75%, 50%, 25%, and 10% of the            the full-data control at lower fractions. The
+available training annotations. (See Table 5).                   strong low-data performance is also supported by
+                                                                 the size and visual redundancy of PlantSegV3,
+                                                                 which means that even reduced annotation sub-
+   Across all three architectures, performance re-               sets still capture much of the dominant source-
+mains remarkably stable even under substan-                      domain structure (Li et al., 2023).
+tial reductions in annotation volume, with no
+                                                            15
+                                                              PlantSegV3.      The retraining stage improves
+                                                              robustness while preserving the clean-domain
+                                                              performance of the optimized models.            On
+                                                              the clean validation split, the retrained check-
+                                                              points achieve refined mIoU values of 0.7165 for
+                                                              DeepLabV3+ + DDPM, 0.7122 for DeepLabV3+
+                                                              + semantic-guided diffusion, and 0.7111 for U-
+                                                              Net + semantic-guided diffusion. Boundary-F1
+                                                              also remains strong, with values of 0.2352, 0.2273,
+                                                              and 0.2601, respectively. The augmentation pol-
+                                                              icy improves robustness most clearly on the per-
+Figure 10: Qualitative robustness assessment of the           turbations that were previously identified as se-
+DeepLabV3+ + DDPM hybrid architecture under repre-
+                                                              vere. Fog and shadow are recovered to near-clean
+sentative augmentation-induced perturbations. (See Ta-
+ble 6).                                                       levels, while coarse dropout and noise remain
+                                                              more challenging but still noticeably improved
+                                                              compared with the unadapted models. Grayscale
+   Overall, these results indicate that the se-
+                                                              remains the hardest condition, which is consis-
+lected hybrid architectures are highly annotation-
+                                                              tent with the sensitivity ranking and confirms
+efficient and that the boundary-aware training
+                                                              that the models still depend partly on color in-
+regime can maintain, and in some cases slightly
+                                                              formation. Table 7 summarizes the robustness
+improve, both overlap-based and boundary-
+                                                              gains obtained after augmentation-guided retrain-
+sensitive performance under limited supervision.
+                                                              ing, and Figure 11 shows representative qualita-
+3.4. Perturbation Sensitivity Analysis                        tive recovery under the most severe perturbations.
+   The perturbation analysis identifies the fail-             The retraining policy improves robustness with-
+ure modes that most strongly degrade segmen-                  out degrading clean-domain performance, indicat-
+tation quality. Among the tested perturbations,               ing that the perturbation-derived augmentation
+grayscale conversion is by far the most damag-                curriculum acts as a corrective mechanism rather
+ing, producing a refined mIoU drop of -0.2585.                than a generic regularizer.
+Fog is the second most severe perturbation with
+                                                              3.6. Constrained Hyperparameter Screening
+a drop of -0.0820, followed by coarse dropout
+(-0.0590), shadow (-0.0326), Gaussian noise (-                   A short hyperparameter search is then per-
+0.0244), blur (-0.0209), perspective distortion (-            formed around the validated retraining regime.
+0.0160), brightness-dark shifts (-0.0115), contrast           The goal is not to pursue exhaustive optimiza-
+reduction (-0.0100), and motion blur (-0.0082).               tion, but to check whether the retrained mod-
+Table 6 and Figure 10 together show that the most             els can be fine-tuned further under a restricted
+damaging perturbations are photometric rather                 compute budget (Raiaan et al., 2024). The re-
+than geometric. Grayscale conversion is the most              sults show only modest improvements, indicat-
+severe failure mode, followed by fog and coarse               ing that augmentation-guided retraining already
+dropout, which motivates the augmentation pol-                places the models close to a stable operating
+icy used in the retraining stage. The ranking                 point.
+based severity analysis provides a direct empiri-                After constrained screening, U-Net + semantic-
+cal basis for the augmentation policy used in the             guided diffusion reaches the best clean-validation
+retraining stage.                                             mIoU of 0.7183 and Boundary-F1 of 0.2658.
+                                                              DeepLabV3+ + semantic-guided diffusion im-
+3.5. Augmentation-Guided Retraining                           proves to 0.7164 mIoU and 0.2447 BF1, while
+   The perturbation-derived augmentation pol-                 DeepLabV3+ + DDPM remains essentially un-
+icy is used to retrain the selected models on                 changed in mIoU at 0.7161 but improves in BF1 to
+                                                         16
+     Table 6: Perturbation sensitivity analysis of the selected DeepLabV3+ + DDPM hybrid model and the augmentation policy derived from the observed
+     performance degradation. The table reports refined mIoU and Boundary-F1 under each perturbation, together with the change relative to the clean
+     condition, the resulting severity rank, and the retraining priority assigned for augmentation-guided retraining. Negative ∆ values indicate performance loss.
+     Qualitative robustness assessment is reported in Figure 10.
+
+                 Condition            Refined mIoU ∆ mIoU Refined BF1              ∆ BF1     Severity rank Sensitivity level Retraining priority
+                 Clean                    0.7066        0.0000        0.2225       0.0000          –                 –                    –
+                 Affine                   0.7111       +0.0046       0.2297       +0.0072          –              Low                   Low
+                 Horizontal Flip          0.7060        -0.0006      0.2199        -0.0027         –              Low                   Low
+                 Elastic                  0.7052        -0.0014      0.2204        -0.0021          –             Low                   Low
+                 Gamma Bright             0.7046        -0.0020      0.2182        -0.0043         –              Low                   Low
+                 Contrast High            0.7033        -0.0032      0.2199        -0.0026         –              Low                   Low
+                 Vertical Flip            0.7018        -0.0047      0.2174        -0.0051         –            Medium                Medium
+
+
+
+
+17
+                 Brightness Bright        0.7013        -0.0052      0.2162        -0.0064          –           Medium                Medium
+                 Gamma Dark               0.7008        -0.0058      0.2163        -0.0062          –           Medium                Medium
+                 Motion Blur              0.6984        -0.0082      0.2044        -0.0181         10             Mild                  Low
+                 Contrast Low             0.6966        -0.0100      0.2108        -0.0117         9              Mild                  Low
+                 Brightness Dark          0.6951        -0.0115      0.2099        -0.0126          8             Mild                  Low
+                 Perspective              0.6906        -0.0160      0.1948        -0.0277         7            Moderate              Medium
+                 Blur                     0.6857        -0.0209      0.1933        -0.0293          6           Moderate              Medium
+                 Noise                    0.6821        -0.0244      0.1921        -0.0304          5           Moderate              Medium
+                 Shadow                   0.6740        -0.0326      0.1902        -0.0323          4            Severe                High
+                 Coarse Dropout           0.6476        -0.0590      0.1735        -0.0490          3            Severe                High
+                 Fog                      0.6246        -0.0820      0.1300        -0.0925          2           Critical             Very High
+                 Grayscale                0.4481       -0.2585       0.0920       -0.1305           1           Critical             Very High
+Table 7: Effect of augmentation-guided retraining on the robustness of the DeepLabV3+ + DDPM hybrid architecture.
+Positive ∆ values indicate performance improvement after retraining. Qualitative comparison is reported in Figure 11.
+
+         Condition             Before mIoU After mIoU ∆ mIoU Before BF1 After BF1                      ∆ BF1
+         Clean                     0.7066         0.7165           +0.0099     0.2225       0.2352     +0.0127
+         Grayscale                 0.4481         0.6375           +0.1894     0.0920       0.1550     +0.0630
+         Fog                       0.6246         0.7153           +0.0907     0.1300       0.2342     +0.1042
+         Coarse Dropout            0.6476         0.6832           +0.0356     0.1735       0.1985     +0.0250
+         Shadow                    0.6740         0.7096           +0.0356     0.1902       0.2281     +0.0379
+         Noise                     0.6821         0.6988           +0.0167     0.1921       0.2098     +0.0177
+         Blur                      0.6857         0.6997           +0.0140     0.1933       0.2118     +0.0185
+         Motion Blur               0.6984         0.7098           +0.0114     0.2044       0.2208     +0.0164
+         Brightness Dark           0.6951         0.7059           +0.0108     0.2099       0.2252     +0.0153
+         Brightness Bright         0.7013         0.7083           +0.0070     0.2162       0.2277     +0.0115
+         Contrast Low              0.6966         0.7125           +0.0159     0.2108       0.2284     +0.0176
+         Contrast High             0.7033         0.7087           +0.0054     0.2199       0.2291     +0.0092
+         Gamma Dark                0.7008         0.7099           +0.0091     0.2163       0.2275     +0.0112
+         Gamma Bright              0.7046         0.7148           +0.0102     0.2182       0.2342     +0.0160
+         Affine                    0.7111         0.7192           +0.0081     0.2297       0.2435     +0.0138
+         Perspective               0.6906         0.7000           +0.0094     0.1948       0.2060     +0.0112
+         Elastic                   0.7052         0.7149           +0.0097     0.2204       0.2346     +0.0142
+
+
+                                                                   regime. In other words, the augmentation-guided
+                                                                   retraining stage has already captured the main
+                                                                   benefit, and the short hyperparameter search
+                                                                   merely adjusts the operating point. This result is
+                                                                   useful for the manuscript because it supports the
+                                                                   resource-aware design philosophy. The pipeline
+                                                                   does not depend on brute-force search or exten-
+                                                                   sive compute. Instead, it reaches a stable solu-
+                                                                   tion through a short screening process, targeted
+                                                                   retraining, and a narrow hyperparameter pass.
+                                                                   The best performing hyperparameter configura-
+                                                                   tions for all three selected hybrid architectures are
+                                                                   reported in Table 8.
+
+                                                                   3.7. Cross-Domain      Transfer    and   Controlled
+                                                                        Adaptation
+Figure 11: Qualitative comparison of the baseline hybrid
+model and the augmentation-guided retrained model un-                 To evaluate the transferability of the learned
+der representative perturbations identified during the per-        representations, the augmentation-guided models
+turbation sensitivity analysis. Quantitative improvement
+                                                                   were adapted to two external benchmarks with
+in performance after retraining is reported in Table 7.
+                                                                   progressively increasing target supervision. Un-
+                                                                   like the source-domain experiments, these evalua-
+0.2410. These changes are best interpreted as fine                 tions intentionally expose the models to substan-
+calibration rather than as a shift in performance                  tial distribution shifts, allowing us to assess not
+                                                              18
+Table 8: The best configuration selected for each hybrid architecture after constrained hyperparameter screening. The
+search is intentionally narrow and centered around the validated augmentation-guided retraining regime to keep the
+optimization budget low while preserving methodological consistency.
+
+               Parameter                DeepLabV3+         DeepLabV3+                U-Net
+                                         + DDPM          + Semantic-Guided      + Semantic-Guided
+               Learning rate              3 × 10−5              5 × 10−5              3 × 10−5
+               Weight decay                 10−4                  10−4                    0
+               Batch size                     8                     8                     4
+               Dice weight                  1.25                   1.0                   1.5
+               Boundary weight              1.25                   1.0                  1.25
+               Lovász weight                 0.5                   1.0                   1.0
+               Auxiliary loss weight         0.2                   0.2                   0.2
+               Gradient clipping              1                     1                     3
+
+
+only direct transfer but also the recoverability of           positive responses.
+performance under controlled adaptation.                         A different adaptation behavior is observed on
+   Direct transfer produces a pronounced re-                  CWFID. Zero-shot predictions largely fail to dis-
+duction in segmentation performance on both                   tinguish crop and weed structures because the
+datasets, confirming that the source-domain rep-              source models were optimized for stress-region lo-
+resentations do not generalize unchanged across               calization rather than semantic crop/weed dis-
+agricultural domains. On NWRD, the best zero-                 crimination. Nevertheless, increasing target su-
+shot checkpoint achieves 0.5186 refined mIoU and              pervision enables the models to progressively reor-
+0.0482 Boundary-F1, while on CWFID the corre-                 ganize their learned feature representations. The
+sponding scores fall further to 0.1090 and 0.0257,            qualitative results show a gradual transition from
+respectively. Although both datasets differ from              fragmented foreground activation during zero-
+PlantSegV3, the nature of the domain shift is fun-            shot inference to increasingly coherent crop and
+damentally different. NWRD remains a disease-                 weed segmentation after adaptation, illustrating
+segmentation benchmark with similar lesion lo-                that the pretrained representations retain trans-
+calization objectives, whereas CWFID introduces               ferable structural information despite the sub-
+structured crop–weed field imagery together with              stantial task mismatch. Table 9 reports the repre-
+a different annotation ontology. Consequently,                sentative zero-shot and adapted checkpoints, Fig-
+transfer to CWFID requires adaptation not only                ure 12 shows how performance evolves as target
+to new appearance statistics but also to new se-              supervision increases, and Figure 13 provides the
+mantic classes and scene organization, making it              corresponding qualitative recovery patterns.
+a substantially more challenging benchmark.                      Importantly, full-shot adaptation does not com-
+   Introducing even a small amount of target                  pletely eliminate the performance gap relative
+supervision progressively restores segmentation               to the source-domain results. This behavior
+quality. On NWRD, the refined masks improve                   is expected because the models are initialized
+steadily as the support fraction increases, eventu-           from representations learned predominantly on
+ally reaching 0.5892 mIoU and 0.2195 Boundary-                PlantSegV3 and subsequently fine-tuned on the
+F1 after full adaptation. The qualitative ex-                 target datasets rather than trained from scratch.
+amples demonstrate that the transferred models                Consequently, the final representations remain
+already preserve coarse lesion localization dur-              partially influenced by the source-domain op-
+ing zero-shot inference, while adaptation mainly              timization trajectory, particularly for CWFID
+improves contour precision and suppresses false-              where both visual statistics and annotation se-
+                                                         19
+Table 9: Representative best-performing checkpoints before and after controlled target adaptation. The zero-shot column
+reports the best direct-transfer checkpoint from the augmentation-guided retrained models, while the adapted column
+reports the best full fine-tuning result for each benchmark. Effect of increasing target-domain supervision can be observed
+in Figure 12, while qualitative performance reported in Figure 13.
+
+         Dataset     Regime             Best model                               Refined mIoU Refined BF1
+         NWRD        Zero-shot          DeepLabV3+ + Semantic-Guided             0.5186               0.0482
+         NWRD        Full fine-tuning   DeepLabV3+ + DDPM                        0.5892               0.2195
+         CWFID       Zero-shot          U-Net + Semantic-Guided                  0.1090               0.0257
+         CWFID       Full fine-tuning   U-Net + Semantic-Guided                  0.4573               0.2216
+
+
+
+
+Figure 12: Effect of increasing target-domain supervi-
+sion on cross-domain adaptation performance. The best-
+performing hybrid architecture under each adaptation
+regime was evaluated using progressively larger target-
+domain support sets (1%, 5%, 10%, 20%, and full super-           Figure 13: Qualitative evaluation of controlled few-shot
+vision).                                                         adaptation under cross-domain transfer. For each target
+                                                                 dataset, predictions are shown before adaptation (direct
+                                                                 transfer) and after adaptation using progressively larger
+mantics differ substantially from the source task.               fractions of labeled target-domain data (1%, 5%, 10%,
+                                                                 20%, and full supervision). Best performing checkpoints
+These findings indicate that the proposed hybrid
+                                                                 are reported in Table 9.
+models learn transferable structural priors that
+can be efficiently adapted to new domains, while
+also highlighting the influence of source-domain                 occluded. Third, low-data robustness is preserved
+bias under large appearance and task shifts.                     because pretrained backbones and the boundary-
+                                                                 sensitive objective provide strong inductive bias,
+3.8. Discussion                                                  allowing the model to remain stable even with
+   Taken together, the results support four main                 limited supervision. Fourth, direct cross-domain
+conclusions. First, diffusion refinement is bene-                transfer fails without adaptation, but controlled
+ficial when used as a structural correction stage                target supervision restores a substantial fraction
+for coarse segmentation masks, as evidenced                      of the lost performance.
+by the consistent performance margins main-                         The results also show why the resource-
+tained between coarse and refined predictions                    constrained design matters. The best-performing
+throughout the training process (Figure 14).                     configurations were identified through short
+Second, boundary-aware optimization produces                     screening runs on a local RTX 4050 6 GB GPU
+much larger gains in contour fidelity than in over-              rather than through exhaustive training. The pa-
+lap alone, which is important for plant stress                   per demonstrates that a careful combination of ar-
+structures that are thin, fragmented, or partially               chitectural screening, perturbation-aware retrain-
+                                                            20
+                                                                    visual distribution if the dataset is internally
+                                                                    repetitive (Hussain et al., 2026; Li et al., 2023).
+                                                                    Figure 15 shows the mean grayscale and Red,
+                                                                    Green, Blue (RGB) histogram profiles. The nor-
+                                                                    malized distributions exhibit a dominant mass
+                                                                    in the mid-intensity range together with visible
+                                                                    extreme-intensity tails, suggesting a mix of re-
+                                                                    current plant appearance and illumination-driven
+                                                                    variation. Figure 16 complements this view by
+Figure 14: Training dynamics of the selected hybrid con-            combining proxy signal-to-noise ratio, histogram
+figurations during the Stage-1 screening process. Curves            entropy, and Jensen-Shannon divergence (Zhang
+are shown for both coarse and diffusion-refined predictions,        et al., 2024a; To et al., 2013; Seo, 2021), while
+illustrating convergence behavior and the evolution of val-         Figure 17 shows examples from the low and high
+idation mIoU and Boundary-F1 across epochs.
+                                                                    SNR extremes. Taken together, these figures
+                                                                    indicate that PlantSegV3 is heterogeneous but
+ing, and targeted adaptation can yield robust seg-                  not uniformly dispersed in appearance space,
+mentation behavior without requiring large-scale                    which helps explain why the selected models
+compute (Khan et al., 2023).                                        remain stable under reduced supervision.
+   From a modeling perspective, the three re-
+finement strategies behave differently. DDPM                        We first computed normalized grayscale and
+is strongest when the priority is overlap stabil-                   RGB histogram profiles over the training split.
+ity (Ho et al., 2020), semantic-guided diffusion is                 The broad overlap among samples indicates that
+most effective when boundary localization mat-                      many images share similar global intensity statis-
+ters (Liu et al., 2023), and latent diffusion is                    tics, while the sharp peaks near the low and high
+less reliable under the current short-screening and                 intensity extremes reflect the coexistence of large
+limited-budget regime (Rombach et al., 2022).                       dark background regions, shadowed areas, and
+This suggests that diffusion priors are useful, but                 saturated foreground pixels (Holub and Ferreira,
+only when the conditioning mechanism is aligned                     2006). In other words, the dataset contains a
+with the segmentation backbone and the train-                       strong dominant appearance mode, together
+ing regime. The framework therefore provides not                    with extreme-intensity tails that are typical of
+just a performance comparison, but a practical                      field imagery and illumination variation. This
+selection rule for compute-aware plant segmenta-                    combination suggests that the model can learn a
+tion.                                                               stable core representation from a limited number
+                                                                    of annotations, while still encountering nontrivial
+3.8.1. Dataset Redundancy and Appearance Di-                        appearance variation.
+       versity
+  The relatively strong low-data performance                        To quantify image-level variation more ex-
+observed in this study motivated an additional                      plicitly, we computed the Jensen-Shannon (JS)
+appearance-level analysis of PlantSegV3. The                        divergence between each sample histogram and
+goal of this analysis was not to suggest that                       the reference histogram of the full training set.
+the dataset is visually simple, but to determine                    Lower JS divergence indicates that a sample
+whether it contains recurring intensity patterns,                   closely follows the common dataset distribution,
+texture statistics, and morphological structures                    whereas higher values identify more atypical
+that make the learning problem partially re-                        appearance patterns (Rahnenführer et al., 2023;
+dundant.     Such redundancy is important in                        Zhang et al., 2024a). In parallel, a proxy signal-
+low-data settings because a reduced annotation                      to-noise ratio (proxy SNR) was used to assess
+subset can still represent much of the dominant                     how clearly the foreground structure stands out
+                                                               21
+Figure 15: Mean grayscale and RGB histogram profiles
+computed across the PlantSegV3 training split. The distri-
+butions exhibit a dominant concentration within the mid-
+intensity range while retaining non-negligible variability
+across the full dynamic range.
+                                                                  Figure 16: Redundancy and appearance-diversity anal-
+                                                                  ysis of the PlantSegV3 training split. Top-left: distri-
+                                                                  bution of proxy signal-to-noise ratio (SNR). Top-right:
+                                                                  grayscale histogram entropy distribution. Bottom-left:
+from the surrounding background clutter, and                      Jensen-Shannon divergence of individual image histograms
+histogram entropy was used as a measure of ap-                    relative to the dataset reference histogram. Bottom-right:
+pearance spread (Minervini et al., 2015).The joint                joint distribution of proxy SNR and entropy, coloured by
+                                                                  histogram divergence.
+distribution of proxy SNR and entropy shows
+that most samples occupy a compact region of
+moderate entropy and moderate separability,
+which is consistent with the presence of recurring
+image patterns and moderate redundancy. At
+the same time, a smaller set of low-SNR samples
+exhibits heavier clutter, weaker contrast, and
+less favorable acquisition conditions, confirming
+that the dataset is diverse enough to remain
+challenging.
+                                                                  Figure 17: Representative training samples selecrted from
+Representative samples from the lower and                         the lower and upper extremes of the proxy SNR distri-
+upper ends of the proxy SNR distribution                          bution. The low-SNR examples exhibit reduced contrast,
+further support this interpretation. Low-SNR                      increased background clutter, and more challenging acqui-
+examples typically contain more background                        sition conditions, whereas the high-SNR examples show
+                                                                  clearer object boundaries and improved visual separabil-
+clutter, weaker object contrast, and less distinct
+                                                                  ity.
+boundaries, whereas high-SNR examples exhibit
+cleaner structural separation and more easily
+identifiable foreground regions (Seo, 2021). Im-                  3.8.2. Effect of Encoder Pretraining
+portantly, both groups still preserve similar plant                  The low-data results in Table 5 show that the
+morphology and texture motifs, indicating that                    selected hybrid models remain robust even at 10%
+PlantSegV3 combines global redundancy with                        supervision, but this behavior is not explained
+local variability. This explains why the selected                 by architecture alone. To isolate the contribu-
+hybrid models remain reasonably stable under                      tion of transfer learning, the 10% setting was re-
+reduced supervision: even when the annotation                     peated with randomly initialized encoders while
+budget is reduced, the remaining samples still                    keeping the same objective and training schedule
+cover much of the dominant visual structure of                    fixed (Stuckner et al., 2022; Dini et al., 2026). Ta-
+the dataset.                                                      ble 10 shows that the pretrained models substan-
+                                                             22
+Table 10: Effect of encoder pretraining under extreme annotation scarcity (10% supervision). The pretrained models
+correspond to the low-data supervision experiments using ImageNet-pretrained encoders, while the random-initialization
+models are trained from scratch under the same annotation fraction.
+
+            Model                                    Pretrained mIoU Random mIoU               ∆ mIoU
+            DeepLabV3+ + DDPM                              0.7151               0.5058         +0.2093
+            U-Net + Semantic-Guided                        0.7140               0.5199         +0.1941
+            DeepLabV3+ + Semantic-Guided                   0.7090               0.5097         +0.1993
+            Mean Gain                                          –                   –           +0.2009
+
+
+tially outperform the random-initialization coun-             transferable structural priors under domain and
+terparts, with a mean gain of 0.2009 mIoU. This               label-space shift, rather than as a direct compar-
+confirms that the strong low-data behavior is                 ison with the original benchmark settings.
+driven by the combination of pretrained visual
+priors and boundary-aware optimization rather                 3.9.1. Limitations and Future Work
+than by the model topology alone.
+                                                                 This work has several limitations. First, the
+                                                              study is intentionally focused on source-domain
+3.9. Contextual Benchmarking
+                                                              screening and controlled adaptation rather than
+   Table 11 provides a contextual comparison be-              on exhaustive optimization over a large architec-
+tween representative benchmark studies and the                ture or hyperparameter search space. This de-
+best checkpoints obtained in this work. The                   sign choice was necessary to keep the experiments
+comparison is useful for positioning the proposed             feasible under local compute constraints, but it
+framework relative to prior results, but it should            also means that the reported results should be in-
+not be interpreted as a direct quantitative com-              terpreted as resource-aware findings rather than
+parison because the datasets, splits, label spaces,           fully saturated upper bounds (Raiaan et al., 2024;
+and evaluation protocols are not identical across             Khan et al., 2023; Degu et al., 2025). Second, the
+studies. On PlantSegV3, the proposed hybrid                   present study evaluates stress-related segmenta-
+model improves over the published reference re-               tion at the level of region delineation and robust-
+sults under the same source-domain benchmark                  ness, but it does not yet extend to downstream
+(Wei et al., 2026), supporting the benefit of                 structural phenotyping descriptors or fine-grained
+diffusion-guided refinement and boundary-aware                biological trait analysis. Third, although the se-
+optimization.                                                 lected models transfer to a reasonable extent after
+   For the transfer benchmarks, the table should              adaptation, direct zero-shot transfer remains chal-
+be read as a measure of recoverability rather                 lenging 9, which confirms that stronger domain
+than direct in-domain comparability. On NWRD                  invariance is still needed.
+(Anwar et al., 2023), the adapted checkpoint                     Future work will therefore move beyond source-
+reflects target-domain recovery under a differ-               domain robustness and focus on the downstream
+ent acquisition context and patch-based proto-                utilization of the recovered segmentation masks
+col. On CWFID, the lower absolute scores are                  for more detailed structural phenotyping and bi-
+expected because the task involves a substantial              ological trait analysis (Gao et al., 2026; Liu et al.,
+annotation-paradigm shift, where the supervision              2026). In particular, we will investigate whether
+changes from stress-phenotype segmentation to                 diffusion-refined masks can support richer phe-
+crop-weed scene understanding (Haug and Oster-                notypic characterization and whether alternative
+mann, 2015). In this sense, the table helps inter-            refinement and transfer strategies can further im-
+pret the external-transfer results as evidence of             prove generalization across diverse plant domains.
+                                                         23
+Table 11: Contextual benchmark comparison between representative published studies and the best checkpoints from
+the proposed framework. Because the datasets, splits, label spaces, and evaluation protocols differ across studies, the
+numbers are not intended for strict cross-paper ranking.
+
+ Benchmark Reference         Performance re-          Proposed diffusion-      Evaluation protocol
+ dataset   study             ported                   hybrid framework
+
+ PlantSegV3 Wei et al.       ConvNeXt-L:              U-Net + Semantic-        Source-domain benchmark under
+            (2026)           46.24% mIoU,             Guided: 71.83% re-       constrained hyperparameter screen-
+                             59.97% mAcc; Seg-        fined mIoU, 26.10%       ing; the resulting checkpoint after
+                             Next MSCAN-              refined BF1.             augmentation-guided retraining
+                             L: 44.52% mIoU,                                   serves as the source model for all
+                             59.95% mAcc.                                      downstream transfer experiments.
+
+ NWRD          (Anwar        Rust class: F1 =         DeepLabV3+ +             Controlled few-shot adaptation on
+               et al.,       0.638, precision         DDPM: 58.92% re-         an external disease-segmentation
+               2023)         = 0.621, recall =        fined mIoU, 21.95%       benchmark; the result reflects
+                             0.675.                   refined BF1.             target-domain recovery rather than
+                                                                               direct in-domain training.
+
+ CWFID         Agustian      Teacher: 94.98%          U-Net + Semantic-        Few-shot adaptation under a sub-
+               et al.        mIoU / 97.40%            Guided: 45.73% re-       stantial annotation-paradigm shift,
+               (2026)        F1; distilled stu-       fined mIoU, 22.16%       where the semantic label space
+                             dent: 86.95% mIoU        refined BF1.             changes from stress-phenotype seg-
+                             / 98.79% pixel accu-                              mentation to crop–weed scene un-
+                             racy.                                             derstanding.
+
+
+An important direction will be the integration of              training budget, supervision, and domain shift.
+knowledge distillation to transfer the structural              Using PlantSegV3 as the source benchmark, we
+knowledge learned by the proposed hybrid mod-                  evaluated a 3 × 3 space of backbone-refiner com-
+els into student networks. Agustian et al. (2026)              binations and found that the effectiveness of dif-
+demonstrated the viability of such architectures               fusion refinement depends strongly on the un-
+by successfully distilling a heavy DeepLabV3+                  derlying segmentation backbone and condition-
+network into a lightweight Fast Spatial Convo-                 ing strategy. Among the screened configura-
+lutional Neural Network (SCNN) student for ef-                 tions, DeepLabV3+ + DDPM, U-Net + semantic-
+ficient plant-related semantic segmentation en-                guided diffusion, and DeepLabV3+ + semantic-
+abling efficient deployment without significant                guided diffusion emerged as the most stable and
+loss of segmentation quality. In addition, future              useful hybrid models. These selected architec-
+studies will explore more structure-preserving seg-            tures consistently improved upon their coarse pre-
+mentation strategies, adaptive domain transfer                 dictions, and boundary-constrained optimization
+mechanisms, and the biological consistency of the              further strengthened structural delineation with-
+recovered masks under increasingly challenging                 out degrading region-level overlap.
+domain shifts.                                                    A key outcome of this work is that compet-
+                                                               itive segmentation performance can be achieved
+4. Conclusion                                                  under a compact training budget. The models
+                                                               were screened and retrained on a local RTX 4050
+  This study investigated whether diffusion-                   6 GB GPU using short training schedules rather
+guided refinement can improve stress-related                   than exhaustive optimization, yet the resulting
+plant segmentation under realistic constraints on              pipeline remained effective across full-data, low-
+                                                          24
+data, perturbation-aware, and cross-domain set-               PlantSegV3 Dataset:           The PlantSegV3
+tings. Low-data evaluation showed that the se-              dataset provides in-the-wild plant disease segmen-
+lected models remain stable under reduced su-               tation masks, containing 7,774 diseased images
+pervision, while perturbation-guided augmenta-              across 34 host plants and 69 disease types (Wei
+tion retraining improved resilience to realistic            et al., 2026). It is publicly available and can
+appearance shifts. Direct transfer to external              be accessed at https://github.com/tqwei05/
+datasets caused substantial performance degra-              PlantSeg.
+dation, but controlled target-domain adaptation               NUST Wheat Rust Disease (NWRD)
+recovered much of the lost overlap and bound-               Dataset: The NWRD dataset serves as an ex-
+ary quality. These findings indicate that diffusion         ternal transfer benchmark for disease-related lo-
+is effective as a structural refinement mechanism           calization and segmentation, containing 100 high-
+when paired with an appropriate backbone and                resolution wheat-rust images under a different
+trained under a robustness-oriented protocol.               acquisition context (Anwar et al., 2023). It
+   Overall, the proposed framework offers a                 is publicly available at https://github.com/
+resource-aware route to plant segmentation that is          dll-ncai/NUST-Wheat-Rust-Disease-NWRD.
+not limited to a single benchmark setting. Rather             Crop/Weed Field Image Dataset (CW-
+than optimizing only for in-domain accuracy, the            FID): The CWFID dataset introduces structured
+study emphasizes structural reliability, label effi-        crop-weed scenes, containing 60 top-down field
+ciency, and transferability under constrained com-          images with 162 crop plants and 332 weed plants
+putation. This makes the framework relevant for             annotated with vegetation masks and crop/weed
+agricultural segmentation problems where anno-              labels (Haug and Ostermann, 2015). This dataset
+tated data are limited and operating conditions             is publicly available at https://github.com/
+vary across domains.                                        cwfid/dataset.
+
+CRediT Authorship Contribution State-                       Code Availability
+ment
+                                                              The code will be available upon reasonable re-
+   Gurbhit Chaurakoti: Conceptualization,
+                                                            quest from the corresponding author.
+Methodology, Software, Data curation, Visualiza-
+tion, Validation, Writing – original draft, Writing
+– review & editing. Soumyashree Kar: Concep-                References
+tualization, Methodology, Supervision, Investiga-
+tion, Validation, Visualization, Formal analysis,           Agustian, I., Ardiyanto, I., Wibirama, S., 2026.
+Writing – review & editing, Project administra-               Efficient crop–weed semantic segmentation via
+tion.                                                         knowledge distillation from deeplabv3+ to fast-
+                                                              scnn. Green Technologies and Sustainability 4,
+Declaration of Competing Interest                             100357. doi:10.1016/j.grets.2026.100357.
+
+  The authors declare that they have no known               Alimisis,    P.,   Mademlis,      I.,    Radoglou-
+competing financial interests or personal relation-           Grammatikis, P., Sarigiannidis, P., Papadopou-
+ships that could have appeared to influence the               los, G.T., 2025. Advances in diffusion models
+work reported in this paper.                                  for image data augmentation: a review of meth-
+                                                              ods, models, evaluation metrics and future
+Data Availability                                             research directions. Artificial Intelligence Re-
+                                                              view 58. doi:10.1007/s10462-025-11116-x.
+  The data used in this study are derived from
+publicly available, open-source repositories. Brief         de     Andrade Porto, J.V., Dorsa, A.C.,
+descriptions of each dataset are provided below.                 de Moraes Weber, V.A., de Andrade Porto,
+                                                       25
+  K.R., Pistori, H., 2023. Usage of few-shot learn-          and decoder-only language models. Knowledge-
+  ing and meta-learning in agriculture: A litera-            Based Systems 342, 115850. doi:10.1016/j.
+  ture review. Smart Agricultural Technology 5,              knosys.2026.115850.
+  100307. doi:10.1016/j.atech.2023.100307.
+                                                           Fang, A., Li, Y., Long, J., Wang, X., Guo, Y.,
+Anwar, H., Khan, S.U., Ghaffar, M.M., Fayyaz,                2025. Denoising diffusion fusion network for
+ M., Khan, M.J., Weis, C., Wehn, N., Shafait,                semantic segmentation based on degradation
+ F., 2023. The nwrd dataset: An open-source                  analysis modeling with graph networks. In-
+ annotated segmentation dataset of diseased                  formation Fusion 122, 103205. doi:10.1016/j.
+ wheat crop. Sensors 23, 6942. doi:10.3390/                  inffus.2025.103205.
+ s23156942.
+                                                           Fawakherji, M., Alaoui, S., Turjya, S.M., 2026.
+Assunção, E., Gaspar, P.D., Mesquita, R.,                    Learning to see with less: A survey on com-
+  Simões, M.P., Alibabaei, K., Veiros, A.,                   puter vision with limited and imperfect data.
+  Proença, H., 2022. Real-time weed control ap-              Archives of Computational Methods in Engi-
+  plication using a jetson nano edge device and              neering doi:10.1007/s11831-026-10558-y.
+  a spray mechanism. Remote Sensing 14, 4217.
+  doi:10.3390/rs14174217.                                  Gao, B., Nie, H., Du, T., Cai, X., 2026.
+                                                            Multi-scale feature rectification for crop leaf
+Baranchuk, D., Rubachev, I., Voynov, A.,                    disease segmentation in complex scenar-
+  Khrulkov, V., Babenko, A., 2021. Label-                   ios. Horticulturae 12, 640. doi:10.3390/
+  efficient semantic segmentation with diffu-               horticulturae12050640.
+  sion models. arXiv preprint arXiv:2112.03126
+  abs/2112.03126.                                          Ge, Z., Fan, X., Zhang, J., Jin, S., 2025. Segppd-
+                                                            fs: Segmenting plant pests and diseases in
+Bokhovkin, A., Burnaev, E., 2019. Boundary                  the wild using few-shot learning. Plant Phe-
+  loss for remote sensing imagery semantic seg-             nomics 7, 100121. doi:10.1016/j.plaphe.
+  mentation, in: Advances in Neural Networks                2025.100121.
+  – ISNN 2019: 16th International Symposium
+  on Neural Networks, Springer. pp. 388–401.               Haug, S., Ostermann, J., 2015. A crop/weed field
+  doi:10.1007/978-3-030-22808-8_38.                          image dataset for the evaluation of computer vi-
+                                                             sion based precision agriculture tasks, in: Com-
+Chen, L.C., Zhu, Y., Papandreou, G., Schroff, F.,            puter Vision - ECCV 2014 Workshops, pp. 105–
+  Adam, H., 2018. Encoder-decoder with atrous                116. doi:10.1007/978-3-319-16220-1_8.
+  separable convolution for semantic image seg-
+  mentation, in: Computer Vision – ECCV                    He, Q., Cui, X., Fei, Q., et al., 2025. Masked pre-
+  2018, Springer. pp. 833–851. doi:10.1007/                  training of u-net for ultrasound image segmen-
+  978-3-030-01234-2_49.                                      tation. Scientific Reports 15, 31713. doi:10.
+                                                             1038/s41598-025-11688-2.
+Degu, M.Z., Raymond, C., Zhang, D., Saleh, A.,
+  Anazodo, U.C., Simegn, G.L., 2025. Optimized             Ho, J., Jain, A., Abbeel, P., 2020. Denoising diffu-
+  brain tumor segmentation for resource con-                 sion probabilistic models, in: Advances in Neu-
+  strained settings: Vgg-infused u-net approach,             ral Information Processing Systems, pp. 6840–
+  in: Medical Information Computing, Springer.               6851. doi:10.48550/arXiv.2006.11239.
+  pp. 14–23.
+                                                           Holub, O., Ferreira, S.T., 2006. Quantitative his-
+Dini, L., Domenichelli, L., Brunato, D.,                     togram analysis of images. Computer Physics
+  Dell’Orletta, F., 2026. On the impact of pre-              Communications 175, 620–623. doi:10.1016/
+  training data ordering in transformer encoder-             j.cpc.2006.06.014.
+                                                      26
+Hussain, A., Ullah, K., Afaq, M., et al., 2026.             less data. Nature Communications 14, 7283.
+ Quality over quantity: a data-centric survey of            doi:10.1038/s41467-023-42992-y.
+ annotation errors in object detection datasets.
+ Artificial Intelligence Review 59, 107. doi:10.          Liu, W., Lan, G., Xing, Z., Tan, J., Liu, J., Liu,
+ 1007/s10462-026-11502-z.                                   Q., Zhu, D., Yuan, X., Dong, N., 2026. Re-
+                                                            vealing hierarchical structure of leaf venations
+Jia, S., Tang, Y., Wang, Y., Zhang, X., Oh, J.,             via diffusion-refined label-efficient segmenta-
+  Si, G., 2026. Enhancing mineral segmentation              tion: Dataset and method. Plant Phenomics 8,
+  in rock ct images via hessian-guided morpho-              100164. doi:10.1016/j.plaphe.2026.100164.
+  logical feature learning with deep neural net-
+  works. Journal of Rock Mechanics and Geotech-           Liu, X., Park, D.H., Azadi, S., Zhang, G.,
+  nical Engineering doi:10.1016/j.jrmge.2026.               Chopikyan, A., Hu, Y., Shi, H., Rohrbach, A.,
+  03.027.                                                   Darrell, T., 2023. More control for free! image
+                                                            synthesis with semantic diffusion guidance, in:
+Jiang, H., Chen, Q., Wang, R., Du, J., Chen,                Proceedings of the IEEE/CVF Winter Confer-
+  T., 2024. Swformer: A scale-wise hybrid cnn-              ence on Applications of Computer Vision, pp.
+  transformer network for multi-classes weed seg-           289–299. doi:10.48550/arXiv.2112.05744.
+  mentation. Journal of King Saud University -
+  Computer and Information Sciences 36, 102144.           Magistri, F., Weyler, J., Gogoll, D., Lottes, P.,
+  doi:10.1016/j.jksuci.2024.102144.                        Behley, J., Petrinic, N., Stachniss, C., 2023.
+                                                           From one field to another—unsupervised do-
+Karthik, P., Parashar, M., Reka, S.S., Raja-               main adaptation for semantic segmentation in
+ mani, K.T., Heinrich, M.P., 2022. Semantic                agricultural robotics. Computers and Electron-
+ segmentation for plant phenotyping using ad-              ics in Agriculture 212, 108114. doi:10.1016/j.
+ vanced deep learning pipelines. Multimedia                compag.2023.108114.
+ Tools and Applications 81, 4535–4547. doi:10.
+ 1007/s11042-021-11770-7.                                 Minervini, M., Scharr, H., Tsaftaris, S., 2015.
+                                                           Image analysis: The new bottleneck in plant
+Khan, A.T., Jensen, S.M., Khan, A.R., Li, S.,              phenotyping [applications corner]. IEEE Sig-
+ 2023. Plant disease detection model for edge              nal Processing Magazine 32, 126–131. doi:10.
+ computing devices. Frontiers in Plant Science             1109/MSP.2015.2405111.
+ 14. doi:10.3389/fpls.2023.1308528.
+                                                          Mohamed, E., Sirlantzis, K., Howells, G., 2021.
+Kumar, R., Kar, S., 2026. Pixel-precise explain-           Incorporation of rejection criterion - a novel
+ able stress indexing: A semantic segmentation             technique for evaluating semantic segmentation
+ framework for disease severity quantification in          systems, in: 2021 14th International Confer-
+ field crops. doi:10.48550/arXiv.2607.06585,               ence on Human System Interaction (HSI), pp.
+ arXiv:2607.06585.                                         1–7. doi:10.1109/HSI52170.2021.9538787.
+Le, M.Q., Nguyen, T.V., Le, T.N., Do, T.T., Do,           Mohammadi, M., Mollazade, K., Behroozi-
+  M.N., Tran, M.T., 2024. Maskdiff: modeling               Khazaei, N., 2025.      Under- and over-
+  mask distribution with diffusion probabilistic           segmentation: New metrics for image seg-
+  model for few-shot instance segmentation, in:            mentation accuracy measurement. Array 28,
+  Proceedings of the Thirty-Eighth AAAI Con-               100624. doi:10.1016/j.array.2025.100624.
+  ference on Artificial Intelligence, AAAI Press.
+  p. 320. doi:10.1609/aaai.v38i3.28068.                   Polly, R., Devi, E.A., 2024. Semantic seg-
+                                                            mentation for plant leaf disease classification
+Li, K., Persaud, D., Choudhary, K., et al.,                 and damage detection: A deep learning ap-
+  2023. Exploiting redundancy in large materi-              proach. Smart Agricultural Technology 9,
+  als datasets for efficient machine learning with          100526. doi:10.1016/j.atech.2024.100526.
+                                                     27
+Prabhakaran, V., Hutchinson, B., Mitchell, M.,               Computing and Computer-Assisted Interven-
+  2019. Perturbation sensitivity analysis to detect          tion – MICCAI 2015, Springer. pp. 234–241.
+  unintended model biases, in: Conference on                 doi:10.1007/978-3-319-24574-4_28.
+  Empirical Methods in Natural Language Pro-
+  cessing.                                                 Seo, S., 2021. Snr analysis for quantitative com-
+                                                             parison of line detection methods. Applied Sci-
+Qin, F., Wang, H., Jiang, Q., Wang, H., 2025.                ences 11, 10088. doi:10.3390/app112110088.
+  A novel method based on lesion expansion to
+                                                           Shafay, M., Hassan, T., Owais, M., Hussain, I.,
+  assess plant disease severity. Frontiers in Plant
+                                                             Khawaja, S.G., Seneviratne, L., Werghi, N.,
+  Science 16, 1510663. doi:10.3389/fpls.2025.
+                                                             2025. Recent advances in plant disease detec-
+  1510663.
+                                                             tion: challenges and opportunities. Plant Meth-
+                                                             ods 21. doi:10.1186/s13007-025-01450-0.
+Rafi, T.T., Mahjabin, R., Ghosh, E., Hoque,
+  M.M., Hassan, M.M., 2024. Domain general-                Shi, X., Wang, S., Zhang, B., Ding, X., Qi, P., Qu,
+  ization for semantic segmentation: a survey.               H., Li, N., Wu, J., Yang, H., 2025. Advances
+  Artificial Intelligence Review 57. doi:10.1007/            in object detection and localization techniques
+  s10462-024-10817-z.                                        for fruit harvesting robots. Agronomy 15, 145.
+                                                             doi:10.3390/agronomy15010145.
+Rahnenführer, J., De Bin, R., Benner, A., Am-
+  brogi, F., Lusa, L., Boulesteix, A.L., Migli-            Singh, A.K., Ganapathysubramanian, B., Sarkar,
+  avacca, E., Binder, H., Michiels, S., Sauer-               S., Singh, A., 2018. Deep learning for plant
+  brei, W., McShane, L., for topic group “High-              stress phenotyping: Trends and future perspec-
+  dimensional data” (TG9) of the STRATOS                     tives. Trends in Plant Science 23, 883–898.
+  initiative, 2023. Statistical analysis of high-            doi:10.1016/j.tplants.2018.07.004.
+  dimensional biomedical data: a gentle introduc-
+  tion to analytical goals, common approaches              Song, X., Yan, L., Liu, S., Gao, T., Han, L.,
+  and challenges. BMC Medicine 21, 182. doi:10.              Jiang, X., Jin, H., Zhu, Y., 2025. Agricul-
+  1186/s12916-023-02858-y.                                   tural image processing: Challenges, advances,
+                                                             and future trends. Applied Sciences 15, 9206.
+Raiaan, M.A.K., Sakib, S., Fahad, N.M., Mamun,               doi:10.3390/app15169206.
+  A.A., Rahman, M.A., Shatabda, S., Mukta,
+                                                           Stuckner, J., Harder, B., Smith, T.M., 2022.
+  M.S.H., 2024. A systematic review of hyper-
+                                                             Microstructure segmentation with deep learn-
+  parameter optimization techniques in convo-
+                                                             ing encoders pre-trained on a large microscopy
+  lutional neural networks. Decision Analytics
+                                                             dataset. npj Computational Materials 8, 200.
+  Journal 11, 100470. doi:10.1016/j.dajour.
+                                                             doi:10.1038/s41524-022-00878-5.
+  2024.100470.
+                                                           Tavera, A., Arnaudo, E., Masone, C., Caputo,
+Rombach, R., Blattmann, A., Lorenz, D., Patrick,             B., 2022. Augmentation invariance and adap-
+  E., Ommer, B., 2022. High-resolution im-                   tive sampling in semantic segmentation of agri-
+  age synthesis with latent diffusion models,                cultural aerial images, in: Proceedings of the
+  in: Proceedings of the IEEE/CVF Conference                 IEEE/CVF Conference on Computer Vision
+  on Computer Vision and Pattern Recognition,                and Pattern Recognition (CVPR) Workshops,
+  pp. 10684–10695. doi:10.48550/arXiv.2112.                  pp. 1506–1515. doi:10.48550/arXiv.2204.
+  10752.                                                     07969.
+Ronneberger, O., Fischer, P., Brox, T., 2015.              Terven, J., Cordova-Esparza, D.M., Romero-
+  U-net: Convolutional networks for biomedi-                 González, J.A., et al., 2025. A comprehensive
+  cal image segmentation, in: Medical Image                  survey of loss functions and metrics in deep
+                                                      28
+  learning. Artificial Intelligence Review 58, 195.          Unsupervised domain adaptation for plant dis-
+  doi:10.1007/s10462-025-11198-7.                            ease recognition in the wild. Plant Phenomics
+                                                             5, 0038. doi:10.34133/plantphenomics.0038.
+To, H., Chiang, K., Shahabi, C., 2013. Entropy-
+  based histograms for selectivity estimation, in:         Xie, E., Wang, W., Yu, Z., Anandkumar, A., Al-
+  Proceedings of the 22nd ACM International                  varez, J.M., Luo, P., 2021. Segformer: sim-
+  Conference on Information & Knowledge Man-                 ple and efficient design for semantic segmenta-
+  agement, Association for Computing Machin-                 tion with transformers, in: Proceedings of the
+  ery. pp. 1939–1948. doi:10.1145/2505515.                   35th International Conference on Neural Infor-
+  2505756.                                                   mation Processing Systems, Curran Associates
+                                                             Inc. doi:10.48550/arXiv.2105.15203.
+Tran, A.T., Zeevi, T., Payabvash, S., 2025.
+  Strategies to improve the robustness and                 Yang, L., Zhang, Z., Song, Y., Hong, S., Xu, R.,
+  generalizability of deep learning segmen-                  Zhao, Y., Zhang, W., Cui, B., Yang, M.H.,
+  tation and classification in neuroimaging.                 2023. Diffusion models: A comprehensive sur-
+  BioMedInformatics 5, 20.      doi:10.3390/                 vey of methods and applications. ACM Com-
+  biomedinformatics5020020.                                  puting Surveys 56, 105. doi:10.1145/3626235.
+
+                                                           Yaseen, M., Ali, M., Ali, S., Kim, H.C., 2026.
+Wang, C., Wang, H., Zhou, C., Chen, H.,                      Diffusion-based approaches for medical image
+ 2021. Experiencethinking: Constrained hy-                   segmentation: An in-depth review. Electronics
+ perparameter optimization based on knowledge                15, 1400. doi:10.3390/electronics15071400.
+ and pruning. Knowledge-Based Systems 223,
+ 106602. doi:10.1016/j.knosys.2020.106602.                 Yeung, M., Sala, E., Schönlieb, C.B., Rundo, L.,
+                                                             2022. Unified focal loss: Generalising dice and
+Wang, Z., He, D., Zhao, L., Liu, B., Zheng, Y.,              cross entropy-based losses to handle class im-
+ Zhang, X., 2025. Difusionseg: Diffusion-driven              balanced medical image segmentation. Com-
+ semantic segmentation with multi-modal image                puterized Medical Imaging and Graphics 95,
+ fusion for enhanced perception. Knowledge-                  102026. doi:10.1016/j.compmedimag.2021.
+ Based Systems 330, 114481. doi:10.1016/j.                   102026.
+ knosys.2025.114481.
+                                                           Zhang, P., Tong, Y., Du, C., Che, C., Zhu, Y.,
+Wei, R., Yang, L., Li, X., Zhu, C., Zhang, L.,               2024a. Jscds: A core data selection method
+ Wang, J., Liu, J., Zhu, L., Chen, 2025. Break-              with jason-shannon divergence for caries rgb
+ ing the limitations of scenes and sensors vari-             images-efficient learning. doi:10.48550/arXiv.
+ ability: A novel unsupervised domain adaptive               2407.00362.
+ instance segmentation framework for agricul-
+ tural field extraction. Remote Sensing of En-             Zhang, Q., Geng, G., Yan, L.H., Zhou, P., Li,
+ vironment 331, 115051. doi:10.1016/j.rse.                   Z., Li, K., Liu, Q., 2024b. P-msdiff: Parallel
+ 2025.115051.                                                multi-scale diffusion for remote sensing image
+                                                             segmentation. arXiv preprint arXiv:2405.20443
+Wei, T., Chen, Z., Yu, X., Chapman, S.C.,                    abs/2405.20443. doi:10.48550/arXiv.2405.
+ Melloy, P., Huang, Z., 2026. A large-scale                  20443.
+ in-the-wild dataset for plant disease segmen-
+ tation. Scientific Data 13. doi:10.1038/
+ s41597-025-06513-4.
+
+Wu, X., Fan, X., Luo, P., Choudhury, S.D., Tjah-
+ jadi, T., Hu, C., 2023. From laboratory to field:
+                                                      29
+

@@ -1,0 +1,413 @@
+                                                       R ELIABLE D ETECTION OF M INUTE TARGETS IN
+                                                  H IGH -R ESOLUTION A ERIAL I MAGERY ACROSS T EMPORAL
+                                                                          S HIFTS
+
+                                                                                                    A P REPRINT
+
+
+                                                    Mohammad Sadegh Gholizadeh ∗                   Amir Arsalan Rezapour∗               Hamidreza Shayegh
+arXiv:2512.11360v1 [cs.CV] 12 Dec 2025
+
+
+
+
+                                                       Shahid Rajaee University                    Shahid Rajaee University           Shahid Rajaee University
+                                                      gholizadeh@sru.ac.ir                         arsalanrzp@sru.ac.ir                hshayegh@sru.ac.ir
+
+                                                                                                  Ehsan Pazouki
+                                                                                              Shahid Rajaee University
+                                                                                            ehsan.pazouki@sru.ac.ir
+
+
+                                                                                                   October 4, 2022
+
+                                                                                                   A BSTRACT
+                                                      Efficient crop detection via Unmanned Aerial Vehicles (UAVs) is critical for scaling precision
+                                                      agriculture, yet it remains challenging due to the small scale of targets and environmental variability.
+                                                      This paper addresses the detection of rice seedlings in paddy fields by leveraging a Faster R-CNN
+                                                      architecture initialized via transfer learning. To overcome the specific difficulties of detecting minute
+                                                      objects in high-resolution aerial imagery, we curate a significant UAV dataset for training and
+                                                      rigorously evaluate the model’s generalization capabilities. Specifically, we validate performance
+                                                      across three distinct test sets acquired at different temporal intervals, thereby assessing robustness
+                                                      against varying imaging conditions. Our empirical results demonstrate that transfer learning not only
+                                                      facilitates the rapid convergence of object detection models in agricultural contexts but also yields
+                                                      consistent performance despite domain shifts in image acquisition.
+
+                                         Keywords Precision Agriculture · UAV · Deep Learning · Object Detection
+
+                                         1       Introduction
+                                         The escalating global demand for agricultural products places unprecedented pressure on the farming sector to transcend
+                                         traditional production limitations [Lencucha et al., 2020, Bochtis et al., 2014]. As population growth necessitates higher
+                                         yields, agricultural systems are increasingly compelled to adopt precision agriculture paradigms to optimize resource
+                                         allocation—specifically regarding fertilizer application, irrigation management, and labor reduction—while ensuring
+                                         sustainability [Josephson et al., 2014, Ricker-Gilbert et al., 2014, Fróna et al., 2019, Le Mouël et al., 2018, Zhang,
+                                         2019, Singh et al., 2020, Yang et al., 2020a]. In this context, the integration of high-resolution remote sensing data
+                                         has become indispensable. Unmanned Aerial Vehicles (UAVs), operating within the broader Internet of Things (IoT)
+                                         ecosystem, have emerged as a primary instrument for acquiring large-scale, high-fidelity field data. When coupled with
+                                         advanced computer vision and deep learning techniques, these systems facilitate the transition from raw data collection
+                                         to actionable “smart farming” insights, enabling precise interventions that address systemic production challenges [Tian
+                                         et al., 2020, Saiz-Rubio and Rovira-Más, 2020, Carolan, 2017, López and Corrales, 2017, Zhao et al., 2021].
+                                         While UAVs have been widely deployed for various agricultural tasks—ranging from weed classification and livestock
+                                         counting to harvest estimation and aquatic product damage assessment [Yang et al., 2020b, Ward et al., 2016, Yang
+                                         et al., 2017, Driessen and Heutinck, 2014, Li et al., 2021, Soares et al., 2021]—automated analysis remains a complex
+                                             ∗
+                                                 These authors contributed equally to this work.
+                                             UAV Rice Seedling Detection                                    A P REPRINT
+
+
+
+challenge. The efficacy of these systems relies heavily on the ability of computer vision algorithms to extract semantic
+information from complex visual data [Gomes and Leta, 2012, Rose and Chilvers, 2018, Deng et al., 2020, Vasconez
+et al., 2020, Wu et al., 2019]. This study focuses specifically on the monitoring of sowing areas, a critical early-stage
+phase in rice cultivation. The objective is to identify, count, and spatially locate rice seedlings to detect potential
+displacements or sowing failures. Unlike mature crops, rice seedlings present a unique computer vision challenge: they
+are minute objects with sparse feature representations, making them difficult to distinguish from background noise
+or visually similar categories in high-altitude aerial imagery. Traditional detection algorithms, which rely on manual
+feature extraction and geometric heuristics, often fail to achieve the requisite precision for such small, high-density
+targets [Yang et al., 2020c].
+Deep learning, particularly the use of Convolutional Neural Networks (CNNs), has fundamentally advanced the state
+of the art in object detection by enabling end-to-end feature learning [Zhang et al., 2020a,b]. By training on large-
+scale datasets, CNN-based models can learn to robustly identify and localize targets—such as humans, vehicles, or
+crops—despite variations in scale and orientation [Kamilaris and Prenafeta-Boldú, 2018, Murthy et al., 2020, Zou, 2019,
+Liu et al., 2020, Etienne et al., 2021]. However, the detection of small objects remains a distinct sub-problem where the
+lack of appearance information complicates the separation of foreground from background [Tong et al., 2020].
+Current deep learning object detection architectures are generally bifurcated into one-stage and two-stage frameworks
+(see Figure 1 [Murthy et al., 2020]).
+
+
+
+
+Figure 1: Comparison of one-stage and two-stage object detection architectures. One-stage models prioritize speed,
+while two-stage models typically achieve higher accuracy for small objects [Murthy et al., 2020].
+
+One-stage algorithms, including YOLO [Redmon et al., 2016], SSD [Liu et al., 2016], RetinaNet [Lin et al., 2020], and
+EfficientDet [Tan et al., 2020], prioritize inference speed by performing bounding box regression and class probability
+prediction in a single forward pass of the network. These methods extract features directly from the backbone network’s
+output maps but often struggle with the fine-grained localization required for very small objects. Conversely, two-stage
+algorithms, such as R-CNN [Girshick et al., 2014], Fast R-CNN [Girshick, 2015], and Faster R-CNN [Ren et al., 2015],
+introduce an intermediate step: a Region Proposal Network (RPN) that generates candidate bounding boxes (proposals)
+before a second stage refines these proposals for classification.
+Although one-stage detectors offer computational efficiency, two-stage architectures typically yield higher Mean
+Average Precision (mAP) in complex scenarios involving small objects and dense clustering [Tong et al., 2020].
+For instance, Mask R-CNN [He et al., 2017] extends this capability to pixel-level segmentation. Given the specific
+requirements of this study—namely, the need for high localization accuracy of tiny rice seedlings rather than real-time
+video processing speed—we adopt the Faster R-CNN architecture.
+Furthermore, the application of deep learning in agriculture is frequently hindered by the scarcity of annotated domain-
+specific data. To address this, we employ transfer learning, initializing our model with weights pre-trained on large
+benchmark datasets to accelerate convergence and improve feature extraction capabilities in a data-limited environment.
+This study, therefore, presents a rigorous application of a two-stage object detection framework tailored for the micro-
+scale detection of rice seedlings. By validating this approach on UAV-acquired imagery, we demonstrate a methodology
+
+
+                                                           2
+                                               UAV Rice Seedling Detection                                   A P REPRINT
+
+
+
+for precision monitoring that addresses the dual challenges of small-object feature representation and agricultural data
+scarcity—a combination that has been insufficiently explored in traditional rice cultivation contexts.
+
+2   Methodology
+To facilitate early-stage growth monitoring, high-resolution aerial imagery of rice seedlings was acquired over experi-
+mental fields at the Taiwan Agriculture Research Institute, Wu-Feng District, Taichung City. Data collection utilized a
+DJI Phantom 4 Pro UAV equipped with a 1-inch CMOS sensor (20 MP), calibrated to capture nadir imagery across
+multiple temporal epochs. The dataset comprises four primary acquisition campaigns spanning 2018 and 2019. Table 1
+details the comprehensive sensor specifications, ensuring consistent imaging capabilities, while Table 2 summarizes the
+environmental variables and flight parameters for each acquisition date [Yang et al., 2021]. The campaigns were selected
+to introduce specific environmental variabilities—such as lighting changes and cloud cover—to test the robustness of
+the detection model.
+                                         Table 1: UAV imaging sensor details
+
+                                      Parameter                   Value
+                                      Sensor Description          DJI Phantom 4 Pro
+                                      Resolution                  5472 × 3648 pixels
+                                      FOV (H◦ × V◦ )              73.7◦ × 53.1◦
+                                      Focal Length                8.8 mm
+                                      Sensor Size (H × V)         13.2 × 8.8 mm
+                                      Pixel Size                  2.41 × 2.41 µm
+                                      Image Format                JPG
+                                      Dynamic Range               8 bit
+
+                                 Table 2: Details of flight mission [Yang et al., 2021]
+
+                 Parameter            07 Aug 2018         14 Aug 2018       12 Aug 2019      20 Aug 2019
+                 Time                 07:19–07:32        07:03–07:13        14:23–14:44      08:16–08:36
+                 Weather              Mostly clear       Mostly cloudy      Cloudy/Rain      Partly cloudy
+                 Avg. Temp (◦ C)          28.9               26.8               26.6              27.5
+                 Avg. Press (hPa)        997.7              992.0              994.1             996.4
+                 Flight Height (m)        21.4               20.8               18.6              19.1
+                 GSD (mm/px)              5.24               5.09               4.62              4.78
+                 Fwd Overlap (%)           80                 80                 85                85
+                 Side Overlap (%)          75                 75                 80                80
+                 Collected Images         349                299                615               596
+
+Following acquisition, raw imagery was orthorectified and mosaicked to generate a unified field map. To satisfy GPU
+memory constraints and maximize the effective receptive field relative to object size, the high-resolution mosaics were
+tessellated into sub-images of dimension 512 × 512 pixels. Ground truth annotation was performed using the labelImg
+tool, where agricultural experts manually bounded individual rice seedlings. Given the high labor cost of pixel-level
+annotation, a semi-automated proposal method was employed to accelerate the process, followed by manual verification.
+The resulting dataset was partitioned into a training set containing 273 sub-images and a validation set of 60 sub-images,
+both derived from the 07 Aug 2018 campaign. To evaluate model robustness against temporal domain shifts, three
+distinct generalization test sets were curated from the subsequent dates (14 Aug 2018, 12 Aug 2019, 20 Aug 2019).
+For the detection task, we employ the Faster R-CNN architecture [Ren et al., 2015], a two-stage object detector that
+integrates a Region Proposal Network (RPN) with a Fast R-CNN detector. This architecture is particularly well-suited
+for high-precision localization of small, dense targets where single-stage detectors often degrade. The network utilizes
+a ResNet-101 backbone [He et al., 2016], pre-trained on the COCO dataset to leverage transfer learning. The RPN
+operates by sliding a small window over the feature map extracted by the backbone, predicting multiple region proposals
+at each location based on k fixed-ratio anchor boxes. The loss function for the RPN is defined as:
+
+                                               1 X                         1 X ∗
+                          L({pi }, {ti }) =          Lcls (pi , p∗i ) + λ        p Lreg (ti , t∗i )                   (1)
+                                              Ncls i                      Nreg i i
+
+
+                                                              3
+                                               UAV Rice Seedling Detection                                       A P REPRINT
+
+
+
+
+                    Figure 2: Rice seedlings annotated with bounding boxes in green on sub-images
+
+
+
+
+                               Figure 3: Examples of annotated images for model training.
+
+
+where i is the index of an anchor, pi is the predicted probability of being an object, p∗i is the ground truth label, ti is the
+vector of bounding box coordinates, and Lreg is the robust smooth L1 loss. Proposals from the RPN are subsequently
+passed to a Region of Interest (RoI) pooling layer for classification and bounding box refinement. The model was
+implemented using the TensorFlow Object Detection API. Input images were resized to 640 × 640 pixels during training,
+with a batch size of 8 and a total of 25,000 steps. The maximum number of detections per image was set to 200 to
+accommodate the high density of seedlings, and optimization was performed using a Momentum Optimizer with a
+learning rate schedule adapted for fine-tuning.
+
+3   Results and Discussion
+All experiments were conducted in a containerized TensorFlow 2.5 environment hosted on a workstation equipped with
+an Intel Xeon Gold 6154 CPU (90 GB RAM) and a single NVIDIA Tesla V100 GPU. The Faster R-CNN model was
+initialized with COCO 2017 pre-trained weights to accelerate convergence and leverage robust feature priors. Inference
+efficiency is a critical constraint for agricultural deployment; as detailed in Table 3, the system achieves an average
+inference throughput of 20 frames per second (FPS), corresponding to a total latency of τ ≈ 50 ms per image. While
+experimental I/O was serialized from disk, deployment architectures utilizing direct bus transfer from camera cache
+would likely yield even lower latency.
+Regarding detection accuracy, the model demonstrates high efficacy on the primary test set, achieving a Mean Average
+Precision (mAP) of 0.8881. We observe a divergence between training performance (mAP ≈ 1.0) and testing
+performance, indicating a degree of overfitting common in deep learning applications with limited domain-specific
+
+
+                                                              4
+                                              UAV Rice Seedling Detection                                          A P REPRINT
+
+
+
+
+                                 Figure 4: Architecture of Faster R-CNN ResNet-101.
+
+                                  Table 3: Model performance and computational cost
+
+             Training             Test                      Computational Cost (s)                      Total (fps)
+          mAP      mIoU       mAP     mIoU     Preprocess      Inference    Visualization       Total       fps
+          1.000    0.996      0.888   0.637       0.005            0.042        0.003        0.050        20.000
+
+
+data2. However, the use of transfer learning mitigated the need for extensive training epochs (convergence < 500
+epochs, < 1 hour), significantly reducing the computational budget compared to training from scratch3. Comparatively,
+prior work by Wu et al. [2019] utilized a fully convolutional architecture for rice seedling counting, reporting a
+correlation coefficient of R2 = 0.944. However, their approach was limited to regression without explicit localization5.
+By employing a two-stage detector, our method matches counting capabilities while providing precise bounding box
+regression and size estimation6.To ensure the model is robust enough for real-world application, we evaluated its
+generalization capabilities across three additional datasets acquired on different dates (14 Aug 2018, 12 Aug 2019,
+20 Aug 2019)7. Table 4 summarizes the comprehensive performance metrics, including Average Precision (AP),
+Intersection over Union (IoU), F1-Score, Precision, and Recall across these temporal domains.
+
+Table 4: Evaluation of Generalization across Temporal Domain Shifts. The model is trained on August 7 data and
+evaluated on subsequent dates to test robustness against environmental variations.
+
+                  Test Date              Conditions       AP       IoU     Precision    Recall    F1-Score
+                  7 August 2018        Clear (Ref)     0.888 0.637          0.855       0.780       0.783
+                  14 August 2018         Cloudy        0.981 0.686          0.948       0.747       0.904
+                  12 August 2019       Rain/Cloudy     0.986 0.871          0.972       0.615       0.790
+                  20 August 2019      Algae/Ponding    0.739 0.382          0.583       0.345       0.480
+
+The results indicate that the model generalizes effectively to the August 14 and August 12 datasets, even exceeding
+the baseline metrics in some instances. However, performance degrades on the August 20, 2019 dataset, where the
+F1-Score drops to 0.480. Qualitative analysis (see Figure 8) reveals that this performance drop is attributable to severe
+background occlusion caused by algae proliferation and varying water levels. This highlights the sensitivity of CNNs to
+domain shifts in texture and color, suggesting that future work must incorporate data augmentation techniques targeting
+environmental noise to enhance robustness.
+
+4   Conclusion
+The detection of minute targets in high-resolution aerial imagery remains a formidable challenge in precision agriculture,
+compounded by the computational constraints of edge deployment and the visual complexity of heterogeneous field
+environments. This study establishes a robust framework for rice seedling detection by leveraging a Faster R-CNN
+
+
+                                                               5
+                                             UAV Rice Seedling Detection                                     A P REPRINT
+
+
+
+
+                         Figure 5: Example of visualized detection results of Faster R-CNN.
+
+
+
+
+                                 Figure 6: AP curves of the detection results of Faster
+
+
+architecture initialized via transfer learning. By integrating a semi-automated annotation pipeline, we effectively
+mitigated the data scarcity bottleneck, enabling the rapid curation of training datasets with minimal expert intervention.
+Our empirical evaluation demonstrates that two-stage detectors can achieve high-precision localization even for
+objects with sparse feature representations. The model exhibited strong generalization across temporal domain
+shifts, maintaining Mean Average Precision (mAP) scores between 0.888 and 0.986 on three out of four test sets.
+These results validate the efficacy of transfer learning in adapting deep, generic feature extractors to the specific
+morphological constraints of rice seedlings. However, the distinct performance degradation observed on the final test
+set (mAP = 0.739) highlights the sensitivity of current CNN architectures to severe environmental noise, specifically
+high-density algae growth and extreme lighting variations. This suggests that while the model is robust to minor
+temporal shifts, significant radiometric and textural deviations remain a barrier to fully autonomous deployment.
+
+Future Work Future research will focus on two primary axes to address the identified limitations. First, to enhance
+robustness against environmental variance—specifically illumination changes, motion blur, and background clutter like
+algae—we will investigate unsupervised domain adaptation (UDA) and active learning techniques. These approaches
+aim to iteratively incorporate hard examples into the training manifold without necessitating exhaustive manual
+
+
+                                                            6
+                                           UAV Rice Seedling Detection                                     A P REPRINT
+
+
+
+
+Figure 7: An example of the test images on four datasets on (a) 7 August 2018, (b) 14 August (c) 12 August 2019 and
+(d) 20 August
+
+
+
+
+            Figure 8: An example of detection results with precision and recall metrics on four datasets
+
+
+annotation, thereby bridging the domain gap observed in the August 20 dataset. Second, to facilitate deployment on
+resource-constrained UAV hardware, we will explore model compression strategies, including quantization and pruning,
+to optimize the trade-off between inference latency and detection accuracy for real-time edge computing.
+
+
+References
+Raphael Lencucha, N. E. Pal, A. Appau, A.-M. Thow, and J. Drope. Government policy and agricultural production: A
+  scoping review to inform research and policy on healthy agricultural commodities. Globalization and Health, 16:11,
+  2020.
+
+
+                                                         7
+                                             UAV Rice Seedling Detection                                      A P REPRINT
+
+
+
+Dionysis D. Bochtis, C. G. C. Sørensen, and P. Busato. Advances in agricultural machinery management: A review.
+   Biosystems Engineering, 126:69–81, 2014.
+A. L. Josephson, J. Ricker-Gilbert, and R. J. G. M. Florax. How does population density influence agricultural
+   intensification and productivity? evidence from ethiopia. Food Policy, 48:142–152, 2014.
+J. Ricker-Gilbert, C. Jumbe, and J. Chamberlin. How does population density influence agricultural intensification and
+   productivity? evidence from malawi. Food Policy, 48:114–128, 2014.
+D. Fróna, J. Szenderák, and M. Harangi-Rákos. The challenge of feeding the world. Sustainability, 11:5816, 2019.
+C. Le Mouël, D. Lattre-Gasquet, and O. Mora. Land Use and Food Security in 2050: A Narrow Road. Éditions Quae,
+   Versailles, France, 2018.
+Y. Zhang. The role of precision agriculture. Resource, 19:9, 2019.
+P. Singh, P. C. Pandey, G. P. Petropoulos, A. Pavlides, P. K. Srivastava, N. Koutsias, K. A. K. Deng, and Y. Bao.
+   Hyperspectral remote sensing in precision agriculture: Present status, challenges, and future trends. In P. C. Pandey,
+   P. K. Srivastava, H. Balzter, B. Bhattacharya, and G. P. Petropoulos, editors, Hyperspectral Remote Sensing, pages
+   121–146. Elsevier, Amsterdam, The Netherlands, 2020.
+C. Y. Yang, M. D. Yang, W. C. Tseng, Y. C. Hsu, G. S. Li, M. H. Lai, D. H. Wu, and H. Y. Lu. Assessment of rice
+   developmental stage using time series uav imagery for variable irrigation management. Sensors, 20:5354, 2020a.
+H. Tian, T. Wang, Y. Liu, X. Qiao, and Y. Li. Computer vision technology in agricultural automation—a review.
+   Information Processing in Agriculture, 7:1–19, 2020.
+V. Saiz-Rubio and F. Rovira-Más. From smart farming towards agriculture 5.0: A review on crop data management.
+   Agronomy, 10:207, 2020.
+M. Carolan. Publicising food: Big data, precision agriculture, and co-experimental techniques of addition. Sociologia
+   Ruralis, 57:135–154, 2017.
+I. D. López and J. C. Corrales. A smart farming approach in automatic detection of favorable conditions for planting and
+   crop production in the upper basin of cauca river. In Proceedings of the Advances in Information and Communication
+   Technologies for Adapting Agriculture to Climate Change, pages 223–233, Popayán, Colombia, 2017.
+W. Zhao, W. Yamada, T. Li, M. Digman, and T. Runge. Augmenting crop detection for precision agriculture with deep
+   visual transfer learning—a case study of bale detection. Remote Sensing, 13:23, 2021.
+M. D. Yang, J. G. Boubin, H. P. Tsai, H. H. Tseng, Y. C. Hsu, and C. C. Stewart. Adaptive autonomous uav scouting for
+   rice lodging assessment using edge computing with deep learning edanet. Computers and Electronics in Agriculture,
+   179:105817, 2020b.
+S. Ward, J. Hensler, B. H. Alsalam, and L. Gonzalez. Autonomous uavs wildlife detection using thermal imaging,
+   predictive navigation and computer vision. In Proceedings of the IEEE Aerospace Conference, pages 1–8, Big Sky,
+   MT, USA, 2016.
+M. D. Yang, K. S. Huang, Y. H. Kuo, H. P. Tsai, and L. M. Lin. Spatial and spectral hybrid image classification for rice
+   lodging assessment through uav imagery. Remote Sensing, 9:583, 2017.
+C. Driessen and L. Heutinck. Cows desiring to be milked? milking robots and the co-evolution of ethics and technology
+   on dutch dairy farms. Agriculture and Human Values, 32:3–20, 2014.
+D. Li, X. Sun, H. Elkhouchlaa, Y. Jia, Z. Yao, P. Lin, J. Li, and H. Lu. Fast detection and location of longan fruits using
+   uav images. Computers and Electronics in Agriculture, 190:106465, 2021.
+V. H. A. Soares, M. A. Ponti, R. A. Gonçalves, and R. J. G. B. Campello. Cattle counting in the wild with geolocated
+   aerial images in large pasture areas. Computers and Electronics in Agriculture, 189:106354, 2021.
+J. F. S. Gomes and F. R. Leta. Applications of computer vision techniques in the agriculture and food industry: A
+   review. European Food Research and Technology, 235:989–1000, 2012.
+D. C. Rose and J. Chilvers. Agriculture 4.0: Broadening responsible innovation in an era of smart farming. Frontiers in
+   Sustainable Food Systems, 2:87, 2018.
+R. Deng, Y. Jiang, M. Tao, X. Huang, K. Bangura, C. Liu, J. Lin, and L. Qi. Deep learning-based automatic detection
+   of productive tillers in rice. Computers and Electronics in Agriculture, 177:105703, 2020.
+J. P. Vasconez, J. Delpiano, S. Vougioukas, and F. Auat Cheein. Comparison of convolutional neural networks in fruit
+   detection and counting: A comprehensive evaluation. Computers and Electronics in Agriculture, 173:105348, 2020.
+J. Wu, G. Yang, X. Yang, B. Xu, L. Han, and Y. Zhu. Automatic counting of in situ rice seedlings from uav images
+   based on a deep fully convolutional neural network. Remote Sensing, 11:691, 2019.
+
+
+                                                            8
+                                            UAV Rice Seedling Detection                                    A P REPRINT
+
+
+
+M. D. Yang, H. H. Tseng, Y. C. Hsu, and H. P. Tsai. Semantic segmentation using deep learning with vegetation indices
+   for rice lodging identification in multi-date uav visible images. Remote Sensing, 12:633, 2020c.
+Y. Zhang, J. Chu, L. Leng, and J. Miao. Mask-refined r-cnn: A network for refining object details in instance
+   segmentation. Sensors, 20:1010, 2020a.
+Q. Zhang, Y. Liu, C. Gong, Y. Chen, and H. Yu. Applications of deep learning for dense scenes analysis in agriculture:
+   A review. Sensors, 20:1520, 2020b.
+A. Kamilaris and F. X. Prenafeta-Boldú. Deep learning in agriculture: A survey. Computers and Electronics in
+   Agriculture, 147:70–90, 2018.
+C. B. Murthy, M. F. Hashmi, N. D. Bokde, and Z. W. Geem. Investigations of object detection in images/videos using
+   various deep learning techniques and embedded platforms—a comprehensive review. Applied Sciences, 10:3280,
+   2020.
+X. Zou. A review of object detection techniques. In Proceedings of the 2019 International Conference on Smart Grid
+   and Electrical Automation (ICSGEA), pages 251–254, Xiangtan, China, 2019.
+L. Liu, W. Ouyang, X. Wang, P. Fieguth, J. Chen, X. Liu, and M. Pietikäinen. Deep learning for generic object detection:
+   A survey. International Journal of Computer Vision, 128:261–318, 2020.
+A. Etienne, A. Ahmad, V. Aggarwal, and D. Saraswat. Deep learning-based object detection system for identifying
+   weeds using uas imagery. Remote Sensing, 13:5182, 2021.
+K. Tong, Y. Wu, and F. Zhou. Recent advances in small object detection based on deep learning: A review. Image and
+   Vision Computing, 97:103910, 2020.
+J. Redmon, S. Divvala, R. Girshick, and A. Farhadi. You only look once: Unified, real-time object detection. In
+   Proceedings of the 2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pages 779–788,
+   Las Vegas, NV, USA, 2016.
+W. Liu, D. Anguelov, D. Erhan, C. Szegedy, S. Reed, C. Y. Fu, and A. C. Berg. Ssd: Single shot multibox detector. In
+   European Conference on Computer Vision, pages 21–37. Springer, 2016.
+T. Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollar. Focal loss for dense object detection. IEEE Transactions on
+   Pattern Analysis and Machine Intelligence, 42:318–327, 2020.
+M. Tan, R. Pang, and Q. V. Le. Efficientdet: Scalable and efficient object detection. In Proceedings of the 2020
+   IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pages 10778–10787, Seattle, WA,
+   USA, 2020.
+R. Girshick, J. Donahue, T. Darrell, and J. Malik. Rich feature hierarchies for accurate object detection and semantic
+   segmentation. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pages
+   580–587, Columbus, OH, USA, 2014.
+R. Girshick. Fast r-cnn. In Proceedings of the IEEE International Conference on Computer Vision (ICCV), pages
+   1440–1448, Washington, DC, USA, 2015.
+S. Ren, K. He, R. Girshick, and J. Sun. Faster r-cnn: Towards real-time object detection with region proposal networks.
+   arXiv preprint arXiv:1506.01497, 2015.
+K. He, G. Gkioxari, P. Dollár, and R. Girshick. Mask r-cnn. In Proceedings of the IEEE International Conference on
+   Computer Vision (ICCV), pages 2961–2969, Venice, Italy, 2017.
+M. D. Yang, H. H. Tseng, Y. C. Hsu, C. Y. Yang, M. H. Lai, and D. H. Wu. A uav open dataset of rice paddies for deep
+   learning practice. Remote Sensing, 13:1358, 2021.
+K. He, X. Zhang, S. Ren, and J. Sun. Deep residual learning for image recognition. In Proceedings of the 2016 IEEE
+   Conference on Computer Vision and Pattern Recognition (CVPR), pages 770–778, Las Vegas, NV, USA, 2016.
+
+
+
+
+                                                           9
+

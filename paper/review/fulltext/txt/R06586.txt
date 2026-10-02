@@ -1,0 +1,503 @@
+                                          AGILE: A Diffusion-Based Attention-Guided Image and Label Translation for
+                                                       Efficient Cross-Domain Plant Trait Identification
+
+                                                          Earl Ranario, Lars Lundqvist, Heesup Yun, Brian N. Bailey, J. Mason Earles
+                                                                                University of California, Davis
+                                                                 {ewranario, llund, hspyun, bnbailey, jmearles}@ucdavis.edu
+arXiv:2503.22019v1 [cs.CV] 27 Mar 2025
+
+
+
+
+                                                                  Abstract
+
+                                             Semantically consistent cross-domain image translation
+                                         facilitates the generation of training data by transferring la-
+                                         bels across different domains, making it particularly useful
+                                         for plant trait identification in agriculture. However, ex-
+                                         isting generative models struggle to maintain object-level
+                                         accuracy when translating images between domains, es-
+                                         pecially when domain gaps are significant. In this work,
+                                         we introduce AGILE (Attention-Guided Image and Label
+                                         Translation for Efficient Cross-Domain Plant Trait Identi-
+                                         fication)1 , a diffusion-based framework that leverages opti-     Figure 1. We use labels from synthetic data to gain object domain
+                                         mized text embeddings and attention guidance to seman-            knowledge represented by text labels by optimizing for semantic
+                                         tically constrain image translation. AGILE utilizes pre-          correspondences between the source and target domains.
+                                         trained diffusion models and publicly available agricultural
+                                         datasets to improve the fidelity of translated images while
+                                         preserving critical object semantics. Our approach op-            plant-specific traits or characteristics that reflect the con-
+                                         timizes text embeddings to strengthen the correspondence          dition of the plant. This allows farmers or plant breed-
+                                         between source and target images and guides attention             ers to identify key phenotypic traits in plants that improve
+                                         maps during the denoising process to control object place-        decision-making. For example, Palacios et al. [20] imple-
+                                         ment. We evaluate AGILE on cross-domain plant datasets            mented a segmentation model to detect visible berries and
+                                         and demonstrate its effectiveness in generating semanti-          canopy features to predict the yields of different varieties of
+                                         cally accurate translated images. Quantitative experiments        grapes. Palacios further states that their results would im-
+                                         show that AGILE enhances object detection performance             prove should a higher number of diverse data points be used
+                                         in the target domain while maintaining realism and consis-        to build the models. Chen et al. [4] detected rice plant dis-
+                                         tency. Compared to prior image translation methods, AG-           eases based on deep transfer learning, utilizing pre-trained
+                                         ILE achieves superior semantic alignment, particularly in         models which was trained on a large amount of images and
+                                         challenging cases where objects vary significantly or do-         fine-tuned on a smaller, domain specific dataset.
+                                         main gaps are substantial.                                            Although machine learning tools have allowed for high-
+                                                                                                           throughput identification of plant traits, the performance
+                                                                                                           of these tools is limited by the availability of labeled data
+                                         1. Introduction                                                   and resource constraints [12]. There is an emphasis on ex-
+                                                                                                           panding public image datasets for agricultural tasks, but this
+                                         1.1. Computer Vision in Agriculture                               alone may not adequately address the complexities of multi-
+                                         Computer vision is used in a wide range of agricultural           domain scenarios [15]. For instance, a model trained on one
+                                         tasks such as plant phenotyping, disease detection, and           domain may not generalize well to another domain due to
+                                         yield estimation. Such tasks involve the identification of        differences in lighting, camera angle, or plant species. The
+                                                                                                           general approach is to label new data tailored to specific do-
+                                           1 https : / / github . com / plant - ai - biophysics - lab /    mains, but this process is costly and time-consuming [14].
+                                         AGILE                                                             However, recent advances in artificial intelligence (AI) pro-
+Figure 2. AGILE uses pretrained diffusion models to find semantic correspondences between unpaired source and target images. We
+optimize text embeddings through query attention maps generated from labeled source images, guiding the model to focus on desired
+regions in the target domain. Attention guidance is applied during the denoising process to enhance control over semantic alignment,
+achieving improved consistency in translation between source and target domains.
+
+
+vide new capabilities in improving the efficiency of label-          yard settings. Third, the generated images may not be se-
+ing.                                                                 mantically accurate or not contain the desired object. For
+                                                                     the case of image-to-image translation, the user may want
+1.2. Domain Translation                                              to keep an object in a specific location based on the seman-
+                                                                     tics of the input image.
+Some of the many applications of generative AI to improve
+labeling efficiency include image-to-image translation, text-            Therefore, this paper studies how to efficiently uti-
+to-image generation, and style transfer. These methods have          lize existing labeled images to improve semantic accu-
+been applied to a variety of applications, including med-            racy in image-to-image translation tasks, specifically for
+ical imaging, autonomous driving, and video games. For               plant trait identification. We propose a diffusion-based
+the case of image-to-image translation, by using existing            method Attention-Guided Image and Label Translation for
+labeled public datasets, it is possible to translate the images      Efficient Cross-Domain Plant Trait Identification (AGILE),
+to another domain while maintaining the semantics of the             which utilizes existing pretrained diffusion models and pub-
+labeled object, where semantics refers to the structural fea-        lic agricultural datasets to generate labeled images for spe-
+tures of an object, such as its shape, color, and positional         cific domains. The idea is to use labels generated for super-
+relationships within the image.                                      vised tasks to gain object domain knowledge represented by
+   Generative Adversarial Networks (GANs) [7, 32] is an              text labels. Through this, we should be able to find semantic
+early example of image-to-image translation for unpaired             correspondences between the source and target domain and
+images. More recently, Stable Diffusion models [23, 27]              guide it to desired regions. Our contributions include:
+have enabled high-quality image generation through vari-             • Images collected in real-world settings often lack accom-
+ous conditioning mechanisms. Although diffusion models                 panying text descriptions and semantic alignment with
+such as DALL-E [2, 24, 25] and Stable Diffusion are ca-                text inputs. By optimizing prompt embeddings, we lever-
+pable of generating complex scenes, using them for seman-              age existing labeled images to emphasize regions of in-
+tically constrained image-to-image translation comes with              terest, improving semantic knowledge. This allows us to
+challenges. First, for most diffusion-based models, train-             have text-image correspondence with few labeled images.
+ing a model that can translate an image from one domain to           • With semantically-aware, optimized prompt embeddings,
+another requires paired images, which is difficult to obtain.          we can control object semantics in the target domain
+Second, images collected in the field do not come with text            through attention guidance during the de-noising process
+descriptions. For instance, the prompt “grapes in a vine-              of a diffusion-based model. This allows labels to be trans-
+yard” could output different types of grapes in various vine-          ferrable from the source to target domains.
+     Synthetic Grape               Borden Day                Borden Night              Synthetic Flower               Real Flower
+
+
+
+
+Figure 3. The dataset is pulled from AgML, a machine learning library for agricultural datasets. The original synthetic images were
+generated from Helios, a 3D Plant and Environment Biophysical Modeling Framework [1, 13]. Synthetic images is treated as the source
+domain for its capability to generate an infinite amount of labeled images. We train and evaluate our method on object detection tasks and
+constrain the translation within the same plant.
+
+
+• We compare the performance between the source, target                 handling complex features. Moreover, their method is lim-
+  and generated data for object detection tasks.                        ited to translating only a single object per image. Parmar
+                                                                        et al. additionally addressed the slow processing speed
+2. Related Work                                                         and the reliance of paired data for model fine-tuning with
+                                                                        CycleGan-Turbo and pix2pix-Turbo by adapting a single-
+2.1. Image-to-Image Translation                                         step diffusion model to new domains through adversarial
+                                                                        learning objectives [21]. Xu et al. introduced CycleNet,
+Image-to-image translation is the task of translating one               which incorporates cycle consistency into diffusion models
+possible representation of a scene into another, which was              to regularize image to image manipulation, without the need
+explored early with GANs [11]. Within the GAN frame-                    for paired data [30].
+work, a generator creates an output image that aims to re-                  Zhang et al. developed a method, called ControlNet, to
+semble a target image, while the discriminator evaluates                add conditional control for text-to-image diffusion models
+how real or fake the output looks compared to the actual                [31]. ControlNet locks the production ready large diffu-
+data. Fei et al. enlisted 3D crop models and GANs to se-                sion models and reuses their pretrained encoding layers to
+mantically constrain fruit position and geometry [6]. Crop-             learn a diverse set of conditional controls. It also contains
+GAN performs effectively when the source and target do-                 “zero convolutions” (zero-initialized convolutional layers)
+mains are similar, but its performance deteriorates signifi-            that progressively grow the parameters from zero and en-
+cantly when applied to vastly different domains.                        sure that no harmful noise could affect finetuning. Their
+   For the case of classifier-free diffusion-based models,              method allows for various control methods to be used and
+conditional inputs can be included during the generation                is very fast to converge during training. However, as is the
+process, allowing for more creativity or control. How-                  case for most diffusion-based methods, paired data needs to
+ever, diffusion models can dramatically change the con-                 be accessible to streamline the training process.
+tent of the desired image and introduce unexpected changes
+in regions of interest. Parmar et al. developed a zero-                 2.2. Semantic Correspondence
+shot image-to-image translation using the Stable Diffusion
+framework [22]. Their proposed method focuses on chang-                 Semantic correspondence is a core problem in computer vi-
+ing desired regions while keeping unrelated regions consis-             sion tasks that relates to finding corresponding locations in
+tent by editing the text embedding space and using cross-               images that are of the same semantic [5, 8, 16]. Hedin et
+attention guidance. While their approach effectively main-              al. leverages semantic knowledge within diffusion models
+tains the structure of the desired region, it struggles with            to find locations in multiple images that have the same se-
+mantic meaning [9]. Their key insight is that since recent
+diffusion models can generate photo-realistic images from
+text prompts only, there must be knowledge about seman-
+tic correspondences built-in within them. Therefore, they
+deduced that one may not need any ground-truth semantic
+correspondences between image pairs to find semantic cor-
+respondences. By exploiting the attention maps of latent
+diffusion models, one can identify the prompt correspond-
+ing to a particular image location. Given arbitrary input
+images, these attention maps should respond to the seman-
+tics of the prompt. They proposed a method, inspired by
+recent prompt-to-prompt text-based image editing [18], to
+first optimize a randomly initialized text embedding to max-
+imize the cross-attention score at a query location. Then,
+they find the semantically corresponding location in another
+image by using the pixel attaining the maximum attention
+map score within the target image. Attend and Excite [3]        Figure 4. The displayed timesteps indicate when attention guid-
+is an example of a similar approach. We can build upon          ance is halted. The optimal stopping range is between t = 5 to
+this method by not relying on paired images by using the        t = 15, as this preserves object structure and color effectively.
+model’s underlying knowledge of the object based on the
+given prompt.                                                   of labeled images. Additionally, plant modeling parameters
+                                                                can be tweaked to close the domain gap, in exchange for
+2.3. Cross-Attention Guidance                                   resources and compute time, to allow for improved genera-
+                                                                tive results. As seen in Figure 3, we train and evaluate our
+Content preservation through cross-attention guidance in-
+                                                                method on object detection tasks and constrain our transla-
+volves maintaining the semantics of an image before and
+                                                                tion within the same plant.
+after diffusion translation by ensuring that the text-image
+cross-attention map remains consistent. Ma et al. demon-
+                                                                3.2. Method
+strated cross-attention guidance in their method, Directed
+Diffusion, which improves upon diffusion models by pro-         We build the proposed method on top of ControlNet [31],
+viding direct control over object placement within gener-       which enables conditional control of pretrained diffusion
+ated images [17]. Their approach uses text-image cross-         models by incorporating external control signals during the
+attention maps to guide the positioning of labeled or speci-    generation process. Our method first includes finding se-
+fied objects while maintaining contextual coherence. How-       mantic correspondences between source and target images
+ever, the constraint is that text prompts provided must have    using pretrained diffusion models. In order to do that, we
+text-image correspondence, which are not readily available      first optimize text embeddings using a query attention map
+in the field. Therefore, prior to attention guidance, we must   generated from the labels of the source images. This al-
+first optimize text embeddings to find semantic correspon-      lows us to have text-image correspondence without the need
+dences between the text prompt and target images.               for paired images. Then, we use the optimized text embed-
+                                                                dings to highlight regions of interest in the target domain.
+3. Experimental Setup                                           We further guide the attention maps to highlight the de-
+                                                                sired regions using the same set of query attention maps.
+3.1. Datasets                                                   This allows us to control the semantics of the target image
+                                                                through attention guidance during the denoising process of
+Each set of images is derived from AgML2 , a machine            a diffusion-based model.
+learning library for agricultural datasets. AgML provides
+                                                                    In diffusion models [19], during the forward process, an
+labeled datasets of different plants in various domains. For
+                                                                image I is encoded into its latent representation, x0 . Noise
+example, we use a synthetically generated grape and flower
+                                                                is gradually added to x0 for T timesteps, making the data
+dataset generated from Helios [1], a 3D Plant and Environ-
+                                                                increasingly noisy until it becomes pure noise at t = T . The
+ment Biophysical Modeling Framework, as our source do-
+                                                                training objective is to minimize the discrepancy between
+main. Typically, synthetic images are treated as a source do-
+                                                                the model’s predicted noise ϵθ (xt , t) and the true noise ϵ.
+main based on its capability to generate an infinite amount
+                                                                The model can be further conditioned on a text prompt y by
+  2 https://github.com/Project-AgML/AgML                        providing an embedding e = τθ (y) using a text encoder τθ :
+          Target                       Source                                 AGILE                CropGAN             CycleGAN-turbo
+
+
+
+                                                       Borden Day
+
+
+
+
+                                                     Borden Night
+
+
+
+
+                                                       Real Flower
+
+
+
+
+Figure 5. Generation results across translation tasks for our method (AGILE), CropGAN, and CycleGAN-turbo. The Target column
+represents the desired output domain for each translation task. Top Row: Synthetic Grape to Borden Day. Middle Row: Synthetic Grape
+to Borden Night. Bottom Row: Synthetic Flower to Real Flower.
+
+
+                                                                              where dk is the dimension of the key vectors. We first define
+              L = Ex0 ,ϵ,t ∥ϵ − ϵθ (xt , t, e)∥22 .                           our source and target model by fine-tuning the Stable Diffusion
+                                                
+                                                                        (1)
+                                                                              [23, 27] model, SD1.5, until the input matches the output image,
+                                                                              as seen in Section A and C from Figure 2. During this fine-tuning
+   In the reverse process, using Denoising Diffusion Im-
+                                                                              process, we included geometric and color augmentations to the
+plicit Models (DDIM) [28], a series of denoising steps, pa-                   images concatenated during the denoising process, which was not
+rameterized by θ, are applied to predict xt−1 given by:                       originally implemented in ControlNet. Doing this prevents the
+                                                                              model from overfitting with the training set.
+
+             √                         p
+    xt−1 =       ᾱt−1 fθ (xt , t) +    1 − ᾱt−1 ϵθ (xt , t),          (2)   3.2.1. Text Optimization
+                                                                              Images collected in the field do not come with a paired text de-
+where ᾱt−1 is the noise scaling factor, fθ (xt , t) is the                   scription. Therefore, we cannot collect semantic correspondences
+model’s predicted denoised version of x0 , and ϵθ (xt , t) is                 between images using paired data. To address this, we propose
+the model’s prediction of the noise at step t. The denoiser                   to optimize provided text embeddings using existing labeled im-
+for Stable Diffusion based models is a transformer archi-                     ages for improved semantic knowledge, as summarized in Part B
+tecture [29] utilizing a series of self-attention and cross-                  of Figure 2. The labeled images, the source domain, must con-
+attention layers. For latent xt at the t-th timestep, we can                  tain the object of interest that makes semantic correspondence be-
+compute the attention maps by computing the query Ql and                      tween the source and target domain possible. A query attention
+key Kl attention map for each l-th layer of the decoder. The                  map, Ms , is created for each labeled image containing multiple
+                                                                              Gaussian markers centered within the labeled bounding box. Each
+cross-attention for a given sample is defined as:
+                                                                              Gaussian marker, G(x, y), is defined as:
+
+
+                                                       Ql Kl⊤                                          (x − xc )2   (y − yc )2
+                                                                                                                            
+  Ml (xt | t, e, Ii ) = Attn(Ql , Kl ) = softmax        √           ,   (3)            G(x, y) = exp −            −              ,           (4)
+                                                          dk                                              2σx2         2σy2
+Table 1. Comparison of Fréchet Inception Distance (FID) and Average Precision (AP) metrics for various image translation methods across
+three domain translation tasks: Synthetic Grape to Borden Day, Synthetic Grape to Borden Night, and Synthetic Flower to Real Flower.
+Our method consistently outperforms existing approaches in both metrics. All methods were fine-tuned for each task. CropGAN was
+provided few-shot examples of labeled target images.
+
+                                          Syn. Grape                            Syn. Grape                          Syn. Flower
+                                               to                                    to                                  to
+                                         Borden Day                            Borden Night                         Real Flower
+       Method
+                                      FID↓           AP↑                    FID↓           AP↑                  FID↓          AP↑
+       Synthetic Only                265.96               0.12              363.87           0.00              175.94              0.11
+       Real Only                      92.89               0.51              129.27           0.69               81.93              0.65
+       CropGAN[6]                    131.18               0.28              192.12           0.17              202.96              0.24
+       CycleGAN-turbo[21]            146.64               0.09              276.94           0.00              154.21              0.33
+       ControlNet[31]                140.60               0.09              198.90           0.00              183.53              0.26
+       Ours                          123.08               0.33              187.18           0.32              156.44              0.35
+
+
+where (xc , yc ) is the center of the Gaussian marker and σx2 and σy2          and background tokens. Prior to scaling, we compute the mean
+are the variances. The variance can be scaled by the dimensions                and standard deviation of each map, Ml,token , for the object and
+of the bounding boxes. After creating the query attention map for              background token separately, and normalize the query map based
+each labeled image, we condition the stable diffusion model with               on these statistics. As a result, we get normalized representative
+the text embedding e and optimize the text embedding at a specific             maps per token for each selected decoding layer, M̃l,token . Since
+timestep. As the Gaussian regions represent the desired region                 each layer produces attention maps at different resolutions, the
+of focus, we can optimize the embedding e that reproduces the                  representative maps are interpolated to match the dimensions of
+desired attention map. We extracted the cross-attention map from               the query map, ensuring consistency during the attention guidance
+timestep 30 and optimize the first token only using MSE loss:                  process.
+                                                                                  We add the final query map M̃s (Ii ) with the final attention map
+                         N                                                     M̃l,token for each token index as shown:
+                       1 X
+      e∗ = arg min             ∥Ml (xt | t, e, Ii ) − Ms (Ii )∥22 .   (5)
+                   e   N i=1
+                                                                                        edit
+                                                                                       Ml,token = β ∗ M̃l,token (xt |t, e∗ , Ii ) + M̃s (Ii ),   (6)
+    The attention response from each layer in the decoding stage
+exhibits different levels of semantic knowledge [18]. Therefore,
+                                                                               where β is the scaling factor that can be different for object or
+to summarize these responses, we average the attention maps for
+                                                                               background tokens. This editing approach can be stopped early to
+token 1 across all the decoding layers and attention heads. At the
+                                                                               prevent harsh contrast differences with the target domain, as seen
+end of each optimization step, we obtain an optimized text embed-
+                                                                               in Figure 4, though this can change depending on the dataset used.
+ding e∗ that highlights the desired regions of interest in the source
+domain. Once e∗ is obtained from (5), it is used as input for subse-
+quent optimization steps using Ml (xt | t, e∗, Ii ). We have found             4. Experiments and Ablation Study
+that at least five images are needed to get the desired optimized
+embedding.                                                                     Our method leverages synthetic images and their corresponding la-
+                                                                               bels to enforce semantic constraints during image-to-image trans-
+3.2.2. Attention Guidance                                                      lation. In our framework, the real images are treated as the target
+                                                                               domain, but their labels are withheld during training to simulate
+The following steps are applied after defining the target model as
+                                                                               an unpaired setting. To evaluate our approach, we compute the
+shown in Part C in Figure 2. Our approach builds on ControlNet by
+                                                                               Fréchet Inception Distance (FID) [10] between the generated im-
+concatenating the source and synthetic images during the denois-
+                                                                               ages and the target domain. For comparison, we also calculate the
+ing process to preserve semantic consistency, while skip connec-
+                                                                               FID for the Synthetic Only and Real Only baselines by measuring
+tions help maintain fine details [21]. In contrast to text optimiza-
+                                                                               the distance between their respective training sets and the target
+tion, we target the first three cross-attention layers of the decod-
+                                                                               test set.
+ing block, which are closest to the high-level latent feature space.
+Within each of these layers, we aggregate the attention maps by                   To demonstrate the practical utility of our generated images, we
+averaging over all attention heads and spatial dimensions to obtain            use them as training data for a Faster R-CNN [26] object detection
+a single representative map per token, Ml,token . Since we employ              model. Specifically, we train the detection model on the synthetic,
+single-word text embeddings, we designate the first token as the               real and generated images annotated with bounding boxes corre-
+“object” token and treat the remaining tokens as “background” to-              sponding to grape clusters or flowers. After training, we test the
+kens. This allows us to apply different scaling weights to object              model on real images from the target domain, comparing the pre-
+Table 2. Ablation study results summarizing the importance of
+text optimization prior to attention guidance.
+
+                   Syn. Grape Syn. Grape Syn. Flower
+                        to         to           to
+ Method            Borden Day Borden Night Real Flower
+                      AP↑         AP↑         AP↑
+ No Text Optim.        0.10            0.01            0.13
+ No Guidance           0.14            0.00            0.25
+ Ours                  0.33            0.32            0.35
+
+
+dicted bounding boxes to the ground truth bounding boxes from
+the real dataset. We quantify detection performance using Aver-
+age Precision (AP). Finally, we compare our results against recent
+unpaired image-to-image translation methods to highlight the ef-
+fectiveness of our approach.
+                                                                      Figure 6. Without attention guidance, the generated image fails
+4.1. Quantitative Results                                             to translate the labeled objects. The background and object color
+                                                                      of the generated Borden Day image is inconsistent with the target
+We evaluate our approach against CropGAN [6], CycleGAN-turbo          domain.
+[22], and ControlNet [31]. Table 1 presents a quantitative compar-
+ison based on FID between the generated images and the target
+domain, as well as the AP when performing object detection on         Borden Night translation, and CycleGAN-turbo fails to maintain
+the target domain.                                                    proper color consistency with the target domain. Overall, our ap-
+    Our results demonstrate that AGILE outperforms the baseline       proach effectively preserves the color, shape, and texture of both
+models across all datasets in terms of AP. For example, when trans-   object and background compared to the other methods. For in-
+lating Synthetic Grape to Borden Day, AGILE achieves an AP of         stance, a grape in the synthetic image could look very different
+0.33, which is a significant improvement compared to CropGAN          in the target image. But our approach aims to maintain the shape
+(0.28) and CycleGAN-turbo (0.09). Similarly, for the Synthetic        despite differences between domains. However, it does encounter
+Grape to Borden Night task, AGILE achieves an AP of 0.32, sur-        challenges when transferring very small objects that provide min-
+passing both CropGAN (0.17) and CycleGAN-turbo (0.00). Ad-            imal signal, as seen in the flower translation task.
+ditionally, when translating Synthetic Flower to Real Flower, AG-         In our ablation study, we attempted attention guidance using a
+ILE achieves an AP of 0.35, outperforming CropGAN (0.24) and          text embedding that is not optimized to have object knowledge, as
+slightly surpassing CycleGAN-turbo (0.33).                            seen in Figure 7. As a result, the method without text optimiza-
+   While AGILE excels in AP performance across all tasks,             tion failed to preserve the object’s shape and color in the target
+CycleGAN-turbo achieves a marginally better FID score for the         domain. Additionally, we observed an inconsistency in the back-
+Synthetic Flower to Real Flower translation task. Despite this,       ground color between the full proposed method and the variant
+AGILE demonstrates superior performance in maintaining object         without text optimization, though this discrepancy may be unre-
+semantics and producing high-quality images across the other do-      lated. This proves that text optimization is a necessary preliminary
+mains. Furthermore, our approach surpasses CropGAN, a few-            step prior to attention guidance. Figure 6 shows that without at-
+shot learning method, across all datasets, despite CropGAN being      tention guidance, the generated image fails to translate the labeled
+provided with some of the labeled target images.                      objects and struggles to maintain object color consistency with the
+                                                                      target domain.
+    We also conducted an ablation study to assess the impact of
+text optimization on attention guidance. As shown in Table 2,
+when text optimization is omitted, attention guidance adversely       5. Discussion
+affects the generation process compared to both the base Control-
+Net method and the approach using only text optimization.             The timing and location for optimizing text embeddings and guid-
+                                                                      ing attention maps depend on the specific timestep chosen for ap-
+4.2. Qualitative Comparisons                                          plying edits or optimizations during the denoising process, as well
+                                                                      as the decoding layers targeted for modification. We optimize at
+Figure 5 presents a visual comparison of the images generated by      t = 30 while noise is still present which ensures that the opti-
+the different approaches. Our method preserves realism while en-      mized text embedding maintains robust against variability in im-
+suring semantic consistency, whereas CropGAN and CycleGAN-            ages. Furthermore, we edit only the first three layers to avoid ob-
+turbo fall short. For example, CropGAN struggles to distinguish       ject distortion or inconsistent colors in the final image. Since atten-
+between the sky and grape regions in the Synthetic Grape to           tion guidance involves manipulation the attention scores, excessive
+                                                                        to hallucinations if the object is significantly different from those
+                                                                        seen during training.
+                                                                            A potential solution for improving small object translation and
+                                                                        overall image quality is enabling guidance for multiple objects,
+                                                                        which requires incorporating multi-object knowledge within the
+                                                                        text embedding. Our proposed method currently relies on labels
+                                                                        for a single class, but extending the approach to optimize for mul-
+                                                                        tiple classes could make multi-object guidance feasible.
+                                                                            Despite applying these image translation methods, domain
+                                                                        gaps still exist between the generated target images and the ground
+                                                                        truth target images. Our visual analysis revealed that the most
+Figure 7. Without text optimization, attention guidance fails to        influential factors contributing to this gap are perspective, bright-
+accurately generate the correct shape and color of the flower in        ness, and plant type. These parameters are not explicitly accounted
+the real image. Despite differences between the synthetic and           for during the diffusion process, as they are not defined on a per-
+real flowers, our method successfully preserves the flower’s shape      image basis.
+within the target domain, demonstrating improved semantic con-
+sistency.
+
+
+
+adjustments could lead to unwanted artifacts or background incon-
+sistency.
+                                                                        7. Conclusion and Future Work
+    Additionally, we found that different layers in the decoding
+block attend to different areas of the image. For example, early        In this paper, we proposed AGILE (Attention-Guided Image and
+layers focus on interpreting the foreground or objects defined by       Label Translation for Efficient Cross-Domain Plant Trait Identifi-
+the text embedding, while later layers contribute to background         cation), a diffusion-based framework aimed at improving semantic
+refinement and overall image coherence. Overall, there are two          consistency for cross-domain image translation tasks relevant to
+key axes to consider for successful text optimization and attention     plant trait identification. By leveraging pretrained diffusion mod-
+guidance: the denoising timestep and the decoding layers.               els, optimized text embeddings, and attention guidance during the
+   The scaling of the attention maps using β from Equation 6            denoising process, AGILE effectively maintains object structure
+enhances signals for particularly small objects, ensuring they re-      and semantics even when there are significant domain gaps.
+ceive adequate focus. Multiplying this scalar on background to-            Our experimental results demonstrate that AGILE consistently
+kens improves semantic consistency, even though these tokens are        outperforms existing image translation methods across multiple
+not explicitly optimized to contain the specified object knowledge.     datasets. The quantitative results highlight improvements in object
+ControlNet provides a mechanism to preserve the semantics of the        detection performance, while the qualitative comparisons show
+source image by scaling the concatenated feature map with a factor      enhanced realism and consistency in generated images. Further-
+known as the control scale during the decoding process. However,        more, ablation studies validate the importance of text optimization
+we observed that increasing this value beyond one degrades image        and attention guidance, emphasizing their complementary roles
+quality. Conversely, decreasing this value when there are large do-     in preserving semantic alignment between source and target do-
+main gaps—such as between synthetic grape images and Borden             mains.
+night scenes—yields better results by preventing the output from
+                                                                            However, our approach still faces challenges when translating
+overly adhering to the source domain.
+                                                                        small objects or generalizing to unseen examples. Additionally,
+                                                                        existing domain gaps such as perspective, brightness, and plant
+6. Limitations                                                          type are not fully addressed during the diffusion process. While
+                                                                        the domain-translated images generated by AGILE may not com-
+                                                                        pletely surpass the performance of using real, labeled target im-
+Our method faces challenges when translating small objects, as ob-
+                                                                        ages, they can still provide valuable information for pretraining a
+ject guidance via attention scores is constrained by the resolution
+                                                                        backbone model. This pretraining can enhance the model’s ability
+of the attention map. If an object is too small, the correspond-
+                                                                        to extract relevant features, which can then be further fine-tuned
+ing signal may be too weak to be effectively captured, leading to
+                                                                        using a limited set of labeled images from the target domain.
+reduced visibility in the final output. Additionally, our method
+also struggles with unseen examples. For instance, if an object is         Future work will focus on extending our method to incor-
+found in the synthetic image but is not found in the real image,        porate multi-object guidance through enhanced text embeddings
+the model will try to fill in the gaps with plausible details based     and improving robustness to various domain gaps. Furthermore,
+on its learned prior, ensuring coherence with the training distribu-    we will explore more efficient optimization techniques to en-
+tion. This means that the model synthesizes missing features in a       hance performance and generalization across diverse agricultural
+way that aligns with its learned representations, potentially leading   datasets.
+References                                                                agriculture: A comprehensive review. Computers and Elec-
+                                                                          tronics in Agriculture, 215:108412, 2023. 1
+ [1] Brian N. Bailey. Helios: A scalable 3d plant and environ-       [15] Yuzhen Lu and Sierra Young. A survey of public datasets for
+     mental biophysical modeling framework. 10. Publisher:                computer vision tasks in precision agriculture. 178:105760.
+     Frontiers. 3, 4                                                      1
+ [2] James Betker, Gabriel Goh, Li Jing, Tim Brooks, Jianfeng        [16] Jiayi Ma, Xingyu Jiang, Aoxiang Fan, Junjun Jiang, and
+     Wang, Linjie Li, Long Ouyang, Juntang Zhuang, Joyce Lee,             Junchi Yan. Image Matching from Handcrafted to Deep Fea-
+     Yufei Guo, Wesam Manassra, Prafulla Dhariwal, Casey Chu,             tures: A Survey. International Journal of Computer Vision,
+     Yunxin Jiao, and Aditya Ramesh. Improving Image Genera-              129(1):23–79, 2021. 3
+     tion with Better Captions. 2                                    [17] Wan-Duo Kurt Ma, J. P. Lewis, Avisek Lahiri, Thomas Le-
+ [3] Hila Chefer, Yuval Alaluf, Yael Vinker, Lior Wolf, and               ung, and W. Bastiaan Kleijn. Directed Diffusion: Direct
+     Daniel Cohen-Or. Attend-and-excite: Attention-based se-              Control of Object Placement through Attention Guidance,
+     mantic guidance for text-to-image diffusion models. 4                2023. arXiv:2302.13153 [cs]. 4
+ [4] Junde Chen, Defu Zhang, Yaser A Nanehkaran, and                 [18] Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch,
+     Dele Li.      Detection of rice plant diseases based on              and Daniel Cohen-Or.          Null-text Inversion for Edit-
+     deep transfer learning. Journal of the Science of Food               ing Real Images using Guided Diffusion Models, 2022.
+     and Agriculture, 100(7):3246–3256, 2020.              eprint:        arXiv:2211.09794. 4, 6
+     https://onlinelibrary.wiley.com/doi/pdf/10.1002/jsfa.10365.     [19] Alexander Quinn Nichol and Prafulla Dhariwal. Improved
+     1                                                                    denoising diffusion probabilistic models. In Proceedings
+ [5] Seokju Cho, Sunghwan Hong, and Seungryong Kim.                       of the 38th International Conference on Machine Learning,
+     CATs++: Boosting Cost Aggregation With Convolutions and              pages 8162–8171. PMLR, 2021. 4
+     Transformers. IEEE Transactions on Pattern Analysis and         [20] Fernando Palacios, Maria P. Diago, Pedro Melo-Pinto,
+     Machine Intelligence, 45(6):7174–7194, 2023. Conference              and Javier Tardaguila. Early yield prediction in differ-
+     Name: IEEE Transactions on Pattern Analysis and Machine              ent grapevine varieties using computer vision and machine
+     Intelligence. 3                                                      learning. Precision Agriculture, 24(2):407–435, 2023. 1
+ [6] Zhenghao Fei, Alex Olenskyj, Brian N. Bailey, and Ma-           [21] Gaurav Parmar, Taesung Park, Srinivasa Narasimhan, and
+     son Earles. Enlisting 3D Crop Models and GANs for                    Jun-Yan Zhu. One-step image translation with text-to-image
+     More Data Efficient and Generalizable Fruit Detection. In            models. 3, 6
+     2021 IEEE/CVF International Conference on Computer Vi-          [22] Gaurav Parmar, Krishna Kumar Singh, Richard Zhang, Yijun
+     sion Workshops (ICCVW), pages 1269–1277, Montreal, BC,               Li, Jingwan Lu, and Jun-Yan Zhu. Zero-shot image-to-image
+     Canada, 2021. IEEE. 3, 6, 7                                          translation, 2023. 3, 7
+ [7] Ian J. Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing        [23] Dustin Podell, Zion English, Kyle Lacey, Andreas
+     Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and          Blattmann, Tim Dockhorn, Jonas Müller, Joe Penna, and
+     Yoshua Bengio. Generative adversarial networks, 2014. 2              Robin Rombach. Sdxl: Improving latent diffusion models
+ [8] Kamal Gupta, Varun Jampani, Carlos Esteves, Abhinav Shri-            for high-resolution image synthesis, 2023. 2, 5
+     vastava, Ameesh Makadia, Noah Snavely, and Abhishek Kar.        [24] Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray,
+     ASIC: Aligning Sparse in-the-wild Image Collections, 2023.           Chelsea Voss, Alec Radford, Mark Chen, and Ilya Sutskever.
+     arXiv:2303.16201. 3                                                  Zero-Shot Text-to-Image Generation, 2021. 2
+ [9] Eric Hedlin, Gopal Sharma, Shweta Mahajan, Hossam Isack,        [25] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu,
+     Abhishek Kar, Andrea Tagliasacchi, and Kwang Moo Yi.                 and Mark Chen. Hierarchical text-conditional image gener-
+     Unsupervised Semantic Correspondence Using Stable Dif-               ation with clip latents, 2022. 2
+     fusion, 2023. arXiv:2305.15581 [cs]. 4                          [26] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun.
+[10] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner,                  Faster r-CNN: Towards real-time object detection with re-
+     Bernhard Nessler, and Sepp Hochreiter. GANs trained by               gion proposal networks. 6
+     a two time-scale update rule converge to a local nash equi-     [27] Robin Rombach, Andreas Blattmann, Dominik Lorenz,
+     librium. 6                                                           Patrick Esser, and Björn Ommer. High-resolution image syn-
+[11] Phillip Isola, Jun-Yan Zhu, Tinghui Zhou, and Alexei A.              thesis with latent diffusion models, 2022. 2, 5
+     Efros. Image-to-image translation with conditional adver-       [28] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-
+     sarial networks, 2018. 3                                             ing diffusion implicit models. In International Conference
+[12] Yu Jiang and Changying Li. Convolutional neural networks             on Learning Representations, 2021. 5
+     for image-based high-throughput plant phenotyping: A re-        [29] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+     view. Plant Phenomics, 2020:4152816, 2020. 1                         reit, Llion Jones, Aidan N Gomez, Ł ukasz Kaiser, and Illia
+[13] Tong Lei, Jan Graefe, Ismael K. Mayanja, Mason Earles, and           Polosukhin. Attention is all you need. In Advances in Neu-
+     Brian N. Bailey. Simulation of automatically annotated visi-         ral Information Processing Systems. Curran Associates, Inc.,
+     ble and multi-/hyperspectral images using the helios 3d plant        2017. 5
+     and radiative transfer modeling framework. 6:0189. 3            [30] Sihan Xu, Ziqiao Ma, Yidong Huang, Honglak Lee, and
+[14] Jiajia Li, Dong Chen, Xinda Qi, Zhaojian Li, Yanbo Huang,            Joyce Chai. CycleNet: Rethinking cycle consistency in text-
+     Daniel Morris, and Xiaobo Tan. Label-efficient learning in           guided diffusion for image manipulation. 3
+[31] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding
+     conditional control to text-to-image diffusion models, 2023.
+     3, 4, 6, 7
+[32] Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A.
+     Efros. Unpaired image-to-image translation using cycle-
+     consistent adversarial networks, 2020. 2
+

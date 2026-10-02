@@ -1,0 +1,1204 @@
+                                         TimeMatch: Unsupervised Cross-Region Adaptation by Temporal Shift Estimation
+
+                                                                 Joachim Nyborga,c , Charlotte Pelletierb , Sébastien Lefèvreb , Ira Assenta
+                                                                      a Department of Computer Science, Aarhus University, Aarhus, Denmark
+                                                                           b IRISA UMR 6074, Université Bretagne Sud, Vannes, France
+                                                                                       c FieldSense A/S, Aarhus, Denmark
+
+
+
+
+                                        Abstract
+                                        The recent developments of deep learning models that capture complex temporal patterns of crop phenology have greatly
+                                        advanced crop classification from Satellite Image Time Series (SITS). However, when applied to target regions spatially
+arXiv:2111.02682v3 [cs.CV] 9 May 2022
+
+
+
+
+                                        different from the training region, these models perform poorly without any target labels due to the temporal shift of crop
+                                        phenology between regions. Although various unsupervised domain adaptation techniques have been proposed in recent
+                                        years, no method explicitly learns the temporal shift of SITS and thus provides only limited benefits for crop classification.
+                                        To address this, we propose TimeMatch, which explicitly accounts for the temporal shift for improved SITS-based domain
+                                        adaptation. In TimeMatch, we first estimate the temporal shift from the target to the source region using the predictions
+                                        of a source-trained model. Then, we re-train the model for the target region by an iterative algorithm where the estimated
+                                        shift is used to generate accurate target pseudo-labels. Additionally, we introduce an open-access dataset for cross-region
+                                        adaptation from SITS in four different regions in Europe. On our dataset, we demonstrate that TimeMatch outperforms
+                                        all competing methods by 11% in average F1-score across five different adaptation scenarios, setting a new state-of-the-art
+                                        in cross-region adaptation. Our source code and dataset are available at https://github.com/jnyborg/timematch.
+                                        Keywords: Satellite Image Time Series, Temporal Shift, Crop Classification, Domain Adaptation, Deep Learning
+
+
+                                        1. Introduction                                                                    spring barley                       spring peas
+                                                                                                                0.8
+                                           Today, the availability of satellite image time series               0.6
+                                                                                                         NDVI
+
+
+
+
+                                        (SITS) data is rapidly increasing. For instance, the twin
+                                                                                                                0.4
+                                        Sentinel-2 satellites provide imagery of the entire Earth
+                                        every two to five days [1]. A frequent acquisition of images            0.2
+                                        is crucial for vegetation-related remote sensing applications                     winter rapeseed                      winter wheat
+                                        such as crop type classification [2, 3]. Multi-temporal                 0.8
+                                        data enables capturing the phenological development of                  0.6
+                                                                                                         NDVI
+
+
+
+
+                                        crops (i.e., the progressions of crop growth), a key di-                0.4
+                                        mension to discriminate each crop type [4]. Recently, the
+                                                                                                                0.2
+                                        increasing availability of SITS along with advances in deep                   0   100   200        300      0     100       200       300
+                                        learning has led to crop classifiers with temporal neural ar-                       day of year                        day of year
+                                        chitectures using convolutions [5, 6], recurrent units [7–10],                                       Denmark (32VNH)          France (30TXT)
+                                        self-attention [11, 12], or combinations thereof [13, 14].
+                                           These crop classification models achieve impressive per-       Figure 1: Normalized difference vegetation index (NDVI) time series
+                                                                                                          for crops from two different Sentinel-2 tiles in Europe, indicating
+                                        formance by capturing the temporal structure of the prob-
+                                                                                                          the growth of four crop types. Crops develop similarly in different
+                                        lem but rely on the existence of a large amount of labeled        regions, but the patterns are temporally shifted, e.g. if crops ripen at
+                                        training data. While unlabeled SITS are plenty, access to         different times of the year.
+                                        labels in the region of interest (the target domain) is often
+                                        either costly or otherwise unavailable. A possible solution
+                                        is to train a model in a region with labels available (the        machine learning known as unsupervised domain adapta-
+                                        source domain) and apply it to the unlabeled target region.       tion (UDA) [15, 18, 19]. Here, we consider the cross-region
+                                        However, when the two regions are geographically differ-          UDA problem for SITS [20], where we are provided with
+                                        ent, the dissimilarity between the source and target data         labeled data from a source region and unlabeled data from
+                                        distributions can cause a source-trained model to perform         a target region. In this setting, the source and target data
+                                        poorly when applied to the target region [15–17].                 distributions differ due to changes in local conditions, such
+                                           Addressing the distributional shift problem to adapt a         as the soil, climate, and farmer practices, which cause
+                                        source-trained model to an unlabeled target domain is in          spectral and temporal shifts [15].
+                                        Preprint submitted to ISPRS Journal of Photogrammetry and Remote Sensing                                                      May 10, 2022
+   Addressing the temporal shift is of particular impor-             generate more accurate pseudo-labels in the target domain
+tance when adapting crop classifiers to new regions, as              for self-training.
+we illustrate in Figure 1. While crops in different regions             In TimeMatch learning, we therefore use self-training
+have similar growth patterns, the timing of key growth               to adapt a model to the target domain. We propose an
+stages, such as the peak of greenness, is shifted along the          iterative algorithm where we alternate between temporal
+temporal axis. As crops are classified primarily by their            shift estimation and re-training the model for the target
+unique growth patterns, the temporal shift may cause mis-            domain by learning from both labeled source data and
+classifications when a source-trained model is applied to a          pseudo-labeled target data. By doing so, the model learns
+target region. For example, the shift in time could cause            discriminative target features for accurate crop classifica-
+the phenology of spring barley to appear similar to that             tion in the target region.
+of winter barley in the target. Thus, accounting for the                Lastly, we present the TimeMatch dataset, a challenging
+temporal shift is a key factor in cross-region adaptation.           new open-access dataset for training and evaluating cross-
+   A possible approach could be to train models that are             region models on SITS with over 300.000 annotated parcels
+invariant to temporal shifts, such as by applying random             from four different regions in Europe. Evaluated on this
+temporal shifts to the training data. However, as the tempo-         dataset, our approach outperforms all competing methods
+ral shift could be the main feature that separates two crop          by 11% F1-score on average across five different cross-region
+types, shift-invariant models have reduced classification            UDA experiments.
+ability compared to shift-variant models.                               In summary, our contributions are as follows:
+   Another approach is to apply existing UDA methods.
+Typically, these methods address domain adaptation by                  • We propose a method for estimating the temporal
+constraining the classifier to operate on domain-invariant               shift between a labeled source region and an unlabeled
+features [21]. This is achieved by training the classifier               target region to reduce their temporal discrepancy.
+to perform well on the source domain while minimizing a                • We propose TimeMatch, a novel UDA method de-
+divergence measure between features extracted from the                   signed for the cross-region problem of SITS, where
+source and the target domains [20, 22, 23]. While these                  crop classification models are adapted to an unlabeled
+methods have been successfully applied in various applica-               target region by self-training on temporally shifted
+tions [19, 24], they do not directly account for the temporal            data for improved performance compared to exist-
+shift in SITS and have thus been reported to provide lim-                ing methods. Our source code is available at https:
+ited benefits in cross-region UDA [25]. More recently, self-             //github.com/jnyborg/timematch.
+training methods have emerged as a promising alternative
+to domain-invariant methods [26–30]. Self-training itera-              • We release the TimeMatch dataset [33], a new dataset
+tively generates pseudo-labels [31] for the target domain                for training and evaluating cross-region UDA models
+and then uses them to retrain the model with target data.                on SITS from four different European regions.
+To account for noisy pseudo-labels caused by the domain
+shift, these methods typically incorporate a refinement step           This paper is organized as follows. Section 2 describes the
+                                                                     existing literature related to our work. Section 3 describes
+where the noise is reduced in various ways, such as with
+                                                                     the proposed method for temporal shift estimation and
+generative models [28] or learned confusion matrices [29].
+Still, no method considers the particular case of SITS where         the TimeMatch learning algorithm. Section 4 presents our
+the pseudo-label noise is caused by a temporal shift.                dataset and the experimental setup, and Section 5 the
+   In this paper, we propose TimeMatch, a self-training              experimental results. Lastly, Section 6 concludes this work.
+method for cross-region UDA where we directly account for
+the temporal shift. TimeMatch consists of two components:            2. Related Work
+(i) the temporal shift estimation and (ii) the TimeMatch
+learning algorithm.                                                     TimeMatch is related to the existing work in unsuper-
+   Estimating the temporal shift directly from the target            vised domain adaptation of learning domain-invariant fea-
+data is difficult, as the lack of labels hinders e.g. the com-       tures, time-series adaptation, cross-region adaptation, and
+parison of class-wise vegetation indices as in Figure 1. To          self-training.
+address this, we propose an unsupervised method where
+we estimate the temporal shift from target to source with            2.1. Domain-Invariant Methods
+a source-trained model. First, we obtain the softmax pre-               The predominant approach in UDA is to train the clas-
+dictions of the model when input target data with different          sifier to rely only on domain-invariant features [21, 24].
+temporal shifts. Then, we choose the temporal shift with             To this end, several works consider adversarial train-
+high prediction confidences across a diverse set of classes.         ing [22, 34, 35]. In domain adversarial neural networks
+We show that this approach corresponds well to the actual            (DANN) [22, 34], the feature extractor is adversarially
+climatic differences between the two regions. Moreover,              trained to produce domain-invariant features that are in-
+as correctly classified examples tend to have higher pre-            distinguishable by a domain discriminator. Conditional
+diction confidence [32], the estimated shift enables us to           domain adversarial networks (CDAN) [35] improves upon
+                                                                 2
+DANN by conditioning the domain discriminator on classi-             whereas the teacher is updated by an exponential moving
+fier predictions in addition to features to enable the align-        average (EMA) of student parameters to reduce pseudo-
+ment of multimodal data distributions.                               label noise. FixMatch [45] generates pseudo-labels for
+   Another approach is to align the feature distributions            weakly-augmented inputs, and uses confident pseudo-labels
+directly by minimizing a divergence measure. Choices                 to self-train the model on strongly-augmented inputs, reg-
+for divergence measure include maximum mean discrep-                 ularizing the model to output consistent pseudo-labels for
+ancy (MMD) [23], correlation alignment [36], or optimal              random augmentations of the input.
+transport [37, 38]. Recently, JUMBOT [38] achieves state-               Recently, self-training has emerged for UDA as an alter-
+of-the-art UDA results by using mini-batch unbalanced                native to domain-invariant methods [26–30]. By learning
+optimal transport to minimize the domain discrepancy of              from both labeled source data and pseudo-labeled target
+joint deep feature and label distributions.                          data, self-training methods implicitly encourage feature
+   While domain-invariant methods achieve strong results             alignment for each class without restricting the model to
+on computer vision datasets, they do not explicitly handle           operate on domain-invariant features. However, since the
+the temporal dimensions of SITS data and time series in              domain shift often results in increased pseudo-label noise
+general.                                                             compared to SSL, existing methods introduce various refine-
+                                                                     ment methods to reduce the noise, such as co-training [47],
+2.2. Time-Series Unsupervised Domain Adaptation                      tri-training [26], conditional generative models [28], or con-
+   Few methods tackle the challenge of time series UDA.              fidence regularization [30]. Recently, Adversarial-Learned
+Current methods for time series are typically also based on          Loss for Domain Adaptation (ALDA) [29] proposes to
+learning domain-invariant features [39–41]. Recurrent do-            refine the pseudo-labels with a noise-correcting domain
+main adversarial neural network (R-DANN) and variational             discriminator.
+recurrent adversarial deep domain adaptation (VRADA) ex-                Similar to this line of work, our approach is based on
+plore long short-term memory and variational recurrent neu-          self-training. By directly accounting for the temporal shift,
+ral networks as feature extractors, respectively, and learn          we can temporally align the target SITS with that of the
+domain-invariant features using the DANN method [39].                source, which enables the generation of more accurate
+Likewise, the convolutional deep domain adaptation model             pseudo-labels compared to existing self-training methods
+for time series data (CoDATS) learns domain-invariant                that do not.
+features with a temporal convolutional network with the
+DANN method [40]. However, while these methods are ef-               3. TimeMatch
+fective at learning domain-invariant features for time series,
+they are not designed to learn the temporal shift present              In this section, we describe our proposed method
+in SITS.                                                             TimeMatch for cross-region UDA. We begin by formally
+                                                                     defining the problem setting, followed by an overview of
+2.3. Cross-Region Crop Classification                                how TimeMatch addresses it. We then give the details of
+                                                                     the two TimeMatch components: temporal shift estimation
+    Lucas et al . [25] reports that existing UDA methods,
+                                                                     and TimeMatch learning.
+including existing domain-invariant methods [42, 43], per-
+form poorly when applied to cross-region UDA of SITS
+                                                                     3.1. Problem Setting
+due to the temporal shift problem and the change in class
+distribution between the two regions. Recently, Wang et                 In crop classification, the input is a sequence of satellite
+                                                                                          (1)      (T )
+al . [20] proposed the phenology alignment network (PAN)             images xi = (xi , . . . , xi i ) of length Ti to be classified
+as the first method for cross-region UDA of SITS. PAN                into one of the K crop classes. In object-based classifica-
+learns domain-invariant features with MMD [23] and a                 tion, which we focus on in this work, each xi ∈ RTi ×Ni ×C
+feature extractor consisting of gated recurrent units and            contains a sequence of Ni pixels of C spectral bands within
+self-attention. Still, as PAN learns domain-invariant fea-           a homogeneous, agricultural plot of land which we refer to
+tures, the temporal shift problem is not directly addressed.         as a parcel.
+                                                                        Each xi is accompanied by a sequence τi =
+                                                                       (1)          (T )                       (j)
+2.4. Self-Training Methods                                           (τi , . . . , τi i ) indicating the time τi at which each ob-
+                                                                                     (j)                         (j)
+   Semi-supervised learning (SSL) is a similar task to do-           servation xi is sampled. In practice, τi is typically repre-
+main adaptation, but where the labeled and unlabeled data            sented by the day-of-year [8, 12], and makes it possible to ac-
+are sampled from the same data distribution [44]. Many               count for the irregular temporal sampling of most satellites.
+SSL methods are based on pseudo-labeling [31] (also called           The goal of the crop classification task is to learn a model
+self-training [45]), where the model’s own high-confidence           which predicts class probabilities p(y|(xi , τi )) ∈ RK , typi-
+predictions are used as labels for the unlabeled samples.            cally learned with supervision from labels y ∈ {1, . . . , K}.
+In Mean Teacher [46], the model assumes a dual role as                  In this work, we consider the problem of cross-region
+                                                                                                                                  s
+teacher and student. The student is updated by gradi-                UDA. We are given a source domain Ds = {(xsi , τis , yis )}ni=1
+                                                                                                                                  t
+ent descent with pseudo-labels generated by the teacher,             of ns labeled SITS and a target domain Dt = {xti , τit }ni=1
+                                                                 3
+                                         Temporal Shift Estimation                                               TimeMatch Learning
+                                   shift target data by δ ∈ {−∆, −∆ + 1, . . . , ∆}
+                                 −∆                                               re-estimate δ t→s                  loss Lall
+
+                                                                                                         loss Ls→t               loss Lt
+                                                                                                                                           pseudo label ŷit
+                                                                           teacher θ0        label yis
+              crop growth
+
+
+
+
+                                                                              shift
+                                  +δ t→s                                   predictions
+                                                                                                             student θ         θ 7→ θ0       teacher θ0
+                                                                                                                                 EMA
+                                                                                                         D s→t         Dt                           D t→s
+                                        +∆
+
+                                                                           shift score
+                                                                                                                 τ s + δ s→t                  τ t + δ t→s
+                            −∆      0                          365 365+∆
+                                              day of year
+                                                                                 δ t→s , δ s→t             source domain Ds                target domain Dt
+                                             source         target
+
+
+
+Figure 2: Overview of TimeMatch. Both the student and teacher are pre-trained on the source domain. Temporal Shift Estimation: We input
+shifted target data to the teacher model and obtain its predictions for each shift. We then score each shift by the confidence and diversity of
+the teacher predictions, and the shift with the best score is output as the temporal shift estimate δ t→s and δ s→t = −δ t→s . TimeMatch
+Learning: The teacher generates pseudo-labels for unlabeled target data shifted by δ t→s . Then, the student is updated for (non-shifted) target
+data using the pseudo-labels, and for source data shifted by δ s→t using the available source labels. As a result, the student is adapted to the
+target domain with both generated target labels and actual source labels. After the student parameters have been updated with gradient
+descent, the teacher parameters are updated as an exponential moving average (EMA) of the student parameters. As both models adapt to the
+temporal shift of the target domain, the best shift for pseudo-labeling with the teacher changes and must be re-estimated. The EMA ensures
+the teacher adapts slowly which enables δ t→s to be re-estimated each epoch only for improved training efficiency and pseudo-label accuracy.
+
+
+
+of nt unlabeled SITS. We assume both the source and                                                  containing all remaining source data. This ensures that all
+target domains consist of SITS acquired over a single year                                           target examples can be classified to either one of the K − 1
+(January 1 to December 31) and in geographically different                                           crop classes or “unknown”.
+locations. The two domains can be associated with differ-
+ent data distributions, as changes in local conditions, e.g.
+soil, weather, climate, or farmer practices, cause domain                                            3.2. Approach Overview
+discrepancies [15]. In this work, we focus on the domain
+                                                                                                        Here we give an overview of how TimeMatch addresses
+discrepancies caused by temporal shifts (Section 1). Al-
+                                                                                                     the cross-region UDA problem before describing the full
+though not explicitly addressed in this work, there are other
+                                                                                                     details. A visual presentation of TimeMatch is given in Fig-
+sources of discrepancies that might occur. For example,
+                                                                                                     ure 2. TimeMatch consists of two components (i) temporal
+the local topography or soil conditions could impact not
+                                                                                                     shift estimation and (ii) TimeMatch learning.
+only the temporal development of crop growth, but also the
+                                                                                                        We aim to estimate the temporal shift between the source
+spectral values, which could change the spectral signature
+                                                                                                     and target regions to reduce their domain discrepancy (see
+of the same crop type in different regions.
+                                                                                                     Figure 1). We represent the temporal shift by a scalar
+   Because of these data discrepancies, models which are                                             δ t→s ∈ Z (as the number of days), here in the direction
+trained with the labeled source domain can fail when ap-                                             from target to source. Note that the shift in the opposite
+plied to the unlabeled target domain [16], thus hindering                                            direction is obtained by δ s→t = −δ t→s , so we only have
+the large-scale application of crop classifiers. To this end,                                        to estimate one shift. To shift the target domain by δ t→s ,
+our goal is to adapt a model trained on Ds to make accu-                                             we write τ t + δ t→s , meaning δ t→s is added element-wise
+rate predictions on Dt . We do so by explicitly estimating                                           to each target day-of-year. With our proposed method for
+the temporal shift between the two regions to generate                                               temporal shift estimation (Section 3.3), we obtain estimates
+accurate pseudo-labels for Dt . Then, we re-train the model                                          for δ t→s and δ s→t .
+with target data using the pseudo-labels, thereby adapting                                              In TimeMatch learning (Section 3.4), we use δ s→t to
+the model to the spectral and temporal properties of the                                             construct a target-shifted source domain Ds→t = {(xsi , τis +
+                                                                                                                     s
+target region. We note that the classes in the source may                                            δ s→t ), yis }ni=1 , which has reduced domain discrepancy to the
+not be exactly the same as the classes in the target. This                                           unlabeled target domain Dt due to the temporal alignment.
+complicates UDA, which typically assumes a closed-set set-                                           We therefore use self-training to learn from the labeled
+ting [48], where the set of classes in the source and target                                         Ds→t and unlabeled Dt . To do so, TimeMatch learning
+domains are equal. For simplicity, we focus on a closed-set                                          unifies temporal shift estimation with the loss function of
+setting by adapting a classifier trained for the main K − 1                                          FixMatch [45] and the exponential moving average (EMA)
+crop types in the source region, plus an “unknown” class                                             training of Mean Teacher [46], as we explain next.
+                                                                                                 4
+   We first obtain source-trained parameters by training             more confident predictions than wrongly classified or out-
+a crop classifier with Ds . We then duplicate the trained            of-distribution examples [32], we argue that a confident
+classifier into two models: the teacher and the student.             temporal shift indicates a better alignment of the target
+Our TimeMatch learning algorithm aims to adapt both the              domain with the source which results in accurate pseudo-
+teacher and the student to the new target region with self-          labels and reduced domain discrepancy.
+training. The teacher generates pseudo-labels for the target            The confidence of a model for a particular shift δ t→s can
+domain to train the student, and the knowledge learned               be measured by the expected entropy:
+by the student is then updated back to the teacher, thus
+                                                                               E(xt ,τ t )∼Dt H pθ y|(xt , τ t + δ t→s ) ,
+                                                                                                                       
+                                                                                                                               (1)
+the pseudo-labels used to train the student itself are im-
+proved. We generate pseudo-labels by using δ t→s to create           where H denotes the entropy, here computed over the
+                                                       t
+an adapted target domain Dt→s = {xti , τit + δ t→s }ni=1 . As        predictions of the model θ when input temporally shifted
+D t→s                                s
+       is temporally aligned with D , the source-initialized         target data sampled from Dt .
+teacher generates more accurate pseudo-labels for Dt→s                  To estimate a temporal shift with entropy, Equa-
+than Dt . The student is then trained with labeled Ds→t              tion 1 should be computed for each possible shift
+and pseudo-labeled Dt via the FixMatch loss [45], thereby            δ t→s ∈ {−∆, −∆ + 1, . . . , ∆}, and the estimated shift is
+leveraging both the available source labels and the target           then the one with lowest entropy. Here, ∆ defines the
+pseudo-labels to adapt the student to the target domain.             maximum possible shift (in days) to estimate between the
+   After updating the student, the teacher is updated via            source and target regions.
+an EMA of the student parameters. As the two models                     However, due to the class imbalance of SITS, relying
+adjust to the temporal shift of the target domain, the best          on expected entropy alone could result in choosing a shift
+shift δ t→s for pseudo-labeling with the teacher gradually           where the model outputs confident predictions for only
+moves to zero during TimeMatch learning. To adjust to the            the most frequent classes while ignoring the less frequent
+changing shift and ensure the pseudo-labels are consistently         classes. This would hinder the adaptation of the model for
+accurate, it is necessary to re-estimate the temporal shift          the less frequent target classes. To address this problem,
+of the teacher as it learns. However, repeating temporal             the diversity of the predicted marginal distribution should
+shift estimation is computationally expensive, and drasti-           also be considered in the estimation. The marginal is given
+cally increases training time if done each training iteration.       by:
+Therefore, in Section 3.4.3, we discuss how EMA training                    pθ (y) = E(xt ,τ t )∼Dt pθ y| xt , τ t + δ t→s
+                                                                                                                          
+                                                                                                                               , (2)
+alleviates this issue by enabling the re-estimation to be
+done only once per epoch.                                            that is, the expected predictions of the model (parameter-
+   Next, we first describe our method for estimating the             ized by θ) when input shifted target data.
+temporal shift before describing the loss function and learn-           Ideally, the marginal distribution should match the class
+ing algorithm of TimeMatch learning.                                 distribution of the target domain, as this indicates a shift
+                                                                     where the model predicts a diverse set of classes accord-
+                                                                     ing to their actual frequency. But since target labels are
+3.3. Temporal Shift Estimation                                       unavailable, so is the target class distribution. Instead,
+   Estimating the temporal shift directly from the data is           inspired by metrics for evaluating image generative mod-
+difficult, as labels are not available in the target domain.         els, we consider two options to address this: the Inception
+Without labels, we cannot separate the target data into              score [49] (IS), and the activation maximization score [50]
+each crop type, which prevents the computation of e.g. veg-          (AM). Both metrics consider the entropy and marginal of a
+etation indices to compare the source and target phenology           pre-trained model, but IS scores the marginal distribution
+of each crop type directly.                                          by its similarity to a uniform distribution, whereas AM
+   Instead, we propose to estimate the temporal shift by             uses the actual class distribution.
+calculating statistics on the predictions of a source-trained           As these metrics were originally proposed to evaluate
+model when input temporally shifted target data. By doing            the quality of generated images, we describe next how we
+so, we estimate the shift that aligns the target data with the       repurpose them for temporal shift estimation. Finally, we
+source crop phenology learned by a model, leveraging the             describe an algorithm where IS is used to initialize the tem-
+classification ability of the trained model to estimate the          poral shift for estimating the target class distribution with
+shift from unlabeled data. Another benefit of this approach          pseudo-labels and enable a better temporal shift estimate
+is that it enables re-estimation of the best temporal shift          with AM.
+for pseudo-labeling as the learned phenology of the model
+                                                                     3.3.1. Inception Score
+changes from source to target in TimeMatch learning.
+                                                                       IS is computed for a temporal shift δ by:
+   One possible value to measure is the confidence of the
+model predictions. Intuitively, when a source-trained model            IS(δ t→s , θ)
+is applied to correctly shifted target data, it should out-             = E(xt ,τ t ) DKL pθ y|(xt , τ t + δ t→s )
+                                                                                                                 
+                                                                                                                    pθ (y)
+                                                                                                                           
+                                                                                                                                  (3)
+put more confident predictions than for incorrectly shifted
+                                                                        = H(pθ (y)) − E(xt ,τ t ) H pθ y|(xt , τ t + δ t→s )
+                                                                                                                           
+target data. As correctly classified examples tend to have                                                                        (4)
+
+                                                                 5
+where DKL (· k ·) is the KL-divergence between two distri-                     Algorithm 1: EstimateTemporalShift
+butions, here the conditional distribution pθ y|(xt , τ t + δ)
+                                                                               1 Input: Source-trained parameters θs , target domain
+and marginal distribution pθ (y) predicted with model pa-
+rameters θ. Higher values of IS indicate a better δ, as when                       Dt , target class distribution estimate Ĉ t
+                                                                                       t
+                                                                               2 if Ĉ = 0 then
+the conditional and marginal distributions are different,
+this corresponds to a temporal shift where the former has                      3     Estimate temporal shift δ t→s ← δIS      t→s s
+                                                                                                                                  (θ ) (Eq. 5)
+low entropy (i.e., the model is confident), and the latter                     4     Compute pseudo labels for each (xti , τit ) ∈ Dt :
+has high entropy (i.e., the model predicts a diverse set of                            ŷit ← argmaxy (pθs (y|xti , τit + δ t→s ))
+                                                                                                                                 Pnt
+classes). Hence, the temporal shift δ t→s is estimated by:                     5     Estimate class distribution Ĉyt ← n1t i=1 1ŷit =y
+                                                                                       for y ∈ {1, . . . , K}
+            t→s s
+           δIS (θ ) =         argmax          IS(δ t→s , θs ),       (5)       6 Estimate temporal shift δ t→s ← δAM
+                                                                                                                  t→s s
+                                                                                                                     (θ , Ĉ t ) (Eq. 7)
+                          δ t→s ∈{−∆,...,∆}
+                                                                                                            t→s
+                                                                               7 Output: Temporal shift δ
+
+where the estimated temporal shift maximizes IS for a
+source-trained model parameterized by θs when applied to
+target data.                                                                   3.4. TimeMatch Learning
+                                                                                 With our method for estimating the temporal shift, we
+3.3.2. AM Score                                                                can reduce the domain discrepancy between the source
+  A shortcoming of IS is that the highest score is achieved                    and target domains. The TimeMatch learning algorithm
+when pθ (y) is uniform [51], which corresponds to an even                      uses the temporal shift to train the student model for the
+distribution of classes in the target domain. For SITS,                        target domain from teacher-generated pseudo-labels via
+where the class distribution is often highly imbalanced,                       the FixMatch loss [45] and EMA training [46]. We present
+this may cause IS to estimate a suboptimal shift. AM [50]                      the complete TimeMatch algorithm in Algorithm 2, and
+addresses this issue by taking the actual target class distri-                 describe the details of each step in the following.
+bution C t into account:
+                                                                               3.4.1. Pre-training on the Source Domain
+  AM(δ t→s , θ, C t ) = E(xt ,τ t ) H pθ y|(xt , τ t + δ t→s )
+                                                              
+                                                                                  As we rely on the teacher to generate pseudo-labels
+                       + DKL (C t k pθ (y)).                                   to train the student, it is important to obtain a good
+                                                                     (6)       initialization for both models. Additionally, temporal shift
+                                                                               estimation requires a source-trained model. Thus, we first
+AM consists of two terms: the first term is an entropy term                    use the labeled source domain to obtain source-trained
+on the conditional distribution, and the second is the KL-                     model parameters θs . Given a batch of labeled source data
+divergence between the underlying class distribution C t and                   from Ds , we optimize the following loss function:
+the marginal distribution. Lower values of AM indicate
+a better δ, as the model is confident in its predictions,                                             B
+                                                                                                   1 X
+                                                                                            Ls =         L pθs y|(xsi , τis ) , yis ,
+                                                                                                                              
+and the actual class distribution of the data matches the                                                                                        (8)
+                                                                                                   B i=1
+predicted distribution of classes. The temporal shift δ t→s
+is estimated by:
+                                                                               where L(·, ·) is a classification loss (e.g. cross-entropy or
+    δAM (θ , C t ) =
+     t→s s
+                           argmin          AM(δ   t→s     s      t
+                                                        , θ , C ).   (7)       focal loss [52]) and B the batch size. After pre-training,
+                       δ t→s ∈{−∆,...,∆}                                       we initialize the parameters of the student θ and teacher
+                                                                               θ0 from θs (line 2).
+where the estimated temporal shift minimizes AM.
+                                                                               3.4.2. TimeMatch Loss
+3.3.3. Algorithm for Estimating Temporal Shift                                    The TimeMatch loss consists of two terms: a super-
+    While AM is more accurate at estimating the temporal                       vised loss Ls→t applied to the adapted source domain
+shift, it requires knowledge of the target class distribution                  Ds→t and an unsupervised loss Lt applied to the unlabeled
+C t , which is not available. To address this, we propose                      target domain Dt . Our loss is based on the FixMatch
+to approximate the target class distribution for AM by                         loss [45]. To regularize the model to predict consistent
+pseudo-labels obtained with IS. We show our approach in                        pseudo-labels on randomly augmented versions of the same
+Algorithm 1. First, we use IS (Equation 5) to estimate an                      inputs, FixMatch applies two types of augmentation func-
+initial shift δ t→s (line 3). This initial estimate allows us to               tions: weakly-augmented a(·) and strongly-augmented A(·),
+shift the target domain so that more accurate pseudo-labels                    corresponding to simple and extensive augmentations of
+can be generated with a source-trained model. We then use                      the input. We describe the form of augmentations we use
+the pseudo-labels to estimate the target class distribution                    for a(·) and A(·) in Section 4.4.
+Ĉ t (lines 4-5). Finally, we re-estimate the temporal shift                      Let δ s→t and δ t→s be temporal shifts estimated given by
+more accurately with AM and Ĉ t (line 6).                                     Algorithm 1 using the teacher (line 5-7). To compute the
+                                                                           6
+ Algorithm 2: TimeMatch
+ 1 Input: Labeled source domain Ds , unlabeled target domain Dt , source-trained parameters θs , total epochs n and
+    iterations m, pseudo label threshold , trade-off value λ, EMA decay rate α, learning rate η
+                                         s                       0    s
+ 2 Initialize student parameters θ ← θ and teacher parameters θ ← θ
+                                                    t
+ 3 Initialize estimated target class distribution Ĉ = 0
+ 4 for epoch = 1 to n do
+ 5     Estimate temporal shift with teacher: δ t→s ← EstimateTemporalShift(θ0 , Dt , Ĉ t )
+ 6     if epoch = 1 then
+ 7         Initialize δ s→t ← −δ t→s
+ 8      for iteration = 1 to m do
+ 9         Sample mini-batches of size B from source S = {(xsi , τis , yis )}B                           t  t B
+                                                                                 i=1 and target T = {(xi , τi )}i=1
+                                s→t                            s→t
+10         With S shifted by δ      , compute source loss L         (Eq. 9)
+11         For each example in T shifted by δ t→s , generate teacher prediction qit and pseudo labels ŷit (Eq. 10 and 11)
+12         With T and confident pseudo labels ŷit with max(qit ) > , compute target loss Lt (Eq. 12)
+13         Update student by gradient: θ ← θ − γ∇θ (Ls→t + λLt )
+14         Update teacher by EMA: θ0 ← (1 − α)θ + αθ0
+                                                1
+        Re-estimate class distribution: Ĉyt ← mB
+                                                  P
+15                                                   i 1ŷit =y for y ∈ {1, . . . , K} (using all pseudo labels from epoch)
+16   Output: Student parameters θ
+
+
+supervised loss on the source domain, we use δ s→t to align                3.4.3. EMA training and re-estimating temporal shift
+the source domain with the target domain and optimize:                        By optimizing Lall , the student and teacher are trained
+                     B
+                                                                           only for the target phenology, as Ls→t shifts the time of
+                  1 X                                                      the source to the target, while Lt keeps the target in its
+        Ls→t =          L pθ y|A(xsi , τis + δ s→t ) , yis ,
+                                                     
+                                                                (9)
+                  B i=1                                                    original time. This loss enables a source-trained model to
+                                                                           adapt to the crop phenology of the target domain.
+using source labels yis to update the student θ on strongly                   However, by doing so, the source domain is gradually
+augmented source data shifted by δ s→t . This loss makes it               “forgotten”, and as a result, it becomes unnecessary to ap-
+possible for the student to learn the target phenology from                ply the temporal shift δ t→s for pseudo-labeling the target
+shifted source data (line 10).                                             domain with the teacher. This causes δ t→s to gradually
+  To generate pseudo-labels for the target domain, we                      move to zero during TimeMatch learning. Thus, if δ t→s is
+obtain the predicted class distribution from the teacher                   fixed to the same shift, the target samples will be wrongly
+when input source-shifted target data:                                     shifted, which results in incorrect pseudo-labels. To ad-
+                                                                           dress this, we re-estimate the temporal shift for the teacher
+               qit = pθ0 y|a xti , τit + δ t→s ,
+                                              
+                                                        (10)
+                                                                           during TimeMatch learning. As Algorithm 1 chooses the
+where the teacher θ0 is input a weakly-augmented target                    shift based on the confidence and diversity of model pre-
+sample, shifted by δ t→s . Then, we use                                    dictions, re-estimating the temporal shift with the teacher
+                                                                           ensures the generated pseudo-labels remain accurate during
+                         ŷit = argmax(qit )                   (11)        training.
+                                                                              However, if the teacher is a direct copy of the student,
+as pseudo-label (line 11). The student θ is then updated on
+                                                                           the model will rapidly adapt to the target domain, which
+strongly-augmented target data for confident pseudo-labels
+                                                                           requires the temporal shift to be re-estimated every few
+(line 10):
+                                                                           iterations. But doing so drastically increases training time,
+             1 X
+                 B                                                         as Equation 7 requires forwarding a large sample of target
+      Lt =         1max(qit )> L pθ y|A xti , τit , ŷit ,
+                                                   
+                                                               (12)        data for each possible temporal shift. We address this
+             B i=1
+                                                                           by introducing EMA training, where the teacher is slowly
+where 1 is the indicator function, and  is the confidence                 updated via an EMA of the student parameters (line 14):
+threshold for using a pseudo-label. With this loss, the
+                                                                                              θ0 ← (1 − α)θ + αθ0 ,                (14)
+student is trained with target data using pseudo-labels.
+The total loss minimized by the student in TimeMatch is:                  where α is a decay rate. By choosing α close to 1, we reduce
+                       L all
+                               =L   s→t       t
+                                          + λL ,               (13)       the rate at which the teacher adapts to the target domain,
+                                                                          enabling the re-estimation of δ t→s to be done only once
+where λ is a scalar hyperparameter to control the trade-off               each epoch (line 5). Moreover, by averaging model weights
+between the supervised and the unsupervised loss (line 13).               via EMA, we also obtain less noisy pseudo-labels [46].
+                                                                      7
+                                                                                         Temporal Shift
+                                                                                         τi   +     δ t→s /δ s→t
+                        (1)                                   (1)
+                       xi                                   ei
+                                                                                                  Positional
+                       ...       Pixel Sampling                                                   Encoding
+                                                                                   ei
+
+
+
+
+                                                                                                                                            Probabilities
+                                                                         ...
+
+
+
+
+                                                                                                                               Classifier
+
+
+                                                                                                                                              Output
+                                                                     (t)
+                                                                    ei                                                 oi
+                (t)
+              xi
+                                                     PSE                                      +      LTAE
+
+
+
+
+                                                                                   ...
+                                                                         ...
+                       ...
+
+
+
+
+                        (T )                                 (T )
+                       xi i                                 ei i
+
+Figure 3: Overview of the PSE+LTAE model [12, 53]. Given SITS of an agricultural parcel, the PSE module process each time step
+independently by embedding a random sample of pixels. The results are then concatenated into a sequence of embeddings ei . The observation
+dates τi , which we add temporal shifts to, are input to the model by adding their positional encoding to ei . The result is temporally processed
+by LTAE to a single embedding oi which is then passed to the classifier.
+
+
+
+   By re-estimating the temporal shift, the teacher and the                        xi ∈ RTi ×Ni ×C , which is then embedded by the PSE for
+shift can both evolve jointly during training, resulting in                        each time step independently.
+better pseudo-labels for improved cross-region adaptation.                            The LTAE module [53] handles the temporal context by
+Note that δ s→t is not re-estimated (line 7). The first shift                      applying self-attention [54] with modifications to output a
+estimate represents the shift of the data, whereas the re-                         single embedding. It improves the accuracy and computa-
+estimated shift represents the shift of the teacher. By                            tional efficiency compared to the original TAE [12] by a
+fixing δ s→t to the initial estimate, the source domain is                         channel grouping strategy and a learnable master query.
+kept aligned with the target domains during training, which                        The additional input τi is input to LTAE by encoding the
+enables semi-supervised learning.                                                  days with sinusoidal positional encoding [54] and adding
+                                                                                   the result to the output of PSE. As the positional encoding
+                                                                                   does not support negative inputs, we input negative tempo-
+4. Dataset and Materials
+                                                                                   ral shifts by offsetting each τi by the maximum temporal
+  This section presents the TimeMatch dataset [33] and                             shift ∆. Given the sequence of PSE-embeddings and the
+the materials for our experiments. We first introduce                              encoded τi , LTAE outputs a single embedding oi , which is
+the crop classification model we use, followed by a de-                            then classified by a multi-layer perceptron to produce class
+scription of the dataset and its pre-processing. Then, we                          probabilities p(y|(xi , τi )) ∈ RK .
+describe the competitors and our implementation. Our
+                                                                                   4.2. The TimeMatch Dataset
+source code is publicly available, and contains the imple-
+mentation of TimeMatch and the competitors, a link to                                 The TimeMatch dataset [33] contains SITS from Sentinel-
+download our dataset, and the full experimental results:                           2 Level-1C products in top-of-atmosphere reflectance. Four
+https://github.com/jnyborg/timematch.                                              Sentinel-2 tiles are chosen in various climates: 33UVP
+                                                                                   (Austria), 32VNH (Denmark), 30TXT (mid-west France),
+4.1. Network Architecture                                                          and 31TCJ (southern France), abbreviated as AT1, DK1,
+                                                                                   FR1, and FR2, respectively. A map of the tiles is shown
+    As model, we use the existing object-based crop clas-                          in Figure 4. We use all available observations with cloud
+sifier PSE+LTAE introduced by Sainte Fare Garnot et                                coverage ≤ 80% and coverage ≥ 50% between January 2017
+al . [12, 53]. The network consists of two modules: the                            and December 2017. Figure 5 shows the resulting acquisi-
+pixel-set encoder (PSE) and the lightweight temporal at-                           tion dates for the four tiles. We leave out the atmospheric
+tention encoder (LTAE). See Figure 3 for an overview.                              bands (1, 9, and 10), keeping C = 10 spectral bands. The
+    The PSE module handles the spatial and spectral context                        20m bands are bilinearly interpolated to 10m.
+of SITS. Given SITS of an agricultural parcel, PSE samples                            For ground truth data, we retrieve geo-referenced parcel
+a random pixel-set of size S among the Ni available pixels                         shapes and their crop type labels from the openly avail-
+within the parcel. The PSE is efficient compared to e.g.                           able Land Parcel Identification System (LPIS) records in
+convolutions, which are time and memory-consuming when                             Denmark1 , France2 , and Austria3 . We select 15 major
+applied to irregularly sized parcels. As spatial information                       crop classes in Europe and label any remaining parcels as
+is lost by doing so, the PSE supports an optional extra input                      unknown. Figure 6 shows the selected classes and their
+with various geometrical properties of the given parcel, such                      frequency in each tile.
+as its area. We do not input this extra feature to avoid
+biasing the model towards the shapes of parcels in the                                   1 https://kortdata.fvm.dk/download (“Marker”)
+source region, which typically change depending on the                                   2 http://professionnels.ign.fr/rpg (“RPG”)
+
+local farmer practices. Thus, we only input the sequence                                 3 https://www.data.gv.at (“INVEKOS Schläge”)
+
+
+                                                                               8
+                                                                                    100000            Min. count   AT1   DK1   FR1    FR2
+         Estimated δ t→s
+                                         32VNH (DK1)                                 10000
+         DK1→FR1            32
+                                                                                      1000
+
+
+
+
+                                                                            count
+         DK1→FR2            42
+         DK1→AT1            16                                                         100
+         FR1→DK1           -35                                                          10
+         FR1→FR2             4
+                                                                                         1
+
+
+
+
+                                                                                          sp mea ns
+
+
+                                                                                           sp ing_ y
+                                                                                          sp ing_ at
+                                                                                                 g_ as
+                                                                                                rse corn
+
+                                                                                                 g_b w
+
+
+
+
+                                                                                                 nfl at
+                                                                                          win unkn ers
+                                                                                                   _ n
+                                                                                                   t y
+                                                                                          ter er_p t
+                                                                                                   pe s
+                                                                                        win int eed
+                                                                                          win _trit ye
+                                                                                                   _w e
+                                                                                                         at
+                                                                                       win wint er_oa
+                                                                                             _ra ea
+                                                                                             sp arle
+
+
+
+
+                                                                                             win barle
+
+
+
+
+                                                                                              ter ical
+                                                                                              ter ow
+                                                                                            rin do
+
+
+                                                                                               r o
+
+                                                                                             su whe
+
+
+
+
+                                                                                                     he
+                                                                                            rin pe
+                                                                                                       a
+
+
+
+
+                                                                                            ter er_r
+                                                                                                    ow
+                                                                                                    be
+
+
+
+
+                                                                                                     s
+                                                                                                 r
+
+
+
+
+                                                                                             w
+                                                                                       ho
+                                                                           Figure 6: Class frequencies (log scale) for each Sentinel-2 tile in the
+                                                                           TimeMatch dataset. The dashed line indicates the threshold for the
+                                                                           source region when selecting a class as part of the K classes.
+                                                   33UVP (AT1)
+             30TXT (FR1)
+                                                                           the target domain, and use it during training e.g. to select
+                                                                           the best model [23, 29, 34, 35]. However, this assumption is
+                                                                           unrealistic, as if labels were available in real-world scenarios,
+                                                                           they would be better used for training the model. Instead,
+                   31TCJ (FR2)                                             we report all cross-region UDA test results with the model
+                                                                           output at the end of training. Still, hyperparameters must
+                                                                           be chosen with a labeled validation set. Thus, we tune
+                                                                           hyperparameters with the target validation set for only one
+Figure 4: Locations of the four European Sentinel-2 tiles in the           task, DK1→FR1, and apply the found hyperparameters to
+TimeMatch dataset. In the upper left corner, we show the temporal          all remaining tasks (as done in [38]).
+shifts δ t→s estimated by Algorithm 1 with a source-trained model.
+                                                                              The class distributions between regions differ signifi-
+                                                                           cantly, and there may not be enough examples of a crop
+       AT1
+                                                                           type in the source region for a model to learn their classi-
+       DK1                                                                 fication. Thus, when pre-training models on source data,
+tile
+
+
+
+
+       FR1
+       FR2
+                                                                           we only use a subset of the available crop types with at
+               0      50     100   150     200    250   300   350          least 200 examples in the source region (as indicated by
+                                    day of year                            the dashed line in Figure 6). The remaining classes are set
+Figure 5: Acquisition dates for each Sentinel-2 tile in our dataset.       as “unknown”. When evaluating on the target data, we
+The inputs are irregularly sampled with variable temporal length.
+                                                                           report results on the same selection of source classes no
+                                                                           matter their frequency in the target.
+
+   We pre-process the parcels by applying 20m erosion and                  4.3. Comparisons
+removing all parcels with an area of less than 1 hectare.                  Baselines. We consider the following baseline methods:
+This reduces label noise by removing pixels near the bor-
+der of parcels, which are often less representative of the                    • Source-Trained is PSE+LTAE trained on the source
+given crop class compared to the pixels in the middle,                          domain and applied to the target domain without
+and also by removing small or thin polygons, which are                          domain adaptation. This result represents the lower
+typically miscellaneous classes such as field borders. The                      bound cross-region performance of the model.
+SITS are pre-processed for object-based classification by                     • Target-Trained is PSE+LTAE trained with labeled
+cropping the pixels within each parcel to input sequences                       target data using the same classes as the source-trained.
+xi ∈ RTi ×Ni ×10 . Each input is then randomly assigned                         We note that by training with the source classes, which
+to the train/validation/test sets of each Sentinel-2 tile by                    is required for comparison, infrequent classes may not
+a 70%/10%/20% ratio. Note that this process assumes                             be learned properly which increases the variance of the
+knowledge of parcel shapes in the target region. If this                        results. This result can be seen as the upper bound
+is not available, TimeMatch may instead be applied for                          cross-region performance if labels were available in the
+pixel-based classification by inputting single pixels (S = 1)                   target region.
+to PSE+LTAE. We choose five different cross-region tasks
+(written as “source→target”): DK1→FR1, DK1→FR2,                            Competing UDA Methods. We compare TimeMatch to
+DK1→AT1, FR1→DK1, and FR1→FR2. When a Sentinel-                            five existing UDA methods. We reproduce these methods
+2 tile is chosen as source, all labels of the train and vali-              for SITS by replacing the original feature extractor with
+dation sets are available for training. When a tile is the                 PSE+LTAE. For domain-invariant methods, we align the
+target region, no labels are available, except for the final               LTAE feature vector input to the final classifier (i.e., oi in
+evaluation on the test set. In contrast, many existing UDA                 Figure 3), similar to the original approach in these methods.
+methods assume that a labeled validation set is available for                 We compare to the following methods:
+                                                                       9
+  • FixMatch [45] is TimeMatch without the temporal                   Source-training. To initialize models on the labeled source
+    shift estimation. As this method is semi-supervised               domain, we follow the original training approach of
+    learning, it shows whether UDA or SSL is more bene-               PSE+LTAE [12]. We train for 100 epochs with the
+    ficial for cross-region adaptation.                               Adam [56] optimizer with an initial learning rate of 0.001
+                                                                      and we decay the learning rate using a cosine annealing
+  • MMD [23] learns domain-invariant features by mini-                schedule [57]. We use weight decay of 0.0001, batch size
+    mizing the maximum mean discrepancy metric.                       128, and focal loss γ = 1. Inputs are normalized to [0, 1] by
+                                                                      dividing by the max 16-bit pixel value 216 − 1. The best
+  • DANN [22] uses a domain classifier to learn domain-
+                                                                      source-trained model is selected using the source validation
+    invariant features with adversarial training.
+                                                                      set. We augment the inputs by randomly sub-sampling
+  • CDAN+E [35] improves upon DANN by conditioning                    30 time steps. The pixel-set size of PSE is set to S = 64
+    the domain classifier on the classification output and            during training. The same setup is used for the target-
+    minimizing an entropy loss on target data.                        trained model. For the final evaluation, we do not sample
+                                                                      time steps or pixels, and instead input all available time
+  • ALDA [29] is a self-training method where pseudo-                 steps (T = Ti ) and pixels (S = Si ) for each example to the
+    labels are refined by a noise-correcting domain dis-              model. This ensures deterministic test results, and we also
+    criminator. This method is in essence the most similar            observe slightly improved results by doing so.
+    to TimeMatch.
+                                                                      ShiftAug. When training with ShiftAug, all training data
+  • JUMBOT [38] learns domain-invariant features by a                 (both source and target) are randomly shifted during train-
+    discrepancy measure based on optimal transport.                   ing as described in Section 4.3. ShiftAug is disabled during
+                                                                      evaluation.
+We note that time-series domain adaptation methods R-
+DANN, VRADA [39] and CoDATS [40] also employ DANN
+                                                                      TimeMatch. We use the same training setup as the source-
+to align the features extracted by temporal network ar-
+                                                                      trained model but instead train for 20 epochs with a lower
+chitectures. Thus, the only difference between VRADA,
+                                                                      initial learning rate of 0.0001. We define an epoch as
+CoDATS, and the DANN approach mentioned here is the
+                                                                      500 iterations to fix the frequency in which the temporal
+backbone architecture, which in our case is the temporal
+                                                                      shift is re-estimated. We use maximum temporal shift
+model PSE+LTAE.
+                                                                      ∆ = 60 days, as we did not observe shifts greater than
+   PAN [20], a UDA method for SITS, learns domain-
+                                                                      2 months for our dataset in Europe. We set the trade-
+invariant features by minimizing the MMD loss for a tem-
+                                                                      off hyperparameter λ = 2.0 in Equation 13, EMA keep-
+poral crop classification network. Unfortunately, we were
+                                                                      rate α = 0.9999, and pseudo-label threshold τ = 0.9. A
+unable to gain access to the source code of PAN for compar-
+                                                                      sensitivity analysis of these hyperparameters is provided
+ison. As an alternative, we include the MMD comparison,
+                                                                      in Section 5.4. For the FixMatch [45] augmentations, we
+which is similar to PAN, except the crop classifier is changed
+                                                                      use the identity function for the weak a(·) in Equation 10
+to PSE+LTAE.
+                                                                      and randomly sub-sample time steps for the strong A(·) in
+                                                                      Equations 9 and 12. These are used for simplicity, and we
+ShiftAug. To verify the benefits of estimating the temporal
+                                                                      leave the use of more advanced augmentations for SITS
+shift compared to training models that are invariant to
+                                                                      to future work. At each iteration, we sample two mini-
+temporal shifts, we implement a simple data augmentation
+                                                                      batches of size 128, one from the source and one from the
+technique to train shift-invariant models that we name
+                                                                      target, in order to calculate the TimeMatch objective in
+ShiftAug. During training, ShiftAug uniformly samples δ ∼
+                                                                      Equation 13. We use a class-balanced mini-batch sampler
+U(−∆, ∆) for each training example and shifts the example
+                                                                      for the source domain to ensure each source mini-batch
+by (xi , τi + δ). By extending the training data to contain
+                                                                      contains roughly the same number of samples for each class.
+all valid temporal shifts with uniform probability, ShiftAug
+                                                                      This reduces the class imbalance problem for the source
+enables training models with invariance towards shifts.
+                                                                      domain for improved performance. Additionally, we apply
+Note that ShiftAug is incompatible with the temporal shift
+                                                                      domain-specific batch normalization [58–60] by forwarding
+estimation presented in Algorithm 1, which requires a shift-
+                                                                      the source and target mini-batches separately instead of
+variant model.
+                                                                      concatenated. This ensures the batch normalization [61]
+   We implement all competing methods with and with-
+                                                                      statistics are calculated separately for each domain, for
+out ShiftAug. This reveals the degree at which existing
+                                                                      improved adaptation.
+methods can implicitly learn shift-invariance.
+                                                                      Competing Methods. We re-implement the competitors
+4.4. Implementation Details                                           MMD, DANN and CDAN+E following the domain adap-
+   All experiments are implemented in PyTorch [55] and                tation library in [62], and use the original source codes for
+trains on a single NVIDIA 1080 Ti GPU. Our implementa-                ALDA [29] and JUMBOT [38]. FixMatch [45] follows our
+tion is based on the source code of PSE+LTAE [53].                    re-implementation for TimeMatch with an EMA teacher
+                                                                 10
+      Method              ShiftAug     DK1→FR1         DK1→FR2           DK1→AT1        FR1→DK1         FR1→FR2            Avg.
+      Source-trained          7          28.3±1.9        29.0±5.2          43.4±4.0       24.9±2.0       70.3±1.9       39.2±3.0
+                              3          40.9±0.8        37.4±2.3          48.9±2.8       47.3±1.9       70.5±1.1       49.0±1.8
+      FixMatch [45]           7          24.2±4.0        28.2±6.9          37.4±5.6       26.2±1.8       70.4±0.9       37.3±3.8
+                              3          48.2±1.3        44.2±3.2          57.4±2.2       51.3±1.6       67.7±0.2       53.7±1.7
+      MMD [23]                7          36.6±0.7        35.5±0.6          49.7±2.0       32.5±2.0       61.6±2.6       43.2±1.6
+                              3          42.2±0.4        39.5±0.8          48.9±2.4       42.8±2.3       59.0±2.7       46.5±1.7
+      DANN [22]               7          38.7±0.7        37.3±0.6          52.0±1.4       34.0±1.8       71.0±0.2       46.6±0.9
+                              3          45.3±2.2        44.1±1.4          52.4±1.4       42.9±2.5       68.7±0.5       50.7±1.6
+      CDAN+E [35]             7          39.3±0.6        37.9±0.3          51.5±2.9       36.5±1.3       71.7±0.6       47.4±1.1
+                              3          46.5±2.3        45.2±1.3          55.0±1.3       46.9±0.5       70.7±1.3       52.9±1.3
+      ALDA [29]               7          36.9±0.2        33.1±1.9          47.2±3.9       35.0±1.0       55.3±3.1       41.5±2.0
+                              3          42.8±2.1        36.2±0.6          51.5±2.2       40.7±1.3       53.8±3.9       45.0±2.0
+      JUMBOT [38]             7          36.8±0.2        33.6±1.3          50.5±0.6       35.6±3.0       63.7±3.0       44.0±1.6
+                              3          42.7±0.1        38.3±1.2          49.7±4.2       41.5±0.5       62.2±1.2       46.9±1.4
+      TimeMatch               7         57.4±1.5        47.0±0.9          61.7±4.9       52.1±1.4        73.0±0.5       58.2±1.8
+      Target-trained          7          74.6±0.6        72.4±1.4          86.9±2.7       90.6±4.3       85.7±0.7       82.0±1.9
+
+
+Table 1: Macro F1-score (%) results on our dataset for unsupervised cross-region adaptation. We consider five adaptation tasks across four
+Sentinel-2 tiles: DK1=32VNH (Denmark), FR1=30TXT (mid-west France), FR2=31TCJ (southern France), and AT1=33UVP (Austria).
+
+
+
+and the student as the final model. All methods are initial-                Our approach TimeMatch, where we explicitly estimate
+ized from a source-trained model. ShiftAug versions are                  the temporal shift, outperforms all competing methods
+initialized from the corresponding ShiftAug source-trained               by 11% on average and 5% for their ShiftAug variants.
+model, and we continue to use ShiftAug during training.                  This shows that accounting for the temporal shift is a
+As in TimeMatch, we train for 20 epochs and tune the                     key component for the cross-region adaptation problem of
+hyper-parameters of these methods on the task DK1→FR1.                   SITS. Moreover, the shift-variant approach of TimeMatch
+The full details can be found in our source code.                        outperforms the shift-invariance strategy. We hypothe-
+                                                                         size that training for shift-invariance may complicate crop
+                                                                         classification, as the classification of certain crop types is
+5. Experimental Results                                                  shift-variant. For example, spring barley and winter barley
+                                                                         develop similarly over time but shifted, as also discussed
+5.1. Main Results
+                                                                         in Section 1.
+   Table 1 shows the performance obtained with our ap-
+proach and the re-implemented baselines and competitors.                    Comparing TimeMatch to the results of the target-
+We report the mean and standard deviation of macro F1                    trained model, we observe that our approach—without
+scores, calculated from the results of three runs with differ-           any target labels—recovers a significant part of the highest
+ent dataset splits.                                                      achievable performance if target labels were available, but
+                                                                         we also find that there is room for improvement. From
+   We observe that source-trained models transfer very
+                                                                         our results, we see that methods which explicitly account
+poorly to new target regions, with an average F1-score of
+                                                                         for the temporal shift, such as TimeMatch and the Shif-
+39% on target data. In comparison, target-trained models
+                                                                         tAug variants of competing methods, generally outperform
+on the same classes achieve 82% on average. We observe
+                                                                         methods which do not. We therefore believe that further
+that training shift-invariant models with ShiftAug improves
+                                                                         improvements can be gained by considering stronger forms
+domain generalization, leading to an increased average score
+                                                                         of temporal alignment than shifts, such as class-wise align-
+of 49%. This greatly motivates addressing the temporal
+                                                                         ments or time warping. We leave this interesting direction
+shift in UDA.
+                                                                         to future work.
+   Existing UDA methods, however, only slightly increase
+the performance of source-trained models, with the best                     Lastly, we highlight the results of the semi-supervised
+result obtained by CDAN+E [35] with 47%. By incorporat-                  learning method FixMatch [45]. This method is similar to
+ing our ShiftAug, we observe a performance boost across                  TimeMatch, but without temporal shift estimation. We
+all evaluated methods, indicating that existing methods                  observe that without ShiftAug, FixMatch obtains results
+are unable to implicitly handle the temporal shift.                      worse than the source-trained model. This indicates semi-
+                                                                    11
+              Accuracy         Entropy          IS        AM                         =0.9999       =0.999     =0.99        =0.0           Ablation                                    DK1→FR1
+        1.0
+                                                                                30
+        0.8
+                                                                                                                                          No EMA (α = 0.0)                             49.9±3.7
+                                                                                25
+                                                                                                                                          No source temporal shift (δ s→t = 0)         51.9±1.9
+
+
+
+
+                                                               temporal shift
+        0.6                                                                     20
+score
+
+
+
+
+                                                                                15
+                                                                                                                                          No balanced batch sampler for source         53.3±3.6
+        0.4
+                                                                                10                                                        IS instead of AM                             56.3±2.6
+        0.2
+                                                                                 5                                                        Entropy instead of AM                        56.9±1.8
+        0.0                                                                      0                                                        No domain-specific batch norm.               56.9±4.1
+                60       40   20    0      20   40   60                                        5      10     15       20
+                                   shift                                                             epoch
+                                                                                                                                          TimeMatch                                    57.4±1.5
+        (a) Score of temporal shifts.                          (b) Temporal shift during training.
+                                                                                                                                       Table 2: Ablation study of TimeMatch components, sorted by in-
+Figure 7: (a) Overall accuracy, entropy, IS, and AM scores of a source-                                                                creasing F1-score (%).
+trained model when applied to the target domain with different shifts.
+The dashed line indicate the most accurate shift. (b) The re-estimated
+temporal shifts of the teacher model during TimeMatch learning with
+different EMA decay rates.                                                                                                             between regions. For example, the temporal shift (δ t→s )
+                                                                                                                                       from the warmer FR1 (mid-west France) to the colder DK1
+                                                                                                                                       (Denmark) is estimated as 32 days. Due to the warmer
+supervised learning cannot address the cross-region task                                                                               climate, crops in FR1 mature earlier than in DK1, and a
+alone. With ShiftAug, however, the results are greatly im-                                                                             positive shift is required to align the former with the latter.
+proved on average. Interestingly, the performance is worse                                                                             In the other direction, the opposite is true, and indeed, we
+without ShiftAug for all tasks except FR1→FR2. Here, the                                                                               estimate a negative temporal shift of −35 days. Note that
+source and target regions are the most geographically close,                                                                           these are off by 3 days due to estimation variance. Here, the
+and as result, the temporal shift is also closer to zero (see                                                                          two source-trained models used to estimate the temporal
+the top-left table in Figure 4). This indicates that ShiftAug                                                                          shift in each direction are trained with two completely
+(controlled by ∆) is a trade-off between better long-range                                                                             separate source region, yet their estimated shifts are still
+classification results and worse short-range results. In con-                                                                          roughly inverses. This indicates that the temporal shift
+trast, by estimating the temporal shift directly, TimeMatch                                                                            learned by these models is connected to the phenological
+does not have this issue and outperforms shift-invariance                                                                              properties of their respective source regions.
+at both short and long distances.
+                                                                                                                                       5.3. Ablation Study
+5.2. Analysis of Temporal Shift Estimation                                                                                                To better understand how TimeMatch is able to obtain
+   In Figure 7a, we show the change in the overall accuracy                                                                            state-of-the-art results, we perform an ablation study on the
+of a source-trained model when applied to target data with                                                                             different components for the task DK1→FR1. We report
+different temporal shifts for DK1→FR1. We also show the                                                                                the results in Table 2. We first study the impact of the EMA
+change in entropy, IS, and AM scores of the model. We                                                                                  training. Instead of EMA, we set the teacher as a direct
+observe a significant increase in accuracy by temporally                                                                               copy of the student (No EMA). We observe that training
+shifting the target data. Calculating the statistics of en-                                                                            without EMA introduces a significant drop in F1-score.
+tropy, IS, and AM from the predictions of the model works                                                                              This shows that EMA is important to ensure high pseudo-
+well as an unlabeled proxy to accuracy. We aim to estimate                                                                             label accuracy. Setting δ s→t = 0 disables the temporal
+the shift with the highest accuracy (dashed blue line) for                                                                             shift of the source domain, and the student is trained
+the highest quality pseudo-labels. For the shown example,                                                                              with datasets with different temporal shifts. We observe
+the minimum of both entropy and AM correspond to the                                                                                   a significant decrease in F1-score as a result. Disabling
+best shift. However, we find AM to be the most consistent                                                                              the balanced mini-batch sampler for the source domain
+across different adaptation tasks.                                                                                                     also leads to a degradation of the performance. If the
+   In Figure 7b, we show the rate at which the estimated                                                                               model is trained with class imbalanced source data, the
+temporal shift for the teacher goes to zero in TimeMatch                                                                               teacher will make biased pseudo-labels for the samples
+learning when training with different EMA decay rates.                                                                                 from the target domain [64]. This hinders the TimeMatch
+When the shift changes, the previous estimate becomes sub-                                                                             learning process, as pseudo-labels for infrequent classes
+optimal for generating accurate pseudo-labels. We address                                                                              in the source domain are less likely to be generated for
+this by re-estimating the temporal shift during training.                                                                              the target. By applying a balanced mini-batch sampler
+We observe that low decay rates (e.g. 0.99) require the shift                                                                          for the source, we address this problem by ensuring each
+to be re-estimated after a few iterations, which is inefficient.                                                                       source batch contains roughly the same number of samples
+In comparison, a decay rate of 0.9999 allows us to only                                                                                for each category. Estimating the temporal shift with IS
+re-estimate the shift only once every epoch.                                                                                           or entropy instead of AM results in a slight performance
+   The table in the upper left corner of Figure 4 shows the                                                                            drop. Domain-specific batch normalization is simple to
+initial temporal shifts estimated by our method. We find                                                                               implement, as it just requires forwarding source and target
+the estimated shifts are connected to the climatic differences                                                                         batches separately instead of concatenated. Disabling this
+                                                                                                                                  12
+Figure 8: Visualization with t-SNE [63] of target features for the DK1→FR1 task. TimeMatch shows improved clustering of target features
+compared to existing approaches.
+
+
+
+
+                   (a) Source-Only                            (b) TimeMatch                                            (c) Ground Truth
+
+Figure 9: Parcel predictions for an example target area (6 km2 ) from the DK1→FR1 task, comparing (a) Source-Only, (b) TimeMatch, and (c)
+the corresponding ground truth. The figure shows the combination of multiple individual parcel predictions in the target region. The colors
+map to the classes in Figure 8.
+
+
+
+component results in a small average performance loss with               on average), TimeMatch, and target-trained models on the
+notably higher variance.                                                 task DK1→FR1. The colors of the points represent their
+                                                                         class (black is the unknown class). With TimeMatch, the
+5.4. Sensitivity Analysis
+                                                                              60
+   Here we study the sensitivity of the TimeMatch hyper-                      55
+parameters. The results are shown in Figure 10. Higher                        50
+values of α lead to better results, with a decay rate of 0.9999
+                                                                         f1
+
+
+
+
+                                                                              45
+being the best. However, increasing it to 1.0, so the teacher                 40
+is not updated, results in a drop in F1-score, as the teacher                 35
+cannot benefit from the knowledge learned by the student.                          0.9 0.99 0.999 0.9999 1.0   0.5   0.7   0.8   0.9 0.95   0.5   1.0   2.0     5.0 10.0
+                                                                                         EMA decay               Confidence threshold               Trade-off
+The confidence threshold  controls the trade-off between
+the quality and quantity of pseudo-labels. A threshold                   Figure 10: Sensitivity analysis of TimeMatch for the EMA decay rate,
+of 0.9 gives the best F1-score and further increasing the                pseudo-label confidence threshold, and the trade-off in Eq. 13. The
+                                                                         error bars show standard deviation.
+threshold to 0.95 drops performance as a result of too few
+pseudo-labels, which particularly decreases performance for
+                                                                         target features are better clustered into their respective
+the less frequent classes. Finally, the trade-off parameter
+                                                                         classes compared CDAN+E, which does not result in much
+λ controls the importance of the source domain loss Ls→t
+                                                                         better feature separation than the source-trained model.
+with respect to the target domain loss Lt . We observe that
+                                                                         The target-trained plot shows the best possible learned fea-
+this hyperparameter is less important than the other two,
+                                                                         tures when training with all available target labels. Even
+but setting λ = 2.0 gives the best results.
+                                                                         with labels, the classes are not perfectly separated, e.g. for
+                                                                         unknown/meadow or winter triticale/winter wheat.
+5.5. Visual Analysis                                                        Figure 9 shows example parcel predictions in a small
+  Finally, we visualize the ability of TimeMatch in learning             area for the source-trained and TimeMatch models com-
+discriminative features for the target domain. In Figure 8,              pared to the ground truth. The colors represent the same
+we visualize t-SNE [63] embeddings of target domain fea-                 classes as before. We observe a large class confusion for the
+tures from source-trained, CDAN+E (the best competitor                   source-trained model, in particular between winter barley
+                                                                    13
+(blue) and winter wheat (dark pink), which are also not                     [3] F. Vuolo, M. Neuwirth, M. Immitzer, C. Atzberger, W.-T. Ng,
+separated well in Figure 8. Without using any target labels,                    How much does multi-temporal Sentinel-2 data improve crop
+                                                                                type classification?, International Journal of Applied Earth Ob-
+TimeMatch resolves this issue, resulting in clusters that                       servation and Geoinformation 72 (2018) 122–130.
+better resemble the ground truth.                                           [4] J. B. Odenweller, K. I. Johnson, Crop identification using landsat
+                                                                                temporal-spectral profiles, Remote Sensing of Environment 14 (1)
+                                                                                (1984) 39–54. doi:10.1016/0034-4257(84)90006-3.
+6. Conclusion                                                               [5] C. Pelletier, G. I. Webb, F. Petitjean, Temporal convolutional
+                                                                                neural network for the classification of satellite image time series,
+                                                                                Remote Sensing 11 (5) (2019) 523. doi:10.3390/rs11050523.
+   This paper presented TimeMatch, a novel cross-region                     [6] L. Zhong, L. Hu, H. Zhou, Deep learning based multi-temporal
+adaptation method for SITS. Unlike previous methods                             crop classification, Remote Sensing of Environment 221 (2019)
+                                                                                430–443.
+that solely match the feature distributions across domains,                 [7] E. Ndikumana, D. Ho Tong Minh, N. Baghdadi, D. Courault,
+TimeMatch explicitly captures the underlying temporal                           L. Hossard, Deep recurrent neural network for agricultural clas-
+discrepancy of the data by estimating the temporal shift                        sification using multitemporal SAR Sentinel-1 for Camargue,
+between two regions. Through TimeMatch learning, we                             France, Remote Sensing 10 (8) (2018) 1217.
+                                                                            [8] M. Rußwurm, M. Korner, Temporal vegetation modelling using
+adapt a crop classifier trained in a labeled source region to                   long short-term memory networks for crop identification from
+an unlabeled target region. This is achieved by a learning                      medium-resolution multi-spectral satellite images, in: Proceed-
+algorithm that combines temporal shift estimation with self-                    ings of the IEEE/CVF Conference on Computer Vision and
+                                                                                Pattern Recognition Workshops, 2017, pp. 11–19.
+training, where target pseudo-labels are generated using
+                                                                            [9] D. Ienco, R. Gaetano, C. Dupaquier, P. Maurel, Land cover
+the estimated temporal shift from target to source. Lastly,                     classification via multitemporal spatial data by deep recurrent
+we presented the TimeMatch dataset, a new large-scale                           neural networks, IEEE Geoscience and Remote Sensing Letters
+cross-region UDA dataset with SITS from four different                          14 (10) (2017) 1685–1689.
+                                                                           [10] D. H. T. Minh, D. Ienco, R. Gaetano, N. Lalande, E. Ndikumana,
+regions in Europe. Evaluated on this dataset, TimeMatch                         F. Osman, P. Maurel, Deep recurrent neural networks for winter
+outperforms all existing approaches by 11% F1-score on                          vegetation quality mapping via multitemporal SAR Sentinel-1,
+average across five different adaptation tasks, setting a new                   IEEE Geoscience and Remote Sensing Letters 15 (3) (2018)
+state of the art in unsupervised cross-region adaptation.                       464–468.
+                                                                           [11] M. Rußwurm, M. Körner, Self-attention for raw optical satellite
+While this demonstrates that TimeMatch reaches strong                           time series classification, ISPRS Journal of Photogrammetry and
+results, there is still a gap with the performance obtained                     Remote Sensing 169 (2020) 421–435. doi:10.1016/j.isprsjprs.
+by fully supervised approaches. To overcome this limita-                        2020.06.006.
+tion, we hypothesize that stronger temporal alignments,                    [12] V. Sainte Fare Garnot, L. Landrieu, S. Giordano, N. Chehata,
+                                                                                Satellite image time series classification with pixel-set encoders
+e.g. class-wise alignments or time warping, could further                       and temporal self-attention, in: Proceedings of the IEEE/CVF
+improve the performance. Another possibility is to perform                      Conference on Computer Vision and Pattern Recognition, 2020,
+domain adaptation across both time and space, which in                          pp. 12325–12334.
+addition to the temporal aspect also brings new considera-                 [13] M. Rußwurm, M. Körner, Multi-temporal land cover classi-
+                                                                                fication with sequential recurrent encoders, ISPRS Interna-
+tions, such as the change in parcel shapes over time and                        tional Journal of Geo-Information 7 (4) (2018) 129. doi:
+crop rotations. We hope our proposed method and released                        10.3390/ijgi7040129.
+dataset will encourage the remote sensing community to                     [14] R. Interdonato, D. Ienco, R. Gaetano, K. Ose, DuPLO: A
+                                                                                DUal view Point deep Learning architecture for time series
+consider the challenging cross-region adaptation problem
+                                                                                classificatiOn, ISPRS Journal of Photogrammetry and Remote
+and its temporal aspect.                                                        Sensing 149 (2019) 91–104. doi:https://doi.org/10.1016/j.
+                                                                                isprsjprs.2019.01.011.
+                                                                           [15] D. Tuia, C. Persello, L. Bruzzone, Domain adaptation for the
+7. Acknowledgements                                                             classification of remote sensing data: An overview of recent
+                                                                                advances, IEEE Geoscience and Remote Sensing Magazine 4 (2)
+                                                                                (2016) 41–57.
+  We would like to thank the anonymous reviewers for                       [16] B. Lucas, C. Pelletier, D. Schmidt, G. I. Webb, F. Petitjean, A
+their insightful comments and constructive feedback. The                        bayesian-inspired, deep learning-based, semi-supervised domain
+                                                                                adaptation technique for land cover mapping, Machine Learning
+work of Joachim Nyborg was funded by the Innovation                             (2021) 1–33.
+Fund Denmark under reference 8053-00240.                                   [17] L. Kondmann, A. Toker, M. Rußwurm, A. Camero, D. Peressuti,
+                                                                                G. Milcinski, P.-P. Mathieu, N. Longépé, T. Davis, G. Marchisio,
+                                                                                L. Leal-Taixé, X. X. Zhu, DENETHOR: The DynamicEarthNET
+References                                                                      dataset for harmonized, inter-operable, analysis-ready, daily
+                                                                                crop monitoring from space, in: Neural Information Processing
+                                                                                Systems Datasets and Benchmarks Track, 2021.
+ [1] M. Drusch, U. Del Bello, S. Carlier, O. Colin, V. Fernandez,          [18] S. J. Pan, Q. Yang, A survey on transfer learning, IEEE Trans-
+     F. Gascon, B. Hoersch, C. Isola, P. Laberinti, P. Martimort,               actions on Knowledge and Data Engineering 22 (10) (2009)
+     et al., Sentinel-2: ESA’s optical high-resolution mission for              1345–1359. doi:10.1109/TKDE.2009.191.
+     GMES operational services, Remote Sensing of Environment 120          [19] B. Kellenberger, O. Tasar, B. Bhushan Damodaran, N. Courty,
+     (2012) 25–36.                                                              D. Tuia, Deep Domain Adaptation in Earth Observation, John
+ [2] B. C. Reed, J. F. Brown, D. VanderZee, T. R. Loveland, J. W.               Wiley & Sons, Ltd, 2021, Ch. 7, pp. 90–104.
+     Merchant, D. O. Ohlen, Measuring phenological variability from        [20] Z. Wang, H. Zhang, W. He, L. Zhang, Phenology alignment
+     satellite imagery, Journal of Vegetation Science 5 (5) (1994)              network: A novel framework for cross-regional time series crop
+     703–714.
+
+                                                                      14
+     classification, in: Proceedings of the IEEE/CVF Conference on                 Geoscience and Remote Sensing Letters 14 (6) (2017) 896–900.
+     Computer Vision and Pattern Recognition, 2021, pp. 2940–2949.            [42] B. Gong, Y. Shi, F. Sha, K. Grauman, Geodesic flow kernel
+[21] S. Ben-David, J. Blitzer, K. Crammer, A. Kulesza, F. Pereira,                 for unsupervised domain adaptation, in: Proceedings of the
+     J. W. Vaughan, A theory of learning from different do-                        IEEE/CVF Conference on Computer Vision and Pattern Recog-
+     mains, Machine Learning 79 (1) (2010) 151–175. doi:10.1007/                   nition, IEEE, 2012, pp. 2066–2073.
+     s10994-009-5152-4.                                                       [43] B. Fernando, A. Habrard, M. Sebban, T. Tuytelaars, Unsuper-
+[22] Y. Ganin, V. Lempitsky, Unsupervised domain adaptation by                     vised visual domain adaptation using subspace alignment, in:
+     backpropagation, in: International Conference on Machine Learn-               Proceedings of the IEEE/CVF Conference on Computer Vision
+     ing, PMLR, 2015, pp. 1180–1189.                                               and Pattern Recognition, 2013, pp. 2960–2967.
+[23] E. Tzeng, J. Hoffman, N. Zhang, K. Saenko, T. Darrell, Deep              [44] O. Chapelle, B. Scholkopf, A. Zien, Semi-supervised learning,
+     domain confusion: Maximizing for domain invariance, CoRR                      IEEE Transactions on Neural Networks 20 (3) (2009) 542–542.
+     abs/1412.3474 (2014).                                                    [45] K. Sohn, D. Berthelot, N. Carlini, Z. Zhang, H. Zhang, C. A.
+[24] G. Wilson, D. J. Cook, A survey of unsupervised deep domain                   Raffel, E. D. Cubuk, A. Kurakin, C.-L. Li, FixMatch: Simpli-
+     adaptation, ACM Transactions on Intelligent Systems and Tech-                 fying semi-supervised learning with consistency and confidence,
+     nology 11 (5) (2020) 1–46. doi:10.1145/3400066.                               Advances in Neural Information Processing Systems 33 (2020).
+[25] B. Lucas, C. Pelletier, D. Schmidt, G. I. Webb, F. Petitjean,            [46] A. Tarvainen, H. Valpola, Mean teachers are better role models:
+     Unsupervised domain adaptation techniques for classification                  Weight-averaged consistency targets improve semi-supervised
+     of satellite image time series, in: International Geoscience and              deep learning results, in: Advances in Neural Information Pro-
+     Remote Sensing Symposium (IGARSS), IEEE, 2020, pp. 1074–                      cessing Systems, 2017, pp. 1195–1204.
+     1077. doi:10.1109/IGARSS39084.2020.9324339.                              [47] M. Chen, K. Q. Weinberger, J. Blitzer, Co-training for domain
+[26] K. Saito, Y. Ushiku, T. Harada, Asymmetric tri-training for                   adaptation., in: Nips, Vol. 24, Citeseer, 2011, pp. 2456–2464.
+     unsupervised domain adaptation, in: International Conference             [48] P. Panareda Busto, J. Gall, Open set domain adaptation, in:
+     on Machine Learning, PMLR, 2017, pp. 2988–2997.                               Proceedings of the IEEE International Conference on Computer
+[27] R. Shu, H. H. Bui, H. Narui, S. Ermon, A dirt-t approach to                   Vision, 2017, pp. 754–763.
+     unsupervised domain adaptation, in: International Conference             [49] T. Salimans, I. Goodfellow, W. Zaremba, V. Cheung, A. Radford,
+     on Learning Representations, 2018.                                            X. Chen, Improved techniques for training GANs, Advances in
+[28] P. Morerio, R. Volpi, R. Ragonesi, V. Murino, Generative pseudo-              Neural Information Processing Systems 29 (2016) 2234–2242.
+     label refinement for unsupervised domain adaptation, in: Pro-            [50] Z. Zhou, H. Cai, S. Rong, Y. Song, K. Ren, W. Zhang, J. Wang,
+     ceedings of the IEEE/CVF Winter Conference on Applications                    Y. Yu, Activation maximization generative adversarial nets, in:
+     of Computer Vision, 2020, pp. 3130–3139.                                      International Conference on Learning Representations, 2018.
+[29] M. Chen, S. Zhao, H. Liu, D. Cai, Adversarial-learned loss for           [51] S. Barratt, R. Sharma, A note on the inception score, in: Work-
+     domain adaptation, in: Proceedings of the AAAI Conference on                  shop on Theoretical Foundations and Applications of Deep Gen-
+     Artificial Intelligence, Vol. 34, 2020, pp. 3521–3528.                        erative Models, ICML, 2018.
+[30] Y. Zou, Z. Yu, X. Liu, B. Kumar, J. Wang, Confidence regu-               [52] T.-Y. Lin, P. Goyal, R. Girshick, K. He, P. Dollár, Focal loss
+     larized self-training, in: Proceedings of the IEEE/CVF Interna-               for dense object detection, in: Proceedings of the IEEE/CVF
+     tional Conference on Computer Vision, 2019, pp. 5982–5991.                    International Conference on Computer Vision, 2017, pp. 2980–
+[31] D.-H. Lee, et al., Pseudo-label: The simple and efficient semi-               2988.
+     supervised learning method for deep neural networks, in: Work-           [53] V. Sainte Fare Garnot, L. Landrieu, Lightweight temporal self-
+     shop on Challenges in Representation Learning, ICML, Vol. 3,                  attention for classifying satellite images time series, in: Inter-
+     2013, p. 896.                                                                 national Workshop on Advanced Analytics and Learning on
+[32] D. Hendrycks, K. Gimpel, A baseline for detecting misclassi-                  Temporal Data, Springer, 2020, pp. 171–181.
+     fied and out-of-distribution examples in neural networks, in:            [54] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N.
+     International Conference on Learning Representations, 2017.                   Gomez, L. Kaiser, I. Polosukhin, Attention is all you need, in:
+[33] J. Nyborg, C. Pelletier, S. Lefèvre, I. Assent, The TimeMatch                Advances in Neural Information Processing Systems, 2017, pp.
+     Dataset (2021). doi:10.5281/zenodo.5636422.                                   5998–6008.
+[34] Y. Ganin, E. Ustinova, H. Ajakan, P. Germain, H. Larochelle,             [55] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan,
+     F. Laviolette, M. Marchand, V. Lempitsky, Domain-adversarial                  T. Killeen, Z. Lin, N. Gimelshein, L. Antiga, et al., PyTorch:
+     training of neural networks, The Journal of Machine Learning                  An imperative style, high-performance deep learning library,
+     Research 17 (1) (2016) 2096–2030.                                             Advances in Neural Information Processing Systems 32 (2019)
+[35] M. Long, Z. Cao, J. Wang, M. I. Jordan, Conditional adver-                    8026–8037.
+     sarial domain adaptation, in: Advances in Neural Information             [56] D. P. Kingma, J. Ba, Adam: A method for stochastic optimiza-
+     Processing Systems, 2018, pp. 1647–1657.                                      tion, in: International Conference on Learning Representations,
+[36] B. Sun, K. Saenko, Deep coral: Correlation alignment for deep                 2015.
+     domain adaptation, in: European Conference on Computer                   [57] I. Loshchilov, F. Hutter, SGDR: Stochastic gradient descent
+     Vision, Springer, 2016, pp. 443–450.                                          with warm restarts, in: International Conference on Learning
+[37] B. B. Damodaran, B. Kellenberger, R. Flamary, D. Tuia,                        Representations, 2017.
+     N. Courty, DeepJDOT: Deep joint distribution optimal transport           [58] Y. Li, N. Wang, J. Shi, J. Liu, X. Hou, Revisiting batch normal-
+     for unsupervised domain adaptation, in: European Conference                   ization for practical domain adaptation, Pattern Recognition 80
+     on Computer Vision, 2018, pp. 447–463.                                        (03 2016). doi:10.1016/j.patcog.2018.03.005.
+[38] K. Fatras, T. Séjourné, N. Courty, R. Flamary, Unbalanced              [59] W.-G. Chang, T. You, S. Seo, S. Kwak, B. Han, Domain-specific
+     minibatch optimal transport; applications to domain adaptation,               batch normalization for unsupervised domain adaptation, in:
+     in: International Conference on Machine Learning, 2021.                       Proceedings of the IEEE/CVF Conference on Computer Vision
+[39] S. Purushotham, W. Carvalho, T. Nilanon, Y. Liu, Variational                  and Pattern Recognition, 2019, pp. 7354–7362.
+     recurrent adversarial deep domain adaptation, in: International          [60] K. Saito, D. Kim, S. Sclaroff, T. Darrell, K. Saenko, Semi-
+     Conference on Learning Representations, 2017.                                 supervised domain adaptation via minimax entropy, in: Proceed-
+[40] G. Wilson, J. R. Doppa, D. J. Cook, Multi-source deep domain                  ings of the IEEE/CVF International Conference on Computer
+     adaptation with weak supervision for time-series sensor data, in:             Vision, 2019, pp. 8050–8058.
+     Proceedings of the 26th ACM SIGKDD International Conference              [61] S. Ioffe, C. Szegedy, Batch normalization: Accelerating deep
+     on Knowledge Discovery & Data Mining, 2020, pp. 1768–1778.                    network training by reducing internal covariate shift, in: In-
+[41] A. Bailly, L. Chapel, R. Tavenard, G. Camps-Valls, Nonlin-                    ternational Conference on Machine Learning, PMLR, 2015, pp.
+     ear time-series adaptation for land cover classification, IEEE                448–456.
+
+
+                                                                         15
+[62] J. Jiang, B. Chen, B. Fu, M. Long, Transfer learning library,
+     https://github.com/thuml/Transfer-Learning-Library
+     (2020).
+[63] L. Van der Maaten, G. Hinton, Visualizing data using t-SNE.,
+     Journal of Machine Learning Research 9 (11) (2008).
+[64] H. He, E. A. Garcia, Learning from imbalanced data, IEEE
+     Transactions on Knowledge and Data Engineering 21 (9) (2009)
+     1263–1284.
+
+
+
+
+                                                                     16
+

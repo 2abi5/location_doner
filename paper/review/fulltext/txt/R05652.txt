@@ -1,0 +1,255 @@
+                                             Benchmarking Geospatial Foundation Models for Agriculture
+                                                                  Applications
+                                                     Zhuocheng Shang                                     Sanmay Das                                Ahmed Eldawy
+                                              University of California, Riverside             University of California, Riverside         University of California, Riverside
+                                                       Riverside, USA                                  Riverside, USA                              Riverside, USA
+                                                     zshan011@ucr.edu                                 sdas050@ucr.edu                             eldawy@ucr.edu
+
+                                         Abstract                                                                 models generalize across geographies for agricultural crop mapping,
+                                         Geospatial foundation models pretrained on satellite imagery promise     or do reported results mainly reflect the quirks of a single dataset?’
+                                         broad generalization across remote sensing tasks and regions, but           Existing benchmarks cannot settle this question, because each
+                                                                                                                  fails at least one of two requirements, geographic diversity beyond
+arXiv:2606.29664v1 [cs.CV] 29 Jun 2026
+
+
+
+
+                                         their geographic transferability has not been systematically tested,
+                                         especially in agriculture applications. This paper presents a con-       Europe and an evaluation that exposes generalization rather than
+                                         trolled benchmark that evaluates three models, Prithvi, SpectralGPT,     concealing it. PASTIS [5], BreizhCrop [18], Sen4AgriNet [20], and
+                                         and SatMAE, on multi-temporal crop segmentation and change de-           EuroCropsML [17] are confined to Europe. GEO-Bench [12] ran-
+                                         tection across four U.S. states, Iowa, North Carolina, California,       domly subsamples chips, removing the spatial structure needed to
+                                         and Minnesota. By assigning each train, validation, and test split       test transfer to new regions. PANGAEA [14] evaluates geographic
+                                         to a separate region, we measure how well each model transfers           transfer only on a single urban land cover dataset, not crop map-
+                                         to land it has not seen. All three degrade sharply under regional        ping, and PhilEO-Bench [4] does not target agriculture. As a result,
+                                         distribution shift, predicting only the most common crops while          whether GeoFMs transfer across U.S. geographies for crop mapping
+                                         missing rare ones. We further find that fitting these models to a        remains untested.
+                                         shared input format affects each one differently, which complicates         We close this gap with a benchmark that evaluates Prithvi [10],
+                                         direct architectural comparison. These results expose key limita-        SpectralGPT [9], and SatMAE [1] on multi-temporal crop segmenta-
+                                         tions of current geospatial foundation models for agriculture and        tion and change detection using Sentinel-2 imagery [3] across four
+                                         point to region aware evaluation as a necessary standard.                climatically diverse U.S. states, Iowa, North Carolina, California,
+                                                                                                                  and Minnesota. For each model, we use separate non-overlapping
+                                         Keywords                                                                 regions for training, validation, and testing, so that performance
+                                                                                                                  reflects transfer to unseen geographic areas rather than spatial
+                                         geospatial foundation models, remote sensing, segmentation, change
+                                                                                                                  overlap between splits. This design lets us measure how well each
+                                         detection, crop mapping, Sentinel-2
+                                                                                                                  model generalizes across agricultural regions. Our results show
+                                                                                                                  that all three models degrade sharply when tested on a new
+                                         1   Introduction
+                                                                                                                  region. Under this regional distribution shift, the models often con-
+                                         Agriculture occupies roughly 880 million acres in the United States,     centrate on dominant crop classes while failing to detect minority
+                                         nearly 39% of the national land area [21]. Managing this land at scale   crops. We further find that adapting these models to a shared input
+                                         requires accurate crop type maps, which identify what is grown           configuration affects their pretrained representations unequally,
+                                         and where. Such maps support food supply monitoring, yield es-           which complicates direct architectural comparison. These findings
+                                         timation, water planning, and other agricultural decisions [11].         suggest that region-aware evaluation and input-preserving adapta-
+                                         However, crop mapping becomes difficult when models are applied          tion are necessary steps toward geospatial foundation models that
+                                         across regions with different production systems, climates, and          transfer reliably across agricultural regions.
+                                         management constraints. For example, annual row-crop production
+                                         in the US Corn Belt differs sharply from agriculture in California,
+                                         where crop diversity, irrigation dependence, and water stress create     2   Related Work
+                                         a substantially different mapping setting [13, 19]. Such regional        Geospatial foundation models build large neural networks trained
+                                         differences mean that the methods and models used in one agricul-        on Earth observation imagery to learn transferable representations
+                                         tural setting may not be accurate in another, making geographic          for remote sensing tasks. Prithvi [10] uses multitemporal HLS im-
+                                         generalization a central challenge for national scale crop mapping.      agery and has been evaluated on Cropland Data Layer (CDL) for
+                                             Producing crop maps at national scale rules out manual ground        crop segmentation. SatMAE [1] learns spectral group embeddings
+                                         surveys, which are labor intensive and cannot cover the area in-         from functional map of the world (fMoW) Sentinel imagery. Spec-
+                                         volved [11]. Satellite imagery removes this bottleneck by capturing      tralGPT [9] emphasizes spectral structure for understanding remote
+                                         large regions in a single pass, and a growing body of work builds on     sensing. These models introduce different temporal and spectral
+                                         it to monitor agriculture. Geospatial Foundation Models (GeoFMs)         inductive biases, but existing evaluations do not isolate geographic
+                                         such as Prithvi [10], SatMAE [1], and SpectralGPT [9], pretrained        transfer as the main variable. In particular, they either use pooled
+                                         on large Earth observation datasets, promise generalizable represen-     training and test samples or target broader land cover and land
+                                         tations for multi temporal crop segmentation and change detection        use tasks rather than controlled cross region crop mapping. We
+                                         with little task specific supervision. Whether they keep this promise    evaluate these models under controlled geographic splits across
+                                         is unclear. The question that we would like to study is ‘Do these        diverse U.S. agricultural regions.
+          Table 1: Study regions for this benchmark.                                   Ground Truth                SatMAE (FPN)
+
+
+ State              Train             Val.             Test
+ Iowa               Ames              Cedar Rapids     Sheldon–Sibley
+ North Carolina     Rocky Mount       Clinton          Belhaven
+ California         Rio Vista         Merced           Bakersfield
+ Minnesota          Crookston         Willmar          Rochester
+
+
+   Crop mapping benchmarks. Several datasets support crop
+type mapping from satellite time series. PASTIS [5], BreizhCrop [18],     Figure 1: SatMAE (FPN) segmentation on the Minnesota test
+Sen4AgriNet [20], and EuroCropsML [17] provide labeled imagery            region (mIoU 8.11). Corn is yellow and Soybean dark green.
+for segmentation and classification, but all four are confined to
+Europe and therefore cannot reveal whether a model trained in
+one climate transfers to another. Their labels are reported by farm-
+ers, which introduces systematic error that propagates into both
+training and evaluation. As a result, these benchmarks measure
+accuracy within a region rather than transfer across regions.
+   Benchmarking and evaluation of foundation models. A sep-
+arate line of work evaluates how well geospatial foundation models
+generalize. GEO-Bench [12] assembles many tasks but randomly
+subsamples image chips, removing the spatial structure needed to
+test transfer to new regions. PANGAEA [14] reports that supervised
+baselines often match or exceed GeoFMs, and includes a regional
+transfer test, but on a single urban land cover dataset rather than
+crop mapping. PhilEO-Bench [4] evaluates only on Sentinel-2 data          Figure 2: USDA Cropland Data Layer ground truth, with the
+and does not target agriculture. None evaluates U.S. crop mapping         crop and land cover classes used as labels.
+or tests transfer across controlled, climatically diverse regions, so
+whether GeoFMs transfer across U.S. agricultural geographies re-
+mains open. Our benchmark fills this gap through strict geographic        model’s expected input size. Labels are derived from the 2024 USDA
+splits that isolate generalization as the variable under test.            Cropland Data Layer [22], mapped to 13 classes, and used for both
+                                                                          tasks. For change detection, a pixel is labeled as changed if its CDL
+3   Datasets and Experimental Setup                                       class differs between 2023 and 2024; pixels with missing CDL data
+                                                                          in either year are excluded.
+Throughout this paper, train, validation, and test refer to the down-        Models. We evaluate three GeoFMs with native multispectral
+stream supervised fine tuning and evaluation splits, not to the origi-    support beyond RGB, which excludes Scale-MAE [16] and SAM [8,
+nal foundation model pretraining stage. Each GeoFM starts from its        15]. We retain Prithvi [10], SpectralGPT [9], and SatMAE [1], which
+publicly released pretrained weights, is fine tuned on labeled chips      differ in whether they prioritize temporal or spectral structure, each
+from the training region, selected on the validation region, and          with its own pretrained encoder as in Table 2. Since PSANet gave
+evaluated only on the held out test region. Study regions. For each       near zero mIoU with the SatMAE backbone [1], we use FPN heads
+studied state, we define three non overlapping contiguous regions         for SatMAE and SpectralGPT and an FCN head for Prithvi. Because
+of 800–1,300 km2 and assign one each to train, validation, and test       the head varies with the encoder, we treat absolute cross model
+as in Table 1. This allows us to test each model on an area that it did   differences with caution and focus on each model across regions.
+not see during training to evaluate their geographical transferabil-      For change detection, all three use a Siamese encoder with shared
+ity. The four states span contrasting agricultural conditions. Iowa       weights and an FPN style head.
+and Minnesota cover Corn Belt row crops, North Carolina covers               Inference. Segmentation uses TerraTorch tiled inference [7]
+coastal and muck soil agriculture, and California covers perennial,       with reflect padding, cosine tapered blending, and an 8 pixel border
+irrigation dependent agriculture, the most severe distribution shift.     discard. We report mIoU and per class IoU for segmentation, and
+   Imagery and labels. We use Sentinel-2 Level-2A imagery from            F1 and IoUchange for change detection following the SpectralGPT
+the Copernicus Data Space Ecosystem [2] for the 2024 growing              protocol [9]. All runs use a single NVIDIA A100.
+season. For each location, we select six bands, B2, B3, B4, B8A,
+B11, and B12 [6], at early, mid, and late season time points. Scenes      4 Results
+are cloud-filtered at acquisition and reprojected to EPSG:5070 at
+10 m resolution, with all bands resampled to the common grid. We          4.1 Segmentation
+stack the six bands across the three time points to form an 18-band       Each model takes an 18 band multitemporal chip and produces a
+input. We then create image chips of size 224 × 224 for Prithvi,          dense per pixel prediction over the 13 CDL classes, trained on the
+128 × 128 for SpectralGPT, and 96 × 96 for SatMAE to match each           training region of each state, selected on the validation region, and
+Table 2: Segmentation configuration. Loss is cross entropy.                zero elsewhere, including California. Minority crops such as Winter
+SatMAE uses SGD with momentum 0.9, encoder LR 1 × 10−3 ,                   Wheat and Sorghum are near zero for nearly all models and regions,
+weight decay 1 × 10−4 , and effective batch 128.                           effectively unrecognized under distribution shift. SatMAE shows a
+                                                                           large apparent region dependence, from 45.68 crop mIoU in Iowa
+               Prithvi         SpectralGPT         SatMAE                  to 3.20 in Minnesota. Because this gap is unusually large, we are
+                                                                           auditing the SatMAE evaluation for consistent class index handling
+Backbone       ViT MAE         3D spectral MAE     GroupChannels ViT-L
+Pretraining    HLS             fMoW-S2             fMoW-S2                 before interpreting it as a model level effect.
+Seg. head      ConvT + FCN     FPN                 FPN
+Optimizer      Adam            AdamW               SGD                     4.2    Change Detection
+LR             1.5 × 10 −5     1 × 10 −4           1 × 10 −2               Each model takes a bitemporal 2023–2024 image pair and predicts
+Epochs         80              250                 100                     a binary mask of pixels whose CDL class changed between the two
+Loss           weighted CE     CE                  CE                      years, using a Siamese encoder with shared weights. We measure
+                                                                           F1 on the changed class over the held out test region as in Table 3.
+  Table 3: Change detection F1 (%) across four U.S. states.                   Change detection shows the same regional pattern as segmen-
+                                                                           tation. All three models peak in Minnesota, with F1 above 83 for
+                                                                           SpectralGPT and Prithvi, and bottom out in California, where F1
+              Model           IA      NC      CA         MN
+                                                                           falls to 18.73 for SpectralGPT and 27.00 for SatMAE. The difficulty
+              SpectralGPT 68.20 48.81 18.73 86.05                          ordering of regions is consistent across models, so it reflects the
+              Prithvi     55.03 53.80 23.64 83.26                          region rather than the architecture. No model leads everywhere:
+              SatMAE      41.10 55.65 27.00 67.89                          SpectralGPT is strongest in Iowa and Minnesota, while SatMAE
+                                                                           and Prithvi pull ahead in North Carolina and California, the two
+Table 4: Per-class segmentation IoU (%) for all three models               hardest regions.
+on Iowa and Minnesota. NaN = class absent.
+                                                                           5     Discussion and Conclusion
+                                                                           The finding is that geography matters as much as architecture. For
+                               Iowa                     Minnesota
+Class                                                                      the two fully evaluated models, Prithvi and SpectralGPT, accuracy
+                       Pri    SGPT SatMAE        Pri     SGPT SatMAE       changes substantially across held out test areas, even though the
+                                                                           splits are geographically disjoint within each state. The effect falls
+ Crops
+Corn                  33.69   7.99    92.10       4.04 46.86     14.15     hardest on crops. Land cover classes such as forest and water are
+Soybean               38.41   26.70   92.41      17.27 62.14      3.15     easier, especially for SpectralGPT, so a pooled mIoU is carried by
+Winter Wheat           0.00   0.00     0.00       0.00  0.00      0.00     them and overstates how well the crops themselves are mapped.
+Alfalfa                0.00   30.62   63.38       0.12 9.31      0.73          Comparing the models fairly is difficult because they do not be-
+Fallow/Idle            0.00   0.00    26.21       0.00 23.57     NaN       gin from the same input assumptions. Our chips carry 18 channels,
+Cotton                NaN     NaN     NaN        NaN NaN         0.00      six bands over three timesteps. Prithvi was pretrained on this exact
+Sorghum                0.00   0.00     0.00       0.00  0.00      0.00
+                                                                           structure and keeps its input layer intact, while SpectralGPT and
+ Land cover                                                                SatMAE were not. SpectralGPT discards its pretrained patch embed-
+Natural Veg.          0.00    41.86   78.19      0.01    14.94    8.61     ding when the shape changes, and SatMAE averages and expands
+Forest                0.73    8.62    79.62      2.16    44.38   32.30     its existing weights. Yet even Prithvi, with the closest match, does
+Wetlands              0.00    2.03    44.93      1.69    14.08   9.27      not generalize well, so a compatible input is not by itself enough.
+Developed/Barren      1.51    53.35   66.01      0.32    52.83   19.83
+                                                                               The broader lesson is that strong numbers on one dataset do not
+Open Water            6.86    39.44   67.71      0.76    75.35    0.00
+Other                 0.00    0.08    29.72      0.93     8.35   NaN       promise the same elsewhere. Crop mapping benchmarks should
+                                                                           test across separated geographies and report crop specific scores,
+mIoU (all)             6.77   17.59   53.36      2.28    29.32      8.11   not a single aggregate. Three limitations remain. Each model was
+mIoU (crops)          12.02   10.94   45.68      3.57    23.65      3.20   run once, so we report observed differences rather than significance.
+                                                                           SatMAE segmentation covers only Iowa and Minnesota, and the
+                                                                           large gap between them needs further checks before we draw con-
+evaluated on the held out test region. Prithvi and SpectralGPT are         clusions. And the models differ in decoder and input adaptation, so
+evaluated on all four states as in Table 5. SatMAE is evaluated on         finishing the SatMAE runs, equalizing the input setup, and adding
+Iowa and Minnesota, with North Carolina and California left to             repeated seeds are the clear next steps.
+future work as in Table 4.
+   We focus on crop classes, since the aggregate mIoU is inflated
+by stable land cover classes such as Forest, Open Water, and Devel-
+oped/Barren that are easy to map and change little across regions.
+On crops, SpectralGPT is the strongest of the fully evaluated mod-
+els but still degrades sharply with regional shift, from 25.95 crop
+mIoU in North Carolina to 7.45 in California. Prithvi reaches usable
+crop IoU only on Corn and Soybean in Iowa, and collapses to near
+Table 5: Per-class IoU (%) for Prithvi and SpectralGPT, grouped into crop and land cover classes. Bold marks the higher of the
+two models in each state, omitted where both fall below 1.0. mIoU (all) averages all 13 classes; mIoU (crops) averages the seven
+crop classes only. NaN = class absent in that region.
+
+                                                       Iowa           North Carolina           California            Minnesota                mIoU
+                     Class
+                                                 Pri       SGPT        Pri        SGPT        Pri       SGPT         Pri      SGPT         Pri      SGPT
+                     Crops
+                     Corn                       33.69       7.99       9.58        48.83     0.00        0.75      4.04       46.86      11.83      26.11
+                     Soybean                    38.41      26.70       6.12        59.84     NaN        NaN        17.27      62.14      20.60      49.56
+                     Winter Wheat                0.00       0.00       0.00         0.00     0.00        0.00      0.00        0.00      0.00        0.00
+                     Alfalfa                     0.00      30.62       0.00         0.00     0.09       41.08      0.12        9.31      0.05       20.25
+                     Fallow/Idle                 0.00       0.00       0.00         0.00     0.00       2.80       0.00       23.57      0.00       6.74
+                     Cotton                     NaN        NaN         2.35        66.90     0.00        0.00      NaN        NaN        1.18       33.45
+                     Sorghum                     0.00       0.00       0.00         4.94     0.00        0.00      0.00        0.00      0.00       1.24
+                     Land cover
+                     Natural Veg.                0.00      41.86      11.10        32.06      1.46      74.86       0.01      14.94      3.14       40.93
+                     Forest                      0.73       8.62      65.42        88.43     12.98       2.74       2.16      44.38      20.32      36.04
+                     Wetlands                    0.00      2.03        0.00         0.00      0.00       0.00       1.69      14.08      0.42       4.15
+                     Developed/Barren            1.51      53.35       3.22        56.43      6.95      23.91       0.32      52.83      3.00       46.63
+                     Open Water                  6.86      39.44       0.13        90.26     11.17      34.76       0.76      75.35      4.73       59.95
+                     Other                       0.00       0.00       4.51        64.75     20.35      62.96       0.93       8.35      6.45       34.04
+                     mIoU (all)                  6.77      17.59       8.65        44.20      4.83      24.03       2.28      29.32       5.63      28.79
+                     mIoU (crops)               12.02      10.94       2.58        25.95      0.02       7.45       3.57      23.65       4.55      16.97
+
+
+References                                                                                      Procedures over Four Decades. International Journal of Applied Earth Observation
+ [1] Yezhen Cong et al. 2022. Satmae: Pre-training transformers for temporal and                and Geoinformation (2025). doi:10.1016/j.jag.2025.104494
+     multi-spectral satellite imagery. Advances in Neural Information Processing Sys-      [12] Alexandre Lacoste, Nils Lehmann, Pau Rodriguez, Evan David Sherwin, Han-
+     tems 35 (2022), 197–211.                                                                   nah Kerner, Björn Lütjens, Jeremy Irvin, David Dao, Hamed Alemohammad,
+ [2] Copernicus Data Space Ecosystem. 2025. Copernicus Data Space Ecosystem                     Alexandre Drouin, et al. 2023. GEO-Bench: Toward Foundation Models for Earth
+     (CDSE) Annual Report 2024. https://dataspace.copernicus.eu/news/2025-12-4-                 Monitoring. In NeurIPS Datasets and Benchmarks Track.
+     copernicus-data-space-ecosystem-cdse-releases-annual-report-2024.                     [13] Pang-Wei Liu, James S. Famiglietti, Adam J. Purdy, Kyra H. Adams, Ashley L.
+ [3] ESA eoPortal. 2024. Copernicus Sentinel-2 — Overview. https://www.eoportal.                McEvoy, John T. Reager, Rajat Bindlish, David N. Wiese, Cedric H. David, and
+     org/satellite-missions/copernicus-sentinel-2#overview.                                     Matthew Rodell. 2022. Groundwater Depletion in California’s Central Valley
+ [4] Casper Fibaek, Luke Camilleri, Andreas Luyts, Nikolaos Dionelis, and Bertrand              Accelerates during Megadrought. Nature Communications 13, 1 (2022), 7825.
+     Le Saux. 2024. PhilEO Bench: Evaluating geo-spatial foundation models. In                  doi:10.1038/s41467-022-35582-x
+     IGARSS 2024-2024 IEEE International Geoscience and Remote Sensing Symposium.          [14] Valerio Marsocci, Yuru Jia, Georges Le Bellier, David Kerekes, Liang Zeng, Se-
+     IEEE, 2739–2744.                                                                           bastian Hafner, Sebastian Gerard, Eric Brune, Ritu Yadav, Ali Shibli, et al. 2024.
+ [5] Vivien Sainte Fare Garnot and Loic Landrieu. 2021. Panoptic segmentation of                Pangaea: A global and inclusive benchmark for geospatial foundation models.
+     satellite image time series with convolutional temporal attention networks. In             arXiv preprint arXiv:2412.04204 (2024).
+     Proceedings of the IEEE/CVF International Conference on Computer Vision. 4872–        [15] Lucas Prado Osco, Qiusheng Wu, Eduardo Lopes De Lemos, Wesley Nunes
+     4881.                                                                                      Gonçalves, Ana Paula Marques Ramos, Jonathan Li, and José Marcato Junior. 2023.
+ [6] GIS Geography. 2024. Sentinel-2 Bands and Combinations. https://gisgeography.              The segment anything model (sam) for remote sensing applications: From zero to
+     com/sentinel-2-bands-combinations/.                                                        one shot. International Journal of Applied Earth Observation and Geoinformation
+ [7] Carlos Gomes, Benedikt Blumenstiel, Joao Lucas De Sousa Almeida, Pedro Hen-                124 (2023), 103540.
+     rique De Oliveira, Paolo Fraccaro, Francesc Marti Escofet, Daniela Szwarcman,         [16] Colorado J Reed, Ritwik Gupta, Shufan Li, Sarah Brockman, Christopher Funk,
+     Naomi Simumba, Romeo Kienzler, and Bianca Zadrozny. 2025. TerraTorch: The                  Brian Clipp, Kurt Keutzer, Salvatore Candido, Matt Uyttendaele, and Trevor
+     geospatial foundation models toolkit. In IGARSS 2025-2025 IEEE International               Darrell. 2023. Scale-mae: A scale-aware masked autoencoder for multiscale
+     Geoscience and Remote Sensing Symposium. IEEE, 6364–6368.                                  geospatial representation learning. In Proceedings of the IEEE/CVF International
+ [8] Rutuja Gurav, Het Patel, Zhuocheng Shang, Ahmed Eldawy, Jia Chen, Elia Scud-               Conference on Computer Vision. 4088–4099.
+     iero, and Evangelos Papalexakis. 2023. Can SAM Recognize Crops? Quantifying           [17] Joana Reuss, Jan Macdonald, Simon Becker, Lorenz Richter, and Marco Körner.
+     the Zero-Shot Performance of a Semantic Segmentation Foundation Model on                   2025. The EuroCropsML time series benchmark dataset for few-shot crop type
+     Generating Crop-Type Maps Using Satellite Imagery for Precision Agriculture.               classification in Europe. Scientific Data 12, 1 (2025), 664.
+     In NeurIPS 2023 AI for Science Workshop.                                              [18] Marc Rußwurm, Charlotte Pelletier, Maximilian Zollner, Sébastien Lefèvre, and
+ [9] Danfeng Hong, Bing Zhang, Xuyang Li, Yuxuan Li, Chenyu Li, Jing Yao, Naoto                 Marco Körner. 2019. Breizhcrops: A time series dataset for crop type mapping.
+     Yokoya, Hao Li, Pedram Ghamisi, Xiuping Jia, et al. 2024. SpectralGPT: Spectral            arXiv preprint arXiv:1905.11893 (2019).
+     remote sensing foundation model. IEEE transactions on pattern analysis and            [19] Timothy Ruth. 2026. U.S. crop production concentrated in the Corn Belt and
+     machine intelligence 46, 8 (2024), 5227–5244.                                              specialty crop regions, especially California. USDA Economic Research Service,
+[10] Johannes Jakubik, Sujit Roy, CE Phillips, Paolo Fraccaro, Denys Godwin, Bianca             Chart Gallery. https://www.ers.usda.gov/data-products/chart-gallery/58320.
+     Zadrozny, Daniela Szwarcman, Carlos Gomes, Gabby Nyirjesy, Blair Edwards,                  Accessed June 18, 2026.
+     et al. 2023. Foundation models for generalist geospatial artificial intelligence.     [20] Dimitris Sykas, Ioannis Papoutsis, and Dimitrios Zografakis. 2021. Sen4AgriNet:
+     arXiv preprint arXiv:2310.18660 (2023).                                                    A harmonized multi-country, multi-temporal benchmark dataset for agricul-
+[11] Abhasha Joshi, Biswajeet Pradhan, et al. 2025. Advancements in Crop Mapping                tural earth observation machine learning applications. In 2021 IEEE International
+     through Remote Sensing: A Comprehensive Review of Concept, Data Sources, and               Geoscience and Remote Sensing Symposium IGARSS. IEEE, 5830–5833.
+[21] U.S. Department of Agriculture, National Agricultural Statistics Service. 2024.        8, 2026.
+     2022 Census of Agriculture: Farms and Farmland. https://www.nass.usda.gov/        [22] USDA National Agricultural Statistics Service. 2024. Cropland Data Layer. https:
+     Publications/Highlights/2024/Census22_HL_FarmsFarmland.pdf. Accessed June              //www.nass.usda.gov/Research_and_Science/Cropland/Release/index.php.
+

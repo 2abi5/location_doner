@@ -1,0 +1,788 @@
+1             An adaptive adversarial domain adaptation approach for corn yield
+2                                                          prediction
+3                            Yuchi Ma1, Zhou Zhang1*, Hsiuhan Lexie Yang2, Zhengwei Yang3
+
+4        1.    Department of Biological Systems Engineering, University of Wisconsin-Madison, Madison, WI 53706,
+5              USA; ma286@wisc.edu (Y.Ma)
+6        2.    GeoAI Group, National Security Science Division, Oak Ridge National Laboratory
+7        3.    Research and Development Division, National Agricultural Statistics Service, United States Department of
+8              Agriculture, Washington, DC 20250, USA
+
+9    * Correspondence: zzhang347@wisc.edu
+
+10                                                       Abstract
+
+11   Recently, statistical machine learning techniques, especially deep learning, have been widely used for corn
+12   yield prediction. Though successful, machine learning models generated within a specific spatial domain
+13   often lose their validity when directly applied to new regions. To address this issue, we designed an
+14   unsupervised adaptive domain adversarial neural network (ADANN). Specifically, through domain
+15   adversarial training, the ADANN model reduced the domain shift by projecting different domain data into
+16   the same subspace. Also, we trained the ADANN model in an adaptive way to guarantee the model can
+17   learn the domain-invariant features and perform accurate yield prediction simultaneously. Informative
+18   variables including time-series vegetation indices and sequential weather variables were extracted from
+19   different data sources and the ADANN model was established based on the extracted features and observed
+20   yield. The U.S. corn belt was used as the study area and counties under study were grouped into two diverse
+21   ecological regions. The experimental results showed that the developed ADANN model outperformed three
+22   other state-of-the-art machine learning models in both local experiments (train and test in the same region)
+23   and transfer experiments (train and test in different regions). As the first study using the adversarial learning
+24   for crop yield prediction, this research demonstrates a novel solution for improving model transferability
+25   on crop yield prediction.
+
+26   Keywords: Yield prediction, Remote sensing, Transfer learning, Domain adaptation, Adversarial training
+
+27
+
+28       1. Introduction
+
+29             As the world’s largest corn producer and exporter, the U.S. harvested 366.6 million metric tons of
+30   corn and supplied over 30% of global corn production in 2018 (Guo et al., 2019; USDA, 2020). Accurate
+
+                                                             1
+31   and timely estimation of corn yield in the U.S. is therefore of great importance for food security monitoring
+32   and market planning (Jiang et al., 2019; Johnson, 2014). Moreover, under pressure of increasing
+33   environment stress (Crane-Droesch, 2018; Lobell et al., 2013, 2009), corn production in the U.S. has
+34   experienced increasing inter-year variability (Lobell et al., 2014; Sibley et al., 2014). Timely and reliable
+35   corn yield prediction can facilitate better assessments of its response to environmental stresses, and also
+36   help inform decision making about commodity trading and insurance assessment (Kang et al., 2020).
+
+37           With the advance of data science, various machine learning models, including deep learning models,
+38   have been developed for crop yield prediction using multiple data sources. For example, Johnson (2014)
+39   built tree-based regression models using remotely sensed vegetation indices (VIs) and weather observations
+40   for county-level corn and soybean yield prediction across the U.S. corn belt. Khaki and Wang (2019)
+41   developed a fully connected multi-layer perceptron (MLP) to estimate corn yield at the field-level in the
+42   U.S. using weather and soil variables. You et al. (2017) added the Gaussian process to Convolutional Neural
+43   Networks (CNN) for county-level soybean yield prediction using MODIS imagery. Jiang et al. (2019) built
+44   a phenology-based Long Short-Term Memory (LSTM) model for rain-fed corn yield prediction at the
+45   county level in nine U.S. Midwestern states. Similarly, Schwalbert et al. (2020) developed a LSTM model
+46   for municipality-level soybean yield prediction in Brazil using satellite imagery and climate data and
+47   achieved a mean absolute error (MAE) of 0.24 mg/ha. Kang et al. (2020) systematically compared the
+48   performance of different machine learning models, including support vector regression (SVR), random
+49   forest (RF), extreme gradient boost (XGBoost), CNN, and LSTM, for county-level corn yield prediction in
+50   twelve states in the U.S. Midwest.
+
+51           However, most existing models established between reported yields and remote sensing
+52   measurements are location specific. Due to the phenomenon known as domain shift (Kouw and Loog, 2019),
+53   models generated within a specific spatial domain often lose their validity when directly applied to new
+54   regions (Hao et al., 2020; Ma et al., 2019; Wang et al., 2018). To address this challenge, transfer learning,
+55   which aims to apply knowledge learned from the source domain to the target domain, has become a viable
+56   solution. To apply transfer learning with deep neural networks, a common strategy is to fine-tune a
+57   pretrained network weights (trained from the source domain) by using the labeled samples from the target
+58   domain. For example, Lu et al. (2017) first trained a CNN model from the linear feature elimination task,
+59   and then directly fine-tuned a pre-trained model with labeled UAV images to fulfill the task of classifying
+60   cultivated land. Wang et al. (2018) adapted a deep CNN model trained with data from Argentina to predict
+61   province-level soybean yields in Brazil by fine-tuning the pre- trained model with labeled data from Brazil.
+62   Russello (2018) explored transfer learning between two ecoregions in the U.S. for county-level soybean
+63   yield estimation by training a CNN model with labeled data from one ecoregion and fine-tuning it in another
+
+
+                                                          2
+64   region. When only a small number of labeled samples are available in the target domain, there would be
+65   concerns about overfitting if fine-tune the entire network (Mehdipour Ghazi et al., 2017). Therefore, some
+66   research freezed the weights of earlier layers of a pretrained deep learning architecture and customized the
+67   model to a given task through fine-tuning the last few layers. This framework is based on the idea that the
+68   earlier layers of a neural network learn generic features that can be used in relevant domains (Yosinski et
+69   al., 2014). For example, Barbedo (2018) fine-tuned the last few layers of a pretrained GoogleNet with a
+70   plant disease database and adapted the network for plant disease classification. Abdalla et al (2019) fine-
+71   tuned a well-trained VGG16 with a small oilseed rape images dataset to classify plants in fields with high-
+72   density weeds. Similarly, Chen et al. (2020) freezed the learned weights in top layers of a VGG19 trained
+73   on the ImageNet dataset and fine-tuned the last three layers with crop disease images to customize it for
+74   disease classification.
+
+75           Despite several successful cases, these fine-tuning based methods still require a certain amount of
+76   labeled data from the target domain.. Since the collection of yield records heavily depends on field surveys
+77   and censuses, which are financially expensive, labor-intensive, and time-consuming, it is possible that some
+78   agricultural areas lack ground reference for either directly training or fine-tuning the supervised learning
+79   models. To address the issue of missing labeled data in the target domain, the Domain-Adversarial neural
+80   network (DANN) is a promising approach, since it intentionally alleviates domain shift through an
+81   unsupervised domain adaptation strategy which does not require any labeled data from the target domain
+82   (Ganin et al., 2017; Li and Chen, 2020). Specifically, the DANN consists of three parts, including the
+83   feature extractor, domain classifier, and label predictor. The feature extractor is trained to minimize the
+84   prediction loss for the label predictor while maximizing the domain loss for the domain classier. Since it is
+85   trained adversarially against the domain classifier, the feature extractor can be updated towards generating
+86   domain-invariant features to help alleviate the negative impact from domain shift. The effectiveness of
+87   DANN has been demonstrated in several classification tasks. For example, Ganin et al. (2017) achieved
+88   effective transfer learning from the MNIST dataset to the MNIST-M dataset for handwritten digits
+89   classification. Wang et al. (2018) designed a DANN for speaker recognition and overcame the domain shift
+90   between two independent telephone corpora datasets. Han et al. (2019) designed a convolutional DANN
+91   for mechanical faults classification, which generalized well for conditions not observed during training.
+92   Despite success in classification tasks, the DANN cannot be directly applied for yield prediction which is
+93   a regression task. This is mainly because the predefined weighting parameter in the original DANN model,
+94   which controls the trade-off between the prediction loss and the domain loss, needs to be adjusted according
+95   to the yield magnitudes which can change dramatically at different agricultural production regions.
+
+
+
+
+                                                          3
+96            In this study, we designed an adaptive DANN (ADANN) for county-level corn yield prediction, in
+97    which the weighting parameter is adjusted adaptively. The U.S. corn belt was used as the study area and
+98    counties under study were grouped into two diverse ecological regions. Informative variables including
+99    time-series VIs and sequential climate observations were first extracted from multiple data sources and
+100   aggregated to the county level. The ADANN was established based on the extracted features and observed
+101   yield. It was compared to three other state-of-the-art machine learning models including the original DANN
+102   model in both local experiments (i.e., train and test in the same region) and transfer experiments (i.e., train
+103   and test in different regions). Finally, we further interpreted the proposed ADANN model and discussed
+104   potential future works.
+
+105   2. Materials
+
+106           In this study, the U.S. corn belt was selected as our study area since it is the top corn-producing
+107   area in the world with abundant historical corn yield records. For the model development and evaluation,
+108   three types of data were collected, including yield records, remote sensing products, and weather
+109   observations. A detailed description of each data type and preprocessing steps are provided below.
+
+110   2.1 Study area and yield records
+
+111           The experimental area included twelve states in the U.S. corn belt (Johnson, 2014; Kang et al.,
+112   2020), including Michigan, Ohio, Indiana, Illinois, Wisconsin, North Dakota, Nebraska, Minnesota, Iowa,
+113   South Dakota, Missouri, and Kansas, which account for over 70% of the annual corn production in the U.S.
+114   (USDA, 2020). Historical yield records from 2006 to 2019 in these states were collected at the county level
+115   from the USDA National Agricultural Statistics Service (NASS) database (USDA, 2020).
+
+116           To evaluate the model’s transferability across different regions, the counties under study were
+117   grouped into two diverse ecological regions based on the United States Environmental Protection Agency
+118   (EPA) (EPA, 2001), including the Eastern Temperate Forests (ETF) region and the Great Plains (GP) region
+119   (Fig. 1). The ETF is characterized by a warm, humid, and temperate climate, with humid summers and mild
+120   to cold winters. It is mainly covered by dense and diverse forests and has a dense population. Great plains,
+121   on the other hand, mainly consists of flat grasslands, and has a scarcity of forests. The change of seasons in
+122   GP is more obvious, with very hot summers and harsh winters. This region is also subjected to drought,
+123   due to the scarcity of forests and lack of rainfall (Omernik, 1987; Omernik and Griffith, 2014).
+
+
+
+
+                                                            4
+124
+
+125     Fig. 1. Corn growing counties in the two ecosystem regions (i.e., ETF and GP) within the study area.
+
+126   2.2 Satellite imagery and weather observations
+
+127           We considered VIs as predictors in this study since VIs have been proven to be indicative of crop
+128   growth and production (Feng et al., 2020; Johnson, 2014). Specifically, four complementary VIs have been
+129   extracted from the daily MODIS MCD43A4 product at 500m spatial resolution (Schaaf and Wang, 2015),
+130   including NDVI, Enhanced Vegetation Index (EVI), Green Chlorophyll Index (GCI), and Normalized
+131   Difference Water Index (NDWI). NDVI is one of the most representative VIs used to assess vegetation
+132   vigor (Wang et al., 2020). EVI is an improved NDVI that can correct aerosol scattering and ground cover
+133   signals and has enhanced sensitivity in high biomass regions (Gao et al., 2000; Huete et al., 2002). GCI
+134   quantifies the light use efficiency by measuring the canopy chlorophyll content and can be used as a
+135   measurement for crop health (Gitelson et al., 2005). NDWI measures the vegetation moisture content, and
+136   thus it is widely employed to monitor the water content changes in crop leaves (Bolton & Friedl, 2013;
+137   Gao, 1996). These four VIs were calculated as below:
+
+                                                         𝑁𝐼𝑅 ― 𝑅𝑒𝑑
+                                                NDVI =                                                 (1)
+                                                         𝑁𝐼𝑅 + 𝑅𝑒𝑑
+
+                                                         (𝑁𝐼𝑅 ― 𝑅𝑒𝑑)
+                                  𝐸𝑉𝐼 = 2.5 ×                                                          (2)
+                                                𝑁𝐼𝑅 + 𝐶1 × 𝑅𝑒𝑑 ― 𝐶2 × 𝐵𝑙𝑢𝑒 + 𝐿
+
+                                                          𝑁𝐼𝑅
+                                                 𝐺𝐶𝐼 =         ―1                                      (3)
+                                                         𝐺𝑟𝑒𝑒𝑛
+
+
+
+
+                                                         5
+                                                                 𝑁𝐼𝑅 ― 𝑆𝑊𝐼𝑅
+                                                     𝑁𝐷𝑊𝐼 =                                                     (4)
+                                                                 𝑁𝐼𝑅 + 𝑆𝑊𝐼𝑅
+
+138   where 𝑅𝑒𝑑, 𝐵𝑙𝑢𝑒, 𝐺𝑟𝑒𝑒𝑛 𝑁𝐼𝑅, and 𝑆𝑊𝐼𝑅 respectively represent the atmospherically-corrected surface
+139   reflectance in red, blue, green, near-infrared, and short-wave infrared channels; 𝐿 stands for the soil and
+140   canopy background adjustment factor; 𝐶1 and 𝐶2 denote the coefficients to correct atmospheric influences.
+141   The coefficients in Eq. (2) were set to 𝐿 = 1, 𝐶1 = 6, and 𝐶2 = 7.5 according to the MODIS EVI algorithm
+142   (Jiang et al., 2008).
+
+143           Besides the VIs, weather variables were also included for the model development. First, daytime
+144   and nighttime land surface temperature (LSTday and LSTnight) were collected and extracted from the
+145   MODIS MYD11A2 product, which provides daily data with a 1-km spatial resolution (Park et al., 2005).
+146   These two variables were considered because they have been used for monitoring agricultural drought,
+147   which is a critical environmental stressor that can significantly affect crop productivity (Guan et al., 2017;
+148   Johnson, 2014; Lobell et al., 2013). Finally, daily total precipitation (PPT) was extracted from the Parameter
+149   elevation Regressions on Independent Slopes Model (PRISM) dataset at a 4-km spatial resolution (Daly et
+150   al., 2008).
+
+151   2.5 Preprocessing
+
+152           Remote sensing imagery and weather observations were first aggregated spatially to the county
+153   level on Google Earth Engine (GEE) platform (Gorelick et al., 2017). Then, the USDA-NASS Cropland
+154   Data Layer (CDL) at 30-m spatial resolution was used to mask out irrelevant areas of corn from the MODIS
+155   and PRSIM data. Afterward, the daily sequential predictors from 2006 to 2019, including VIs and weather
+156   variables, were aggregated to an 8-day interval from April 15th to October 15th to cover the entire planting
+157   and growing season for corn in the U.S. corn belt. We started from 2006 when the CDL was publicly
+158   available and fully covered the U.S. corn belt (Johnson, 2014). Finally, the officially reported corn yield of
+159   each county for a particular year was paired with the corresponding time-series predictors with a total length
+160   of 198. The total number of data samples in ETF and GP are 5358 and 5393, respectively. A complete
+161   summary of the study areas and data used for model development is given in Table 1.
+
+162                            Table 1. Summary of study areas and data used for model development.
+           Domains                Environment and Climate             Landcover Layer           Predictor Variables
+
+            Eastern           Largely covered by dense forests    USDA-NASS Cropland           NDVI, EVI, NDWI,
+          Temperate           with humid summers and              Data Layer (CDL) at a         GCI from MODIS
+         Forest (ETF)         temperate winters                   30-m spatial resolution
+
+
+
+
+                                                                 6
+         Great Plains      Mainly consists of grasslands and                                    MCD43A4
+             (GP)          a scarcity of forests, with very hot                                LSTday and LSTnight
+                           summers and harsh winters                                            from MODIS
+                                                                                                MYD11A2
+                                                                                               PPT from PRISM
+
+163
+
+164   3. Methodology
+
+165           A conventional deep neural network (DNN) associates input data samples 𝐱 ∈ 𝑋 with data labels 𝐲
+166   ∈ 𝑌 by learning the distribution 𝐷(𝐱,𝐲), in which 𝑋 and 𝑌 are input feature space and output space,
+167   respectively. In the scenario of yield prediction, 𝐱 are remote sensing and weather variables and 𝐲 are yield
+168   records. Given two datasets from the source domain 𝒟𝑠 with 𝑛𝑠 data samples and target domain 𝒟𝑡 with 𝑛𝑡
+169   data samples, they are likely to have different distributions 𝐷𝑠(𝐱,𝐲) and 𝐷𝑡(𝐱,𝐲) due to the domain shift
+170   caused by different environments. Consequently, a data-driven machine learning model trained with data
+171   samples from 𝐷𝑠 would have low performance if directly applied to 𝐷𝑡.
+
+172           To address this issue, the unsupervised domain adversarial neural networks (DANN) has been
+173   proposed to reduce the domain shift in original feature space by projecting inputs from two different
+174   domains into a common subspace (Ganin et al., 2017; Wang et al., 2018; Zhuang et al., 2019). As illustrated
+175   in Fig. 2, the architecture of the DANN is based on traditional feed-forward neural networks but has two
+176   output layers, which output yield prediction 𝐲 ∈ 𝑌 and domain label 𝐝 ∈ {[1,0],[0,1]}, respectively. Denote
+177   with 𝑑𝑖([0,1] or [1,0]) for the 𝑖th sample, which indicates whether 𝐱𝑖 comes from the source domain (𝐱𝑖~𝐷𝑠
+178   (𝐱) if 𝐝𝒊 = [1,0]) or the target domain (𝐱𝑖~𝐷𝑡(𝐱) if 𝐝𝒊 = [0,1]). Specifically, a DANN model consists of
+179   three parts, including a feature extractor 𝐺𝑓, a domain classifier 𝐺𝑑, and a yield predictor 𝐺𝑦 (Fig. 2). From
+180   left to right in Fig. 2, the 𝑖th data sample 𝐱𝑖 from 𝒟𝑠 or 𝒟𝑡 is first fed to the feature extractor 𝐺𝑓 for feature
+181   extraction. Then, the extracted features 𝐱𝑐𝑖 is forwarded into both the domain classifier 𝐺𝑑 and yield
+182   predictor 𝐺𝑦 to predict the domain label 𝐝𝑖 and crop yield 𝑦𝑖, respectively. More formally, the mapping
+183   functions are:
+
+                                                      𝐱𝑐𝑖 = 𝐺𝑓(𝐱i;𝜃𝑓)                                     (5)
+
+
+                                                      𝐝𝑖 = 𝐺𝑑(𝐱𝑐𝑖;𝜃𝑑)                                     (6)
+
+
+                                                      𝑦𝑖 = 𝐺𝑦(𝐱𝑐𝑖;𝜃𝑦)                                     (7)
+
+
+
+                                                                  7
+184   in which 𝜃𝑓, 𝜃𝑑, and 𝜃𝑦 are the trainable parameters in the feature extractor, domain classifier, and yield
+185   predictor, respectively.
+
+
+
+
+186
+
+187   Fig. 2. The structure of the DANN model, including a gradient reversal layer GRL (pink), a feature
+188   extractor 𝐺𝑓 (blue), a domain classifier 𝐺𝑑 (green), and a yield predictor 𝐺𝑦 (yellow).
+
+189           The model aims to jointly train 𝐺𝑓, 𝐺𝑦, and 𝐺𝑑. Specifically, there are two objectives: 1) we would
+190   like to minimize the yield prediction loss and 2) to maximize the domain loss at the same time, which
+191   means the classifier cannot distinguish the extracted features are from source or from target domain.
+192   Therefore, the convergence of the training will provide domain-invariant features from the feature extractor
+193   (Ganin et al., 2017) while higher yield prediction. In other words, the feature extractor is trained
+194   adversarially against the domain classifier and updated towards generating domain-invariant features. A
+195   gradient reversal layer (GRL) is used to simultaneously train the model through backpropagation. This is
+196   achieved by the loss function of this network:
+                       1                                         1
+      𝐿 𝜃𝑓, 𝜃𝑑,𝜃𝑦 = 𝑛 ∑𝑛𝑖=1
+                         𝑠                                    𝑛𝑠+𝑛𝑡 𝑖
+                            𝐿𝑖𝑦(𝐺𝑦(𝐺𝑓 𝐱i;𝜃𝑓 ;𝜃𝑦),𝑦𝑖) ―𝜆𝑛 + 𝑛 ∑𝑖=1  𝐿𝑑 𝐺𝑑 𝐺𝑓 𝐱i;𝜃𝑓 ;𝜃𝑑 ,𝐝𝐢
+                        𝑠                                    𝑠       𝑡
+
+
+                        1                        1
+                     = 𝑛 ∑𝑛𝑖=1
+                            𝑠                      𝑛𝑠+𝑛𝑡 𝑖
+                               𝐿𝑖𝑦(𝑦𝑖,𝑦𝑖) ―𝜆𝑛 + 𝑛 ∑𝑖=1  𝐿𝑑 𝐝𝑖,𝐝𝐢                                            (8)
+                            𝑠                𝑠       𝑡
+
+
+
+197   where 𝜆 is defined as the weighting parameter that adjusts the trade-off between domain loss and prediction
+198   loss during the training process. 𝑛𝑠 and 𝑛𝑡 denote the number of training samples in source domain and
+199   target domain, respectively. 𝐿𝑖𝑑 and 𝐿𝑖𝑦 are the loss function of domain loss and yield prediction loss for the
+200   𝑖th input training sample, correspondingly. We defined a binary cross-entropy function as the domain loss
+201   function and a mean square error (MSE) function as the prediction loss.
+
+
+
+                                                            8
+202           Though successful, the performance of the DANN is significantly affected by the weighting
+203   parameter 𝜆 which is typically predefined experimentally. Also, the DANN has been widely used in
+204   classification tasks where cross-entropy loss is used for both the prediction loss and the domain loss, which
+205   are of similar magnitude. While in yield prediction which is a regression task, the mean squared error is
+206   adopted as the yield prediction loss which can have quite different magnitude with the cross-entropy based
+207   domain classification loss. To address these issues, we developed an adaptive domain adversarial neural
+208   network (ADANN) approach for yield prediction, in which the weighting parameter 𝜆 was adjusted
+209   adaptively. Specifically, motivated by Ganin et al. (2017), we used a schedule to initialize λ at 0 and
+210   gradually increased it as training proceeded. Meanwhile, we normalized the 𝜆 with the ratio of prediction
+211   loss and domain loss to offset the magnitude imbalance. A formal definition of the adaptive 𝜆 is given as
+212   follows:
+
+                                                          2
+                                           𝜆 = 𝑟(
+                                                    1 + exp( ―𝑝)
+                                                                 ― 1)                                     (9)
+
+213   in which 𝑝 is the training progress increasing linearly from 0 to 1; 𝑟 is the normalization term defined as
+214   the ratio between the prediction loss and domain loss. This schedule makes sure there is a small weight on
+215   domain loss during the early training which allows the domain classifier to be less sensitive to noisy signal
+216   at the early stages of the training procedure (Ganin et al., 2017).
+
+217           Through experimental analysis, the architectures of the proposed ADANN were designed to have
+218   a depth of seven (Fig. 2). The feature extractor started with an input layer followed by four fully connected
+219   hidden layers with 256, 128, 64, and 32 neurons, respectively. Both the domain classifier and the yield
+220   predictor consisted of two fully connected hidden layers with 64 and 32 neurons followed by an output
+221   layer. A GRL was used to connect the feature extractor and domain classifier. In each hidden layer, the
+222   Rectified Linear Unit (ReLU) was used as the activation function and batch normalization (BatchNorm)
+223   and dropout (Dropout) were adopted to address internal covariate shift and overfitting (Ioffe and Szegedy,
+224   2015). In training, we set the total number of epochs as 200 with a batch size of 512. Stochastic gradient
+225   descent (SGD) with a momentum term of 0.9 was used as the optimizer to update trainable parameters after
+226   each epoch (Goodfellow et al., 2016), and its learning rate was initiated as 0.01 and decayed by half every
+227   20 epochs.
+
+228   4. Experiments and Discussion
+
+229   4.1 Experimental Setup
+
+230           The spatial generalizability and transferability of the proposed ADANN model was evaluated
+231   through both local experiments and transfer experiments within the U.S. corn belt, and the two ecoregions
+
+
+                                                             9
+232   (i.e., GP and ETF) were alternatively used as the source and target domain. The developed ADANN model
+233   was compared to three other approaches, including RF, DNN and the original DANN model with a fixed 𝜆
+234   in the loss function. For a fair comparison, the DNN model was designed to have an architecture with the
+235   same depth and number of neurons as the ADANN but without the GRL and domain classifier, and the
+236   DANN had the same architecture as the ADANN as well. All the deep learning models were developed
+237   with PyTorch 1.5 in Python 3.7 (Paszke et al., 2019) and the RF was implemented with the scikit-learn
+238   library in Python 3.7 (Pedregosa et al., 2011).
+
+239            All the models were evaluated under two cases: 1) local experiments (i.e., GP→GP and ETF→ETF)
+240   where models were trained and tested on the same domain, and 2) transfer experiments (i.e., GP→ETF and
+241   ETF→GP) where models were trained on one domain and tested on the other. Using all preceding years
+242   since 2006 for model training, the models were evaluated on four testing years 2016 - 2019. For example,
+243   if the testing year was 2018, labeled source samples and unlabeled target samples from 2006 to 2017 were
+244   used for model training. Two accuracy metrics, including the coefficient of determination (R2) and root
+245   mean square error (RMSE), were used to evaluate the yield prediction results, and they were calculated as
+246   below:
+
+                                                             ∑𝑛𝑖=1 (𝑦𝑖 ― 𝑦𝑖)2
+                                               𝑅2 = 1 ―                                                  (10)
+                                                             ∑𝑛𝑖=1 (𝑦𝑖 ― 𝑦)2
+
+
+                                                                 𝑛
+                                            𝑅𝑀𝑆𝐸 = 1                 (𝑦𝑖 ― 𝑦𝑖)2                          (11)
+                                                   𝑛             𝑖=1
+
+
+247   where 𝑛 denotes the total number of data samples; 𝑦𝑖 and 𝑦𝑖 are the observed and estimated yield for the 𝑖
+248   th data sample; 𝑦 denotes the mean value of the observed yield.
+
+249   4.2 Experimental results
+
+250            The comparison results across different models are reported in Table. 2-5 for each testing year. The
+251   best performing one in each case is highlighted in bold.
+
+252                                       Table. 2. Model comparison in 2016
+
+               Case              Model              Metric              RF        DNN    DANN         ADANN
+               Local            GP→GP                   R2             0.74       0.73    0.53          0.76
+          experiments                             RMSE(t/ha)           1.14       1.15    1.53          1.08
+                               ETF→ETF                  R2             0.63       0.71    0.64          0.66
+                                                  RMSE(t/ha)           1.09       0.96    1.08          1.05
+
+
+                                                               10
+       Transfer     GP→ETF              R2          0.52     0.56   0.62    0.68
+      experiments                   RMSE(t/ha)      1.25     1.19   1.11    1.02
+                    ETF→GP              R2          0.19     0.34   0.56    0.73
+                                    RMSE(t/ha)      2.00     1.80   1.47    1.15
+253
+
+254                          Table. 3. Model comparison in 2017
+
+         Case        Model            Metric        RF       DNN    DANN   ADANN
+        Local       GP→GP               R2          0.75     0.81   0.64    0.85
+      experiments                   RMSE(t/ha)      1.39     1.18   1.65    1.05
+                    ETF→ETF             R2          0.51     0.55   0.47    0.59
+                                    RMSE(t/ha)      1.13     1.01   1.18    0.96
+       Transfer     GP→ETF              R2          0.54     0.43   0.44    0.67
+      experiments                   RMSE(t/ha)      1.02     1.22   1.21    0.86
+                    ETF→GP              R2          0.48     0.55   0.68    0.76
+                                    RMSE(t/ha)      1.98     1.82   1.54    1.35
+255
+
+256                          Table. 4. Model comparison in 2018
+
+         Case        Model            Metric        RF       DNN    DANN   ADANN
+        Local       GP→GP               R2          0.73     0.75   0.74    0.77
+      experiments                   RMSE(t/ha)      1.34     1.26   1.30    1.24
+                    ETF→ETF             R2          0.61     0.75   0.64    0.78
+                                    RMSE(t/ha)      1.23     0.97   1.17    0.91
+       Transfer     GP→ETF              R2          0.58     0.52   0.35    0.73
+      experiments                   RMSE(t/ha)      1.26     1.36   1.58    1.03
+                    ETF→GP              R2          0.52     0.64   0.68    0.77
+                                    RMSE(t/ha)      1.78     1.54   1.45    1.23
+257
+
+258                          Table. 5. Model comparison in 2019
+
+         Case        Model            Metric        RF       DNN    DANN   ADANN
+        Local       GP→GP               R2          0.76     0.79   0.81    0.84
+
+
+
+                                             11
+          experiments                             RMSE(t/ha)        1.11      1.05        1.00           0.91
+                               ETF→ETF                R2            0.54      0.56        0.51           0.65
+                                                  RMSE(t/ha)        0.97      0.95        1.00           0.84
+            Transfer           GP→ETF                 R2            0.49      0.30        0.33           0.57
+          experiments                             RMSE(t/ha)        1.01      1.20        1.17           0.97
+                               ETF→GP                 R2            0.53      0.49        0.75           0.78
+                                                  RMSE(t/ha)        1.57      1.63        1.14           1.07
+259
+
+260           In the local experiments, both DNN and RF could make satisfactory predictions, and the DNN
+261   outperformed the RF in most cases since informative features could be learned through multiple neural
+262   network layers. However, it was observed that the performance of RF and DNN degraded in most transfer
+263   experiments due to the domain shift. For example, in 2019, the RF and DNN could make accurate
+264   predictions in the local experiments, achieving an R2 of 0.76 and 0.79 in GP→GP, respectively. However,
+265   the accuracies were significantly reduced to 0.49 and 0.30 when the trained RF and DNN were directly
+266   applied to ETF (i.e., GP→ETF). To improve transferability across domains, both DANN and ADANN
+267   applied the domain adaptation strategy by projecting data from two domains into a common space through
+268   adversarial learning. The adversarial learning acted as a cross domain regularizer, which helped reduce the
+269   domain shift. Consequently, we observed that, in most cases, the DANN and ADANN had improved spatial
+270   generalizability than the RF and DNN. For example, in 2019, both DANN and ADANN yielded higher R2
+271   and lower RMSE than the RF and DNN in the transfer experiment from ETF to GP.
+272           We further compared the performance between DANN and ADANN. The results showed that in
+273   most cases, the ADANN performed better than DANN. Also, it was observed that the DANN performed
+274   unstably from case to case. For example, it achieved a high R2 of 0.75 in 2019 when transfer from ETF to
+275   GP. However, in 2017, its performance degraded and only achieved an R2 of 0.44 when transfer from GP
+276   to ETF. Similar unstable performance was also observed in local experiments. For example, in the local
+277   experiment GP→GP, the DANN achieved an R2 of 0.81 in 2019, while had a much lower accuracy in 2017
+278   (R2 = 0.64). The unstable performance of the DANN was mainly due to the predefined 𝜆 (i.e., set as 1 in
+279   our experiments) which could not universally balance the trade-off between the two quantities in the overall
+280   loss function Eq. (8), including the prediction loss and domain loss. Instead of using a fixed 𝜆, the proposed
+281   ADANN model could adaptively adjust this weighting parameter within the training process which could
+282   help properly balance the prediction performance and domain adaptation. A more detailed discussion in
+283   this regard is presented in Section 4.3.
+
+
+
+
+                                                           12
+284           To further illustrate the performances of different models, we presented the absolute error maps
+285   averaged over years 2016-2019 under the two transfer experiments in Fig. 3, in which darker color
+286   represents a larger error. Again, it was observed that the ADANN had a better spatial transferability than
+287   other comparison models and performed well in both transfer experiments. Specifically, for the RF and
+288   DNN, the spatial clustering of large errors was observed in Michigan, Ohio (Fig. 3 (a1)&(b1)) Nebraska,
+289   and Kansas (Fig. 3 (a2)&(b2)). And such error clusters tended to appear in areas away from the source
+290   domain due to larger domain shift. Compared to the RF and DNN, the DANN reduced errors in transfer
+291   experiments and eliminated most large error clusters (Fig. 3 (c1)&(c2)). The ADANN further outperformed
+292   the DANN with smaller errors obtained for most counties, especially in Illinois (Fig. 3 (d1)), North Dakota,
+293   and Kansas (Fig. 3 (d2)).
+
+
+
+
+                                                          13
+294
+
+295   Fig. 3. Absolute error maps averaged over years 2016-2019 under the two transfer experiments (1)
+296   GP→ETF and (2) ETF→GP for model (a) RF, (b) DNN, (c) DANN, and (d) ADANN.
+
+297   4.3 Model Interpretation
+
+                                                        14
+298           To further investigate the difference between the developed ADANN model with the original
+299   DANN model, we compared their training loss performance over the transfer experiments. Specifically, the
+300   training loss includes two parts, the prediction loss 𝐿𝑦 and the domain loss 𝐿𝑑, and 𝜆 is defined as the
+301   weighting parameter that adjusts the trade-off between domain loss and prediction loss (see Eq. (8)). An
+302   example results in 2018 were shown in Fig. 4. Both transfer experiments showed that the ADANN
+303   eventually converged on lower prediction loss but similar domain loss as the DANN model. Specifically,
+304   as shown in Fig. 4, the prediction loss of the ADANN decreased at higher rates while its domain loss
+305   required more iterations to converge. Since its 𝜆 was nearly zero during early training, the ADANN was
+306   mainly updated towards the direction of making accurate prediction and thus converged faster on the
+307   prediction loss than on the domain loss. On the other hand, the DANN converged slowly on the prediction
+308   loss but much faster on the domain loss. This is because a fixed 𝜆 which is larger than zero was used in the
+309   original DANN. Moreover, with a fixed 𝜆, the domain loss in the DANN could be overweighted in the later
+310   training stage and caused more fluctuations on the yield prediction loss curve. Overweighting domain loss
+311   also prevented the DANN from further reducing the prediction loss and thus it converged on a high
+312   prediction loss error than the ADANN. Furthermore, there was no obvious difference between their
+313   capabilities to extract domain-invariant features since both DANN and ADANN converged on a similar
+314   domain loss after 50 epochs (Fig. 4 (b1)-(b2)).
+
+
+
+
+315
+
+316   Fig. 4. The curves of (a) prediction loss and (b) domain loss for the ADANN and DANN in 2018 under
+317   transfer experiments (1) GP→ETF and (2) ETF→GP.
+
+
+
+                                                          15
+318           Finally, to provide visual insights into the effects of domain adaptation, we used the t-distributed
+319   Stochastic Embedding (t-SNE) algorithm, an unsupervised nonlinear dimensionality reduction technique
+320   (Maaten and Hinton, 2008), to visualize feature distributions. The t-SNE algorithm projects a high-
+321   dimensional feature vector to a two-dimensional space for visualization since spatial analysis in the original
+322   high-dimensional feature space is challenging. Fig. 5 shows the visualization results for the transfer
+323   experiments in 2018. The two domains are color-coded, with green representing for the ETF and red for
+324   the GP. Specifically, Fig. 5(a) shows the original data distribution without domain adaptation, and Fig. 5(b)-
+325   (c) show the data distribution after the domain adaptation using the proposed method ADANN, with one
+326   from GP to ETF (Fig. 5(b)) and one from ETF to GP (Fig. 5(c)). From the results, we can see that the
+327   original data from the two domains are separated, suggesting that the distribution discrepancy existed
+328   between the two ecological regions (GP and ETF). Therefore, directly applying a model trained from one
+329   region to another would have unsatisfactory results due to the domain shift. On the other hand, after the
+330   domain adaptation, it was notable that the distributions of extracted features from ETF and GP were much
+331   closer. It validated that the ADANN was able to bridge the domain discrepancy effectively and thus
+332   overcome the domain shift problem in corn yield prediction.
+
+
+
+
+333
+334   Fig. 5. The t-SNE visualization of (a) original features and extracted features under transfer experiments
+335   (b) GP→ETF and (c) ETF→GP in 2018. Green points correspond to the data samples from ETF, while red
+336   ones correspond to data samples from GP.
+
+337   5. Conclusion
+
+338           Accurate and timely estimation of corn yield is essential for regional and global food security, and
+339   machine learning models have been explored for yield modeling. However, due to domain shift, machine
+340   learning models generated within a specific spatial domain often lose their validity when directly applied
+341   to new regions. In this study, to enhance machine learning models’ transferability, we designed an ADANN
+342   model to realize unsupervised domain adaptation for corn yield prediction based on remote sensing and
+343   weather variables. Through adversarial learning, the ADANN model could extract domain-invariant
+344   features and help reduce the domain shift effectively. Experiments on two diverse ecological regions in the
+
+                                                           16
+345   U.S. corn belt showed that the proposed ADANN model outperformed RF, DNN, and the original DANN
+346   model in both local experiments and transfer experiments in all four testing years (2016, 2017, 2018 and
+347   2019). Model interpretation showed that the ADANN model could flexibly adjust the weight between
+348   prediction loss and domain loss during training, which ensured the ADANN model reduce domain shift and
+349   perform accurate yield prediction simultaneously. Further improvements may be obtained by designing the
+350   feature extractor using more advanced architectures, such as LSTM and self-attention network which have
+351   been proven to be able to well handle time-series features (Jiang et al., 2019; Vaswani et al., 2017).
+352
+
+353   CRediT author statement: Yuchi Ma: Conceptualization, Methodology, Writing- Original draft
+354   preparation; Zhou Zhang: Conceptualization, Resources, Writing- Reviewing and Editing.
+355
+356   Funding: the University of Wisconsin–Madison, Office of the Vice Chancellor for Research and Graduate
+357   Education with funding from the Wisconsin Alumni Research Foundation.
+358
+359
+360   Conflicts of Interest: The authors declare no conflict of interest.
+361
+362
+
+363   Reference:
+
+364   Abdalla, A., Cen, H., Wan, L., Rashid, R., Weng, H., Zhou, W., He, Y., 2019. Fine-tuning convolutional
+365        neural network with transfer learning for semantic segmentation of ground-level oilseed rape images
+366        in a field with high weed pressure. Comput. Electron. Agric. 167, 105091.
+367        https://doi.org/10.1016/j.compag.2019.105091
+
+368   Barbedo, J.G.A., 2018. Impact of dataset size and variety on the effectiveness of deep learning and
+369        transfer learning for plant disease classification. Comput. Electron. Agric. 153, 46–53.
+370        https://doi.org/10.1016/j.compag.2018.08.013
+
+371   Bolton, D.K., Friedl, M.A., 2013. Forecasting crop yield using remotely sensed vegetation indices and
+372        crop phenology metrics. Agric. For. Meteorol. 173, 74–84.
+373        https://doi.org/10.1016/j.agrformet.2013.01.007
+
+374   Chen, Junde, Chen, Jinxiu, Zhang, D., Sun, Y., Nanehkaran, Y.A., 2020. Using deep transfer learning for
+375        image-based plant disease identification. Comput. Electron. Agric. 173, 105393.
+376        https://doi.org/10.1016/j.compag.2020.105393
+
+                                                           17
+377   Crane-Droesch, A., 2018. Machine learning methods for crop yield prediction and climate change impact
+378        assessment in agriculture. Environ. Res. Lett. 13. https://doi.org/10.1088/1748-9326/aae159
+
+379   Daly, C., Halbleib, M., Smith, J.I., Gibson, W.P., Doggett, M.K., Taylor, G.H., Curtis, J., Pasteris, P.P.,
+380        2008. Physiographically sensitive mapping of climatological temperature and precipitation across
+381        the conterminous United States. Int. J. Climatol. a J. R. Meteorol. Soc. 28, 2031–2064.
+
+382   EPA, U.S., 2001. United States Environmental Protection Agency. Qual. Assur. Guid. Doc. Qual. Assur.
+383        Proj. Plan PM Ambient Air 2.
+
+384   Feng, L., Zhang, Z., Ma, Y., Du, Q., Williams, P., Drewry, J., 2020. Alfalfa Yield Prediction Using UAV-
+385        Based Hyperspectral Imagery and Ensemble Learning. https://doi.org/10.3390/rs12122028
+
+386   Ganin, Y., Ustinova, E., Ajakan, H., Germain, P., Larochelle, H., Laviolette, F., Marchand, M.,
+387        Lempitsky, V., 2017. Domain-adversarial training of neural networks. Adv. Comput. Vis. Pattern
+388        Recognit. 17, 189–209. https://doi.org/10.1007/978-3-319-58347-1_10
+
+389   Gao, B.-C., 1996. NDWI—A normalized difference water index for remote sensing of vegetation liquid
+390        water from space. Remote Sens. Environ. 58, 257–266.
+
+391   Gao, X., Huete, A.R., Ni, W., Miura, T., 2000. Optical-biophysical relationships of vegetation spectra
+392        without background contamination. Remote Sens. Environ. 74, 609–620.
+393        https://doi.org/10.1016/S0034-4257(00)00150-4
+
+394   Gitelson, A.A., Viña, A., Ciganda, V., Rundquist, D.C., Arkebauer, T.J., 2005. Remote estimation of
+395        canopy chlorophyll content in crops. Geophys. Res. Lett. 32, 1–4.
+396        https://doi.org/10.1029/2005GL022688
+
+397   Goodfellow, I., Bengio, Y., Courville, A., 2016. Deep learning. MIT press.
+
+398   Gorelick, N., Hancher, M., Dixon, M., Ilyushchenko, S., Thau, D., Moore, R., 2017. Google Earth
+399        Engine: Planetary-scale geospatial analysis for everyone. Remote Sens. Environ. 202, 18–27.
+400        https://doi.org/10.1016/j.rse.2017.06.031
+
+401   Guan, K., Wu, J., Kimball, J.S., Anderson, M.C., Frolking, S., Li, B., Hain, C.R., Lobell, D.B., 2017. The
+402        shared and unique values of optical, fluorescence, thermal and microwave satellite data for
+403        estimating large-scale crop yields. Remote Sens. Environ. 199, 333–349.
+404        https://doi.org/10.1016/j.rse.2017.06.043
+
+405   Guo, L., Lei, Y., Xing, S., Yan, T., Li, N., 2019. Deep Convolutional Transfer Learning Network: A New
+406        Method for Intelligent Fault Diagnosis of Machines with Unlabeled Data. IEEE Trans. Ind. Electron.
+407        66, 7316–7325. https://doi.org/10.1109/TIE.2018.2877090
+
+                                                           18
+408   Han, T., Liu, C., Yang, W., Jiang, D., 2019. A novel adversarial learning framework in deep
+409        convolutional neural network for intelligent diagnosis of mechanical faults. Knowledge-Based Syst.
+410        165, 474–487. https://doi.org/10.1016/j.knosys.2018.12.019
+
+411   Hao, P., Di, L., Zhang, C., Guo, L., 2020. Transfer Learning for Crop classification with Cropland Data
+412        Layer data (CDL) as training samples. Sci. Total Environ. 733, 138869.
+413        https://doi.org/10.1016/j.scitotenv.2020.138869
+
+414   Huete, A., Didan, K., Miura, T., Rodriguez, E.P., Gao, X., Ferreira, L.G., 2002. Overview of the
+415        radiometric and biophysical performance of the MODIS vegetation indices. Remote Sens. Environ.
+416        83, 195–213.
+
+417   Ioffe, S., Szegedy, C., 2015. Batch normalization: Accelerating deep network training by reducing
+418        internal covariate shift. 32nd Int. Conf. Mach. Learn. ICML 2015 1, 448–456.
+
+419   Jiang, H., Hu, H., Zhong, R., Xu, Jinfan, Xu, Jialu, Huang, J., Wang, S., Ying, Y., Lin, T., 2019. A deep
+420        learning approach to conflating heterogeneous geospatial data for corn yield estimation: A case
+421        study of the US Corn Belt at the county level. Glob. Chang. Biol. gcb.14885.
+422        https://doi.org/10.1111/gcb.14885
+
+423   Jiang, Z., Huete, A.R., Didan, K., Miura, T., 2008. Development of a two-band enhanced vegetation
+424        index without a blue band. Remote Sens. Environ. 112, 3833–3845.
+425        https://doi.org/10.1016/j.rse.2008.06.006
+
+426   Johnson, D.M., 2014. An assessment of pre- and within-season remotely sensed variables for forecasting
+427        corn and soybean yields in the United States. Remote Sens. Environ. 141, 116–128.
+428        https://doi.org/10.1016/j.rse.2013.10.027
+
+429   Kang, Y., Ozdogan, M., Zhu, X., Ye, Z., Hain, C., Anderson, M., 2020. Comparative assessment of
+430        environmental variables and machine learning algorithms for maize yield prediction in the US
+431        Midwest. Environ. Res. Lett. 15, 064005. https://doi.org/10.1088/1748-9326/ab7df9
+
+432   Khaki, S., Wang, L., 2019. Crop yield prediction using deep neural networks. Front. Plant Sci. 10, 1–10.
+433        https://doi.org/10.3389/fpls.2019.00621
+
+434   Kouw, W.M., Loog, M., 2019. A review of domain adaptation without target labels. arXiv.
+435        https://doi.org/10.1109/tpami.2019.2945942
+
+436   Li, W., Chen, S., 2020. Unsupervised Domain Adaptation with Progressive Adaptation of Subspaces.
+
+437   Lobell, D.B., Cassman, K.G., Field, C.B., 2009. Crop Yield Gaps: Their Importance, Magnitudes, and
+438        Causes. Annu. Rev. Environ. Resour. 34, 179–204.
+
+                                                          19
+439        https://doi.org/10.1146/annurev.environ.041008.093740
+
+440   Lobell, D.B., Hammer, G.L., McLean, G., Messina, C., Roberts, M.J., Schlenker, W., 2013. The critical
+441        role of extreme heat for maize production in the United States. Nat. Clim. Chang. 3, 497–501.
+442        https://doi.org/10.1038/nclimate1832
+
+443   Lobell, D.B., Roberts, M.J., Schlenker, W., Braun, N., Little, B.B., Rejesus, R.M., Hammer, G.L., 2014.
+444        Greater sensitivity to drought accompanies maize yield increase in the U.S. Midwest. Science
+445        (80-. ). 344, 516–519. https://doi.org/10.1126/science.1251423
+
+446   Lu, H., Fu, X., Liu, C., Li, L. guo, He, Y. xin, Li, N. wen, 2017. Cultivated land information extraction in
+447        UAV imagery based on deep convolutional neural network and transfer learning. J. Mt. Sci. 14,
+448        731–741. https://doi.org/10.1007/s11629-016-3950-2
+
+449   Ma, Y., Kang, Y., Ozdogan, M., Zhang, Z., 2019. County-level corn yield prediction using deep transfer
+450        learning, in: AGU Fall Meeting 2019. AGU.
+
+451   Maaten, L. van der, Hinton, G., 2008. Visualizing data using t-SNE. J. Mach. Learn. Res. 9, 2579–2605.
+
+452   Mehdipour Ghazi, M., Yanikoglu, B., Aptoula, E., 2017. Plant identification using deep neural networks
+453        via optimization of transfer learning parameters. Neurocomputing 235, 228–235.
+454        https://doi.org/10.1016/j.neucom.2017.01.018
+
+455   Omernik, J.M., 1987. Ecoregions of the conterminous United States. Ann. Assoc. Am. Geogr. 77, 118–
+456        125.
+
+457   Omernik, J.M., Griffith, G.E., 2014. Ecoregions of the conterminous United States: evolution of a
+458        hierarchical spatial framework. Environ. Manage. 54, 1249–1266.
+
+459   Park, S., Feddema, J.J., Egbert, S.L., 2005. MODIS land surface temperature composite data and their
+460        relationships with climatic water budget factors in the central Great Plains. Int. J. Remote Sens. 26,
+461        1127–1144.
+
+462   Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N.,
+463        Antiga, L., 2019. Pytorch: An imperative style, high-performance deep learning library, in:
+464        Advances in Neural Information Processing Systems. pp. 8026–8037.
+
+465   Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion, B., Grisel, O., Blondel, M.,
+466        Prettenhofer, P., Weiss, R., Dubourg, V., 2011. Scikit-learn: Machine learning in Python. J. Mach.
+467        Learn. Res. 12, 2825–2830.
+
+468   Russello, H., 2018. Convolutional Neural Networks for Crop Yield Prediction using Satellite Images.
+
+
+                                                           20
+469        IBM Cent. Adv. Stud.
+
+470   Schaaf, C., Wang, Z., 2015. MCD43A4 MODIS/Terra+ Aqua BRDF/Albedo Nadir BRDF Adjusted
+471        RefDaily L3 Global-500m V006. NASA EOSDIS L. Process. DAAC.
+
+472   Schwalbert, R.A., Amado, T., Corassa, G., Pott, L.P., Prasad, P.V.V., Ciampitti, I.A., 2020. Satellite-
+473        based soybean yield forecast: Integrating machine learning and weather data for improving crop
+474        yield prediction in southern Brazil. Agric. For. Meteorol. 284, 107886.
+475        https://doi.org/10.1016/j.agrformet.2019.107886
+
+476   Sibley, A.M., Grassini, P., Thomas, N.E., Cassman, K.G., Lobell, D.B., 2014. Testing remote sensing
+477        approaches for assessing yield variability among maize fields. Agron. J. 106, 24–32.
+478        https://doi.org/10.2134/agronj2013.0314
+
+479   USDA, 2020. United States Department of Agriculture National Agricultural Statistics Service .
+480        Available online: https://quickstats.nass.usda.gov/ (accessed 12.27.20).
+
+481   Vaswani, A., Brain, G., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł.,
+482        Polosukhin, I., 2017. Attention Is All You Need. Adv. Neural Inf. Process. Syst. 5998–6008.
+
+483   Wang, A.X., Tran, C., Desai, N., Lobell, D., Ermon, S., 2018. Deep transfer learning for crop yield
+484        prediction with remote sensing data. Proc. 1st ACM SIGCAS Conf. Comput. Sustain. Soc.
+485        COMPASS 2018. https://doi.org/10.1145/3209811.3212707
+
+486   Wang, Q., Rao, W., Sun, S., Xie, L., Chng, E.S., Li, H., 2018. Unsupervised Domain Adaptation via
+487        Domain Adversarial Training for Speaker Recognition. ICASSP, IEEE Int. Conf. Acoust. Speech
+488        Signal Process. - Proc. 2018-April, 4889–4893. https://doi.org/10.1109/ICASSP.2018.8461423
+
+489   Wang, Y., Zhang, Z., Feng, L., Du, Q., Runge, T., 2020. Combining Multi-Source Data and Machine
+490        Learning Approaches to Predict Winter Wheat Yield in the Conterminous United States. Remote
+491        Sens. 12, 1232.
+
+492   Yosinski, J., Clune, J., Bengio, Y., Lipson, H., 2014. How transferable are features in deep neural
+493        networks? Adv. Neural Inf. Process. Syst. 4, 3320–3328.
+
+494   You, J., Li, X., Low, M., Lobell, D., Ermon, S., 2017. Deep Gaussian process for crop yield prediction
+495        based on remote sensing data. 31st AAAI Conf. Artif. Intell. AAAI 2017 4559–4565.
+
+496   Zhuang, F., Qi, Z., Duan, K., Xi, D., Zhu, Y., Zhu, H., Xiong, H., He, Q., 2019. A Comprehensive Survey
+497        on Transfer Learning 1–27.
+
+498
+
+
+                                                          21
+

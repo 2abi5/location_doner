@@ -1,0 +1,1224 @@
+                                               Uncertainty Guarantees on Automated Precision
+                                                   Weeding using Conformal Prediction1
+                                                                  Paul Melki 1,2 , Lionel Bombrun 1,3 , Boubacar Diallo 2 ,
+                                                                       Jérôme Dias 2 & Jean-Pierre Da Costa 1,3
+
+                                               1
+                                                   Univ. Bordeaux, CNRS, Bordeaux INP, IMS, UMR 5218, F-33400 Talence, France
+                                                                   2
+                                                                     EXXACT Robotics, F-51200 Épernay, France
+                                                               3
+                                                                 Bordeaux Sciences Agro, F-33175 Gradignan, France
+                                                                       paul.melki@exxact-robotics.com
+
+
+
+                                                                                            Abstract
+                                                   Precision agriculture in general, and precision weeding in particular, have greatly benefited
+arXiv:2501.07185v1 [cs.CV] 13 Jan 2025
+
+
+
+
+                                                   from the major advancements in deep learning and computer vision. A large variety of
+                                                   commercial robotic solutions are already available and deployed. However, the adoption
+                                                   by farmers of such solutions is still low for many reasons, an important one being the lack
+                                                   of trust in these systems. This is in great part due to the opaqueness and complexity
+                                                   of deep neural networks and the manufacturers’ inability to provide valid guarantees on
+                                                   their performance. Conformal prediction, a well-established methodology in the machine
+                                                   learning community, is an efficient and reliable strategy for providing trustworthy guaran-
+                                                   tees on the predictions of any black-box model under very minimal constraints. Bridging
+                                                   the gap between the safe machine learning and precision agriculture communities, this
+                                                   article showcases conformal prediction in action on the task of precision weeding through
+                                                   deep learning-based image classification. After a detailed presentation of the conformal
+                                                   prediction methodology and the development of a precision spraying pipeline based on a
+                                                   “conformalized” neural network and well-defined spraying decision rules, the article eval-
+                                                   uates this pipeline on two real-world scenarios: one under in-distribution conditions, the
+                                                   other reflecting a near out-of-distribution setting. The results show that we are able to
+                                                   provide formal, i.e. certifiable, guarantees on spraying at least 90% of the weeds.
+
+                                         Keywords: Conformal prediction; precision weeding; deep learning; uncertainty; safe machine
+                                         learning.
+
+
+                                         1         Introduction
+                                         Precision agriculture, just like a multitude of other science and engineering domains, has greatly
+                                         benefited from the large and quick-paced advancements in machine learning over the last decade
+                                         [13, 37]. The methods have been ingeniously adapted – and sometimes improved – to appli-
+                                         cations in agriculture, spanning plant phenotyping [24, 64], disease identification [18], weed
+                                         detection [12, 27], yield estimation [56, 48], and soil monitoring [69, 55], among others. These
+                                         methods have allowed practitioners to keep pace with the ever-increasing quantity and diver-
+                                         sity of data associated with precision agriculture practices. Indeed, multiple data modalities
+                                         are now involved, often in the same system or use case. These include RGB, multispectral and
+                                         hyperspectral images, text, LiDAR and RADAR data, GNSS and location data, and acoustic
+                                         signals to name only a few [33].
+                                             Deep neural networks are singled out, in both scientific literature and industrial applications,
+                                         as the most powerful approach to “make sense” of this considerable flood of data [34]. These
+                                         multi-layered mathematical models whose architecture can be adapted to the type of data in
+                                         input and the desired output have become more common with the advancements of software
+                                         tools that allow users to import, train and deploy them with relatively simple programming
+                                         steps [11, 53]. Their adoption has also been facilitated by the advances in adapted hardware
+                                         and their wider availability (such as graphical processing units) along with the development of
+                                             1 Preprint. Currently under review.
+
+
+
+
+                                                                                                1
+tools and methods that have allowed their embedding and deployment on the edge in the wild
+for various agricultural applications [19, 75].
+    Although neural networks have shown their superiority in terms of predictive accuracy on a
+majority of applications and benchmark datasets, they still lag behind other predictive models
+on a number of highly desirable characteristics [15], such as good interpretability [61, 76],
+robustness to aberrant observations [42, 58], and good estimation of prediction confidence [26,
+46, 47]. The opaqueness and complexity of neural networks, combined with an often ignored
+caveat – which is the lack of valid guarantees on the quality of the predictions under real-world
+conditions [73, 14, 29], puts the users of deep learning models in front of a difficult conflict
+between predictive performance “in the lab”, and a certain lack of trust in the predictive
+system to be deployed in the real-world. This trade-off is not only faced by developers of
+precision agriculture systems employing deep learning approaches. It has repercussions on the
+end-users of the systems, the farmers. Scientists and manufacturers propose systems that not
+only contain vital components that the farmers do not understand, but also to which we do not
+associate trustworthy guarantees. This gets translated as a lack of trust in the systems proposed
+to the practitioners and leads, in consequence, to a reduced adoption of precision agriculture
+systems [2]. Farmers are reluctant to invest in technologies that do not come with quality
+guarantees because the economic and environmental risks associated with system malfunction
+are high [54, 67].
+    Conformal prediction [73, 4, 63, 51] has gained much attention in recent years in the machine
+learning community. This methodology is an efficient and reliable strategy for providing formal
+valid guarantees on the predictions of any black-box model, including neural networks, under
+very minimal constraints. This makes it very attractive for real-world deployment. It constitutes
+an important step towards shipping trustworthy and certifiable machine learning models [30, 7].
+While conformal prediction has already been applied in a number of fields where safety and
+reliability are critical, such as medical diagnosis [50, 40], autonomous driving [38], robotics
+[36, 41], and even nuclear fusion [68], among others [7, 3, 70], its integration into agricultural
+and environmental use cases is still limited and in its early stages [10, 20, 32, 43, 44].
+    The aim of this article is to bridge the gap between the safe machine learning and precision
+agriculture communities by showcasing conformal prediction in action on the task of precision
+weed spraying through deep learning-based image classification. Working with a proprietary
+database of weed and crop images acquired in Europe, we develop a conformal prediction-based
+pipeline that guarantees the detection of at least 90% of weeds.
+
+Main Contributions – The article’s main contributions may summarized as follows:
+
+  • A detailed presentation of the conformal prediction methodology to the ag-tech commu-
+    nity, including an overview of multiple nonconformity scores, two conformal algorithms
+    (marginal split-conformal prediction and its class-conditional version) and the evaluation
+    metrics;
+  • The development of a conformal prediction-based precision spraying pipeline using a “con-
+    formalized” neural network image classifier and well-defined spraying decision rules;
+  • The evaluation of this pipeline and its comparison to a standard classification model under
+    two experimental procedures reflecting real-world scenarios: one under in-distribution
+    conditions, the other simulating a near out-of-distribution setting.
+
+    In Section 3.1 we begin by presenting the extensive database collected internally and used to
+conduct the study. Section 2.1 constitutes the foundation of this work. It begins with a general
+introduction to conformal prediction and its main ingredients followed by a presentation of the
+central notion of nonconformity score and a detailed description of multiple scores studied here.
+We then present two important algorithms: split-conformal prediction and class-conditional
+conformal prediction. Section 2.2 quickly presents the neural network used in the pipeline.
+Section 2.3 details the rules defined in the pipeline for deciding to spray or not, and Section 2.4
+presents the various evaluation metrics used in our work. In Section 3 we present, the data used
+
+
+                                                2
+in the empirical study and, in turn, each experiment: its setup and then its results. In Section
+4 we discuss the experimental results and the role of conformal prediction in this context, then
+conclude in Section 5.
+
+
+2       Materials and Methods
+2.1     Conformal Prediction
+2.1.1    Overview and Main Components
+
+
+
+
+Figure 1: A high level representation of how conformal prediction transforms any black-box
+point predictor into a conformal set predictor.
+
+    Conformal Prediction [73] is a general framework for quantifying and controlling uncertainty
+in machine learning models without explicit assumptions on the data distribution. The essential
+idea is quite simple: it consists of transforming any predictive model that produces point
+predictions into a set or interval predictor (Figure 1). The prediction sets are constructed in
+such a way as to guarantee the inclusion of the true value with a probability of 1 − α, where
+α ∈ (0, 1) is the tolerance chosen by the user, typically taken to be 0.05 or 0.1. Concretely,
+assume we have a couple of random variables (X, Y ) ∈ X ×Y from which we observe n examples
+{(x1 , y1 ), ..., (xn , yn )}. For instance, X can be an image and Y its associated ground-truth class,
+as in our use case. For a new observation Xn+1 , the goal of a conformal predictor calibrated
+on the n examples is to produce a prediction set, Cˆ1−α (Xn+1 ) ⊆ Y, satisfying the following
+marginal coverage property:
+
+                                        P Yn+1 ∈ Cˆ1−α (Xn+1 ) ≥ 1 − α                              (1)
+                                                              
+
+This guarantee means that on average over all observations, the predicted set of Y values for
+a new observation will contain the true value (1 − α) × 100% of the times. It thus allows the
+user to control the error rate of the predictive system and to associate formal guarantees to
+its predictions, which is not the case for most of the ordinarily used point predictors without
+conformal calibration, including neural networks. This guarantee is valid under the relatively
+weak assumption of the exchangeability of the data [1, 73].
+    As a general framework, conformal prediction has been adapted to a large spectrum of
+learning tasks (classification, regression, segmentation, etc.), predictive models (SVM, decision
+trees, neural networks, etc.), and data configurations (offline vs. online learning) [21, 4]. While
+each application of conformal prediction may have its specificity, all conformal approaches share
+the same general requisites:
+
+    • The user’s tolerance to error, α. This fixed parameter, to be chosen by the user before
+      the start of the conformal procedure is what defines the significance level 1 − α at which
+      the coverage guarantee is to be maintained. Based on this level, the conformal pipeline
+
+
+                                                  3
+        will then ensure that the ground-truth label is included no less than (1 − α) × 100 % of
+        the times in the predicted sets as per Equation 1. This parameter is usually defined based
+        on the use case’s requirements.
+  • The base predictor, hereby noted as B, which can be any black-box point predictor on
+    which to apply the conformal procedure. In this article, we work exclusively with neural
+    network classifiers.
+  • Following the split-conformal procedure [51] (see Section 2.1.3) requires three distinct
+    non-overlapping datasets. Namely, a first training set of ntrain observations on which B
+    is trained. The conformal calibration procedure, which will transform B into a conformal
+    set predictor requires a separate set of ncal calibration observations, and, finally, a set of
+    ntest observations on which to evaluate the performance.
+  • Perhaps the most important component, the nonconformity score ∆, can be understood
+    as a “distance” that measures how similar – or conforming – a new observation Xn+1
+    is to the previously seen data. Different scores have previously been introduced in the
+    literature and will be discussed in detail in the next section.
+
+2.1.2     Nonconformity Score Functions
+Before we review the different nonconformity scores for classification, it is important to define
+some mathematical notations required for the rest of the article.
+    As mentioned previously, we assume that we observe a random vector x ∈ X of features,
+called an object. Each object is assigned a ground-truth class label y ∈ Y := {1, ..., K} by the
+annotators. The couple (X, Y ) ∈ X × Y is often called an example. The classifier B can be
+any function that predicts a class B(x) = ŷ ∈ Y for an input x ∈ X after it has been trained
+on ntrain examples. We also assume  PK that B also produces some sort of associated estimated
+probability p̂ŷ ∈ [0, 1], such that k=1 p̂k = 1. The neural network classifier used in this study
+is a typical example of such a setup, since for each class we can associate its corresponding
+softmax output which can be interpreted as a heuristic estimation of probability [26].
+    The nonconformity score ∆(z) : X × Y → R is a real-valued function that associates to
+each example a measure of “strangeness” with respect to the previously seen examples. It is a
+crucial component of both the conformal calibration and conformal prediction procedures, and,
+in a certain sense, is what distinguishes one conformal predictor from another. Here, we will
+cover some of the nonconformity scores that are especially suitable for the task of classification
+using neural networks [31, 5, 44]. To simplify the notation, we write the nonconformity score
+as a function of the label y since the object x is implicitly included in the output of the base
+classifier.
+
+  • Hinge Loss (IP) [31]. A very “natural” score of nonconformity is the Inverse Probability,
+    i.e. Hinge Loss:
+                                     ∆IP (y) = 1 − p̂y .                                 (2)
+        While very intuitive and easy to compute, this score has a major deficiency in that it is
+        blind to the estimated probabilities of other classes than the class of interest.
+  • Margin Score (MS) [31]. The Margin Score measures how different the estimated
+    probability of the class of interest y from is the highest estimated probability among the
+    other classes:
+                                      ∆MS (y) = max p̂k − p̂y .                            (3)
+                                                      k̸=y
+
+        This score assumes that when class y has a large margin away from the class with the
+        highest estimated probability, it should be considered “nonconformal”. Such a hypothesis
+        is implicitly based on the idea that the true class should often be the one with the highest
+        probability.
+
+
+
+                                                  4
+  • Adaptive Prediction Sets (APS) [60, 5]. The APS conformal method has been intro-
+    duced with the aim of predicting sets whose size is adaptive to the perceived difficulty of
+    the input object by the base classifier. Unlike the two previously described scores, APS
+    does actually take into consideration the estimated probabilities of all the classes deemed
+    “more probable” than the class of interest y, following this definition:
+                                                  R(y)−1
+                                                   X
+                                     ∆APS (y) =            p̂[r] + u · p̂[R(y)] ,                   (4)
+                                                   r=1
+
+        where R(k) is the rank of class k after the classes have been sorted by decreasing order of
+        estimated probabilities, p̂[r] is the probability estimate of the class having rank r, such that
+        p̂k = p̂[R(k)] , and u is a random value sampled uniformly in (0, 1) for breaking potential
+        ties [5].
+
+  • Penalized Inverse Probability (PIP) [44]. Our recently proposed nonconformity
+    score introduces a penalization term to the classical IP score. This penalization takes into
+    consideration the classes having higher estimated probabilities than the class of interest:
+                                                         R(y)−1
+                                                           X p̂[r]
+                                 ∆PIP (y) = 1 − p̂y +              1{R(y)>1} ,                      (5)
+                                                           r=1
+                                                               r
+
+        where the penalization is only added when y is the not the most probable class, where in
+        such cases the score is simply the Hinge Loss (IP). This score has been introduced with
+        the aim of minimizing the average size of the predicted sets while maximizing the number
+        of singletons, which is a non-trivial optimization problem that is not fulfilled by the other
+        nonconformity scores.
+
+   A detailed discussion of the attributes and behavior of these different nonconformity scores
+under different conditions can be found in our previous work [44]. In this article, these different
+scores will be tested in our experimental procedure with the aim of choosing the most suitable
+one for the precision spraying pipeline.
+
+2.1.3     Split-Conformal Procedure
+The split-conformal approach is a simple and efficient procedure to conduct conformal prediction
+in an offline setting [51]. It consists of two main steps: (1) conformal calibration, and (2)
+conformal prediction (Algorithm 1).
+    As described in Section 2.1.1, this procedure requires three distinct non-overlapping datasets.
+The training set is used for training the base model B. After the training phase, the base
+model does not change anymore. That is, the intrinsic parameters that have been learned are
+not modified by the additional conformal component added to the predictive pipeline. The
+calibration dataset, is used for the conformal calibration step that will be shortly described,
+and the test set is used for testing the conformal model.
+    The conformal calibration step is essentially the step that transforms B which produces
+point predictions into a set predictor (Figure 1). For each example zi = (xi , yi ), i = 1, ..., ncal
+in the calibration set, we compute the nonconformity score of the true class yi . We thus obtain
+the set of “true” nonconformity scores on the calibration set: {∆(yi ), i = 1, ..., ncal }. We then
+estimate the 1 − α quantile value of these scores, qcal , where α is the chosen level of tolerance
+to error. This quantile value is the main output of the conformal calibration procedure and will
+be used at the prediction phase.
+    Indeed, qcal , being the 1 − α quantile, is the value after which the α most “extreme” non-
+conformity scores lie. The examples that lie after qcal are the 10% examples with highest
+nonconformity scores. That is, the most “nonconforming” observations.
+    Following this reasoning, it becomes easier to understand how conformal prediction works.
+It can be seen as a form of hypothesis test whereby we test how “conforming” a certain class is
+
+
+                                                    5
+ Algorithm 1: Split-Conformal Procedure
+     Input: calibration set {zi = (xi , yi ), i = 1, ..., ncal }
+            test set {zi = (xj , yj ), j = 1, ..., ntest }
+            error tolerance α ∈ (0, 1)
+            trained base model B
+            nonconformity score function ∆( )
+            number of classesnK
+     Output: prediction sets Cˆ1−α (xj ), j = 1, ..., ntest
+                                                                o
+
+
+ 1 Train base model B on training set ;
+   Conformal Calibration
+ 2 for i ← 1 to ncal do
+ 3    Predict using trained model: B(xi );
+ 4    Use prediction to compute nonconformity score of true class: ∆(yi );
+ 5 Estimate qcal , the 1 − α quantile of {∆(yi ), i = 1, ..., ncal };
+   Conformal Prediction
+ 6 for j ← 1 to ntest do
+ 7    Predict using trained model: B(xj );
+ 8    Cˆ1−α (xj ) ← { };
+ 9    for k ← 1 to K do
+10        Compute nonconformity score of considered class: ∆(k)j ;
+11        if ∆(k)j ≤ qcal then
+12            Cˆ1−α (xj ) ← Cˆ1−α (xj ) ∪ k
+
+
+
+
+relatively to the calibration data. Indeed, for a given new input xj , j ∈ [1, ntest ] from the test
+set, we compute the probability estimates p̂kj for each class k = 1, ..., K by passing the input in
+the base model. For each class, we compute its nonconformity score ∆(k)j and compare it with
+the calibration quantile qcal . If the ∆(k)j lies in the rejection region, it is deemed too extreme
+with regards to the previously seen data. Class k is therefore considered highly unlikely to be
+the true class, and is thus excluded. Otherwise, k is considered plausible enough to be the
+true class and is therefore included in the prediction set. It is important to note that in the
+predicted sets, the classes included are sorted in increasing order of nonconformity scores.
+    Following this procedure, under the crucial hypothesis that the calibration and test data
+come from the same – or at least similar – population, provably leads to conformal sets that
+satisfy the desired marginal coverage property defined in Equation 1. We can thus guarantee
+that the true class is covered by our prediction sets at least (1 − α) × 100% of the times [51, 73].
+
+2.1.4     Class-Conditional Procedure
+The split-conformal procedure provides only a marginal guarantee on the coverage of the true
+class. This means that, on average over all examples, the coverage is guaranteed at 1 − α.
+However, this does not mean that the coverage is maintained for any arbitrary example (x, y),
+a guarantee proven to be impossible to achieve with a conformal predictor with bounded av-
+erage set size [22]. Furthermore, the marginal coverage condition does not guarantee that the
+coverage is maintained at 1 − α for each possible sub-group of the examples. In particular, the
+coverage may not be guaranteed for each class [9]. This can have dire consequences in sensitive
+applications where the coverage has to be maintained equally for all classes or on a particular
+class of interest. For example, in the current use case of precision weeding, it is much more
+important to provide valid guarantees on class weed which we aim to eradicate than on the
+other background or crop classes.
+
+
+
+
+                                                      6
+   Formally, we would like to achieve the class-conditional coverage guarantee:
+
+                    P Yn+1 ∈ Cˆ1−α (Xn+1 )|Yn+1 = y ≥ 1 − α ∀y ∈ Y                             (6)
+                                                      
+
+which can be satisfied by iteratively applying the conformal calibration procedure separately
+on the examples belonging to each class in the calibration set. That is, for each y ∈ Y,
+we conduct conformal calibration on the examples (Xi , y), i = 1, ..., ncal to obtain a class-
+                       (y)
+conditional quantile qcal for each class. At prediction time, the nonconformity score of each class
+                                              (y)
+y is tested against its respective quantile qcal to decide whether to include y in the prediction
+set or not. This procedure provably guarantees the class-conditional coverage [71, 9, 4].
+
+2.2    Base Classifier
+As mentioned previously, conformal prediction is an added layer on top of a base classifier B.
+As conformal prediction is a model-agnostic approach, any classifier that produces some form
+of probability estimate for each class is a good candidate for becoming a conformal predictor,
+even if it does not manifest high classification performance [60]. As such, a classical ResNet-50
+[28] classifier is considered in this study, although more recent and performing models can be
+used [62].
+
+2.3    Decision Rules on Conformal Sets
+The prediction sets allow us to provide reliable guarantees on the performance of the predictive
+model. However, when integrated in a pipeline where a final decision or action should be taken,
+it is important to define the decision functions that map the prediction sets into decisions
+[66, 36].
+
+
+
+
+Figure 2: Schematic representations of the three spraying decision functions considered in our
+spraying pipeline. The decision taken in each example is shown in bold. (a) Weed in set, (b)
+Weed top-1, (c) Weed singleton. Classes are ranked by decreasing order of p̂k , corn in green is
+the true class label.
+
+   The precision spraying pipeline that we develop has to output a final binary spray / no
+spray decision. As such, we define three possible binary in top of the predicted sets. All of
+these functions rely on the existence of class weed in the obtained sets (Figure 2).
+
+ (a) Weed in set: The first decision function leads to a spray decision for a certain input,
+     whenever the class weed is included in the predicted set. This can be considered as the
+     simplest and most lenient decision function and therefore may potentially lead to spraying
+     in unneeded locations. For example, in Figure 2(a), a spraying decision is taken, even
+     though the true class label is corn, simply because weed has also been predicted as a
+     plausible class.
+ (b) Weed top-1: As mentioned previously, the predicted classes are sorted in decreasing order
+     of nonconformity scores in the sets, from the class considered the most “conforming”,
+
+
+                                                7
+      to the least plausible class. Accordingly, we can define a decision function where spray
+      is decided only when class weed is the first predicted class (Figure 2(b)). This decision
+      function is more stringent than the previous one in that it only sprays when weed is the
+      most plausible class.
+
+ (c) Weed singleton: When a singleton is predicted, it means that the one class predicted has
+     been considered overwhelmingly more conforming than the other classes: the base model
+     manifests very high certainty about the class it predicts. The strictest decision function
+     is thus the one where the model chooses to spray when weed is the only predicted class
+     (Figure 2(c)).
+
+2.4    Evaluation Metrics
+There are three levels of evaluation in the precision spraying pipeline considered in this work.
+The first level consists of evaluating the base model on the multiclass classification task after
+training it. For this, we use standard classification metrics such as precision, recall, and their
+harmonic mean, the f1-score [25]. This is not the level of evaluation that interests us since the
+rest of the conformal pipeline provides guaranteed coverage regardless of the performance of
+the base model [31].
+
+Evaluating the conformal predictor The second level evaluates the performance of the
+conformal predictor. In order to verify that the coverage guarantee defined in Equation 1
+is maintained, we can compute the empirical marginal coverage, which is simply the average
+number of times the true class has been covered by the predicted set:
+                                                              n
+                                                      1       X test
+
+                         Empirical Coverage =                          1{yi ∈C1−α (xi )}       (7)
+                                                  ntest i=1
+
+where 1{·} is the indicator function. This value should be around the 1 − α level of coverage.
+    While all conformal predictors are valid by construction, they are not all equally “useful” [6,
+66]. Indeed, the usefulness of a set predictor can be measured using two metrics introduced in
+the literature [72, 31].
+
+  • The efficiency is simply defined as the average size of the predicted sets:
+                                                              n
+                                                      1       X test
+
+                                   Efficiency =                        |C1−α (xi )|            (8)
+                                                  ntest i=1
+
+      where | · | is the set cardinality, the number of classes in the predicted set. Clearly,
+      smaller sets are preferred since they are easier to interpret and to construct decision rules
+      on.
+  • The informativeness computes the ratio of singleton predictions:
+                                                                n
+                                                          1     X test
+
+                             Informativenesss =                          1{|C1−α (xi )|=1}     (9)
+                                                      ntest i=1
+
+      Singleton predictions are the most efficient and the easiest to interpret. Therefore, a con-
+      formal predictor that predicts more singletons without violating the coverage guarantee
+      is preferred.
+
+  A conformal model that jointly optimizes these two criteria can be readily used in a decision-
+making pipeline as the one proposed in the current work.
+
+Evaluating the spraying decision The third level of evaluation is that of the spraying
+decisions: are we taking the right spraying decision when weeds are detected? To estimate the
+
+
+                                                  8
+spraying quality, we rely on two main important assumptions related to the data (cf. Section
+3.1). Namely, that each image is well-aligned with a spraying head and that it represents
+one unit of spraying surface. We also consider that each crop or weed is seen only once and
+that no chemical spray drift occurs [52]. In other words, each image, and in consequence
+each spraying decision, is associated to one plant. While these assumptions may be considered
+simplifying ones, they are crucial to allow a reliable estimation of sprayed ratio in an a posteriori
+experimental setup where a physical inspection of the land is not possible. We argue that given
+the large amount of data available, such an estimation can provide a reliable evaluation of the
+spraying performance of a given pipeline.
+    As such, the evaluation at this level consists of comparing the sprayed ratio, estimated by
+the number of spraying decisions over the number of all images in the considered sample. The
+sprayed ratio can be formally defined as:
+                                                       n
+                                                   1   Xtest
+
+                              Sprayed Ratio =                  1{“spray”} .                      (10)
+                                                 ntest i=1
+
+This ratio can be compared to the infestation level, estimated as the number of images annotated
+as weed over the number of images in the considered sample:
+                                                         nweed
+                                  Infestation Level =          .                            (11)
+                                                         ntest
+Here, ntest is the number of images in the studied sample. In addition, two other metrics
+of interest can be inferred from these quantities. The spray reduction level with respect to
+broadcast spraying (where the whole parcel surface is sprayed) which can be computed as
+                              Spray Reduction = 1 − Sprayed Ratio,                               (12)
+is a metric that can be of particular interest to end-users (the farmers) since it is directly related
+to the reduction of production costs. This reduction may be offset by the spray surplus, which is
+the unneeded amount sprayed, estimated as the excess of spraying decisions taken with respect
+to the infestation level:
+                       Spray Surplus = Sprayed Ratio − Infestation Level                         (13)
+This quantity can be negative when not enough spraying decisions were taken, indicating clearly
+that some weeds have been missed.
+
+
+3     Experimental Procedures & Results
+3.1    Precision Spraying Image Dataset
+To empirically study the conformal prediction-based spraying pipeline, we constructed a large
+dataset of 510,600 RGB images of dimensions 224 × 224 where each image is associated to a
+potential spraying location. That is, an image is assumed to be well-aligned with a spraying
+head and represents a spraying surface.
+    Working in the context of non-selective precision weeding, where the weed species need not
+be identified, each image is carefully annotated by agronomists who associate to it one ground-
+truth class among six possible classes: the four studied crops – corn, rapeseed, sugar beet and
+sunflower –, weed whenever a weed or undesired plant is found (even if another crop is apparent
+in the image), and finally background when no plant appears in the image.
+    Data have been collected in 21 “farms” across France and other European countries, mani-
+festing a large diversity of visual and semantic differences, as shown in Figure 3. The collection
+procedure was conducted in two stages, hence the distinction between the “old” and “new”
+databases (Figure 3), an information that will be exploited in the experimental procedure.
+    All farms are infested with weeds of different types and so exhibit at least three classes:
+weed, background and one or many crop classes. Indeed, some farms contain multiple plots
+where different crops are cultivated. Only one of the farms, Farm 20, contains all six classes.
+
+
+                                                  9
+Figure 3: Example images and their ground-truth classes showing the diversity of conditions
+across some farms in Europe.
+
+
+3.2     Experiment 1: Typical Lab Conditions
+3.2.1   Setup
+The first experiment aims at showing the conformal prediction procedure in action under typical
+“lab” conditions. Indeed, the validity of the conformal approach relies on the fundamental
+hypothesis that the test distribution is the same, or at least similar, to the distribution of the
+calibration set [73]. This hypothesis may not always be satisfied in real-world deployment due
+to naturally occurring distribution shifts from changes in the visual characteristics of images,
+in the environmental conditions, or the semantics of the objects of interest [23, 57, 8].
+    In order to guarantee the satisfaction of this hypothesis, we consider in this experiment
+the old database exclusively, and rely on repeated random subsampling of the data, which on
+average would reflect the distribution of the original database [39].
+    The experimental procedure is detailed in Figure 4. The old database is first randomly
+split into three sets: the training (50%), the validation (20%) and the calibration/test (30%)
+sets. The training and the validation sets are used to finetune the ResNet-50 neural network
+pretrained on ImageNet [35] for the task of image classification into weed, background and
+crop species classes. After the training phase, the base classifier is fixed and does not undergo
+any changes. The calibration/test set is then randomly split into the respective calibration
+set (45%) used for the conformal calibration procedure, and the test set (55%) on which the
+conformal predictor is tested. The conformal procedure is repeated on 100 different splits of
+the calibration and test data. The obtained prediction sets are then analyzed in terms of
+empirical coverage, efficiency and informativeness (defined in Section 2.4) and then in terms of
+spraying performance after applying the decision rules on the sets as described in Section 2.3.
+This procedure is then repeated for each of the nonconformity score functions introduced in
+Section 2.1.2 with the aim of choosing the optimal score for this use case. The repetition of the
+conformal procedure across random data splits and nonconformity scores allows us to study the
+stability of the procedure with regards to the data and the choice of the score function.
+
+
+
+
+                                               10
+Figure 4: Diagram summarizing the Experiment 1 procedure. Only the “old” database is
+considered with the aim of showing the behavior of the conformal procedure when the calibration
+and training sets originate from the same population.
+
+
+3.2.2   Results
+We take a first look at the classification results of the ResNet-50 models after training (Table
+1). The model has good overall performance across all the classes thanks to the controlled
+environment in which the experiment is conducted where the training and test data are subsets
+of the same database. The classifier manifests good recall on our class of interest, weed, but is
+not close to the coverage level that we would like to have at 90%, thus showing the incapacity
+of a coverage control using classical point prediction models.
+
+                           Class      Recall    Precision     F1-Score
+                        background     0.94       0.85          0.90
+                            corn       0.82       0.91          0.86
+                          rapeseed     0.85       0.78          0.81
+                         sugar beet    0.82       0.91          0.87
+                         sunflower     0.78       0.91          0.84
+                           weed        0.82       0.74          0.78
+
+Table 1: Class-specific classification results of the ResNet-50 after finetuning on the training
+set. The results are computed on the full calib/test set. The required 1 − α = 0.90 coverage
+level is not guaranteed for any of the classes using point classification.
+
+   After “conformalizing” the base model following the group-conditional calibration procedure,
+the model is now able to guarantee the coverage on all classes, including class weed, as can
+be seen in Figure 5a. Indeed, as the calibration/prediction procedure is repeated across 100
+
+
+                                               11
+different subsets coming from the same population, it is not surprising to observe little variability
+around the 1−α coverage level over the different repetitions. However, even though the coverage
+is guaranteed using any of the nonconformity scores, the IP and PIP scores manifest significantly
+better performance in terms of efficiency with an average set between 1 and 2 classes (Figure
+5b) and informativeness with around 80% of predicted sets being singletons (Figure 5c). In
+comparison, APS has a significantly lower number of singletons and greater average set size while
+MS exhibits highly unstable performance and unsatisfactory results. The difference between
+IP and PIP is not significant in this experimental setup since the base model’s performance on
+weed is already not “too bad” (Table 1), which means that PIP will often behave like IP.
+
+
+
+
+  (a)                                             (b)                                            (c)
+
+Figure 5: Conformal evaluation results on class weed for the different nonconformity scores over
+100 different data splits. (a) Empirical coverage, (b) Efficiency (mean set size), (c) Informative-
+ness (proportion of singletons). While the coverage is maintained on average using all scores,
+IP and PIP scores are the best in terms of efficiency and informativeness.
+
+
+ Infestation Level                                       0.29 (±0.002)
+                         Recall         Precision       Sprayed Ratio Spray Reduction   Spray Surplus
+     Weed in Set      0.90 (±0.003)   0.63 (±0.004)     0.40 (±0.004)       0.60            0.11
+     Weed Top-1       0.76 (±0.004)   0.75 (±0.004)     0.32 (±0.002)       0.68            0.04
+   Weed Singleton     0.70 (±0.004)   0.83 (±0.004)     0.25 (±0.003)       0.76            -0.04
+
+Table 2: Average spraying results over the 100 repetitions using the PIP score for the three
+decision rules (standard deviation between parenthesis).
+
+    Table 2 shows the results after applying the spraying decision rules. Here we evaluate the
+decision rules from the perspective of a classical binary decision problem using the recall and
+precision and then via the metrics that reflect the end-user’s needs. The Weed in Set decision
+rule is a direct application of the class-conditional conformal prediction set on class weed and
+therefore is the only one that guarantees the coverage (recall) at the required level of 90%.
+The two other decision rules are far from capturing 90% of the weeds even though they have
+significantly higher precision than Weed in Set: around 83% for Weed Singleton and 75% for
+Weed Top-1. This is not surprising since these two functions are more strict than Weed in Set
+and so will tend to be more precise to the detriment of the recall. Looking at the surface-level
+metrics, we can see that all decision rules lead to a highly significant reduction in spraying in
+comparison to broadcast spraying (from 60% to 75.5% reduction). Being the least precise, the
+Weed in Set decision rule has the highest spraying surplus: following this rule will lead to a
+spray decision whenever is the model is suspicious about the existence of a weed. As such, it
+will sometimes lead to spraying when it is not needed. Weed Singleton, on the other hand, is
+a demanding decision rule and so leads to a spraying shortage while covering only 70% (recall)
+
+
+                                                 12
+of the weeds. Weed Top-1 achieves a nice balance between these two decision rules but still
+misses 24% of the weeds.
+
+3.3     Experiment 2: Real-World Scenario
+3.3.1   Setup
+This second experimental setup is more closely aligned with a typical real-world scenario. The
+aim of this experiment is to simulate a common use case whereby, after acquiring an original
+database used for the training of the neural network, we now seek to deploy it on a newly
+observed farm – for example, a new client in a commercial context. It has often been noted in
+machine learning literature that while neural networks may exhibit high performance “in the
+lab”, they quite often fail when deployed under real-world conditions that may not closely reflect
+the original training conditions [65, 14, 29, 49]. One potential solution to mitigate this downside
+is to re-train or finetune the neural network on data from the new domain. For example, when
+deploying the precision weeding pipeline for a new client, we could acquire new images from the
+new farms, annotate them, and use them to finetune the model. However, such an approach
+would require the acquisition of a large amount of new data, which may not always be possible,
+and the re-training of the neural network which is a relatively long and costly procedure.
+
+
+
+
+Figure 6: Diagram showing Experiment 2 procedure. This experimental setup more closely
+simulates a real-world scenario where a new set of “farms” is observed and for which we would
+like to guarantee the results without re-training the model.
+
+   In this experiment, we demonstrate the utility of using conformal predictors in such a sce-
+nario. Having a well-trained and calibrated neural network on the old database, we empirically
+show how the model can be readily deployed on new farms without violating the coverage
+guarantee on the class of interest, weed. The details of the experimental procedure are shown
+in Figure 6. Starting with the old database, we conduct the same random data split as in
+Experiment 1 (with the same fixed seed) and conduct the training of the ResNet-50 neural
+
+
+                                                13
+network following the same procedure as the previous experiment. In other words, we use the
+exact same neural network as previously. The third dataset obtained from the random split is
+used to calibrate the base model following the class-conditional calibration procedure (Section
+2.1.4). For each farm in the new database (Figure 3), we conduct class-conditional conformal
+prediction. The obtained prediction sets are evaluated using the conformal prediction metrics,
+and the spraying metrics after applying the decision rules.
+
+3.3.2   Results
+Table 3 shows the class-specific classification metrics. There is a clear variability in the model’s
+performance across the different classes, which is probably due to class imbalance in the training
+data: some classes are significantly more present than others since they can be found in multiple
+farms. The model is overall less performant than in the previous experiment, indicating that
+the test population (the new database) does not originate from exactly the same population as
+the old database on which the model was trained.
+
+                            Class      Recall     Precision     F1-Score
+                         background     0.85        0.83          0.84
+                             corn       0.66        0.70          0.68
+                           rapeseed     0.45        0.76          0.57
+                          sugar beet    0.72        0.88          0.79
+                          sunflower     0.51        0.68          0.58
+                            weed        0.82        0.63          0.71
+
+Table 3: Class-specific classification results of the ResNet-50 after finetuning on the training
+set (from the old database). The results are computed on the full new database.
+
+    For the conformal procedure, we use the PIP nonconformity score which has shown optimal
+results in Experiment 1. Looking at the obtained results on class weed (Table 4), we can
+see that the coverage guarantee is maintained for most of the farms. For some farms, such
+as Farm 20 and Farm 23, the coverage is far from the required 90% level. This is due to
+difficulties that these farms present to the model through visual or semantic differences with
+the calibration data. The model’s efficiency and informativeness are very good across the farms
+and present little variability with prediction sets having an average size of 1 to 2 classes and
+around 80% of prediction sets being singletons. In some cases, such as Farm 7, the model
+presents exceptionally good performance. The coverage is maintained exactly at the required
+level, with very low average set size and 90% of predicted sets being weed singletons. This is
+probably due to the fact that the images obtained in this farm show clearly the distinction
+between the weeds and the cultivated crops, with a nice contrast between the plants and the
+ground, as can be seen in Figure 3. Under such conditions, the model does not exhibit high
+uncertainty in its predictions.
+    In order to study the performance of the three spraying decision rules over the different
+farms, we categorize the farms by their Infestation Level. Three categories are defined: Low
+corresponds to a level of infestation reaching 20% of total farm surface, Medium corresponds to
+levels between 20 and 40% and High for levels of infestation superior to 40%. Figure 7 visualizes
+all the spraying results for three infestation categories. Each bar corresponds to the Sprayed
+Ratio induced by each of the decision rules. For each infestation category, the average level of
+infestation is shown by the red dashed line. The difference between the sprayed ratio and the
+red dashed line represents the average spray surplus. On the other hand, Spray Reduction can
+be read by comparing the black dashed line – representing broadcast spraying that covers 100%
+of the surface – with the bar plots for each decision rule.
+    In line with the results of the previous experiment, Weed in Set is the one that manifests
+the highest level of surplus. This is due to it being the least stringent decision rule, as stated
+previously. Weed Singleton is such a constraining rule that it fails to cover all the weeds for the
+farms manifesting Medium and High levels of infestation. Weed Top-1 manifests a balanced
+
+
+                                                14
+                     Farm             Coverage        Efficiency     Informativeness
+                  (New) Farm 0           0.94            1.13              0.88
+                  (New) Farm 4           0.88            1.24              0.79
+                  (New) Farm 5           0.94            1.38              0.67
+                  (New) Farm 7           0.90            1.11              0.90
+                  (New) Farm 8           0.94            1.23              0.79
+                 (New) Farm 10           0.92            1.20              0.82
+                 (New) Farm 20           0.78            1.35              0.71
+                 (New) Farm 21           0.94            1.19              0.83
+                 (New) Farm 23           0.85            1.39              0.66
+                 (New) Farm 26           0.90            1.27              0.76
+                                        0.90             1.24              0.79
+                      Marginal
+                                       (±0.05)         (±0.10)            (±0.08)
+
+Table 4: Conformal prediction results on class weed for each farm in the new database using
+the PIP nonconformity score (standard deviation between parenthesis).
+
+
+behavior in terms of Spray Surplus. However, Weed in Set remains the only decision that
+formally guarantees covering the weeds at the required level, even if it over-sprays. Indeed,
+the fact that the two other decision rules lead to a sprayed ratio that is not far away from
+the infestation level is a purely empirical observation that cannot be formally guaranteed. In
+addition, these decision rules provide no guarantee on the weed coverage. This means that even
+though the spray ratio is close to the infestation level, we cannot be sure that the spraying
+decisions were taken at the right locations.
+
+     Farm        Recall   Precision   Infestation Level   Sprayed Ratio   Spray Reduction   Spray Surplus
+  (New) Farm 0    0.94      0.65             0.42              0.60             0.40             0.18
+  (New) Farm 4    0.88      0.73             0.36              0.43             0.57             0.07
+  (New) Farm 5    0.94      0.32             0.24              0.69             0.31             0.45
+  (New) Farm 7    0.90      0.43             0.22              0.46             0.54             0.24
+  (New) Farm 8    0.94      0.60             0.37              0.57             0.43             0.20
+ (New) Farm 10    0.92      0.62             0.27              0.39             0.61             0.13
+ (New) Farm 20    0.78      0.34             0.17              0.39             0.61             0.22
+ (New) Farm 21    0.94      0.36             0.12              0.30             0.70             0.18
+ (New) Farm 23    0.85      0.53             0.27              0.43             0.57             0.16
+ (New) Farm 26    0.90      0.71             0.46              0.58             0.42             0.12
+    Marginal      0.89      0.53             0.45             0.50              0.50            0.20
+
+         Table 5: Spraying results for each farm using the Weed in Set decision rule.
+
+    Table 5 details the spraying metrics using the Weed in Set decision rule. The recall (coverage)
+is maintained for all farms with some variability, mostly evident for the farms that have shown
+inferior conformal results (Farm 20 and Farm 23 for example). The spraying precision exhibits
+much higher inter-farm variability and is, on average, quite low (around 53%), which should
+signal a relatively high level of spray surplus. Indeed, the average spray surplus is around 20%
+of the total surface, although for some farms it is as low as 7% while for others (Farm 5, which
+has the lowest precision) it is around 45%. In all cases, this spraying pipeline still demonstrates
+significant reduction in spraying amount with respect to full broadcast spraying. This reduction
+ranges from 31% (Farm 5 ) for the farm where the model is “struggling” the most, to up 70%
+(Farm 21 ) with an average spray reduction of 50%.
+
+
+4    Discussion
+As deep learning-based precision spraying starts to get deployed in the real-world, it becomes
+increasingly important to improve the reliability of the predictive systems that provide the
+backbone of these spraying pipelines. As Darbyshire et al. [16] state in their recent article:
+
+
+                                                     15
+Figure 7: Bar plot of spraying results per level of infestation. Low infestation corresponds to less
+than 20% of infestation, Medium to around 20 − 40% and High to more than 40% infestation.
+The black dashed line represents broadcast spraying (100% of the surface is sprayed), and the
+red dashed lines represent the average infestation level in each category. The Spray Surplus
+and Spray Reduction can be read by comparing the bars to the red and black dashed lines,
+respectively.
+
+
+“improvements in the reliability and accuracy of weed recognition are crucial for the success-
+ful implementation of precision targeted weed management systems.” It is important to note,
+however, that the focal point of our work is not the maximization of the predictive performance
+of the deep learning models, as is the case with the vast majority of recent works in the pre-
+cision weeding literature [59, 27]. Rather, this article tackles a deeper, longer-term, problem
+that is the development of reliable, trustworthy and certifiable predictive models. Although
+the construction of larger and more comprehensive datasets and the development of new ar-
+chitectures and learning techniques can play a role in improving the reliability of the systems
+[59, 16, 27], they are not enough to provide valid distribution-free performance guarantees. The
+current research provides a starting point for the development, improvement and integration of
+such methodologies as conformal prediction in the ag-tech ecosystem, which lags behind other
+domains on this front.
+    Furthermore, the current work takes a broader perspective than simply focusing on the deep
+learning models. It considers the full spraying pipeline in accordance with Darbyshire et al.’s
+[16] recommendation that “optimizing [machine learning] approaches without considering the
+systems into which they will be integrated may be short-sighted.” Indeed, the current work
+evaluates the predictive pipeline at multiple levels: the standard classification, the conformal
+prediction, and the spraying decision levels, while making sure that the data acquisition and
+model development lifecycles resemble real-world scenarios. That is, the experimental setup
+considered in this article was developed to be somewhere between the “in lab” and real-world
+settings. Certain assumptions taken are rarely satisfied under real-world deployment. For
+example, the object of interest (crop or weed) is often observed multiple times as the system
+advances in the parcel – a fact that was not taken into consideration in our experimental
+setup. In addition, chemical spray drift often occurs due to wind, which means that each image
+cannot be mapped one-to-one to a spraying outcome. However, these assumptions are crucial to
+permit the experimental study of the current methodology in the absence of field testing. Future
+works may involve a relaxation of these assumptions and accompanied by a field evaluation of
+the proposed pipeline.
+    The experimental results have shown the validity of the conformal prediction approach in
+
+
+                                                16
+guaranteeing the coverage of weeds both in-distribution (Experiment 1), and under conditions
+of “shifted” or “near” out-of-distribution [74, 45] (Experiment 2), both scenarios that naturally
+occur when deploying precision weeding systems in the real-world. Without re-training and
+calibrating the neural network, a conformal predictor can be deployed in a new farm and will
+maintain the coverage as long as the prediction domain is not “far away” from the data on
+which the model has been calibrated. Marginally over all deployment domains, the system is
+guaranteed to maintain the 1 − α coverage level. While the current work presented only the
+marginal and class-conditional split conformal approaches, certain extensions such as group-
+conditional [4, 43] and clustered [17] conformal prediction can be used to guarantee the required
+coverage for any sub-group of examples in the population as defined by auxiliary criteria (for
+example, the farm or other environmental characteristics). As such, the conformal methodology
+can be adapted to the context at hand.
+    The versatility of the conformal approach is also due to the fact that it allows the model
+to produce prediction sets, rather than simple point predictions. These predictions sets are
+adaptive in the sense that their size reflects the base model’s uncertainty about the observed
+example. This also offers the practitioner the ability to define any decision rule on these
+prediction sets. In the current work, three basic decision rules have been studied: Weed in Set,
+Weed Top-1 and Weed Singleton. While Weed in Set is the only decision rule that guarantees
+the spraying coverage at 1 − α, the user is still free to choose other rules. The choice depends
+on the importance given to precision, which is related to the tolerance to spray surplus, and
+more generally to the user’s preference between exact weed coverage and spray reduction. This
+opens the door to the deployment of systems that are more modular and adaptive to users’
+requirements.
+
+
+5    Conclusion
+This article constitutes a first comprehensive study, to the authors’ knowledge, of the utility
+of conformal prediction in precision agriculture, and particularly in precision weeding. We
+have presented, in detail, the conformal prediction methodology and its main components.
+Particular focus was accorded to the split-conformal algorithm that can be applied marginally
+to guarantee a 1 − α coverage level on average over all observations, or on a class-conditional
+basis to guarantee the coverage level for each class – and a fortiori on the class of interest
+weed. This methodology is an important step towards the development of valid, trustworthy
+and certifiable deep learning-based autonomous systems in agriculture that can earn the trust
+of the farmers and thus increase the adoption of these technologies [15, 2].
+    Conformal prediction was studied in the context of a fully automated precision spraying
+pipeline based on image classification. Three spraying decision rules were defined on top of the
+predicted conformal sets to lead to a final binary spray / no spray decision. This pipeline
+was evaluated at three levels: (1) the level of standard classification, using common metrics
+such as precision, recall and the f1-score, (2) the level of conformal classification using the
+empirical coverage – which was shown to be maintained at the 1 − α level, and the efficiency
+and informativeness of the prediction sets, (3) and finally at the spraying decision level.
+    Two experimental procedures that reflect commonly faced scenarios were described in detail.
+The first experiment demonstrates the power of the conformal approach when the prediction
+domain is similar to the data seen during conformal calibration. The spraying results show
+that we can guarantee covering at least 1 − α = 90% of the weeds while reducing the sprayed
+quantity by 60% with respect to broadcast spraying. The second experimental setup shows how
+conformal prediction allows the predictive model to maintain its weed coverage guarantee on
+new farms that may not always be aligned with the previously seen data, and that, without re-
+training the neural network. Such a result is especially useful for autonomous systems that will
+be deployed in new, uncontrolled, and unobserved environments. It improves the robustness
+and reliability of the systems while providing signals (through worse coverage, efficiency and
+informativeness) when the model is not performing well.
+    It is the authors’ hope that this work will motivate the ag-tech research community to start
+
+
+                                               17
+exploring conformal prediction, and more largely, the domain of deep learning safety, with the
+aim of developing systems that can be trusted and certified.
+
+
+Declarations
+Acknowledgments The authors would like to thank Estelle Millet and the AgroData team
+at EXXACT Robotics for the acquisition, annotation and management of the data used in this
+article; and Vincent Rachet, CEO of EXXACT Robotics, for his valuable input towards the
+finalization of this article.
+
+CRediT statement Paul Melki: Conceptualization, Methodology, Software, Validation,
+Formal Analysis, Investigation, Data Curation, Writing - Original Draft, Writing – Review &
+Editing, Visualization; Lionel Bombrun: Conceptualization, Methodology, Formal Analysis,
+Validation, Writing – Review & Editing, Supervision; Boubacar Diallo: Conceptualization,
+Methodology, Software, Resources, Data Curation, Writing - Review & Editing, Supervision;
+Jérôme Dias: Conceptualization, Methodology, Validation, Resources, Writing – Review &
+Editing, Supervision, Project Administration, Funding Acquisition; Jean-Pierre Da Costa:
+Conceptualization, Methodology, Formal Analysis, Validation, Writing – Review & Editing,
+Supervision, Project Administration, Funding Acquisition
+
+Funding Paul Melki’s PhD thesis is funded by the Association Nationale de Recherche et
+Technologie (ANRT, France) under the CIFRE contract 2021/1200.
+
+Conflict of interest The authors declare that they have no known competing financial in-
+terests or personal relationships that could have influenced the work reported in this paper.
+
+Data availability Due to confidentiality reasons, the data used in this study cannot be
+made public at the moment, but may be released at a later stage.
+
+
+References
+[1] Aldous, D. J. (1985). Exchangeability and Related Topics. In Hennequin, P. L., editor, École
+   d’Été de Probabilités de Saint-Flour XIII — 1983, pages 1–198, Berlin, Heidelberg. Springer Berlin
+   Heidelberg.
+
+[2] Alexander, C. S., Yarborough, M., and Smith, A. (2023). Who is responsible for ‘responsible
+   AI’?: Navigating challenges to build trust in AI agriculture and food system technology. Precision
+   Agriculture.
+
+[3] Andeol, L., Fel, T., de Grancey, F., and Mossina, L. (2023). Confident Object Detection via Con-
+   formal Prediction and Conformal Risk Control: An Application to Railway Signaling. In Proceedings
+   of the Twelfth Symposium on Conformal and Probabilistic Prediction with Applications, pages 36–55.
+   PMLR.
+
+[4] Angelopoulos, A. N. and Bates, S. (2023). Conformal Prediction: A Gentle Introduction. Founda-
+   tions and Trends in Machine Learning, 16(4):494–591.
+
+[5] Angelopoulos, A. N., Bates, S., Malik, J., and Jordan, M. I. (2021). Uncertainty Sets for Im-
+   age Classifiers Using Conformal Prediction. International Conference on Learning Representations
+   (ICLR), 2021.
+
+[6] Babbar, V., Bhatt, U., and Weller, A. (2022). On the Utility of Prediction Sets in Human-AI Teams.
+   In Proceeedings of the International Joint Conference on Artificial Intelligence (IJCAI), volume 3,
+   pages 2457–2463.
+
+[7] Balasubramanian, V., Ho, S.-S., and Vovk, V. (2014). Conformal Prediction for Reliable Machine
+   Learning: Theory, Adaptations and Applications. Newnes.
+
+
+
+                                                  18
+[8] Cappio Borlino, F. (2024). Addressing Distributional Shift Challenges in Computer Vision for
+   Real-World Applications. PhD thesis, Politecnico di Torino, Turin, Italy.
+
+[9] Cauchois, M., Gupta, S., and Duchi, J. C. (2021). Knowing what You Know: Valid and validated
+   confidence sets in multiclass and multilabel prediction. Journal of Machine Learning Research,
+   22(81):1–42.
+
+[10] Chiranjeevi, S., Sadaati, M., Deng, Z. K., Koushik, J., Jubery, T. Z., Mueller, D., Neal, M. E. O.,
+   Merchant, N., Singh, A., Singh, A. K., Sarkar, S., Singh, A., and Ganapathysubramanian, B. (2023).
+   Deep learning powered real-time identification of insects using citizen science data.
+
+[11] Chollet, F. et al. (2015). Keras. https://keras.io.
+
+[12] Coleman, G. R. Y., Bender, A., Hu, K., Sharpe, S. M., Schumann, A. W., Wang, Z., Bagavathian-
+   nan, M. V., Boyd, N. S., and Walsh, M. J. (2022). Weed detection to weed recognition: Reviewing
+   50 years of research to identify constraints and opportunities for large-scale cropping systems. Weed
+   Technology, 36(6):741–757.
+
+[13] Condran, S., Bewong, M., Islam, M. Z., Maphosa, L., and Zheng, L. (2022). Machine Learning in
+   Precision Agriculture: A Survey on Trends, Applications and Evaluations Over Two Decades. IEEE
+   Access, 10:73786–73803.
+
+[14] D’Amour, A., Heller, K., Moldovan, D., Adlam, B., Alipanahi, B., Beutel, A., Chen, C., Deaton, J.,
+   Eisenstein, J., Hoffman, M. D., Hormozdiari, F., Houlsby, N., Hou, S., Jerfel, G., Karthikesalingam,
+   A., Lucic, M., Ma, Y., McLean, C., Mincu, D., Mitani, A., Montanari, A., Nado, Z., Natarajan, V.,
+   Nielson, C., Osborne, T. F., Raman, R., Ramasamy, K., Sayres, R., Schrouff, J., Seneviratne, M.,
+   Sequeira, S., Suresh, H., Veitch, V., Vladymyrov, M., Wang, X., Webster, K., Yadlowsky, S., Yun,
+   T., Zhai, X., and Sculley, D. (2022). Underspecification presents challenges for credibility in modern
+   machine learning. The Journal of Machine Learning Research, 23(1):226:10237–226:10297.
+
+[15] Dara, R., Hazrati Fard, S. M., and Kaur, J. (2022). Recommendations for ethical and responsible
+   use of artificial intelligence in digital agriculture. Frontiers in Artificial Intelligence, 5.
+
+[16] Darbyshire, M., Coutts, S., Bosilj, P., Sklar, E., and Parsons, S. (2024). Review of weed recognition:
+   A global agriculture perspective. Computers and Electronics in Agriculture, 227:109499.
+
+[17] Ding, T., Angelopoulos, A., Bates, S., Jordan, M., and Tibshirani, R. J. (2023). Class-Conditional
+   Conformal Prediction with Many Classes. Advances in Neural Information Processing Systems,
+   36:64555–64576.
+
+[18] Domingues, T., Brandão, T., and Ferreira, J. C. (2022). Machine Learning for Detection and
+   Prediction of Crop Diseases and Pests: A Comprehensive Survey. Agriculture, 12(9):1350.
+
+[19] Du, P., Polonelli, T., Magno, M., and Cheng, Z. (2022). Towards lightweight deep neural network
+   for smart agriculture on embedded systems. In 2022 IEEE Sensors Applications Symposium (SAS),
+   pages 1–6, Sundsvall, Sweden. IEEE Press.
+
+[20] Farag, M., Kierdorf, J., and Roscher, R. (2023). Inductive Conformal Prediction for Harvest-
+   Readiness Classification of Cauliflower Plants: A Comparative Study of Uncertainty Quantification
+   Methods. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pages
+   651–659.
+
+[21] Fontana, M., Zeni, G., and Vantini, S. (2023). Conformal prediction: A unified review of theory
+   and new challenges. Bernoulli, 29(1):1–23.
+
+[22] Foygel Barber, R., Candès, E. J., Ramdas, A., and Tibshirani, R. J. (2021). The limits of
+   distribution-free conditional predictive inference. Information and Inference: A Journal of the IMA,
+   10(2):455–482.
+
+[23] Gibbs, I. and Candes, E. (2021). Adaptive Conformal Inference Under Distribution Shift. In
+   Advances in Neural Information Processing Systems, volume 34, pages 1660–1672. Curran Associates,
+   Inc.
+
+
+
+
+                                                    19
+[24] Gill, T., Gill, S. K., Saini, D. K., Chopra, Y., de Koff, J. P., and Sandhu, K. S. (2022). A
+   Comprehensive Review of High Throughput Phenotyping and Machine Learning for Plant Stress
+   Phenotyping. Phenomics, 2(3):156–183.
+
+[25] Grandini, M., Bagli, E., and Visani, G. (2020).      Metrics for Multi-Class Classification: An
+   Overview.
+
+[26] Guo, C., Pleiss, G., Sun, Y., and Weinberger, K. Q. (2017). On calibration of modern neural
+   networks. In Precup, D. and Teh, Y. W., editors, Proceedings of the 34th International Conference
+   on Machine Learning, volume 70 of Proceedings of Machine Learning Research, pages 1321–1330.
+   PMLR.
+
+[27] Hasan, A. S. M. M., Sohel, F., Diepeveen, D., Laga, H., and Jones, M. G. K. (2021). A survey of
+   deep learning techniques for weed detection from images. Computers and Electronics in Agriculture,
+   184:106067.
+
+[28] He, K., Zhang, X., Ren, S., and Sun, J. (2016). Deep Residual Learning for Image Recognition. In
+   Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pages
+   770–778.
+
+[29] Hendrycks, D., Carlini, N., Schulman, J., and Steinhardt, J. (2022). Unsolved Problems in ML
+   Safety.
+
+[30] Huang, X., Kroening, D., Ruan, W., Sharp, J., Sun, Y., Thamo, E., Wu, M., and Yi, X. (2020).
+   A Survey of Safety and Trustworthiness of Deep Neural Networks: Verification, Testing, Adversarial
+   Attack and Defence, and Interpretability. Computer Science Review, 37:100270.
+
+[31] Johansson, U., Linusson, H., Löfström, T., and Boström, H. (2017). Model-Agnostic Noncon-
+   formity Functions for Conformal Classification. In 2017 International Joint Conference on Neural
+   Networks (IJCNN), pages 2072–2079.
+
+[32] Kakhani, N., Alamdar, S., Kebonye, N. M., Amani, M., and Scholten, T. (2024). Uncertainty
+   Quantification of Soil Organic Carbon Estimation from Remote Sensing Data with Conformal Pre-
+   diction. Remote Sensing, 16(3):438.
+
+[33] Kamilaris, A., Kartakoullis, A., and Prenafeta-Boldú, F. X. (2017). A review on the practice of
+   big data analysis in agriculture. Computers and Electronics in Agriculture, 143:23–37.
+
+[34] Kamilaris, A. and Prenafeta-Boldú, F. X. (2018). Deep learning in agriculture: A survey. Com-
+   puters and Electronics in Agriculture, 147:70–90.
+
+[35] Krizhevsky, A., Sutskever, I., and Hinton, G. E. (2012). ImageNet Classification with Deep
+   Convolutional Neural Networks. In Advances in Neural Information Processing Systems, volume 25.
+   Curran Associates, Inc.
+
+[36] Lekeufack, J., Angelopoulos, A. N., Bajcsy, A., Jordan, M. I., and Malik, J. (2024). Conformal De-
+   cision Theory: Safe Autonomous Decisions from Imperfect Predictions. In 2024 IEEE International
+   Conference on Robotics and Automation (ICRA), pages 11668–11675.
+
+[37] Liakos, K., Busato, P., Moshou, D., Pearson, S., and Bochtis, D. (2018). Machine Learning in
+   Agriculture: A Review. Sensors, 18(8):2674.
+
+[38] Lindemann, L., Cleaveland, M., Shim, G., and Pappas, G. J. (2023). Safe Planning in Dynamic
+   Environments Using Conformal Prediction. IEEE Robotics and Automation Letters, 8(8):5116–5123.
+
+[39] Lohr, S. L. (2019). Sampling: Design and Analysis. CRC Press.
+
+[40] Lu, C., Lemay, A., Chang, K., Höbel, K., and Kalpathy-Cramer, J. (2022). Fair Conformal
+   Predictors for Applications in Medical Imaging. Proceedings of the AAAI Conference on Artificial
+   Intelligence, 36(11):12008–12016.
+
+[41] Luo, R., Zhao, S., Kuck, J., Ivanovic, B., Savarese, S., Schmerling, E., and Pavone, M. (2024).
+   Sample-efficient safety assurances using conformal prediction. The International Journal of Robotics
+   Research, 43(9):1409–1424.
+
+
+
+                                                  20
+[42] Madry, A., Makelov, A., Schmidt, L., Tsipras, D., and Vladu, A. (2018). Towards Deep Learning
+   Models Resistant to Adversarial Attacks. International Conference on Learning Representations
+   (ICLR).
+
+[43] Melki, P., Bombrun, L., Diallo, B., Dias, J., and Da Costa, J.-P. (2023). Group-Conditional
+   Conformal Prediction via Quantile Regression Calibration for Crop and Weed Classification. In
+   Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops,
+   pages 614–623.
+
+[44] Melki, P., Bombrun, L., Diallo, B., Dias, J., and Da Costa, J.-P. (2024). The Penalized Inverse
+   Probability Measure for Conformal Classification. In Proceedings of the IEEE/CVF Conference on
+   Computer Vision and Pattern Recognition (CVPR) Workshops, pages 3512–3521.
+
+[45] Mukhoti, J., Lin, T.-Y., Chen, B.-C., Shah, A., Torr, P. H. S., Dokania, P. K., and Lim, S.-N.
+   (2023). Raising the Bar on the Evaluation of Out-of-Distribution Detection. In Proceedings of the
+   IEEE/CVF International Conference on Computer Vision, pages 4365–4375.
+
+[46] Niculescu-Mizil, A. and Caruana, R. (2005). Predicting Good Probabilities with Supervised Learn-
+   ing. In Proceedings of the 22nd International Conference on Machine Learning, ICML ’05, pages
+   625–632, New York, NY, USA. Association for Computing Machinery.
+
+[47] Ovadia, Y., Fertig, E., Ren, J., Nado, Z., Sculley, D., Nowozin, S., Dillon, J., Lakshminarayanan,
+   B., and Snoek, J. (2019). Can You Trust Your Model’s Uncertainty? Evaluating Predictive Un-
+   certainty Under Dataset Shift. In Advances in Neural Information Processing Systems, volume 32.
+   Curran Associates, Inc.
+
+[48] Palacios, F., Diago, M. P., Melo-Pinto, P., and Tardaguila, J. (2023). Early yield prediction in
+   different grapevine varieties using computer vision and machine learning. Precision Agriculture,
+   24(2):407–435.
+
+[49] Paleyes, A., Urma, R.-G., and Lawrence, N. D. (2023). Challenges in Deploying Machine Learning:
+   A Survey of Case Studies. ACM Computing Surveys, 55(6):1–29.
+
+[50] Papadopoulos, H., Gammerman, A., and Vovk, V. (2009). Reliable diagnosis of acute abdominal
+   pain with conformal prediction. Engineering Intelligent Systems, 2(3):127–137.
+
+[51] Papadopoulos, H., Proedrou, K., Vovk, V., and Gammerman, A. (2002). Inductive Confidence
+   Machines for Regression. In Elomaa, T., Mannila, H., and Toivonen, H., editors, Machine Learning:
+   ECML 2002, Lecture Notes in Computer Science, pages 345–356, Berlin, Heidelberg. Springer.
+
+[52] Partel, V., Charan Kakarla, S., and Ampatzidis, Y. (2019). Development and evaluation of a low-
+   cost and smart technology for precision weed management utilizing artificial intelligence. Computers
+   and Electronics in Agriculture, 157:339–350.
+
+[53] Paszke, A., Gross, S., Chintala, S., Chanan, G., Yang, E., DeVito, Z., Lin, Z., Desmaison, A.,
+   Antiga, L., and Lerer, A. (2017). Automatic differentiation in PyTorch. NeurIPS 2017 Workshop on
+   Automatic Differentiation.
+
+[54] Pathak, H. S., Brown, P., and Best, T. (2019). A Systematic Literature Review of the Factors
+   Affecting the Precision Agriculture Adoption Process. Precision Agriculture, 20(6):1292–1316.
+
+[55] Patrizi, G., Bartolini, A., Ciani, L., Gallo, V., Sommella, P., and Carratù, M. (2022). A Virtual Soil
+   Moisture Sensor for Smart Farming Using Deep Learning. IEEE Transactions on Instrumentation
+   and Measurement, 71:1–11.
+
+[56] Paudel, D., de Wit, A., Boogaard, H., Marcos, D., Osinga, S., and Athanasiadis, I. N. (2023).
+   Interpretability of deep learning models for crop yield forecasting. Computers and Electronics in
+   Agriculture, 206:107663.
+
+[57] Quinonero-Candela, J., Sugiyama, M., Schwaighofer, A., and Lawrence, N. D. (2022). Dataset
+   Shift in Machine Learning. MIT Press.
+
+[58] Raghunathan, A., Xie, S. M., Yang, F., Duchi, J. C., and Liang, P. (2020). Understanding and
+   Mitigating the Tradeoff between Robustness and Accuracy. In Proceedings of the 37th International
+   Conference on Machine Learning, ICML’20. JMLR.org.
+
+
+                                                    21
+[59] Rai, N., Zhang, Y., Ram, B. G., Schumacher, L., Yellavajjala, R. K., Bajwa, S., and Sun, X.
+   (2023). Applications of deep learning in precision weed management: A review. Computers and
+   Electronics in Agriculture, 206:107698.
+
+[60] Romano, Y., Sesia, M., and Candes, E. (2020). Classification with Valid and Adaptive Coverage.
+   In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M. F., and Lin, H., editors, Advances in Neural
+   Information Processing Systems, volume 33, pages 3581–3591. Curran Associates, Inc.
+
+[61] Rudin, C., Chen, C., Chen, Z., Huang, H., Semenova, L., and Zhong, C. (2022). Interpretable
+   machine learning: Fundamental principles and 10 grand challenges. Statistics Surveys, 16(none).
+
+[62] Schuster, T., Fisch, A., Jaakkola, T., and Barzilay, R. (2021). Consistent Accelerated Inference
+   via Confident Adaptive Transformers. In Moens, M.-F., Huang, X., Specia, L., and Yih, S. W.-t.,
+   editors, Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing,
+   pages 4962–4979, Online and Punta Cana, Dominican Republic. Association for Computational
+   Linguistics.
+
+[63] Shafer, G. and Vovk, V. (2008). A Tutorial on Conformal Prediction. Journal of Machine Learning
+   Research, 9(12):371–421.
+
+[64] Solimani, F., Cardellicchio, A., Nitti, M., Lako, A., Dimauro, G., and Renò, V. (2023). A Sys-
+   tematic Review of Effective Hardware and Software Factors Affecting High-Throughput Plant Phe-
+   notyping. Information, 14(4):214.
+
+[65] Stadelmann, T., Amirian, M., Arabaci, I., Arnold, M., Duivesteijn, G. F., Elezi, I., Geiger, M.,
+   Lörwald, S., Meier, B. B., Rombach, K., and Tuggener, L. (2018). Deep Learning in the Wild. In Pan-
+   cioni, L., Schwenker, F., and Trentin, E., editors, Artificial Neural Networks in Pattern Recognition,
+   pages 17–38, Cham. Springer International Publishing.
+
+[66] Straitouri, E., Wang, L., Okati, N., and Rodriguez, M. G. (2023). Improving Expert Predic-
+   tions with Conformal Prediction. In Proceedings of the 40th International Conference on Machine
+   Learning, pages 32633–32653. PMLR.
+
+[67] Tzachor, A., Devare, M., King, B., Avin, S., and Ó hÉigeartaigh, S. (2022). Responsible Artificial
+   Intelligence in Agriculture Requires Systemic Understanding of Risks and Externalities. Nature
+   Machine Intelligence, 4(2):104–109.
+
+[68] Vega, J., Murari, A., Pereira, A., González, S., and Pastor, I. (2010). Accurate and reliable image
+   classification by using conformal predictors in the TJ-II Thomson scattering). Review of Scientific
+   Instruments, 81(10):10E118.
+
+[69] Vermeulen, D. and Van Niekerk, A. (2017). Machine learning performance for predicting soil
+   salinity using different combinations of geomorphometric covariates. Geoderma, 299:1–12.
+
+[70] Vilfroy, S., Bombrun, L., Urruty, T., De Grancey, F., Lebrat, J.-P., and Carré, P. (2024). Conformal
+   prediction for regression models with asymmetrically distributed errors: Application to aircraft
+   navigation during landing maneuver. Machine Learning, 113(10):7841–7866.
+
+[71] Vovk, V. (2013). Conditional Validity of Inductive Conformal Predictors. Machine Learning,
+   92(2-3):349–376.
+
+[72] Vovk, V., Fedorova, V., Nouretdinov, I., and Gammerman, A. (2016). Criteria of Efficiency for
+   Conformal Prediction. In Gammerman, A., Luo, Z., Vega, J., and Vovk, V., editors, Conformal
+   and Probabilistic Prediction with Applications, volume 9653, pages 23–39. Springer International
+   Publishing, Cham.
+
+[73] Vovk, V., Gammerman, A., and Shafer, G. (2005). Algorithmic Learning in a Random World.
+   Springer, New York, NY.
+
+[74] Winkens, J., Bunel, R., Roy, A. G., Stanforth, R., Natarajan, V., Ledsam, J. R., MacWilliams,
+   P., Kohli, P., Karthikesalingam, A., Kohl, S., Cemgil, T., Eslami, S. M. A., and Ronneberger, O.
+   (2020). Contrastive Training for Improved Out-of-Distribution Detection.
+
+
+
+
+                                                   22
+[75] Yu, H. (2023). Neural Networks for Real-time Plant Species Classification on Embedded MCUs.
+   In Proceedings of the 2022 4th International Conference on Robotics, Intelligent Control and Arti-
+   ficial Intelligence, RICAI ’22, pages 1261–1268, New York, NY, USA. Association for Computing
+   Machinery.
+
+[76] Zhang, Y., Tino, P., Leonardis, A., and Tang, K. (2021). A Survey on Neural Network Inter-
+   pretability. IEEE Transactions on Emerging Topics in Computational Intelligence, 5(5):726–742.
+
+
+
+
+                                                 23
+

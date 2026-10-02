@@ -1,0 +1,791 @@
+                                                   Agri-R1: Agricultural Reasoning for Disease Diagnosis via
+                                                      Automated-Synthesis and Reinforcement Learning
+                                                             Wentao Zhang                                                     Mingkun Xu                                        Qi Zhang
+                                               Shandong University of Technology                              Guangdong Institute of Intelligence                    Faculty of Data Science, City
+                                                       Shandong, China                                            Science and Technology                                 University of Macau
+                                                24418011424@stumail.sdut.edu.cn                                   Hengqin, Zhuhai, China                                  Macau SAR, China
+                                                                                                                  xunmingkun@gdiist.cn                                 qizhang@cityu.edu.mo
+
+                                                              Shangyang Li                                                  Derek F. Wong                                     Lifei Wang
+                                                 School of Physical Science and                                 NLP2CT Lab, Department of                       Institute of International Language
+arXiv:2601.04672v2 [cs.CV] 13 Apr 2026
+
+
+
+
+                                                Technology, Beijing University of                             Computer and Information Science,                 Services Studies, Macau Millennium
+                                                 Posts and Telecommunications                                      University of Macau                                         College
+                                                          Beijing, China                                            Macau SAR, China                                     Macau SAR, China
+                                                        nic_lab@163.com                                            derekfw@um.edu.mo                                  wanglifei@mmc.edu.mo
+
+                                                            Yangchao Yang                                                         Lina Lu∗                                    Tao Fang∗†
+                                              Institute of International Language                             Shandong University of Technology                 Institute of International Language
+                                              Services Studies, Macau Millennium                                      Shandong, China                           Services Studies, Macau Millennium
+                                                             College                                               think0759@sdut.edu.cn                                       College
+                                                       Macau SAR, China                                                                                                  Macau SAR, China
+                                                  yangyanchao@mmc.edu.mo                                                                                               taofang@mmc.edu.mo
+
+                                         Abstract                                                                                        over standard fine-tuning. These results suggest that automated
+                                         Agricultural disease diagnosis challenges VLMs, as conventional                                 reasoning synthesis paired with domain-aware reward design may
+                                         fine-tuning requires extensive labels, lacks interpretability, and                              provide a broadly applicable paradigm for RL-based VLM adap-
+                                         generalizes poorly. While reasoning improves model robustness,                                  tation in data-scarce specialized domains. Our code and data are
+                                         existing methods rely on costly expert annotations and rarely ad-                               publicly available at: https://github.com/CPJ-Agricultural/Agri-R1.
+                                         dress the open-ended, diverse nature of agricultural queries. To ad-
+                                         dress these limitations, we propose Agri-R1, a reasoning-enhanced                               CCS Concepts
+                                         large model for agriculture. Our framework automates high-quality                               • Computing methodologies → Artificial intelligence; Com-
+                                         reasoning data generation via vision-language synthesis and LLM-                                puter vision; • Applied computing → Agriculture.
+                                         based filtering, using only 19% of available samples. Training em-
+                                         ploys Group Relative Policy Optimization (GRPO) with a novel                                    Keywords
+                                         reward function that integrates domain-specific lexicons and fuzzy
+                                                                                                                                         Agricultural Disease Diagnosis, Vision-language Models, Reinforce-
+                                         matching to assess both correctness and linguistic flexibility in
+                                                                                                                                         ment Learning, Group Relative Policy Optimization, Reasoning
+                                         open-ended responses. Evaluated on CDDMBench, our resulting
+                                                                                                                                         VLM
+                                         3B-parameter model achieves performance competitive with 7B-
+                                         to 13B-parameter baselines, showing a +27.9% relative gain in dis-                              ACM Reference Format:
+                                         ease recognition accuracy, +33.3% in agricultural knowledge QA,                                 Wentao Zhang, Mingkun Xu, Qi Zhang, Shangyang Li, Derek F. Wong,
+                                         and a +26.10-point improvement in cross-domain generalization                                   Lifei Wang, Yangchao Yang, Lina Lu, and Tao Fang. 2026. Agri-R1: Agri-
+                                                                                                                                         cultural Reasoning for Disease Diagnosis via Automated-Synthesis and
+                                         ∗ Co-corresponding Author                                                                       Reinforcement Learning. In Proceedings of the 34th ACM International Con-
+                                         † Tao Fang is the Senior Corresponding Author (Last Author) and the principal super-            ference on Multimedia (ACM MM ’26). ACM, New York, NY, USA, 10 pages.
+                                         visor of this work. He led the research design, guided the methodology, and oversaw             https://doi.org/XXX.XXXXXXX.XXXXXXX
+                                         the entire project.
+
+                                         Permission to make digital or hard copies of all or part of this work for personal or           1    Introduction
+                                         classroom use is granted without fee provided that copies are not made or distributed
+                                         for profit or commercial advantage and that copies bear this notice and the full citation       Agricultural crop diseases pose a persistent threat to global food
+                                         on the first page. Copyrights for components of this work owned by others than the              security, causing substantial yield losses and economic damage [11,
+                                         author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+                                         republish, to post on servers or to redistribute to lists, requires prior specific permission   29, 31]. Accurate and timely diagnosis is essential for effective crop
+                                         and/or a fee. Request permissions from permissions@acm.org.                                     protection, yet remains challenging due to complex visual symp-
+                                         ACM MM ’26, Rio de Janeiro, Brazil                                                              toms and limited expert availability in many regions [5, 22, 24, 37].
+                                         © 2026 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+                                         ACM ISBN 978-1-4503-XXXX-X/2026/04                                                              Recent advances in Vision-Language Models (VLMs) have demon-
+                                         https://doi.org/XXX.XXXXXXX.XXXXXXX                                                             strated significant promise for automated diagnosis through visual
+ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil                                                                              Trovato et al.
+
+
+question answering (VQA), enabling farmers to submit crop im-                 • We propose Agri-R1, to our knowledge the first GRPO-based
+ages accompanied by natural language queries to obtain diagnostic               framework specifically designed for agricultural disease di-
+guidance [20, 28].                                                              agnosis. It introduces a fully automated pipeline that synthe-
+   The predominant paradigm for adapting VLMs to agricultural                   sizes and filters high-quality Chain-of-Thought reasoning
+tasks is SFT. Although effective within the training domain, SFT                data without requiring any expert annotations, using only
+suffers from three critical limitations that hinder its real-world de-          19% of the original samples.
+ployment. First, it is data-hungry, requiring massive labeled datasets        • We design a novel domain-aware reward mechanism based
+that are prohibitively expensive to obtain in resource-constrained              on agricultural lexicons and multi-tier fuzzy matching. This
+agricultural settings [19]. Second, it offers limited interpretability,         mechanism jointly evaluates both factual correctness and lin-
+as models produce diagnostic labels without explicating their un-               guistic flexibility in open-ended responses, effectively over-
+derlying reasoning. This "black-box" behavior undermines farmer                 coming the critical limitations of binary-reward systems.
+trust and prevents effective validation by agricultural extension             • We demonstrate that a compact 3B-parameter model trained
+agents [9, 48]. Third, it generalizes poorly, as models tend to memo-           with our framework significantly outperforms much larger
+rize dataset-specific patterns rather than acquire robust diagnostic            (7B–13B) supervised fine-tuning baselines across disease
+reasoning. Consequently, their performance deteriorates sharply                 recognition accuracy (+27.9% relative gain), agricultural knowl-
+under domain shifts, such as encountering new crops, varying light-             edge QA (+33.3% relative gain), and cross-domain generaliza-
+ing conditions, or concurrent infections [7, 23, 25, 42]. Collectively,         tion (+26.10 points on AgMMU), highlighting the powerful
+these limitations reveal a fundamental gap: the need for models that            synergy between automated reasoning synthesis and rein-
+are not only accurate but also data-efficient, interpretable, and ro-           forcement learning exploration.
+bust to the open-ended diversity inherent in real-world agricultural          • Through detailed analysis (Sections 5.3 and 5.4), we iden-
+queries.                                                                        tify frequency-induced gradient competition as a key failure
+   Structured reasoning enhances model transparency by gener-                   mode that degrades performance on rare crops and diseases
+ating explicit intermediate reasoning steps, while reinforcement                under standard GRPO, revealing important insights for im-
+learning (RL) presents a promising alternative to SFT by promot-                proving long-tail robustness in future RL-based VLM adap-
+ing diverse reasoning strategies through reward guidance [32].                  tation.
+GRPO [33, 36, 38] has achieved strong generalization in mathe-
+matical and coding tasks via group-based advantage estimation.            2   Related Work
+However, a direct application in agriculture faces two synergis-
+                                                                          Agricultural Vision-Language Models. Recent advances in VLMs
+tic bottlenecks. First, constructing high-quality CoT data is pro-
+                                                                          have driven the development of domain-specific adaptations for
+hibitively expensive, requiring domain experts to manually anno-
+                                                                          agricultural disease diagnosis [1, 2, 49]. Existing studies generally
+tate reasoning chains. Second, existing RL applications in medical
+                                                                          follow two main paradigms. The first focuses on compact model
+VQA [14, 45] primarily target closed-set multiple-choice questions
+                                                                          design, as exemplified by Cao et al. [6], who employ image-text
+with binary rewards. This paradigm is fundamentally mismatched
+                                                                          contrastive learning for few-shot crop disease identification. The
+with agricultural VQA, which requires evaluating open-ended, lin-
+                                                                          second integrates domain-specific knowledge to enhance represen-
+guistically diverse responses for both factual correctness and rea-
+                                                                          tational alignment, as demonstrated by Yao et al. [44] through the
+soning quality—a challenge that remains unaddressed in prior work.
+                                                                          incorporation of meteorological indicators for multimodal drought
+   To overcome these bottlenecks, we introduce Agri-R1, to our
+                                                                          detection. In addition, large-scale data initiatives such as AGBase-
+knowledge the first GRPO-based framework designed specifically
+                                                                          2000K have facilitated richer knowledge integration via compre-
+for open-ended, reasoning-enhanced agricultural VQA. We inte-
+                                                                          hensive multimodal agricultural corpora [12]. Despite these ad-
+grate three key innovations to simultaneously achieve data effi-
+                                                                          vances, Liu et al. [19] reveal that models trained solely via SFT
+ciency, interpretability, and robustness: (1) we eliminate manual
+                                                                          remain prone to substantial performance degradation under do-
+CoT annotation costs through an automated pipeline that synthe-
+                                                                          main shifts, highlighting the limited robustness and interpretability
+sizes reasoning chains via VLMs and filters high-quality data using
+                                                                          of current approaches in open-ended agricultural VQA.
+LLM-as-a-Judge, constructing a compact yet powerful dataset from
+only 19% of the original corpus; (2) to address the unique chal-             Chain-of-Thought for Interpretability. The inherent “black-box”
+lenge of evaluating open-ended answers, we construct agricultural         nature of VLMs poses a fundamental barrier to their adoption in
+domain vocabularies and design a novel fuzzy-matching reward              high-stakes applications such as agriculture, where transparent and
+function. This function assesses not just correctness but also the        trustworthy decision-making is essential [4, 21, 35]. To address this
+linguistic appropriateness of responses, enabling effective policy        limitation, Chain-of-Thought (CoT) prompting [41] has emerged as
+optimization far beyond binary rewards; (3) we demonstrate that           a prominent technique for improving model interpretability by elic-
+GRPO-driven policy optimization, fueled by our automated reason-          iting explicit, step-by-step reasoning paths. Subsequent research
+ing data and specialized reward, enables a remarkably compact 3B-         has sought to enhance the reliability of CoT; for instance, self-
+parameter model to achieve superior accuracy and cross-domain             consistency [40] improves robustness by aggregating predictions
+generalization compared to significantly larger baselines trained         across multiple reasoning trajectories. However, a critical bottle-
+on full datasets.                                                         neck persists: the manual curation of high-quality, domain-specific
+   Our primary contributions, findings, and results are as follows:       CoT demonstrations remains prohibitively expensive and difficult to
+                                                                          scale [15, 18, 39]. This challenge is particularly acute in agriculture,
+Agri-R1: Agricultural Reasoning for Disease Diagnosis via Automated-Synthesis and Reinforcement Learning                                      ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil
+
+
+
+      STAGE1:Generative Reasoning Enhancement Engine
+
+                            STEP1                                                              STEP2                                                                     STEP3
+                        VQA Alignment                                        Automatic Reasoning Generation                                             Reasoning Judge and Enhenced
+                                                                                                                                                  RESPONSE:<think>
+                                                                           Prompt Template:
+                                                                                                                                                  Step 1: Analyze disease characteristics...
+                                                                           Type detection (Diagnosis/Control)
+                                                                                                                                                  Step 2: Recommend preventive practices ...
+                                                                           Few-shot examples                                                                                                                GPT
+            {"Q": "Has this leaf contracted Early Blight?",                                                                                       </think><answer>No, this tomato...</answer>
+             "A": "No, this tomato leaf has Late Blight."}                 Step-by-step guidelines
+                                                                                                                Deepseek-VL                       Guideline( τ = τ(α)):
+            Processing method:                                                                                                                    Accuracy ; Completeness ; LogicalFlow ;Relevance ;
+            images resize to W×W； QA extract α%                                                                                                   Clarity
+
+
+
+      STAGE2: GRPO Reinforcement Learning
+     STEP1                                                    STEP2                                                    STEP3
+      Domain Vocabulary Construction                          GRPO Training Engine                                     Reward &Update
+
+                                                              Dynamic Dual-Path Evaluation                                        Total Reward: R(o) = 0.5·R_f + 2.0·R_a + 0.5·R_r [0, 3.0]
+                  Plant Synonyms                                 Diagnosis             Treatment                               Format R_f                Answer R_a (Main)                     Reasoning R_r
+                                                                                                                                  Structure                                                    Logical coherence
+                                                               Plant+ Disease          X Categories                              Step count
+                                                                                                        Qwen-VL                                      Diagnosis: Plant/ Disease match            Professionalism
+                                                                                                                                Step quality
+                  Disease Synonyms                                                                                            Reasonable length
+                                                                                                                                                      Control:Treatment keywords                 Completeness
+                                                               System Prompt:
+                                                               Requirements:
+                                                               Output as steps (Step 1, 2..).                           Group Relative Advantage:
+                  Treatment Keywords                           Step Guidelines：                                                       Num generations ; Advantage =(r-μ)/ σ ; Relative evaluation
+                                                               Step 1: Identify plant...
+                                                               Step 2: Describe symptoms...
+                  5-tier fuzzy matching                        Step 3: Analyze disease ...                              Clipped PPO Update:
+                                                               Output Format：                                                                        Max grad norm ; KL penalty;
+                                                               <think>...</think><answer>...</answer>                                             Strategy ; Dtype ; Grad accum steps
+
+
+
+
+Figure 1: Overview of our proposed two-stage GRPO framework. In Stage 1, raw VQA pairs are transformed into reasoning
+exemplars: a SOTA VLM generates structured reasoning chains, which are subsequently filtered by an LLM-based judge to
+ensure quality. Stage 2 performs GRPO-based policy learning, incorporating domain vocabulary construction with proposed
+five-tier fuzzy matching to handle linguistic variability, along with a three-component reward function (Format, Answer,
+Reasoning) to guide optimization. Group-relative advantage normalization is further applied to enable stable policy updates.
+
+
+where expert knowledge is required to validate the correctness and                                               ill-suited for evaluating free-form, agriculturally grounded expla-
+relevance of diagnostic reasoning chains, underscoring the pressing                                              nations. To the best of our knowledge, this work presents the first
+need for scalable, automated solutions for CoT generation.                                                       GRPO-based framework for agricultural VQA. By introducing a
+                                                                                                                 domain-aware reward design and automated reasoning data syn-
+   Reinforcement Learning for VLM Post-Training. RL offers a pow-                                                thesis, the proposed framework jointly improves accuracy, general-
+erful paradigm for aligning models with desired behaviors through                                                ization, and interpretability without requiring expert annotations.
+reward-based feedback, serving as a compelling alternative to su-
+pervised fine-tuning by emphasizing outcome-driven optimiza-
+tion [8, 16]. Building upon Proximal Policy Optimization (PPO) [30],                                             3     Methodology
+GRPO [33] simplifies the training architecture by replacing the                                                  Figure 1 presents the framework. It consists of two stages: a Genera-
+learned value function with group-based advantage estimation.                                                    tive Reasoning Enhancement Engine for constructing a high-quality
+This design substantially reduces computational cost while preserv-                                              reasoning dataset, followed by a GRPO Reinforcement Learning
+ing stable convergence. GRPO has demonstrated strong reasoning                                                   stage for training a robust policy with domain-specific rewards.
+capabilities in mathematics [33] and coding [13]. Similarly, in spe-
+cialized domains such as medical vision-language understanding,
+RL has been successfully adapted to address data scarcity and en-                                                3.1     Generative Reasoning Enhancement
+hance cross-modal generalization, as demonstrated in recent work                                                 To enable interpretable reasoning without manual annotation, we
+such as Zhi et al. [48].                                                                                         adopt the three-stage pipeline illustrated in Figure 1 (Stage 1). First,
+   The application of RL to open-ended agricultural VQA remains                                                  in the data processing stage, input images are resized to a uniform
+an underexplored challenge, with no prior work adapting GRPO                                                     resolution. Second, for reasoning data generation, a state-of-
+to this domain. Unlike medical or mathematical tasks, agricultural                                               the-art VLM produces structured reasoning chains in the format
+diagnosis requires interpretable reasoning under conditions of lin-                                              ⟨think⟩𝑅⟨/think⟩⟨answer⟩𝐴⟨/answer⟩. Third, quality filtering is
+guistic diversity, data scarcity, and domain shifts. Existing RL meth-                                           performed using an LLM-based judge, which evaluates each reason-
+ods typically rely on binary or multiple-choice rewards, which are                                               ing chain on a 10-point rubric and retains only those with a score of
+ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil                                                                                                 Trovato et al.
+
+
+   Criterion         Score     Evaluation Focus
+   Accuracy           0–2      Correct plant/ disease ID; no hallucination                                                    "     𝐺
+   Completeness       0–2      Key elements: plant, symptoms, disease                                                          1 ∑︁
+                                                                                                   J𝐺 (𝜃 ) = E (𝐼,𝑞)∼D                min 𝜌𝑖 𝐴𝑖 ,
+   Detail             0–2      Measurements, colors, distribution                                                             𝐺 𝑖=1
+   Relevance          0–2      Diagnosis-relevant; no redundancy                                                                            
+                                                                                                                  clip(𝜌𝑖 , 1 − 𝜀, 1 + 𝜀)𝐴𝑖                        (3)
+   Clarity            0–2      Professional terms; logical flow                                                                           #
+   Total             0–10      Threshold: 𝜏 = 8.0/10.0
+Table 1: LLM-based quality evaluation rubric for reasoning.                                                        − 𝛽 · 𝐷 𝐾𝐿 (𝜋𝜃 ∥𝜋𝑟𝑒 𝑓 )
+
+                                                                                   where J𝐺 is the GRPO objective; 𝜌𝑖 is the probability ratio between
+                                                                                   current and old policies; the clipping operation and 𝐷 𝐾𝐿 penalty
+                                                                                   enforce conservative policy updates.
+at least 𝜏 = 8.0. Subthreshold outputs are regenerated via feedback-
+guided prompting [34], with up to two refinement attempts. This                    3.2.2 Reward Function Design. A key challenge in agricultural VQA
+stringent filtering process admits only 19% of the initial candidates,             is designing reward functions for open-ended responses with high
+thereby ensuring a high density of training signals.                               linguistic diversity [10, 17, 19, 25, 26]. We construct domain-specific
+                                                                                   vocabularies V𝑝 and V𝑑 for synonym recognition, then define a
+   Evaluation Rubric. Table 1 presents the five-criterion rubric em-               three-component reward function:
+ployed to assess the quality of reasoning chains. Each criterion is
+scored on a scale of 0 to 2, and chains achieving a total score of                               𝑅(𝑜) = 𝑤 𝑓 𝑅 𝑓 (𝑜) + 𝑤 𝑎 𝑅𝑎 (𝑜) + 𝑤𝑟 𝑅𝑟 (𝑜)                       (4)
+at least 8 are retained for subsequent GRPO training. This rubric
+grounds the filtering process in domain-relevant, auditable criteria,              where 𝑜 is the candidate response; 𝑅 𝑓 , 𝑅𝑎 , and 𝑅𝑟 denote Format,
+prioritizing reasoning quality over stylistic fluency. A key feature               Answer Exact Match, and Reasoning Quality rewards respectively;
+of our design is the dual-model architecture, comprising a gener-                  𝑤 𝑓 = 0.5 (17%), 𝑤 𝑎 = 2.0 (67%), and 𝑤𝑟 = 0.5 (17%) are the compo-
+ator VLM and an independent LLM-based judge. This separation                       nent weights; and 𝑅(𝑜) ∈ [0, 3.0] is the total reward.
+ensures cross-architectural independence and mitigates the risk of
+                                                                                      Domain Vocabularies. We construct domain-specific vocabular-
+correlated biases that arise when a single model is tasked with both
+                                                                                   ies V𝑝 (plant species) and V𝑑 (disease types) from the benchmark’s
+generating and evaluating its own outputs.
+                                                                                   major crop and disease categories. Each entry includes canonical
+                                                                                   names, scientific nomenclature (e.g., “tomato” ↔ “Solanum lycoper-
+3.2     GRPO Reinforcement Learning                                                sicum”), and colloquial variations to handle linguistic diversity in
+3.2.1 Group Relative Policy Optimization. GRPO optimizes the                       agricultural diagnosis.
+policy 𝜋𝜃 using group-based advantage estimation [47], without
+                                                                                      Format Reward. This component ensures structured output with
+requiring a separate reward model. For each input (𝐼, 𝑞), we sample
+                                                                                   required tags and quality metrics:
+𝐺 responses:
+                                                                                                            (Í
+                                                                                                                   𝑐 ∈𝐶 𝑓 𝑤𝑐 · 𝑟 𝑐 (𝑜)   if tags exist
+                                                                                                𝑅 𝑓 (𝑜) =                                                          (5)
+                     𝑜𝑖 ∼ 𝜋𝜃 (· | 𝐼, 𝑞),   𝑖 = 1, . . . , 𝐺                  (1)                              0                          otherwise
+                                                                                   where 𝐶 𝑓 = {struct., steps, content, length, quality} evaluates ba-
+where 𝑜𝑖 is a candidate response, 𝐼 the input image, and 𝑞 the                     sic structure with ⟨think⟩ (reasoning) ⟨/think⟩ and ⟨answer⟩ (re-
+question. Each response receives a scalar reward 𝑟𝑖 from our reward                sponse) ⟨/answer⟩ tags (𝑤 = 0.15), step structure and content qual-
+function (Section 3.2.2).                                                          ity (𝑤 = 0.15, 0.10), and appropriate think/answer lengths (𝑤 = 0.05
+The group relative advantage normalizes rewards within each group                  each), summing to 0.5.
+of responses to stabilize learning:
+                                                                                      Answer Keyword Reward. This component evaluates diagnostic
+                                                                                   accuracy using the domain vocabularies. For diagnostic questions,
+                                                𝐺
+                         𝑟𝑖 − 𝜇𝐺             1 ∑︁                                  we employ weighted dual matching:
+                     𝐴𝑖 =        , 𝜇𝐺 =           𝑟𝑗,
+                         𝜎𝐺 + 𝜖             𝐺 𝑗=1
+                                                                                                            diag
+                         v                                                   (2)                         𝑅𝑎        (𝑜) = 𝑤 𝑝 · 𝑀𝑝 (𝑜, 𝑎)
+                                                                                                                                                                   (6)
+                         u
+                         t 𝐺
+                            1 ∑︁                                                                                           + 𝑤𝑑 · 𝑀𝑑 (𝑜, 𝑎)
+                    𝜎𝐺 =          (𝑟 𝑗 − 𝜇𝐺 ) 2
+                            𝐺 𝑗=1
+                                                                                   where 𝑤 𝑝 = 0.8 and 𝑤𝑑 = 1.2 weight plant and disease matching;
+                                                                                   𝑀𝑝 (𝑜, 𝑎) and 𝑀𝑑 (𝑜, 𝑎) measure matches via five-tier fuzzy scoring
+where 𝐴𝑖 is the advantage for candidate 𝑖, 𝜇𝐺 and 𝜎𝐺 are the group’s               ranging from exact synonym match (1.0) to weak relevance (0.25).
+mean and standard deviation, and 𝜖 is a small constant for stability.                 For prevention/control questions, we match against method cat-
+This normalization helps the model learn from relative quality                     egories:
+differences within each group.
+   The GRPO objective balances policy improvement with KL regu-
+                                                                                                                  ∑︁
+                                                                                                  𝑅𝑎ctrl (𝑜) =         𝑤𝑐 · 1[Contains(𝑜, V𝑐 )]                    (7)
+larization:                                                                                                        𝑐
+Agri-R1: Agricultural Reasoning for Disease Diagnosis via Automated-Synthesis and Reinforcement Learning    ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil
+
+
+where 𝑐 ∈ {𝑐ℎ, 𝑐𝑢, 𝑏, 𝑡 } denotes chemical (𝑤 = 0.6), cultural (𝑤 =                     The model is trained for 3 epochs, with the optimal checkpoint
+0.5), biological (𝑤 = 0.5), and timing (𝑤 = 0.4) methods; V𝑐 are                        selected at step 1,800. For GRPO training, we sample 𝐾 = 3 candi-
+category vocabularies; 1[·] indicates keyword presence.                                 date responses per query with temperature 𝑇 = 0.7; this group size
+                                                                                        balances response diversity against computational cost, providing
+  Reasoning Quality Reward. This component evaluates Chain-of-
+                                                                                        sufficient within-group variance for stable advantage estimation
+Thought quality through three dimensions:
+                                                                                        without the memory overhead of larger groups. Throughout train-
+                             ∑︁                                                         ing, the KL divergence stabilized between 0.036 and 0.040, confirm-
+                    𝑅𝑟 (𝑜) =     𝑤𝑑 · 𝑟𝑑 (𝑜)               (8)
+                                                                                        ing that the policy updates remained conservative and did not result
+                                    𝑑 ∈𝐷𝑟
+                                                                                        in collapse. The entire training process took 98 hours.
+where 𝐷𝑟 = {logic., prof., comp.} evaluates logical coherence th-
+rough causal patterns (e.g., “observe...because”) and step connec-
+tions (𝑤 = 0.25), professional terminology usage in appropriate                         4.3     Baselines
+diagnostic context (𝑤 = 0.15), and reasoning chain completeness                         We evaluate our method against the following baselines: Zero-shot
+covering observation→analysis→conclusion flow (𝑤 = 0.10).                               uses the pretrained Qwen2.5-VL-3B-Instruct model with only task
+                                                                                        prompts. Few-shot augments zero-shot with 5 in-context examples.
+   Dynamic Evaluation. Our reward function dynamically adapts
+                                                                                        SFT applies supervised fine-tuning on the complete CDDMBench
+its evaluation criteria according to question type, employing dis-
+                                                                                        dataset (1.05M samples). GRPO optimizes with answer correct-
+tinct scoring formulations for diagnostic queries (Equation 6) and
+                                                                                        ness rewards only, without explicit reasoning. Agri-R1 (Reasoning-
+control/prevention questions (Equation 7). To accommodate the
+                                                                                        Enhanced) (Ours) is our complete two-stage framework, integrat-
+inherent lexical variation in open-ended agricultural responses,
+                                                                                        ing automated reasoning data synthesis and reasoning-aware re-
+the function integrates a five-tier fuzzy matching mechanism that
+                                                                                        ward functions. Furthermore, we compare our results to published
+spans exact matches to weak semantic relevance [27]. The com-
+                                                                                        baselines: CDDMBench [20] uses Supervised Fine-Tuning on crop
+plete pipeline yields a bounded scalar reward 𝑟𝑖 ∈ [0, 3.0], which is
+                                                                                        disease datasets. CPJ [46] is a training-free approach utilizing ex-
+subsequently used for GRPO optimization (Equation 3).
+                                                                                        plainable captions and LLM-as-Judge evaluation.
+4 Experiments
+                                                                                        4.4     Main Results
+4.1 Datasets and Evaluation
+                                                                                           Overall Performance on CDDMBench. Table 2 presents com-
+We construct our training datasets from CDDMBench [19], a large-                        prehensive results comparing our approach with published base-
+scale agricultural VQA benchmark containing approximately 1.05                          lines. Throughout this section, Agri-R1 (Reasoning-Enhanced) de-
+million samples across 16 crop species and 60 disease categories.                       notes the complete Agri-R1 framework and is used interchangeably
+The SFT training set utilizes the full CDDMBench dataset in its                         with “Agri-R1” for brevity. Our Agri-R1 (Reasoning-Enhanced) uses
+standard VQA format. For GRPO training, we apply stratified sam-                        the DeepSeek-VL2 + GPT-4 pipeline (see Section 5.1).
+pling to obtain 200K samples (19% of the original corpus), while                           We highlight three key observations:
+strictly preserving the original class distribution across crops and                       (1) Crop Recognition: Agri-R1 achieves 92.58% accuracy, yield-
+diseases. This ratio aligns with reward-guided data efficiency find-                    ing a +1.61 pp absolute gain over SFT (90.97%), with GRPO con-
+ings [48]. For reasoning synthesis, we explore two Generative Rea-                      tributing +1.36 pp and explicit reasoning adding +0.25 pp.
+soning Enhancement Engines (DeepSeek-VL2 [43] and Qwen2.5-VL-                              (2) Disease Recognition: Agri-R1 reaches 75.30% accuracy, de-
+72B [3]) paired with four judge configurations (No Judge, self-judge,                   livering a +27.9% relative improvement over SFT. GRPO provides
+Qwen2.5-VL-72B, and GPT-4), yielding eight pipeline combinations                        the dominant gain (+10.59 pp), while explicit reasoning further en-
+whose impact on GRPO performance is analyzed in Section 5.1.                            hances fine-grained symptom differentiation (+5.87 pp).
+   Evaluation Protocol: Following CDDMBench protocol, we                                   (3) Knowledge QA: Agri-R1 attains 84.0 points, matching state-
+evaluate on: (1) In-distribution test set (3,963 samples) using key-                    of-the-art proprietary models with a +33.3% relative gain over SFT.
+word matching accuracy for crop/disease recognition; (2) Disease                        Notably, explicit reasoning contributes more (+11.51 points) than
+Knowledge QA (20 samples) scored by GPT-4 (0-10 scale) on pro-                          GRPO alone (+9.49 points), underscoring its critical role in multi-
+fessionalism, completeness, and practicality, following [19]; (3) We                    step knowledge integration.
+also evaluate on AgMMU benchmark (770 samples) [12] for cross-                             Across all three tasks, the benefit of explicit reasoning increases
+scenario generalization using harmonic mean across five subtasks.                       in the order Crop < Disease < KQA, reflecting each task’s growing
+To complement automatic metrics, Section 5.2 further provides                           reliance on causal, multi-step inference rather than pure visual
+expert human evaluation of reasoning quality on a 200-sample                            matching.
+subset.
+                                                                                          Generalization on AgMMU-MCQs. We evaluate cross-domain
+4.2     Training Configuration                                                          generalization on AgMMU-MCQs, a challenging subset of the Ag-
+We adopt Qwen2.5-VL-3B-Instruct [3] as our base VLM. Training is                        MMU benchmark spanning five agricultural reasoning tasks. Using
+conducted on 4 NVIDIA A800 80GB GPUs with DeepSpeed ZeRO-                               only 3B parameters, Agri-R1 (Reasoning-Enhanced) achieves 66.10%
+3 optimization. The hyperparameters include a batch size of 160,                        accuracy, matching LLaVA-1.5-13B (66.73%) while outperforming
+AdamW optimizer with learning rate 8 × 10−7 and cosine sched-                           Qwen-VL-7B (62.34%) and Claude 3 Haiku (62.00%). Figure 2 vi-
+ule warmup, gradient clipping at 0.3, and BF16 mixed precision.                         sualizes performance across all tasks. SFT experiences a drastic
+ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil                                                                                                                                 Trovato et al.
+
+
+                                 Model                                                                 Method                             Crop            Disease           Knowledge
+                                                                                                                                         Acc. (%)         Acc. (%)           QA (/100)
+                                                                                                     Baseline [20]
+                    Qwen-VL-Chat (7B)                                                      Zero-shot                                      28.40              5.00               41.0
+                   Qwen-VL-Chat-AG* (7B)                                              SFT (Frozen encoder)                                84.40             66.10               88.5
+                   Qwen-VL-Chat-AG (7B)                                              SFT (Unfrozen encoder)                               97.40             91.50               84.0
+                                                                                                     Baseline [46]
+                                                                                          Expl. Caption                                    29.30            12.10               46.5
+                       Qwen-VL-Chat (7B)                                                    +Few-shot                                      53.39            24.49               50.0
+                                                                                                +Judge                                     54.90            25.39               51.0
+                                                                                           Zero-shot                                       47.00            11.00               65.0
+                                                                                          Expl. Caption                                    60.30            31.60               84.0
+                             GPT-5-Nano
+                                                                                            +Few-shot                                      58.90            29.80               76.0
+                                                                                                +Judge                                     63.38            33.70               84.5
+                                                                                                     Our Methods
+                                                                                           Zero-shot                                      28.41             4.84                 27.5
+                                                                                            Few-shot                                      36.56             6.96                 45.5
+                   Qwen2.5-VL-3B-Instruct                                                      SFT                                        90.97             58.84                63.0
+                                                                                             GRPO                                         92.33             69.43               72.49
+                                                                                Agri-R1 (Reasoning-Enhanced)                              92.58            75.30                84.0
+                     GRPO Gain (vs SFT)                                                                                                   +1.36            +10.59               +9.49
+                    Reasoning Contribution                                                                                                +0.25             +5.87              +11.51
+                      Total Gain vs SFT                                                                                                   +1.61            +16.46               +21.0
+                        Relative Gain                                                                                                     +1.8%            +27.9%              +33.3%
+Table 2: Performance comparison on CDDMBench. Baselines include zero-shot and SFT variants of Qwen-VL-Chat (7B) [20]
+as well as prompt-based methods using Qwen-VL-Chat (7B) and GPT-5-Nano [46]. Our 3B models are trained with GRPO
+(answer-only rewards) and Agri-R1 (Reasoning-Enhanced with explicit diagnostic reasoning). GRPO yields substantial gains,
+while explicit reasoning delivers further improvements, particularly on knowledge-intensive tasks.
+
+
+                     AgMMU Multi-Task Performance Comparison
+                                                                                                                              structured reasoning chains supply procedural scaffolding and en-
+                                                        Disease/Issue ID                                                      able effective integration of visual cues with domain knowledge.
+                                                           90
+                                                           80
+                                                                                                                              These results highlight RL’s superior capacity to learn transfer-
+                                                           70                                                                 able, domain-invariant representations compared with standard
+                                                           60                                                                 supervised fine-tuning.
+                                                           50
+                                                           40
+                                                           30
+                                                                                                                              5 Analysis
+  Symptom / Visual Desc.                                                                                     Insect/Pest ID
+                                                           20                                                                 5.1 Generator-Judge Configuration Ablation
+                                                           10
+                                                            0                                                                 We compare two generators, DeepSeek-VL2 and Qwen2.5-VL-72B,
+                                                                                                                              under four judge settings. The results on crop recognition, disease
+                                                                                                                              recognition, and knowledge QA are reported in Table 3. Two key
+                                                                                                                              findings emerge: First, external judge quality is paramount. GPT-4
+                                                                                                                              judging consistently outperforms self-judging and weaker alterna-
+                                                                                                                              tives, revealing a systematic failure mode where generator-judge
+                                                                                                                              correlation allows flawed reasoning to survive filtration. This con-
+               Management Instructions                                                      Species Recog.
+                 SFT(Ours)                                                 GRPO（Ours）
+                                                                                                                              firms that judge capability, not merely diversity, determines filter-
+                 Agri-R1 (Reasoning-Enhanced) (Ours)★                      Qwen-VL-7B                                         ing rigor. Second, generator choice involves task-specific trade-offs.
+                 LLaVA-1.5-13B                                             Claude 3 Haiku
+                                                                                                                              While Qwen2.5-VL-72B excels at fine-grained visual recognition,
+                                                                                                                              DeepSeek-VL2 produces more compact, regular reasoning chains
+Figure     2:  AgMMU       cross-domain    performance.                                                                       that transfer effectively to smaller student models. Consequently,
+Agri-R1 (Reasoning-Enhanced) (red) outperforms SFT                                                                            we adopt DeepSeek-VL2 with GPT-4 judging for main experiments,
+(blue) and GRPO (green) on all five tasks.                                                                                    validating that strict reasoning filtration via high-quality external
+                                                                                                                              judges substantially improves downstream inference.
+50.97-point drop from 90.97% (CDDMBench) to 40.00% (AgMMU-
+MCQs). In contrast, GRPO (without explicit reasoning) maintains                                                               5.2    Expert Evaluation of Reasoning Quality
+59.75% despite using identical 19% training data, and Agri-R1 further                                                         Protocol. To complement automatic metrics, which focus on cor-
+boosts generalization by +26.10 points. The largest gains appear on                                                           rectness but do not fully reflect real-world reliability or practical
+Management Instructions and Symptom/Visual Description, where                                                                 utility, we conducted a human evaluation on 200 randomly sampled
+Agri-R1: Agricultural Reasoning for Disease Diagnosis via Automated-Synthesis and Reinforcement Learning                                                            ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil
+
+
+   Generator            Judge                 Crop        Disease      KQA                                                                         Disease Recognition: Performance Improvement Distribution
+                                             Acc. (%)     Acc. (%)    (/100)                                                          80
+
+
+
+
+                                                                                       Agri-R1 (Reasoning-Enhanced)-SFT Improvement
+                        No Judge               92.4        70.54       75.5                                                                          Northern Leaf       Septoria Leaf           Bacterial           Leaf Scorch
+                                                                                                                                                                         Spot          Frog Eye Spot
+                        DeepSeek Judge        92.45         72.5       77.0                                                           60             Blight
+                                                                                                                                                                                       Leaf Spot
+   DeepSeek-VL2                                                                                                                                                      Target Spot                                Leaf Mold          Leaf Rust
+                        Qwen72B Judge          92.5         73.0       81.0                                                           40               Alternaria
+
+
+
+
+                                                                                                    （percentage points）
+                        GPT-4 Judge           92.58        75.3        84.0                                                                            Blotch
+
+                        No Judge               92.6        71.45       73.2                                                           20                                   Septoria Leaf Spot
+
+                        DeepSeek Judge         92.9         72.6       75.0
+   Qwen2.5-VL-72B                                                                                                                      0
+                        Qwen72B Judge          93.1         72.5       74.5                                                                 35        40            45             50           55       60           65            70         75
+
+                                                                                                                                                                         +29.3pp           +26.1pp    +30.7pp
+                        GPT-4 Judge            94.2         74.2       81.0                                                           -20
+                                                                                                                                                                                                                               +26.8pp
+                                                                                                                                                  +39.0pp
+                                                                                                                                                                                                                              Powdery
+Table 3: Generator–Judge ablation across all three metrics.                                                                           -40
+                                                                                                                                                                                                                              Mildew
+                                                                                                                                                                         Spider           Bacterial
+                                                                                                                                                                                                      Grey Spot Loose Smut
+The DeepSeek-VL2 + GPT-4 pipeline generates the highest-                                                                                             Blast
+                                                                                                                                                                         Mites            Wilt                   +30.0pp
+                                                                                                                                      -60
+quality reasoning text, yielding the strongest overall reason-                                                                                                                      SFT Baseline Accuracy (%)
+ing performance. This confirms that optimized reasoning
+synthesis substantially improves downstream inference ca-
+                                                                                         Figure 3: Disease recognition improvement by category
+pability.
+                                                                                         (Agri-R1 vs. SFT). Green points (>15% gain) cluster in the 3–
+                                                                                         8% frequency range, while gray points denote low-frequency
+  Method                        Diag.     Reasoning       Utility    H–G4 𝑟              diseases (<2%) that regress under standard training. Red an-
+                                Acc.       Validity                                      notations mark the recovery obtained with FA weighting
+  SFT                            6.5         3.2            6.1          0.82            (5.3).
+  GRPO                           7.6         5.6            7.3          0.86
+  Agri-R1                        8.1         7.8            8.0          0.89
+  (Reasoning-Enhanced)                                                                       This pattern is consistent with what one would expect from
+Table 4: Expert evaluation (N=200, scores 0–10). H–G4 𝑟 de-                               gradient competition. Frequent classes appear more often, con-
+notes the Pearson correlation between human and GPT-4.                                    tribute more reward signal, and therefore exert more influence on
+                                                                                          the update direction. Apple, for example, accounts for 29.48% of
+                                                                                          the training data, whereas Cherry accounts for only 1.23%. Over
+                                                                                          the course of training, such an imbalance can gradually bias the
+responses from the CDDMBench test set (150 diagnostic questions
+                                                                                          model toward frequent categories at the expense of rare ones. The
+and 50 knowledge QA questions). Two agricultural experts, blind
+                                                                                          same issue reappears in disease recognition and is discussed again
+to model identity, independently scored the outputs using the same
+                                                                                          in Section 5.4. In both cases, the underlying problem is that the
+0–10 rubric as in Table 1 across three dimensions: Diagnostic Ac-
+                                                                                          group-relative advantage in Equation 2 is not frequency-aware,
+curacy, Reasoning Validity, and Practical Utility. Inter-annotator
+                                                                                          so batch statistics are dominated by classes that are already well
+agreement was strong (𝜅 = 0.84), and averaged scores were used in
+                                                                                          represented.
+the final analysis.
+                                                                                             To test whether this is the main source of the problem, we in-
+   Results. Table 4 summarizes the human evaluation results. Agri-                        troduce a frequency-aware (FA) variant that rescales Equation 4
+R1 (Reasoning-Enhanced) achieves the highest scores across all                            by 𝑤 freq (𝑐) = 1 + 𝛼 · max(0, 𝜃 − 𝑓 (𝑐)), where 𝛼 = 50 and 𝜃 = 2.5%.
+three dimensions and the strongest alignment with GPT-4 ratings                           Under this setting, classes with 𝑓 (𝑐) ≥ 2.5% keep weight 1.0, while
+(𝑟 = 0.89). The largest improvement appears in Reasoning Validity:                        the rarest classes receive up to 3.35× reward amplification. The
+SFT scores only 3.2/10 (lacking explicit structure), standard GRPO                        effect is concentrated almost entirely on the long tail. Cherry rises
+reaches 5.6/10 (still largely implicit), while Agri-R1 attains 7.8/10                     from 31.88% to 52.10%, and all three low-frequency crops return
+thanks to explicit <think> supervision. This substantial gain aligns                      to or exceed their SFT baselines. At the dataset level, overall crop
+directly with the core design of our framework. Notably, human                            accuracy increases from 92.28% to 93.54%, which is a 1.37% relative
+ratings correlate strongly with GPT-4 scores across all methods (𝑟 ≥                      gain over Agri-R1.
+0.82), confirming that our LLM-based scoring reliably approximates
+expert judgment and supports its use in both data filtering and                           5.4                                                    Analysis of Fine-Grained Disease
+reward design.                                                                                                                                   Recognition
+                                                                                         Figure 3 shows disease-level gains relative to SFT. Improvements
+5.3     Frequency-Induced Bias in Crop                                                   concentrate in the 3–8% frequency range, where the reward signal
+        Recognition                                                                      is stable enough for GRPO to yield consistent gains while SFT leaves
+The crop-level breakdown in Table 5 shows a strong dependence                            room for improvement. Outside this band, performance declines:
+on training frequency. High-frequency crops (>5%) improve in a                           below 3%, updates are noisy and gains inconsistent; above 8%, SFT
+fairly uniform way, with a standard deviation of 3.2 pp. The low-                        already performs well. A key concern is the long tail: six diseases
+frequency group (<2%), in contrast, is much less stable, with a                          with frequencies below 2% each lose over 20 percentage points
+standard deviation of 22.1 pp. All three classes in this range decline                   under standard training. The KL term in Equation 3 mitigates drift
+under standard GRPO, and the drop for Cherry is particularly severe,                     from SFT but does not resolve the imbalance when common and
+from 91.30% to 31.88%.                                                                   rare classes contribute uneven signal within each batch.
+ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil                                                                                                                                                       Trovato et al.
+
+
+                                Crop                                       Freq.                           SFT                                     Agri-R1 (Reasoning-Enhanced)                   +FA Weight†
+                                High-freq. (>5%) – Stable (𝜎=3.2 pp)
+                                Tomato                37.19%                                             90.95%                                            96.05% (+5.10)                        95.68% (−0.37)
+                                Apple                 29.48%                                             90.94%                                            97.69% (+6.75)                        97.18% (−0.51)
+                                Corn                    8.35%                                            91.12%                                            96.55% (+5.43)                        95.86% (−0.69)
+                                Mid-freq. (2-5%) – Moderate (𝜎=8.7 pp)
+                                Potato                4.21%            90.88%                                                                              94.23% (+3.35)                        93.91% (−0.32)
+                                Grape                 3.31%            90.84%                                                                              100.00% (+9.16)                          100.00% (=)
+                                Soybean               3.15%            91.05%                                                                              93.87% (+2.82)                        95.08% (+1.21)
+                                Low-freq. (<2%) – High Variance (𝜎=22.1 pp)
+                                Bell Pepper            1.73%           91.14%                                                                               83.54% (-7.60)                       89.75% (+6.21)
+                                Raspberry              1.61%          100.00%                                                                              80.00% (-20.00)                       89.47% (+9.47)
+                                Cherry                 1.23%           91.30%                                                                              31.88% (-59.42)                      52.10% (+20.22)
+Table 5: Crop recognition by training frequency. Standard GRPO remains stable on high-frequency crops (𝜎=3.2 pp) but becomes
+highly variable on low-frequency crops (𝜎=22.1 pp), where all classes below 2% regress. FA weighting restores all low-frequency
+crops to at or above their SFT baselines. † For mid-frequency crops (𝑓 (𝑐) ≥ 2.5%), FA weighting causes only minor changes
+(≤1.2 pp), indicating that its main effect is concentrated on the long tail.
+
+
+
+                               Ablation Study: Question Complexity vs Performance                                                                     These results show that GRPO effectively refines answer distri-
+                         10                                                                                           80%                             butions, yet explicit reasoning chains are essential for organizing
+                                                                                                              8.85
+                          9
+                                                                                                                                                      intermediate steps when multi-step inference is required.
+                                                                                                                            Knowledge QA (/ 100)
+
+
+
+
+                                           8.0                               8.3
+Crop/ Disease Acc. (%)
+
+
+
+
+                          8                                                                                 61.00%    60%
+                          7
+                          6                                                                                           40%                                Multi-Model KQA Progression. The KQA trajectory in Table 2
+                          5                                                        28.80%                                                             follows the same trend. Zero-shot performance starts at 27.5. SFT
+                          4                                                                                           20%
+                          3                11%
+                                                                                                                                                      raises it to 63.0, and GRPO without explicit reasoning further im-
+                          2                                                                                           0%                              proves it to 72.49. The largest single increase then comes from
+                                Simple(1-2 steps)                Medium(3-4 steps)               Complex (5+ steps)
+                                    SFT                                                     GRPO                                                      GRPO to Agri-R1 (Reasoning-Enhanced), which adds another 11.51
+                                    Agri-R1 (Reasoning-Enhanced)                            GRPO Gain
+                                    Agri-R1 (Reasoning-Enhanced)Gain                                                                                  points. This gain is larger than the improvement from zero-shot
+                                                                                                                                                      to few-shot prompting, and also larger than the gap between SFT
+                                                                                                                                                      and standard GRPO. The final score reaches 84.0, roughly three
+Figure 4: Ablation on Disease Knowledge QA (20 samples).
+                                                                                                                                                      times the zero-shot baseline. Taken together, these results suggest
+Standard GRPO without explicit reasoning (purple) yields
+                                                                                                                                                      that explicit reasoning is most valuable on the part of the bench-
+consistent but limited gains (+4% to +28%), whereas Agri-R1
+                                                                                                                                                      mark where visual recognition is no longer the main difficulty and
+(Reasoning-Enhanced) (red) achieves larger improvements
+                                                                                                                                                      multi-step knowledge integration becomes the bottleneck.
+on difficult questions, reaching +61%.
+                                                                                                                                                         Case Study: Qualitative Analysis of Explicit Reasoning Out-
+                                                                                                                                                      put. Figure 5 gives a concrete example with a Rice Blast control
+   The FA weighting introduced in Section 5.3 largely addresses                                                                                       question. The SFT model (6/10) produces general advice, but the
+this issue. As shown by the annotations in Figure 3, all six regressed                                                                                response is broad and not very specific to the disease. GRPO (7/10)
+diseases recover to 1–3 pp above their SFT baselines. This lifts                                                                                      improves the answer and identifies the right intervention direc-
+overall disease accuracy from 75.3% to 78.3%, which corresponds to                                                                                    tion, yet the output still lacks details that would make it directly
+a 4.0% relative improvement over Agri-R1. Most of that gain comes                                                                                     actionable. Agri-R1 (8/10) gives a more structured response and
+from categories in the sub-2% tail.                                                                                                                   includes concrete information such as variety names (Zao 58, Xi-
+                                                                                                                                                      angzaoxian 3), treatment conditions (56◦ C for 5 min, 1% KMnO4 ),
+5.5                           Analysis of Reasoning Capability                                                                                        and fungicide dilution ratios (800–1200×). The example reflects the
+                                                                                                                                                      broader pattern in the quantitative results: RL improves correctness,
+Scaling of reasoning benefits with task complexity.The benefit
+                                                                                                                                                      while explicit reasoning more noticeably improves completeness
+of explicit reasoning varies with task complexity. On simple visual
+                                                                                                                                                      and usefulness.
+recognition tasks, gains remain modest, as standard GRPO already
+captures most of the available improvement. The advantage be-
+comes substantially larger on knowledge-intensive questions that                                                                                      6   Conclusion and Future Work
+require multi-step integration of agricultural knowledge. Figure 4                                                                                    In this paper, we present Agri-R1, the first GRPO-based frame-
+illustrates this trend: on the most difficult Disease Knowledge QA                                                                                    work for open-ended agricultural VQA. By automating reasoning
+subset, standard GRPO yields up to +28% gain, whereas Agri-R1                                                                                         synthesis and designing a domain-aware fuzzy-matching reward,
+(Reasoning-Enhanced) reaches +61%—a 2.2× larger improvement.                                                                                          we achieve data-efficient, interpretable, and generalizable disease
+Agri-R1: Agricultural Reasoning for Disease Diagnosis via Automated-Synthesis and Reinforcement Learning                         ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil
+
+
+                                                                                                        References
+                       Q:What measures can be taken to control Rice Blast?
+                                                                                                         [1] Muhammad Arbab Arshad, Talukder Zaki Jubery, Tirtho Roy, Rim Nassiri,
+                                                                                                             Asheesh K Singh, Arti Singh, Chinmay Hegde, Baskar Ganapathysubramanian,
+                <think> Step 1: Categorize measures...,Step 2: List resistant varietie                       Aditya Balu, Adarsh Krishnamurthy, et al. 2025. Leveraging Vision Language
+                s...,Step 3: Detail specific parameters... </think><answer>Varieties:                        Models for Specialized Agricultural Tasks. In 2025 IEEE/CVF Winter Conference
+  Agri-R1       Zao 58, Xiangzaoxian 3...,Seed Treatment: 56°C for 5 min...,Chemical:
+                                                                                                             on Applications of Computer Vision (WACV). IEEE, 6320–6329.
+  (Reasoning-   1% KMnO4...,Fungicide: 800-1200x dilution...</answer>
+  Enhanced)                                                                                              [2] Muhammad Awais, Ali Husain Salem Abdulla Alharthi, Amandeep Kumar,
+                        Q:What measures can be taken to control Rice Blast?                                  Hisham Cholakkal, and Rao Muhammad Anwer. 2025. AgroGPT: Efficient Agri-
+                                                                                                             cultural Vision-Language Model with Expert Tuning. In 2025 IEEE/CVF Winter
+                <answer>Input Case: Rice Blast(Magnaporthe oryzae),Select resistant                          Conference on Applications of Computer Vision (WACV). IEEE, 5687–5696.
+                varieties; use disease-freefields; soak seeds in hot water for sometime; u               [3] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai
+    Prior
+    GRPO        se antibacterial </answer>                                                                   Dang, Peng Wang, Shijie Wang, Jun Tang, et al. 2025. Qwen2.5-VL Technical
+                                                                                                             Report. arXiv preprint arXiv:2502.13923 (2025).
+                        Q:What measures can be taken to control Rice Blast?                              [4] Rishi Bommasani. 2021. On the Opportunities and Risks of Foundation Models.
+                                                                                                             arXiv preprint arXiv:2108.07258 (2021).
+                 <answer>you should water the plants regularly and make sure they g                      [5] Ilaria Buja, Erika Sabella, Anna Grazia Monteduro, Maria Serena Chiriacò, Luigi
+    Prior        et enough sunlight. Also, maybe use some kind of fertilizer to make t                       De Bellis, Andrea Luvisi, and Giuseppe Maruccio. 2021. Advances in Plant Disease
+    SFT          hem strong... </answer>                                                                     Detection and Monitoring: From Traditional Assays to In-Field Diagnostics.
+                                                                                                             Sensors 21, 6 (2021), 2129.
+                Evaluation:Agri-R1 (8/10) excels with a thorough thought process, delivering c
+                oncrete, actionable details like specific resistant varieties and precise treatment p    [6] Yiyi Cao, Guangling Sun, Yuan Yuan, and Lei Chen. 2025. Small-Sample Cucumber
+                rotocols. Prior GRPO (7/10) offers correct but superficial recommendations, lacki            Disease Identification Based on Multimodal Self-Supervised Learning. Crop
+                ng the specificity for practical use. Prior SFT (6/10) further declines with unfocus         Protection 188 (2025), 107006.
+                ed, irrelevant advice that fails to address the core of rice blast control.
+                                                                                                         [7] Hardy Chen, Haoqin Tu, Fali Wang, Hui Liu, Xianfeng Tang, Xinya Du, Yuyin
+                                                                                                             Zhou, and Cihang Xie. 2025. SFT or RL? An Early Investigation into Training R1-
+                                                                                                             Like Reasoning Large Vision-Language Models. arXiv preprint arXiv:2504.11468
+Figure 5: Comparison of diagnostic reasoning quality on                                                      (2025).
+Rice Blast control. SFT (6/10) provides broad but unfocused                                              [8] Paul F Christiano, Jan Leike, Tom Brown, Miljan Martic, Shane Legg, and Dario
+                                                                                                             Amodei. 2017. Deep Reinforcement Learning from Human Preferences. Advances
+advice. GRPO (7/10) identifies correct strategies but lacks                                                  in Neural Information Processing Systems 30 (2017).
+operational specificity. Agri-R1 (8/10) produces a structured                                            [9] Tianzhe Chu, Yuexiang Zhai, Jihan Yang, Shengbang Tong, Saining Xie, Dale
+                                                                                                             Schuurmans, Quoc V Le, Sergey Levine, and Yi Ma. 2025. SFT Memorizes, RL
+response with actionable details, including crop varieties,                                                  Generalizes: A Comparative Study of Foundation Model Post-Training. arXiv
+treatment protocols, and dilution ratios.                                                                    preprint arXiv:2501.17161 (2025).
+                                                                                                        [10] Jonas Eschmann. 2021. Reward Function Design in Reinforcement Learning.
+diagnosis with a compact 3B model that surpasses larger 7B–13B                                               Reinforcement Learning Algorithms: Analysis and Applications (2021), 25–33.
+SFT baselines. Our analysis reveals that frequency-induced gra-                                         [11] Yunpeng Gai and Hongkai Wang. 2024. Plant Disease: A Growing Threat to
+                                                                                                             Global Food Security. Agronomy 14, 8 (2024), 1615.
+dient competition, not model capacity, is the root cause of rare-                                       [12] Aruna Gauba, Irene Pi, Yunze Man, Ziqi Pang, Vikram S Adve, and Yu-Xiong
+category collapse under GRPO, challenging the assumption that                                                Wang. 2025. AgMMU: A Comprehensive Agricultural Multimodal Understanding
+scaling model size or rewards alone can overcome imbalance. In-                                              and Reasoning Benchmark. arXiv preprint arXiv:2504.10568 (2025).
+                                                                                                        [13] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin
+stead, targeted interventions like frequency-aware reward weight-                                            Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. 2025. DeepSeek-R1:
+ing effectively recover sub-2% categories, demonstrating that struc-                                         Incentivizing Reasoning Capability in LLMs via Reinforcement Learning. arXiv
+tural imbalances require structural remedies. Beyond agriculture,                                            preprint arXiv:2501.12948 (2025).
+                                                                                                        [14] Mingzhe Hu, Jiahan Zhang, Luke Matkovic, Tian Liu, and Xiaofeng Yang. 2023.
+this insight offers a template for RL-based VLM adaptation in expert-                                        Reinforcement Learning in Medical Image Analysis: Concepts, Applications,
+scarce domains such as medical diagnosis and industrial inspection,                                          Challenges, and Future Directions. Journal of Applied Clinical Medical Physics 24,
+                                                                                                             2 (2023), e13898.
+highlighting that RL effectiveness depends on both algorithmic                                          [15] Seungone Kim, Se June Joo, Doyoung Kim, Joel Jang, Seonghyeon Ye, Jamin
+design and the quality of its guiding data and rewards.                                                      Shin, and Minjoon Seo. 2023. The CoT Collection: Improving Zero-Shot and
+   Looking forward, we envision three promising directions: (1)                                              Few-Shot Learning of Language Models via Chain-of-Thought Fine-Tuning.
+                                                                                                             arXiv:2305.14045 [cs.CL] https://arxiv.org/abs/2305.14045
+principled solutions to frequency-induced collapse, such as dynamic                                     [16] Pawel Ladosz, Lilian Weng, Minwoo Kim, and Hyondong Oh. 2022. Exploration
+curriculum learning rewards; (2) temporal modeling via recurrent                                             in Deep Reinforcement Learning: A Survey. Information Fusion 85 (2022), 1–22.
+or state-space architectures to capture disease progression; and (3)                                    [17] Yuxiang Lai, Jike Zhong, Ming Li, Shitian Zhao, Yuheng Li, Konstantinos Psounis,
+                                                                                                             and Xiaofeng Yang. 2025. Med-R1: Reinforcement Learning for Medical Reasoning
+richer, multi-turn diagnostic dialogues for more natural farmer-AI                                           in Vision-Language Models. arXiv preprint arXiv:2503.13939 (2025).
+interaction. Agri-R1 establishes that automated reasoning syn-                                          [18] Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker,
+                                                                                                             Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 2023. Let’s
+thesis, paired with domain-aware reward design, can unlock                                                   Verify Step by Step. arXiv:2305.20050 [cs.LG] https://arxiv.org/abs/2305.20050
+the potential of reinforcement learning for specialized do-                                             [19] Xiang Liu, Zhaoxiang Liu, Huan Hu, Zezhou Chen, Kohou Wang, Kai Wang, and
+mains, paving the way toward more accessible, interpretable,                                                 Shiguo Lian. 2024. A Multimodal Benchmark Dataset and Model for Crop Disease
+                                                                                                             Diagnosis. In European Conference on Computer Vision. Springer, 157–170.
+and generalizable AI in the real world.                                                                 [20] Yuchun Lu, Xiaoyi Lu, Liping Zheng, Min Sun, Siyu Chen, Baiyan Chen, Tong
+                                                                                                             Wang, Jiming Yang, and Chunli Lv. 2024. Application of Multimodal Transformer
+Acknowledgments                                                                                              Model in Intelligent Agricultural Disease Detection and Question-Answering
+                                                                                                             Systems. Plants 13, 7 (2024), 972.
+This work was supported in part by the International Communica-                                         [21] R John Martin, Ruchi Mittal, Varun Malik, Fathe Jeribi, Shams Tabrez Siddiqui,
+tion Research Project (China International Communications Group)                                             Mohammad Alamgir Hossain, and SL Swapna. 2024. XAI-Powered Smart Agri-
+                                                                                                             culture Framework for Enhancing Food Productivity and Sustainability. IEEE
+under Grant 25ATILX01; in part by the Young Scientists Fund of                                               Access (2024).
+the National Natural Science Foundation of China (NSFC) under                                           [22] Sharada P Mohanty, David P Hughes, and Marcel Salathé. 2016. Using Deep
+                                                                                                             Learning for Image-Based Plant Disease Detection. Frontiers in Plant Science 7
+Grant 62506084; in part by the YoungScientists Fund of the Na-                                               (2016), 215232.
+tional Natural Science Foundation of China (NSFC) under Grant                                           [23] Akash Nanavaty, Rishikesh Sharma, Bhuman Pandita, Ojasva Goyal, Srinivas
+32500997; and in part by the Government Special Support Funds for                                            Rallapalli, Murari Mandal, Vaibhav Kumar Singh, Pratik Narang, and Vinay
+                                                                                                             Chamola. 2024. Integrating Deep Learning for Visual Question Answering in
+the Guangdong Institute of Intelligence Science and Technology.
+ACM MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil                                                                                                    Trovato et al.
+
+
+     Agricultural Disease Diagnostics: Case Study of Wheat Rust. Scientific Reports           Framework. IEEE Transactions on Evolutionary Computation 27, 4 (2022), 1072–
+     14, 1 (2024), 28203.                                                                     1084.
+[24] Habiba N Ngugi, Absalom E Ezugwu, Andronicus A Akinyelu, and Laith Abuali-          [46] Wentao Zhang, Tao Fang, Lina Lu, Lifei Wang, and Weihe Zhong. 2025. CPJ:
+     gah. 2024. Revolutionizing Crop Disease Detection with Computational Deep                Explainable Agricultural Pest Diagnosis via Caption-Prompt-Judge with LLM-
+     Learning: A Comprehensive Review. Environmental Monitoring and Assessment                Judged Refinement. arXiv:2512.24947 [cs.CV] https://arxiv.org/abs/2512.24947
+     196, 3 (2024), 302.                                                                 [47] Chujie Zheng, Shixuan Liu, Mingze Li, Xiong-Hui Chen, Bowen Yu, Chang Gao,
+[25] Jiazhen Pan, Che Liu, Junde Wu, Fenglin Liu, Jiayuan Zhu, Hongwei Bran Li, Chen          Kai Dang, Yuqiong Liu, Rui Men, An Yang, et al. 2025. Group Sequence Policy
+     Chen, Cheng Ouyang, and Daniel Rueckert. 2025. MedVLM-R1: Incentivizing                  Optimization. arXiv preprint arXiv:2507.18071 (2025).
+     Medical Reasoning Capability of Vision-Language Models via Reinforcement            [48] Weihai Zhi, Jiayan Guo, and Shangyang Li. 2025. MedGR2 : Breaking the Data
+     Learning. In International Conference on Medical Image Computing and Computer-           Barrier for Medical Reasoning via Generative Reward Learning. arXiv preprint
+     Assisted Intervention. Springer, 337–347.                                                arXiv:2508.20549 (2025).
+[26] Cheng Qian, Emre Can Acikgoz, Qi He, Hongru Wang, Xiusi Chen, Dilek Hakkani-        [49] Yueyue Zhou, Hongping Yan, Kun Ding, Tingting Cai, and Yan Zhang. 2024. Few-
+     Tür, Gokhan Tur, and Heng Ji. 2025. ToolRL: Reward is All Tool Learning Needs.           Shot Image Classification of Crop Diseases Based on Vision–Language Models.
+     arXiv preprint arXiv:2504.13958 (2025).                                                  Sensors 24, 18 (2024), 6109.
+[27] Klara Reichard, Giulia Rizzoli, Stefano Gasperini, Lukas Hoyer, Pietro Zanuttigh,
+     Nassir Navab, and Federico Tombari. 2025. From Open-Vocabulary to Vocabulary-
+     Free Semantic Segmentation. arXiv preprint arXiv:2502.11891 (2025).
+[28] Ranjan Sapkota, Rizwan Qureshi, Muhammad Usman Hadi, Syed Zohaib Hassan,
+     Ferhat Sadak, Maged Shoman, Muhammad Sajjad, Fayaz Ali Dharejo, Achyut
+     Paudel, Jiajia Li, et al. 2025. Multi-Modal LLMs in Agriculture: A Comprehensive
+     Review. IEEE Transactions on Automation Science and Engineering (2025).
+[29] Serge Savary and Laetitia Willocquet. 2020. Modeling the Impact of Crop Diseases
+     on Global Food Security. Annual Review of Phytopathology 58, 1 (2020), 313–341.
+[30] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov.
+     2017. Proximal Policy Optimization Algorithms. arXiv preprint arXiv:1707.06347
+     (2017).
+[31] Feizollah Shahbazi, Saba Shahbazi, and Dariush Zare. 2025. Losses in Agricultural
+     Produce: Causes and Effects on Food Security. Food and Energy Security 14, 3
+     (2025), e70086.
+[32] Ashish Kumar Shakya, Gopinatha Pillai, and Sohom Chakrabarty. 2023. Rein-
+     forcement Learning Algorithms: A Brief Survey. Expert Systems with Applications
+     231 (2023), 120495.
+[33] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei
+     Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. 2024. DeepSeekMath: Pushing
+     the Limits of Mathematical Reasoning in Open Language Models. arXiv preprint
+     arXiv:2402.03300 (2024).
+[34] Ionut-Teodor Stan and Pasquale Minervini. 2025. Learning from Feedback: To-
+     wards Human-Aligned Reasoning in Large Language Models. arXiv preprint
+     arXiv:2502.11157 (2025).
+[35] Tianxiang Sun, Yunfan Shao, Hong Qian, Xuanjing Huang, and Xipeng Qiu. 2022.
+     Black-Box Tuning for Language-Model-as-a-Service. In International Conference
+     on Machine Learning. PMLR, 20841–20855.
+[36] Chengzhuo Tong, Ziyu Guo, Renrui Zhang, Wenyu Shan, Xinyu Wei, Zhenghao
+     Xing, Hongsheng Li, and Pheng-Ann Heng. 2025. Delving into RL for Image
+     Generation with CoT: A Study on DPO vs. GRPO. arXiv preprint arXiv:2505.17017
+     (2025).
+[37] Abhishek Upadhyay, Narendra Singh Chandel, Krishna Pratap Singh, Subir Kumar
+     Chakraborty, Balaji M Nandede, Mohit Kumar, A Subeesh, Konga Upendar, Ali
+     Salem, and Ahmed Elbeltagi. 2025. Deep Learning and Computer Vision in Plant
+     Disease Detection: A Comprehensive Review of Techniques, Models, and Trends
+     in Precision Agriculture. Artificial Intelligence Review 58, 3 (2025), 92.
+[38] Hongcheng Wang, Yinuo Huang, Sukai Wang, Guanghui Ren, and Hao Dong.
+     2025. GRPO-MA: Multi-Answer Generation in GRPO for Stable and Efficient
+     Chain-of-Thought Training. arXiv preprint arXiv:2509.24494 (2025).
+[39] Ru Wang, Wei Huang, Selena Song, Haoyu Zhang, Yusuke Iwasawa, Yutaka Mat-
+     suo, and Jiaxian Guo. 2025. Beyond In-Distribution Success: Scaling Curves of CoT
+     Granularity for Language Model Generalization. arXiv preprint arXiv:2502.18273
+     (2025).
+[40] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang,
+     Aakanksha Chowdhery, and Denny Zhou. 2022. Self-Consistency Improves Chain
+     of Thought Reasoning in Language Models. arXiv preprint arXiv:2203.11171
+     (2022).
+[41] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi,
+     Quoc V Le, Denny Zhou, et al. 2022. Chain-of-Thought Prompting Elicits Rea-
+     soning in Large Language Models. Advances in Neural Information Processing
+     Systems 35 (2022), 24824–24837.
+[42] Xinlu Wu, Xijian Fan, Peng Luo, Sruti Das Choudhury, Tardi Tjahjadi, and Chun-
+     hua Hu. 2023. From Laboratory to Field: Unsupervised Domain Adaptation for
+     Plant Disease Recognition in the Wild. Plant Phenomics 5 (2023), 0038.
+[43] Zhiyu Wu, Xiaokang Chen, Zizheng Pan, Xingchao Liu, Wen Liu, Damai Dai,
+     Huazuo Gao, Yiyang Ma, Chengyue Wu, Bingxuan Wang, et al. 2024. DeepSeek-
+     VL2: Mixture-of-Experts Vision-Language Models for Advanced Multimodal
+     Understanding. arXiv preprint arXiv:2412.10302 (2024).
+[44] Jianbin Yao, Yushu Wu, Jianhua Liu, and Hansheng Wang. 2024. Multimodal
+     Deep Learning-Based Drought Monitoring Research for Winter Wheat during
+     Critical Growth Stages. PLOS ONE 19, 5 (2024), e0300746.
+[45] Wenjie Yi, Rong Qu, Licheng Jiao, and Ben Niu. 2022. Automated Design of
+     Metaheuristics Using Reinforcement Learning within a Novel General Search
+

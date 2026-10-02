@@ -1,0 +1,824 @@
+                                           DODA: Adapting Object Detectors to Dynamic Agricultural Environments in
+                                                                 Real-Time with Diffusion
+
+                                                           Shuai Xiang, Pieter M. Blok, James Burridge, Haozhou Wang & Wei Guo *
+                                                                      Graduate School of Agricultural and Life Sciences
+                                                                                    The University of Tokyo
+                                                                               1-1-1 Midori-cho, Nishitokyo City
+arXiv:2403.18334v3 [cs.CV] 11 Nov 2025
+
+
+
+
+                                                         {xiang-shuai, pieterblok, burridge-j, haozhou-wang, guowei}@g.ecc.u-tokyo.ac.jp
+
+
+
+
+                                                                    Abstract                               imaging pipeline, making directly applying a given model
+                                                                                                           to new environments unfeasible.
+                                         Object detection has wide applications in agriculture, but            The task of overcoming domain shifts between source
+                                         domain shifts of diverse environments limit the broader use       and target domains is known as domain adaptation (DA)
+                                         of the trained models. Existing domain adaptation meth-           [60]. Some studies [33, 66] have successfully applied ex-
+                                         ods usually require reapplying the entire method for new          isting DA methods to agriculture. However, most of ex-
+                                         domains, which is impractical for agricultural applications       isting DA methods are designed for fixed target domains
+                                         due to constantly changing environments. In this paper,           (e.g., from day to night [22, 68], or from clear to foggy
+                                         we propose DODA (Diffusion for Object-detection Domain            weather [13, 23]) and thus usually require retraining the en-
+                                         Adaptation in Agriculture), a diffusion-based framework           tire model for other new domains. This limitation poses
+                                         that can adapt the detector to a new domain in just 2 min-        particular challenges in agriculture, where environmental
+                                         utes (on one Nvidia 4090). DODA incorporates external             conditions vary significantly across users. Each time a user
+                                         domain embeddings and an improved layout-to-image ap-             applies the model, DA may be necessary. Thus, developing
+                                         proach, allowing it to generate high-quality detection data       a fast and user-friendly DA method is crucial for practical
+                                         for new domains without additional training. We demon-            agricultural applications, enabling models or services to be
+                                         strate DODA’s effectiveness on the Global Wheat Head              adapted efficiently to diverse environments without heavy
+                                         Detection dataset, where fine-tuning detectors on DODA-           computational demands or technical expertise.
+                                         generated data yields significant improvements across mul-
+                                         tiple domains. DODA provides a simple yet powerful solu-              Fine-tuning the model using data from the target domain
+                                         tion for agricultural domain adaptation, reducing the bar-        is a fast adaptation approach. However, the manual effort
+                                         riers for growers to use detection in personalized environ-       required for data annotation makes this impractical. Re-
+                                         ments.                                                            cently, diffusion models [20, 39] have attracted attention for
+                                                                                                           their ability to rapidly generate high-quality, novel images
+                                                                                                           that are not present in the training set. A growing num-
+                                                                                                           ber of studies explore the potential for diffusion models to
+                                         1. Introduction
+                                                                                                           address data-related challenges, including visual represen-
+                                         Object detection has been widely used in various aspects          tation learning [50, 51], classification [2, 42], and semantic
+                                         of agriculture, such as yield estimation [59, 61], disease        segmentation [43, 49, 63]. For diffusion-based detection
+                                         identification [62, 67], and decision-making support [4, 58].     data generation, the existing methods can be categorized
+                                         These applications can improve the efficiency and prof-           into three types. 1. Copy-paste Synthesis [14, 29]: fore-
+                                         itability of plant breeders and farmers to improve their effi-    ground and background are synthesized separately and then
+                                         ciency and profits. These models are built for specific farms,    combined, which often results poor image consistency. 2.
+                                         crop varieties and management systems, and excel primar-          Direct Image Generation [11, 65]: images are generated us-
+                                         ily in their specific settings. However, agricultural scenarios   ing a text-to-image model, with labels derived from a de-
+                                         are very diverse, the domain shifts caused by factors such as     tector or module. While this approach ensures consistency,
+                                         crop varieties, growth stages, cultivation management, and        it is unsuitable for DA, as the detector often fails in unseen
+                                                                                                           domains. 3. Layout-to-Image (L2I) Generation [6, 7, 69]:
+                                           * Corresponding Author                                          uses semantic layouts to control the spatial arrangement of
+generated objects. While accurate and effective, it requires     ences, such as location, imaging pipeline, collection time,
+image-layout pairs for training, making the generated data       wheat development stages, and wheat varieties. This di-
+mainly useful for enhancing its own training set rather than     vision allows the development and evaluation of a robust
+DA. These raise the question: How can diffusion model be         domain adaptation algorithm that performs well under dif-
+leveraged to generate high-quality detection data for new        ferent agricultural environments.
+domains?                                                         Domain shift and adaptation. Domain shift (DS) can be
+    To address the challenge of diverse and unknown do-          divided into image-level shifts (e.g., lighting and color vari-
+mains in agricultural applications, we propose DODA, a           ations that subtly alter feature distributions) and instance-
+unified framework for generating detection data in real-         level shifts (e.g., differences in object pose, category, or po-
+time across diverse domains. First, we introduce a new           sition) [32]. Such shifts often degrade model performance
+L2I method to enhance control over the layout of gener-          when applied to new domains. Few-shot domain adapta-
+ated images, ensuring label accuracy. Our L2I method             tion (FDA) [13, 35] addresses this by aligning representa-
+achieves 42.5 mAP on the COCO dataset [30], surpassing           tions between source data and a small amount of labeled
+the previous SOTA L2I method, GeoDiffusion [6], by +14.8         target data, while unsupervised domain adaptation (UDA)
+mAP, and approaching the performance of real images (45.2        improves performance without target labels. However, most
+mAP). Second, we condition the diffusion model with exter-       DA methods are designed for fixed target domains and re-
+nal domain embeddings. This design decouples the learning        quire the full pipeline to be reapplied for new target do-
+of domain-specific features from the diffusion model, en-        mains, which limits their applicability in open-world agri-
+abling it to generate images for target domains without addi-    cultural settings. To overcome these challenges, we lever-
+tional training (Fig. 1 left). Extensive adaption experiments    age generative models to synthesise data. Specifically, we
+on the Global Wheat Head Detection (GWHD) dataset [9],           decouple the learning of domain-specific features from the
+the largest agricultural detection dataset spanning diverse      diffusion model by conditioning on external domain infor-
+sub-domains, demonstrate consistent improvements across          mation. This enables the generation of data for new do-
+multiple domains (as shown in Fig. 1 right). On GWHD,            mains without the need for retraining, thus allowing detec-
+DODA achieves a maximum AP increase of 15.6, with the            tors to adapt efficiently to novel environments.
+fastest adaptation taking just 2 minutes. These results indi-    Layout-to-image generation. The category and position
+cate that DODA can lower the barriers for growers who use        of all objects in an image are referred to as the layout.
+detection in their personalized environments.                    The layout-to-image (L2I) task aims to synthesize images
+    The main contributions of this paper can be summarized       that follow a given layout. Layouts can be represented
+as:                                                              in two ways: (1) bounding boxes, which specify the po-
+• We propose a new L2I method that can better contrl             sition of an object using the coordinates of its four ver-
+   the layout and improves label accuracy. Results on the        tices, and (2) masks, which specify both the shape and posi-
+   COCO dataset show it generates more accurate layouts,         tion through semantic segmentation. Bounding-box–based
+   significantly outperforming previous L2I methods.             methods [6, 39, 69] typically use a text encoder to process
+• We propose a decoupled conditioning mechanism that             the coordinates. However, this approach often struggles to
+   incorporates external domain embeddings, enabling fast        align the layout with image features, resulting in weaker
+   adaptation to unseen domains without retraining.              control. In contrast, mask-based methods (Mask-to-Image,
+• We propose dividing the training process into pre-training     M2I) [64] provide more precise layout control. Despite this
+   and post-training, and we demonstrate that scaling pre-       advantage, masks are difficult to generate algorithmically
+   training dataset with additional unlabeled images effec-      and lack flexibility, making M2I less suitable for data gen-
+   tively improves the quality of generated data.                eration. To address these issues, we propose representing
+• Our method achieves substantial and consistent improve-        bounding boxes in image form (Fig. 1, left) and encoding
+   ments in AP across multiple domains on the GWHD               them with an image encoder. This design improves the
+   dataset, with adaptation completed in 2 minutes (on a         alignment between layout and image features, enhances lay-
+   consumer-grade GPU NVIDIA 4090.). This highlights             out control, and offers greater flexibility.
+   the DODA’s practicality for rapid and cost-effective do-
+   main adaptation in real-world agricultural applications.
+                                                                 3. Method
+2. Related work                                                  3.1. Preliminaries
+Global Wheat Head Detection dataset. The GWHD [9]                Song et al. [46] provided a perspective on explaining the
+dataset is one of the largest agricultural detection datasets,   diffusion model [20] from the stochastic differential equa-
+specifically focused on close-range wheat head detection.        tion (SDE) and score-based generative models [21, 45]. The
+It consists of 47 sub-domains, each with certain differ-         forward diffusion process perturbs the data with random
+Figure 1. Overview. Left, We propose DODA to generate detection data for diverse agricultural domains, the context of the generated
+images matches the target domain, and the layout of the generated images aligns with the input layout images. Right, fine-tuning detector
+on DODA-generated data yields significant improvements across multiple domains.
+
+
+                                                                                           (1)       (1)
+noise, described by the following SDE:                                 images in D(1) , y1 and y2 represents the domain infor-
+                                                                       mation and the bounding box annotations of x(1) , respec-
+                   dx = f (x, t)dt + g(t)w                    (1)                      (2)
+                                                                       tively. x(2) , y1 are images from the new scenes and their
+                                                                                                                       (1)     (2)
+Where the f : Rd → Rd is the drift coefficient of xt ,                 corresponding domain information. Because y1 ̸= y1 ,
+g : R → R is the diffusion coefficient of xt , and w is the                                        (1)
+                                                                       the detectors trained on D may not be able to recognize
+standard Brownian motion.                                              x(2) . We expect to leverage diffusion to build a synthetic
+   The forward diffusion process gradually transforms the                                        (2)   (2)
+                                                                       dataset D̂(2) = {x̂(2) , y1 , ŷ2 }, and improve detectors’
+data from the original distribution p(x0 ) into a simple noise         recognition of x(2) by fine-tuning on D̂(2) .
+distribution p(xT ), over time T . By reversing this process,              First, the images generated by the diffusion model
+we can sample x0 ∼ p(x0 ) starting from random noise.                  should align with the context of the target domain. This
+According to [1], this reverse process is given by a reverse-          requires the diffusion model to distinguish between dif-
+time SDE:                                                                                                         (2)
+                                                                       ferent domains and sample from p(x|y1 ). Given that
+                                                                         (2)                             (2)
+   dx = [f (x, t) − g(t)2 ∇xt log p(xt )]dt + g(t)dw̄         (2)      x̂ is expected to resemble x , the common approach
+                                                                       for constructing synthetic datasets, synthesizing x̂ ∼ p(x)
+Where the w̄ is the standard Brownian motion in reverse                first, then obtaining labels with an off-the-shelf model
+time. In practice, a neural network (Usually a U-Net)                  [24, 28, 65], cannot be applied. To generate detection data
+s(xt , t; θ) is used to estimate the score ∇xt log p(xt ) for          for the new domains, the diffusion model should be able to
+each time step, thereby approximating the reverse SDE. The                                 (2)   (2)
+                                                                       sample from p(x|y1 , ŷ2 ).
+optimization objective of the model can be written as:
+                                                                       3.3. DODA
+  θ ∗ = arg min Et∼U (0,T ) Ex0 ∼p(x0 ) Ext ∼p(xt |x0 )
+             θ                                                         The overall architecture of our DODA is shown in Fig. 3.
+                 [λ(t)∥s(xt , t; θ) − ∇xt log p(xt |x0 )∥2 ]
+                                                           (3)         3.3.1. Incorporating Domain Embedding for Domain-
+Where λ : [0, T ] → R+ is a weighting function with re-                        Aware Image Generation
+spect to time, ∇xt log p(xt |x0 ) can be obtained through the          We expect to incorporate external domain embeddings to
+transition kernel of the forward process. Given sufficient             decouple the learning of domain-specific features from
+data and model capacity, the converged model s(xt , t; θ ∗ )           diffusion, thus enabling domain-aware image generation.
+matches ∇xt log p(xt ) for almost all xt [46].                         These domain embeddings should satisfy two key criteria:
+                                                                       1. They must effectively guide the diffusion model to gener-
+3.2. Problem Formulation
+                                                                       ate images that align with the target domain. This alignment
+In this paper, we aim to improve the detector’s recogni-               should be at both the image and instance level. 2. They
+tion of new agricultural scenes in agriculture with limited            should be easily obtainable for various unseen domains.
+                                         (1)  (1)
+labeled data. Assume D(1) = {x(1) , y1 , y2 } is an ex-                   [32] demonstrated that combined instance and image
+                                        (1)
+isting object detection dataset, where x represents all the            level DA produces better results than either method alone.
+Figure 2. (a) Visualization of the image features from the GWHD training set. The image features are extracted by MAE [18] and different
+subdomains are distinguishable by color. (b) Features in shallow layers are relatively noisy, while deeper layers progressively form a
+clearer layout of the image. (c) Pipelines of existing text-based L2I methods and our LI2I method, by simplifying existing methods, LI2I
+can better retain spatial information and integrate layout features into U-Net.
+
+
+This suggests that the features extracted by the model en-             our finer-grained test indicates that simple dimensional-
+compass both image-level and instance-level domain char-               ity reduction can differentiate features from different do-
+acteristics. Furthermore, [9] used a ResNet [17] trained on            mains.This suggests that domain-specific features reflect
+ImageNet to extract features from the GWHD dataset, to                 unique domain characteristics, even without prior training
+suggest that dimensionality reduction can distinguish train-           on those domains.
+ing and test set features. Similarly, as shown in Fig. 2a,
+                                                                          Based on the above, we propose using a pre-trained vi-
+sion encoder to extract features as domain embeddings:
+                    (2)
+                   y1 = fDomain (x(2) )                   (4)
+
+Where the fDomain : RH×W ×3 → Rd1 is the vision en-
+coder, x(2) is the reference image from target domain. The
+               (2)
+embeddings y1 is then integrated into the U-Net via cross-
+attention:
+                                       
+                                      1
+Cross-Att(Q, K, V ) = softmax QK ⊤ d− 2 V
+                                              
+                                     (2)     1      (2)
+                    = softmax Q(W K y1 )⊤ d− 2 W V y1
+                                                          (5)    Figure 3. The architecture of DODA: Blue part is the domain en-
+Where the W K ∈ Rd1 ×d2 and W V ∈ Rd1 ×d2 are projec-            coder, which extracts domain embeddings from the reference im-
+tion matrices that convert domain embeddings into Key and        age and guide the style of generated image. The orange part is the
+Value. By default, we use a ViT-B [10] pre-trained with          layout encoder, which encodes the layout image into a feature map
+CLIP [38] as the domain encoder.                                 and guide the layout.
+Decoupling layout information from domain embed-
+ding. The features extracted by the vision encoder contain
+both domain-specific features and layout information. The        the features through addition to maximally retain spatial in-
+layout information can interfere with controlling the layout     formation. Corresponding to LT2I, we refer to this method
+of the generated images. To decouple layout information          as LI2I (layout-image-to-image).
+from domain embedding, we employ a simple yet effective          Design of Layout Encoder. Our layout encoder has a sim-
+method termed asymmetric augmentation. In asymmetric             ple structure, as it does not need to convert the discrete in-
+augmentation, both the domain reference image and the de-        put to spatial relationships. The layout encoder consists of a
+noising target image are obtained by transforming the origi-     stack of time-dependent residual layers and downsampling
+nal image during training, but the augmentation of the refer-    layers. The output of each residual layer is fres (a, t) + a,
+ence image is relatively weaker. More details can be found       here a is the output of last layer, and t is the timestep.
+in Appendix C.                                                   Layers to Merge Layout Embeddings. We observed that
+                                                                 shallow U-Net layers produce noisy, localized features. As
+3.3.2. Encoding Layout Images with Vision Model for              the layers deepen, the features become increasingly abstract
+        Simpler and Better Alignment                             and holistic, gradually forming the overall layout of the im-
+Generating images from layouts is a key focus in image           age (shown in Fig. 2b). Therefore, we merge the layout em-
+generation. As shown in Fig. 2c upper, existing methods          beddings with the deeper layers to better convey the layout
+[6, 26, 39, 69] first represent the layout as text, and encode   information.
+it with a language model, then fuse the layout embedding         Channel Coding for Overlapped Instances. Bounding
+into the diffusion model through cross-attention. We refer to    boxes will overlap with each other, so to help the layout
+these methods collectively as LT2I (layout-text-to-image).       encoder distinguish instances, we assign different colors to
+From our perspective, LT2I disrupts the layout’s spatial re-     overlapped instances. Specifically, we represent the overlap
+lationships in multiple ways: 1. Since, LT2I represents the      relationships of the bounding boxes as an adjacency ma-
+layout as text, which is embedded as discrete tokens before      trix, thereby calculating the overlapping relationships and
+being fed into the transformer, The transformer is forced to     assigning colors (Algorithm in Appendix. B).
+learn to reconstruct the spatial relationships from the dis-     The Fig. 2 illustrates the overview of our DODA architec-
+cretized tokens. 2. Before cross-attention, features from the    ture.
+diffusion model are flattened, which degrades spatial infor-
+                                                                 3.3.3. Unified Optimization Objective for Multi-
+mation and makes alignment more difficult.
+                                                                        Conditional Diffusion
+    We propose to address these problems by simplifying the
+process. As shown in the lower part of Fig. 2c, inspired         According to Sec. 3.2, our goal is to sample from
+by [34, 64], we represent the layout as image, which natu-       p(xt |y1 , y2 ), the training objective can be written as:
+rally has accurate spatial information, eliminating the need     θ ∗ = arg min Et∼U (0,T ) Ext ,y1 ,y2 ∼p(xt ,y1 ,y2 )
+of learning. The layout encoder then interprets the hierar-                θ
+chical and positional relationships between bounding boxes,                      [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |y1 , y2 )∥2 ]
+and converts rectangles into object shapes. Finally, we fuse                                                                           (6)
+   By Proposition 1, this objective is equivalent to:                   Furthermore, we explore cross-crop adaption. As high-
+                                                                        lighted in the last row of Table 1, our method success-
+θ ∗ = arg min Et∼U (0,T ) Ex0 ,y1 ,y2 ∼p(x0 ,y1 ,y2 ) Ext ∼p(xt |x0 )   fully adapts the detector trained on wheat to sorghum [16].
+          θ
+                                                                        These results suggest our method effectively helps the de-
+               [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 )∥2 ]
+                                                                        tector adapt to new scenes of agricultural field, bridging the
+                                                                (7)
+                                                                        gap between limited manual annotations and complex, ever-
+Eq. 7 can be optimized directly and serves as our actual
+                                                                        changing agricultural environments. Appendix G illustrates
+training objective. The complete derivation of training ob-
+                                                                        more generated data and example of adaption results.
+jective is provided in Appendix A.
+                                                                (1)     4.1.2. Comparisons with Previous Domain Adaption
+Two-stage Training. In practice, the box annotations y2
+      (1)
+in D are limited, while x and y1 are easier to obtain.                         Methods
+Therefore, we suggest building a larger dataset without                 In this section, we compare our method with existing do-
+                                        (3)
+box annotations D(3) = {x(3) , y1 }, where x(1) ⊂ x(3) ,                main adaptation approaches for adapting detectors to the
+  (3)                                                                   Terraref domain. The Terraref a combination of Ter-
+y1 = fd (x(3) ), and perform pre-training on D(1) to
+achieve a better estimation of p(x|y1 ), the training objec-            raref1 and Terraref2, which are the most challenging do-
+tive can be written as:                                                 mains in the GWHD dataset. As shown in Table 2, our
+                                                                        method achieves the best trade-off between accuracy and
+ θ ∗ = arg minEt∼U (0,T ) Ex0 ,y1 ∼p(x0 ,y1 ) Ext ∼p(xt |x0 )           speed, requiring only 2 minutes for adaptation.
+              θ
+                [λ(t)∥s(xt , y1 , t; θ) − ∇xt log p(xt |x0 )∥2 ]        4.1.3. Comparisons with Previous Layout-to-image
+                                                             (8)               Methods
+After pre-training, post-training can be conducted using ob-            We evaluate our LI2I architecture on the COCO dataset
+ject detection dataset D(3) with the objective of Eq. 7. The            following prior L2I studies. As shown in Table 3, LI2I
+effectiveness of this two-stage training process is shown in            achieves clear improvements in controllability (mAP) while
+Sec. 4.2.                                                               maintaining competitive image quality (FID) and diversity
+                                                                        (IS).
+4. Experiment                                                           Comparison with text-based approaches (LayoutDiffu-
+                                                                        sion, Layout diffuse, GeoDiffusion). Unlike text-based
+By default, DODA employs latent diffusion (LDM) [39] as                 methods that encode layouts as sequences, LI2I directly
+the base diffusion model. The pre-training of DODA is per-              represents the layouts as images and processes them with
+formed on the GWHD 2+ dataset, followed by post-training                an image encoder. This design avoids the spatial informa-
+on the GWHD training set. The implementation details can                tion loss introduced by text discretization. Consequently,
+be found in Appendix C. We use Fréchet Inception Distance              LI2I achieves substantially higher mAP and shows particu-
+(FID), Inception Score (IS), COCO metrics, YOLO Score                   lar strength in handling small objects (APs ).
+and Feature Similarity (FS) as evaluation metrics. Their                Comparison with mask-based approaches (ControlNet
+specific definitions can be found in Appendix D.                        M2I). ControlNet leverages semantic masks for strong lay-
+4.1. Main Results                                                       out control but introduces rigid constraints that often de-
+                                                                        grade image quality and diversity. In addition, generating
+4.1.1. Synthetic Data for Agricultural Object Detection                 accurate masks automatically is non-trivial. By contrast,
+        Domain Adaptation                                               LI2I offers a more flexible and practical solution for data
+We initialize a YOLOX-L [15] model on the GWHD train-                   generation.
+ing set, serving as the baseline and base model.                        Comparison with real image. The YOLO Score achieved
+   Samples of data generated by DODA for different agri-                on our generated images closely approximate those ob-
+cultural domains can be seen in the Fig. 1 left. As shown               tained from real images. This close alignment highlights
+in Table 1, the data of 13 domains were collected from                  the accuracy of our synthetic labels, and indicates signifi-
+different devices, different regions and different stages of            cant progress in narrowing the gap between synthetic and
+wheat head development. After fine-tuning the detector                  real data.
+with domain-specific data synthesized by DODA, recogni-                     The quantitative comparison of above methods can be
+tion across these domains improved, with an average im-                 found in Appendix H.
+provement of 7.5.
+   In addition to the GWHD, we test our method on wheat
+                                                                        4.2. Ablation study
+images collected by UAV, which have significantly different             In this section, we perform ablation studies to evaluate the
+spatial resolutions. As shown in the Table 1, our method                impact of each design and setting of the proposed method,
+can effectively help the detector adapt to UAV image data.              additional results are in Appendix E.
+Table 1. Domain-specific performance on GWHD test set after fine-tuning with DODA-generated data. Improvements over baseline
+are marked in Green in parentheses. Consistent improvements across various domains demonstrate that DODA is effective in adapting
+detectors to new agricultural domains.
+
+ Domain           AP          AP50         AP75          APs         APm           APl      Development stage Platform      Country
+ Global Wheat Head Detection
+ ARC 1           35.0         29.7          8.1         35.0         39.9        73.1             Filling        Handheld    Sudan
+   + Ours     37.4 (+2.4) 78.3 (+5.2) 32.3 (+2.6) 8.3 (+0.2) 36.8 (+1.8) 43.0 (+3.1)
+ CIMMYT 1        26.7         65.7         16.9         5.3          24.6        45.9          Postflowering       Cart     Mexico
+   + Ours    40.4 (+13.7) 80.7 (+15.0) 36.1 (+19.2) 16.2 (+10.9) 39.2 (+14.6) 55.5 (+9.6)
+ KSU 1           37.1         72.0         34.9         9.5          40.1        51.5          Postflowering      Tractor     US
+   + Ours     46.7 (+9.6) 84.7 (+12.7) 47.2 (+12.3) 22.0 (+12.5) 49.1 (+9.0) 53.4 (+1.9)
+ KSU 2           34.9         74.0         29.6         6.9          38.3        58.7          Postflowering      Tractor     US
+   + Ours     42.2 (+7.3) 86.5 (+12.5) 33.9 (+4.3) 16.2 (+9.3) 44.9 (+6.6) 61.5 (+2.8)
+ KSU 3           27.4         67.8         16.2         6.0          26.5        42.6             Filling         Tractor     US
+   + Ours    39.2 (+11.8) 81.3 (+13.5) 31.8 (+15.6) 16.9 (+10.9) 39.0 (+12.5) 50.0 (+7.4)
+ KSU 4           22.7         56.3         14.6         1.2          22.6        40.6            Ripening         Tractor     US
+   + Ours    38.3 (+15.6) 75.1 (+18.8) 34.1 (+19.5) 10.0 (+8.8) 39.3 (+16.7) 49.4 (+8.8)
+ Terraref 1      11.3         33.1          5.1         1.0          13.1        43.6            Ripening         Gantry      US
+   + Ours     20.7 (+9.4) 54.6 (+21.5) 10.6 (+5.5) 4.1 (+3.1) 24.0 (+10.9) 43.2 (-0.4)
+ Terraref 2       9.1         23.7          5.2         0.6          12.3        31.7             Filling         Gantry      US
+   + Ours     16.4 (+7.3) 41.5 (+17.8) 10.2 (+5.0) 2.7 (+2.1) 20.7 (+8.4) 47.2 (+15.5)
+ Ukyoto 1        35.0         68.4         31.8          4.9         38.7        56.8          Postflowering     Handheld    Japan
+   + Ours     35.6 (+0.6) 70.1 (+1.7) 32.6 (+0.8) 5.5 (+0.6) 39.0 (+0.3) 57.3 (+0.5)
+ UQ 8            31.3         66.3         24.8         12.8         39.1        53.3            Ripening        Handheld Australia
+   + Ours     36.3 (+5.0) 70.3 (+4.0) 33.6 (+8.8) 16.6 (+3.8) 44.4 (+5.3) 58.3 (+5.0)
+ UQ 9            30.9         66.8         25.6          8.4         35.0        54.4         Filling-ripening   Handheld Australia
+   + Ours     36.9 (+6.0) 72.3 (+5.5) 34.8 (+9.2) 14.6 (+6.2) 41.0 (+6.0) 58.4 (+4.0)
+ UQ 10           37.7         78.5         31.2         20.7         43.7        53.8         Filling-ripening   Handheld Australia
+   + Ours     43.3 (+5.6) 81.5 (+3.0) 41.1 (+9.9) 26.5 (+5.8) 49.0 (+5.3) 56.6 (+2.8)
+ UQ 11           27.8         69.5         16.4         17.0         34.0        42.0          Postflowering     Handheld Australia
+   + Ours     31.0 (+3.2) 71.6 (+2.1) 21.6 (+5.2) 21.2 (+4.2) 36.2 (+2.2) 45.7 (+3.7)
+ UAV 1            13.3         35.5         6.6          9.0          18.0           -           Ripening          UAV          -
+   + Ours     28.2 (+14.9) 54.9 (+19.4) 25.9 (+19.3) 20.0 (+11.0) 37.5 (+19.5)       -
+ Sorghum          17.3         40.0         12.6         17.7         21.5           -           Ripening          UAV      Australia
+   + Ours     29.4 (+12.1) 70.5 (+30.5) 17.9 (+5.3) 30.0 (+12.3) 31.5 (+10.0)        -
+
+
+
+Scaling dataset and GWHD 2+. The separation of domain                target images. The performance gains from pre-training
+features by the domain encoder enables us to pre-train the           with additional unlabeled images, particularly those from
+diffusion model using a larger set of images, without requir-        the target domain, suggest that our GWHD 2+ dataset is
+ing labels. In Table 4, we explore the effect of the proposed        still insufficiently large. A priority for the future is to col-
+two-stage training. We consider two scenarios: target do-            lect more images to enhance DODA’s ability.
+main images are accessible (w/ target images) or inacces-            Adapting different detectors. To verify the generalizabil-
+sible (w/o target images) during pre-training.                       ity of the generated data, we evaluate several detectors with
+    As shown in Table 4, when no additional unlabeled data           various architectures and sizes. As shown in Table 5, after
+is used, training is one-stage, leading to the worst results.        fine-tuning with domain-specific data generated by DODA,
+As the size of the pre-training dataset increases, the AP50          these models show consistent improvement in recognizing
+steadily improves, demonstrating the effectiveness of the            Terraref.
+two-stage training process. Notably, pre-training diffusion          Domain encoder. Table 6 shows the effect of the Do-
+models with unlabeled images from the target domain sig-             main encoder. Without domain encoder, diffusion ran-
+nificantly enhances data quality. To support pre-training, we        domly samples from the training set, leading to lower FS.
+collect GWHD 2+, an extension of GWHD with 65k addi-                 Independently of the architecture and training data, vari-
+tional unlabeled wheat images from 12 domains. As shown              ous pre-trained vision models can guide diffusion to gen-
+in last row of Table 4, GWHD 2+ further improves the data            erate images with specific features. Using ViT as the back-
+quality and narrows the gap between w/ and w/o access to             bone, CLIP performs the best, while MAE [18] worse than
+Table 2. Adaptation results on the Terraref domain. The adapta-                Table 4. Impact of pre-training dataset size on the quality of gener-
+tion time is measured on a single consumer-grade GPU NVIDIA                    ated data, measured by AP50 . Pre-training diffusion models with
+4090. Source free: source data is not required for adaptation.                 more unlabeled images, especially those from the target domain,
+                                                                               can improve data quality.
+   Method               Source free          AP50 ↑     Adaptation time↓
+   Faster-RCNN                                                                    Dataset Size      w/o target images            w/ target images
+   Source Only                 -              18.2               -
+                                                                                  33k                        41.1                       41.1
+   SWDA [40]                   ✗               7.0           4.5 hours
+   AASFOD [8]                  ✗              13.7           21 hours             45k                        44.8                       45.4
+   HTCN [5]                    ✗              21.7            2 hours             56k                        45.4                       49.6
+   IRG [54]                    ✓              22.1           1.2 hours            121k                       48.4                       50.7
+   MemCLR [55]                 ✓              22.7             3 min
+   DODA (ours)                 ✓              36.7             2 min
+   YOLOv5-X                                                                    Table 5. Effectiveness of DODA-generated data on different de-
+   Source Only                 -              38.6               -             tectors.
+   AsyFOD [13]                 ✗              47.0           2.5 hours
+   AcroFOD [12]                ✗              50.5           2.5 hours           Method                     Params         w/o DODA         w/ DODA
+   DODA (ours)                 ✓              53.6             2 min
+                                                                                 Deformable DETR [70]         41M            10.4           37.2(+26.8)
+                                                                                 YOLOX L [57]                 54M            30.5           50.7(+20.2)
+Table 3. L2I results on COCO-val2017. Our method achieves                        YOLOV7 X [57]                71M            27.2           47.3(+20.1)
+significant improvements in controllability compared to previous                 FCOS X101 [52]               90M            20.1           41.5(+21.4)
+works. * indicates filtering of objects whose area ratio is less than
+0.02 and images with more than 8 objects.
+                                                                               Table 6. Ablations on domain en-        Table 7. Features from dif-
+                               YOLO Score↑                                     coder.                                  ferent layers in MAE as do-
+ Method                                           FID↓                IS↑                                              main embedding.
+                        mAP AP50 AP75 APs APm APl
+ 256 × 256                                                                       Domain Encoder            FS↑
+ Real image*           55.5    70.7   60.8     -     51.2 69.0 -        -                                                   Layers      FS↑         FID↓
+ PLGAN* [56]           21.4    35.2   22.9     -     16.8 27.3 35.9 17.7±0.9     ✗                      0.477
+ LostGANv2* [47]       26.6    41.6   28.3     -     21.9 34.3 37.0 17.0±0.9                                                2          0.622        44.8
+                                                                                 CLIP                   0.769               4          0.664        37.7
+ LAMA* [27]            38.3    53.9   42.3     -     34.8 45.0 37.5 18.4±1.0
+ LayoutDiffusion* [69] 30.6    56.6   29.5     -     20.0 43.4 23.6 24.3±1.2     MAE                    0.747               8          0.719        30.6
+ LI2I (ours)*          54.3    72.1   59.1     -     48.7 59.9 31.5 24.6±1.2     ResNet101              0.751               12         0.747        28.0
+ Real image             35.5   51.2   37.5 15.3 48.3 62.2 - 29.0±1.3
+ LayoutDiffusion [69]    6.0   14.9    3.8 0.2 4.7 19.8 20.5 21.8±1.1
+ GeoDiffusion [6]       27.3   38.5   29.3 2.8 40.3 63.2 34.3 24.7±1.1         Table 8. Ablations on the position to merge the layout embedding.
+ ControlNet M2I [64]    29.4   39.4   31.1 11.2 39.3 52.4 49.1 18.4±0.9
+ LI2I (ours)            31.8   45.4   33.0 12.3 41.5 57.2 29.9 28.5±0.8
+                                                                                                                   YOLO Score↑
+ 512 × 512                                                                      Encoder   Decoder                                                    FID↓
+ Real image             45.2   63.3   48.5 17.9 45.1 61.5 - 31.5±1.2                                mAP     AP50    AP75     APs     APm     APl
+ Layout diffuse* [7]     4.2   11.3    2.3  -    0.1 4.6 33.5 29.6±1.1             ✓         ✗      23.1    64.1    10.2     17.1    28.2    22.0    27.2
+ GeoDiffusion [6]       27.7   40.7   29.6 0 13.0 57.8 28.8 26.4±2.4               ✗         ✓      26.0    69.5    12.5     20.5    30.7    21.8    27.7
+ ControlNet M2I [64]    41.0   51.7   43.6 16.0 39.0 56.5 33.9 21.3±0.8            ✓         ✓      25.3    67.5    11.9     18.8    30.7    23.1    27.3
+ LI2I (ours)            42.5   56.1   44.9 16.1 40.9 59.1 24.9 29.4±1.1
+
+
+
+                                                                               5. Conclusion
+ResNet [17]. Compared to contrastive learning, MAE fo-
+cuses more on high-frequency texture features [37, 53],                        This paper presents DODA, a framework that incorporates
+which we hypothesize affects the quality of the domain em-                     domain features and image layout conditions to extend a
+bedding. To explore this, we test features from different                      diffusion model, enabling it to generate detection data for
+MAE layers, as shallow layers are generally associated with                    new agricultural domains. With just a few reference im-
+high-frequency, low-level features. As shown in Table 7, us-                   ages from the target domain, DODA can generate data for
+ing shallower MAE features further impacts image quality.                      it without training. Extensive experiments demonstrated the
+Position to merge the layout embedding. Table 8 presents                       effectiveness of DODA-generated data in adapting detectors
+the impact of layout embedding fusion position on layout                       to diverse agricultural domains, as shown by significant AP
+controllability. It can be seen that fusing layout embedding                   improvements across multiple domains. The simplicity and
+with the layers of denoising U-Net decoder can more effec-                     effectiveness of DODA reduce barriers for more growers to
+tively convey layout information.                                              use object detection for their personalized scenarios.
+Acknowledgments                                                      [12] Yipeng Gao, Lingxiao Yang, Yunmu Huang, Song Xie, Shiy-
+                                                                          ong Li, and Wei-Shi Zheng. Acrofod: An adaptive method
+This work was supported by JSPS KAKENHI Grant                             for cross-domain few-shot object detection. In European
+Number 25H01110 and the Hokkaido Sarabetsu Village                        Conference on Computer Vision, pages 673–690. Springer,
+“Endowed Chair for Field Phenomics” projects in Japan.                    2022. 8
+                                                                     [13] Yipeng Gao, Kun-Yu Lin, Junkai Yan, Yaowei Wang,
+                                                                          and Wei-Shi Zheng. Asyfod: An asymmetric adaptation
+References                                                                paradigm for few-shot domain adaptive object detection. In
+                                                                          Proceedings of the IEEE/CVF Conference on Computer Vi-
+ [1] Brian DO Anderson. Reverse-time diffusion equation mod-              sion and Pattern Recognition (CVPR), pages 3261–3271,
+     els. Stochastic Processes and their Applications, 12(3):313–         2023. 1, 2, 8
+     326, 1982. 3, 12
+                                                                     [14] Yunhao Ge, Jiashu Xu, Brian Nlong Zhao, Neel Joshi, Lau-
+ [2] Shekoofeh Azizi, Simon Kornblith, Chitwan Saharia, Mo-               rent Itti, and Vibhav Vineet. Dall-e for detection: Language-
+     hammad Norouzi, and David J Fleet. Synthetic data from               driven compositional image synthesis for object detection.
+     diffusion models improves imagenet classification. arXiv             arXiv preprint arXiv:2206.09592, 2022. 1
+     preprint arXiv:2304.08466, 2023. 1
+                                                                     [15] Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, and Jian
+ [3] Georgios Batzolis, Jan Stanczuk, Carola-Bibiane Schönlieb,          Sun. Yolox: Exceeding yolo series in 2021. arXiv preprint
+     and Christian Etmann.           Conditional image genera-            arXiv:2107.08430, 2021. 6, 13
+     tion with score-based diffusion models. arXiv preprint          [16] Sambuddha Ghosal, Bangyou Zheng, Scott C Chapman, An-
+     arXiv:2111.13606, 2021. 12                                           dries B Potgieter, David R Jordan, Xuemin Wang, Asheesh K
+ [4] Helizani Couto Bazame, José Paulo Molin, Daniel Al-                 Singh, Arti Singh, Masayuki Hirafuji, Seishi Ninomiya, et al.
+     thoff, and Maurı́cio Martello. Detection, classification,            A weakly supervised deep learning framework for sorghum
+     and mapping of coffee fruits during harvest with computer            head detection and counting. Plant Phenomics, 2019. 6
+     vision. Computers and Electronics in Agriculture, 183:          [17] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+     106066, 2021. 1                                                      Deep residual learning for image recognition. In Proceed-
+ [5] Chaoqi Chen, Zebiao Zheng, Xinghao Ding, Yue Huang,                  ings of the IEEE conference on computer vision and pattern
+     and Qi Dou. Harmonizing transferability and discrim-                 recognition, pages 770–778, 2016. 4, 8
+     inability for adapting object detectors. In Proceedings of      [18] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr
+     the IEEE/CVF conference on computer vision and pattern               Dollár, and Ross Girshick. Masked autoencoders are scalable
+     recognition, pages 8869–8878, 2020. 8                                vision learners. In Proceedings of the IEEE/CVF conference
+ [6] Kai Chen, Enze Xie, Zhe Chen, Lanqing Hong, Zhen-                    on computer vision and pattern recognition, pages 16000–
+     guo Li, and Dit-Yan Yeung. Integrating geometric con-                16009, 2022. 4, 7
+     trol into text-to-image diffusion models for high-quality de-   [19] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner,
+     tection data generation via text prompt. arXiv preprint              Bernhard Nessler, and Sepp Hochreiter. Gans trained by a
+     arXiv:2306.04607, 2023. 1, 2, 5, 8, 12, 13                           two time-scale update rule converge to a local nash equilib-
+ [7] Jiaxin Cheng, Xiao Liang, Xingjian Shi, Tong He, Tianjun             rium. Advances in neural information processing systems,
+     Xiao, and Mu Li. Layoutdiffuse: Adapting foundational dif-           30, 2017. 13
+     fusion models for layout-to-image generation. arXiv preprint    [20] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-
+     arXiv:2302.08908, 2023. 1, 8, 13                                     fusion probabilistic models. Advances in neural information
+ [8] Qiaosong Chu, Shuyan Li, Guangyi Chen, Kai Li, and Xiu               processing systems, 33:6840–6851, 2020. 1, 2
+     Li. Adversarial alignment for source free object detection.     [21] Aapo Hyvärinen and Peter Dayan. Estimation of non-
+     In Proceedings of the AAAI conference on artificial intelli-         normalized statistical models by score matching. Journal
+     gence, pages 452–460, 2023. 8                                        of Machine Learning Research, 6(4), 2005. 2
+ [9] Etienne David, Mario Serouart, Daniel Smith, Simon Madec,       [22] Mikhail Kennerley, Jian-Gang Wang, Bharadwaj Veeravalli,
+     Kaaviya Velumani, Shouyang Liu, Xu Wang, Francisco                   and Robby T Tan. 2pcnet: Two-phase consistency training
+     Pinto, Shahameh Shafiee, Izzat SA Tahir, et al. Global wheat         for day-to-night unsupervised domain adaptive object detec-
+     head detection 2021: An improved dataset for benchmarking            tion. In Proceedings of the IEEE/CVF Conference on Com-
+     wheat head detection methods. Plant Phenomics, 2021. 2, 4            puter Vision and Pattern Recognition, pages 11484–11493,
+[10] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,               2023. 1
+     Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,             [23] Mehran Khodabandeh, Arash Vahdat, Mani Ranjbar, and
+     Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-             William G Macready. A robust learning approach to domain
+     vain Gelly, et al. An image is worth 16x16 words: Trans-             adaptive object detection. In Proceedings of the IEEE/CVF
+     formers for image recognition at scale. arXiv preprint               International Conference on Computer Vision, pages 480–
+     arXiv:2010.11929, 2020. 5                                            490, 2019. 1
+[11] Chengjian Feng, Yujie Zhong, Zequn Jie, Weidi Xie, and Lin      [24] Junsu Kim, Hoseong Cho, Jihyeon Kim, Yihalem Yimolal
+     Ma. Instagen: Enhancing object detection by training on              Tiruneh, and Seungryul Baek. Sddgr: Stable diffusion-based
+     synthetic dataset. arXiv preprint arXiv:2402.05937, 2024. 1          deep generative replay for class incremental object detection.
+     In Proceedings of the IEEE/CVF Conference on Computer             [37] Namuk Park, Wonjae Kim, Byeongho Heo, Taekyung Kim,
+     Vision and Pattern Recognition, pages 28772–28781, 2024.               and Sangdoo Yun. What do self-supervised vision transform-
+     3                                                                      ers learn? arXiv preprint arXiv:2305.00729, 2023. 8
+[25] Diederik P Kingma and Max Welling. Auto-encoding varia-           [38] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+     tional bayes. arXiv preprint arXiv:1312.6114, 2013. 14                 Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+[26] Yuheng Li, Haotian Liu, Qingyang Wu, Fangzhou Mu, Jian-                Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning
+     wei Yang, Jianfeng Gao, Chunyuan Li, and Yong Jae Lee.                 transferable visual models from natural language supervi-
+     Gligen: Open-set grounded text-to-image generation. In Pro-            sion. In International conference on machine learning, pages
+     ceedings of the IEEE/CVF Conference on Computer Vision                 8748–8763. PMLR, 2021. 5
+     and Pattern Recognition, pages 22511–22521, 2023. 5               [39] Robin Rombach, Andreas Blattmann, Dominik Lorenz,
+[27] Zejian Li, Jingyu Wu, Immanuel Koh, Yongchuan Tang, and                Patrick Esser, and Björn Ommer. High-resolution image
+     Lingyun Sun. Image synthesis from layout with locality-                synthesis with latent diffusion models. In Proceedings of
+     aware mask adaption. In Proceedings of the IEEE/CVF In-                the IEEE/CVF conference on computer vision and pattern
+     ternational Conference on Computer Vision, pages 13819–                recognition, pages 10684–10695, 2022. 1, 2, 5, 6, 13, 14
+     13828, 2021. 8                                                    [40] Kuniaki Saito, Yoshitaka Ushiku, Tatsuya Harada, and Kate
+[28] Ziyi Li, Qinye Zhou, Xiaoyun Zhang, Ya Zhang, Yanfeng                  Saenko. Strong-weak distribution alignment for adaptive ob-
+     Wang, and Weidi Xie. Open-vocabulary object segmenta-                  ject detection. In Proceedings of the IEEE/CVF conference
+     tion with diffusion models. In Proceedings of the IEEE/CVF             on computer vision and pattern recognition, pages 6956–
+     International Conference on Computer Vision, pages 7667–               6965, 2019. 8
+     7676, 2023. 3, 12                                                 [41] Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki
+[29] Shaobo Lin, Kun Wang, Xingyu Zeng, and Rui Zhao. Ex-                   Cheung, Alec Radford, and Xi Chen. Improved techniques
+     plore the power of synthetic data on few-shot object detec-            for training gans. Advances in neural information processing
+     tion. In Proceedings of the IEEE/CVF Conference on Com-                systems, 29, 2016. 13
+     puter Vision and Pattern Recognition, pages 638–647, 2023.
+                                                                       [42] Mert Bülent Sarıyıldız, Karteek Alahari, Diane Larlus, and
+     1
+                                                                            Yannis Kalantidis. Fake it till you make it: Learning trans-
+[30] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays,               ferable representations from synthetic imagenet clones. In
+     Pietro Perona, Deva Ramanan, Piotr Dollár, and C Lawrence             Proceedings of the IEEE/CVF Conference on Computer Vi-
+     Zitnick. Microsoft coco: Common objects in context. In                 sion and Pattern Recognition, pages 8011–8021, 2023. 1
+     Computer Vision–ECCV 2014: 13th European Conference,
+                                                                       [43] Jacob Schnell, Jieke Wang, Lu Qi, Vincent Tao Hu,
+     Zurich, Switzerland, September 6-12, 2014, Proceedings,
+                                                                            and Meng Tang. Generative data augmentation improves
+     Part V 13, pages 740–755. Springer, 2014. 2
+                                                                            scribble-supervised semantic segmentation. arXiv preprint
+[31] Wenquan Lu, Yufei Xu, Jing Zhang, Chaoyue Wang, and
+                                                                            arXiv:2311.17121, 2023. 1
+     Dacheng Tao. Handrefiner: Refining malformed hands in
+                                                                       [44] Christoph Schuhmann, Romain Beaumont, Richard Vencu,
+     generated images by diffusion-based conditional inpainting.
+                                                                            Cade Gordon, Ross Wightman, Mehdi Cherti, Theo
+     arXiv preprint arXiv:2311.17957, 2023. 12
+                                                                            Coombes, Aarush Katta, Clayton Mullis, Mitchell Worts-
+[32] Haoyu Ma, Xiangru Lin, and Yizhou Yu. I2f: A uni-
+                                                                            man, et al. Laion-5b: An open large-scale dataset for training
+     fied image-to-feature approach for domain adaptive semantic
+                                                                            next generation image-text models. Advances in Neural In-
+     segmentation. IEEE Transactions on Pattern Analysis and
+                                                                            formation Processing Systems, 35:25278–25294, 2022. 13
+     Machine Intelligence, 46(3):1695–1710, 2022. 2, 3
+[33] Yuchi Ma, Zhou Zhang, Hsiuhan Lexie Yang, and Zhengwei            [45] Yang Song and Stefano Ermon. Generative modeling by esti-
+     Yang. An adaptive adversarial domain adaptation approach               mating gradients of the data distribution. Advances in neural
+     for corn yield prediction. Computers and Electronics in Agri-          information processing systems, 32, 2019. 2
+     culture, 187:106314, 2021. 1                                      [46] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Ab-
+[34] Chong Mou, Xintao Wang, Liangbin Xie, Yanze Wu, Jian                   hishek Kumar, Stefano Ermon, and Ben Poole. Score-based
+     Zhang, Zhongang Qi, and Ying Shan. T2i-adapter: Learning               generative modeling through stochastic differential equa-
+     adapters to dig out more controllable ability for text-to-image        tions. arXiv preprint arXiv:2011.13456, 2020. 2, 3
+     diffusion models. In Proceedings of the AAAI Conference on        [47] Wei Sun and Tianfu Wu. Learning layout and style recon-
+     Artificial Intelligence, pages 4296–4304, 2024. 5                      figurable gans for controllable image synthesis. IEEE trans-
+[35] Yuzuru Nakamura, Yasunori Ishii, Yuki Maruyama, and                    actions on pattern analysis and machine intelligence, 44(9):
+     Takayoshi Yamashita. Few-shot adaptive object detection                5070–5087, 2021. 8
+     with cross-domain cutmix. In Proceedings of the Asian             [48] Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jon
+     Conference on Computer Vision (ACCV), pages 1350–1367,                 Shlens, and Zbigniew Wojna. Rethinking the inception archi-
+     2022. 2                                                                tecture for computer vision. In Proceedings of the IEEE con-
+[36] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy                  ference on computer vision and pattern recognition, pages
+     Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez,                 2818–2826, 2016. 13
+     Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al.        [49] Weimin Tan, Siyuan Chen, and Bo Yan. Diffss: Diffusion
+     Dinov2: Learning robust visual features without supervision.           model for few-shot semantic segmentation. arXiv preprint
+     arXiv preprint arXiv:2304.07193, 2023. 13                              arXiv:2307.00773, 2023. 1
+[50] Yonglong Tian, Lijie Fan, Kaifeng Chen, Dina Katabi,                  data augmenters for large vocabulary instance segmentation.
+     Dilip Krishnan, and Phillip Isola. Learning vision from               arXiv preprint arXiv:2309.13042, 2023. 1
+     models rivals learning vision from data. arXiv preprint          [64] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding
+     arXiv:2312.17742, 2023. 1                                             conditional control to text-to-image diffusion models. In
+[51] Yonglong Tian, Lijie Fan, Phillip Isola, Huiwen Chang, and            Proceedings of the IEEE/CVF International Conference on
+     Dilip Krishnan. Stablerep: Synthetic images from text-to-             Computer Vision, pages 3836–3847, 2023. 2, 5, 8, 13
+     image models make strong visual representation learners.         [65] Manlin Zhang, Jie Wu, Yuxi Ren, Ming Li, Jie Qin, Xue-
+     Advances in Neural Information Processing Systems, 36,                feng Xiao, Wei Liu, Rui Wang, Min Zheng, and Andy J Ma.
+     2024. 1                                                               Diffusionengine: Diffusion model is scalable data engine for
+[52] Zhi Tian, Chunhua Shen, Hao Chen, and Tong He. FCOS:                  object detection. arXiv preprint arXiv:2309.03893, 2023. 1,
+     Fully Convolutional One-Stage Object Detection. arXiv e-              3
+     prints, art. arXiv:1904.01355, 2019. 8                           [66] Wenli Zhang, Kaizhen Chen, Jiaqi Wang, Yun Shi, and Wei
+[53] Ani Vanyan, Alvard Barseghyan, Hakob Tamazyan, Vahan                  Guo. Easy domain adaptation method for filling the species
+     Huroyan, Hrant Khachatrian, and Martin Danelljan. Analyz-             gap in deep learning-based fruit detection. Horticulture Re-
+     ing local representations of self-supervised vision transform-        search, 8, 2021. 1
+     ers. arXiv preprint arXiv:2401.00463, 2023. 8                    [67] Yang Zhang, Chenglong Song, and Dongwen Zhang. Deep
+[54] Vibashan VS, Poojan Oza, and Vishal M Patel. Instance re-             learning-based object detection improvement for tomato dis-
+     lation graph guided source-free domain adaptive object de-            ease. IEEE access, 8:56607–56614, 2020. 1
+     tection. In Proceedings of the IEEE/CVF conference on            [68] Yin Zhang, Yongqiang Zhang, Zian Zhang, Man Zhang,
+     computer vision and pattern recognition, pages 3520–3530,             Rui Tian, and Mingli Ding. Isp-teacher: Image signal pro-
+     2023. 8                                                               cess with disentanglement regularization for unsupervised
+[55] Vibashan VS, Poojan Oza, and Vishal M Patel. Towards on-              domain adaptive dark object detection. In Proceedings of
+     line domain adaptive object detection. In Proceedings of the          the AAAI Conference on Artificial Intelligence, pages 7387–
+     IEEE/CVF Winter Conference on Applications of Computer                7395, 2024. 1
+     Vision, pages 478–488, 2023. 8                                   [69] Guangcong Zheng, Xianpan Zhou, Xuewei Li, Zhongang Qi,
+[56] Bo Wang, Tao Wu, Minfeng Zhu, and Peng Du. Interactive                Ying Shan, and Xi Li. Layoutdiffusion: Controllable diffu-
+     image synthesis with panoptic layout generation. In Pro-              sion model for layout-to-image generation. In Proceedings
+     ceedings of the IEEE/CVF Conference on Computer Vision                of the IEEE/CVF Conference on Computer Vision and Pat-
+     and Pattern Recognition, pages 7783–7792, 2022. 8                     tern Recognition, pages 22490–22499, 2023. 1, 2, 5, 8
+[57] Chien-Yao Wang, Alexey Bochkovskiy, and Hong-
+                                                                      [70] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang
+     Yuan Mark Liao. Yolov7: Trainable bag-of-freebies sets
+                                                                           Wang, and Jifeng Dai. Deformable detr: Deformable trans-
+     new state-of-the-art for real-time object detectors. In Pro-
+                                                                           formers for end-to-end object detection. arXiv preprint
+     ceedings of the IEEE/CVF conference on computer vision
+                                                                           arXiv:2010.04159, 2020. 8
+     and pattern recognition, pages 7464–7475, 2023. 8
+[58] Haozhou Wang, Tang Li, Erika Nishida, Yoichiro Kato, Yuya
+     Fukano, and Wei Guo. Drone-based harvest data prediction
+     can reduce on-farm food loss and improve farmer income.
+     Plant Phenomics, 5:0086, 2023. 1
+[59] Lele Wang, Yingjie Zhao, Zhangjun Xiong, Shizhou Wang,
+     Yuanhong Li, and Yubin Lan. Fast and precise detection
+     of litchi fruits for yield estimation based on the improved
+     yolov5 model. Frontiers in Plant Science, 13:965425, 2022.
+     1
+[60] Mei Wang and Weihong Deng. Deep visual domain adapta-
+     tion: A survey. Neurocomputing, 312:135–153, 2018. 1
+[61] Xinyi Wang, Wanneng Yang, Qiucheng Lv, Chenglong
+     Huang, Xiuying Liang, Guoxing Chen, Lizhong Xiong, and
+     Lingfeng Duan. Field rice panicle detection and counting
+     based on deep learning. Frontiers in Plant Science, 13:
+     966495, 2022. 1
+[62] Bizhi Wu, Anjie Liang, Huafeng Zhang, Tengfei Zhu, Zhiy-
+     ing Zou, Deming Yang, Wenyu Tang, Jian Li, and Jun Su.
+     Application of conventional uav-based high-throughput ob-
+     ject detection to the early diagnosis of pine wilt disease
+     by deep learning. Forest Ecology and Management, 486:
+     118986, 2021. 1
+[63] Jiahao Xie, Wei Li, Xiangtai Li, Ziwei Liu, Yew Soon Ong,
+     and Chen Change Loy. Mosaicfusion: Diffusion models as
+Appendix
+A. Derivation of Training Objective
+Based on the assumption that the diffusion model can learn to utilize conditions during training, thereby generating images
+x̂ ∼ p(x|y1 , y2 , . . . , yn ), many studies integrate multiple conditions, e.g., text, depth, pose, into the training of diffusion
+model [6, 28, 31]:
+        θ ∗ = arg min Et∼U (0,T ) Ex0 ,y1 ,y2 ∼p(x0 ,y1 ,y2 ) Ext ∼p(xt |x0 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 )∥2 ]    (9)
+                    θ
+
+However, these studies simply incorporate multiple conditions into the diffusion model without modifying the optimization
+objective, making it unclear whether x̂ ∼ p(x|y1 , y2 , . . . , yn ) is actually achieved. To address this, we derive the two-
+conditional optimization objective as follows.
+   First, applying the forward diffusion process in Eq. 1, obtains the perturbed distribution p(xt |y1 , y2 ), according to [1],
+the corresponding reverse-time SDE is given by:
+                                          dx = [f (x, t) − g(t)2 ∇xt log p(xt |y1 , y2 )]dt + g(t)dw̄                                 (10)
+By simulating Eq. 10, we can generate samples from p(xt |y1 , y2 ). To construct the reverse-time SDE, we need to estimate
+the conditional score. Similar to Eq. 3, the training objective is:
+              θ ∗ = arg min Et∼U (0,T ) Ext ,y1 ,y2 ∼p(xt ,y1 ,y2 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |y1 , y2 )∥2 ]        (11)
+                           θ
+
+   However, the ∇xt log p(xt |y1 , y2 ) in Eq. 11 is hard to access. [3] provided a method to approximate ∇xt log p(xt |y). By
+generalizing it to multi-conditional setting, we prove that the optimal solution of Eq. 11 is the same as the solution of Eq. 9:
+Proposition 1. The solution that minimizes
+Et∼U (0,T ) Ex0 ,y1 ,y2 ∼p(x0 ,y1 ,y2 ) Ext ∼p(xt |x0 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 )∥2 ]
+is the same as the solution minimizes
+Et∼U (0,T ) Ext ,y1 ,y2 ∼p(xt ,y1 ,y2 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |y1 , y2 )∥2 ]
+Proof. Let f (xt , x0 , y1 , y2 ) := λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 )∥2 , first, according to the Law of Iterated Expec-
+tations, we have:
+                    Et∼U (0,T ) Ex0 ,y1 ,y2 ∼p(x0 ,y1 ,y2 ) Ext ∼p(xt |x0 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 )∥2 ]
+                  =Et∼U (0,T ) Ey1 ,y2 ∼p(y1 ,y2 ) Ex0 ∼p(x0 |y1 ,y2 ) Ext ∼p(xt |x0 ) [f (xt , x0 , y1 , y2 )]
+                  =Et∼U (0,T ) Ey2 ∼p(y2 ) Ey1 ∼p(y1 |y2 ) Ex0 ∼p(x0 |y1 ,y2 ) Ext ∼p(xt |x0 ) [f (xt , x0 , y1 , y2 )]               (12)
+The y1 and y2 are independent of each other. Given x0 , y1 and y2 are independent of xt . Let g(xt , x0 , y1 , y2 ) :=
+λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 , y1 , y2 )∥2 , Eq. 12 can be written as:
+                           Et∼U (0,T ) Ey2 ∼p(y2 ) Ey1 ∼p(y1 ) Ex0 ∼p(x0 |y1 ,y2 ) Ext ∼p(xt |x0 ) [f (xt , x0 , y1 , y2 )]
+                         =Et∼U (0,T ) Ey2 ∼p(y2 ) Ey1 ∼p(y1 ) Ex0 ∼p(x0 |y1 ,y2 ) Ext ∼p(xt |x0 ,y1 ,y2 ) [g(xt , x0 , y1 , y2 )]     (13)
+Let t, y1 and y2 be arbitrary fixed values, then we can define h(xt ) := s(xt , y1 , y2 , t; θ), q(x0 ) := p(x0 |y1 , y2 ) and
+q(xt |x0 ) := p(xt |x0 , y1 , y2 ), applying the Law of Iterated Expectations, we have:
+                        Ex0 ∼p(x0 |y1 ,y2 ) Ext ∼p(xt |x0 ,y1 ,y2 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |x0 , y1 , y2 )∥2 ]
+                   =Ex0 ∼q(x0 ) Ext ∼q(xt |x0 ) [λ(t)∥h(xt ) − ∇xt log q(xt |x0 )∥2 ]
+                   =Ext ∼q(xt ) [λ(t)∥h(xt ) − ∇xt log q(xt )∥2 ]
+                   =Ext ∼p(xt |y1 ,y2 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |y1 , y2 )∥2 ]                                    (14)
+Since t, y1 , y2 are arbitrary, Eq. 14 is true for all t, y1 , y2 , via Eq. 14 and the Law of Iterated Expectations, we can easily
+rewrite Eq. 13 as:
+                 Et∼U (0,T ) Ey2 ∼p(y2 ) Ey1 ∼p(y1 ) Ext ∼p(xt |y1 ,y2 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |y1 , y2 )∥2 ]
+              =Et∼U (0,T ) Ext ,y1 ,y2 ∼p(xt ,y1 ,y2 ) [λ(t)∥s(xt , y1 , y2 , t; θ) − ∇xt log p(xt |y1 , y2 )∥2 ]                     (15)
+With this Proposition, we have established that the optimal solution s(xt , y1 , y2 , t; θ ∗ ) of Eq. 9 is able to approximate the
+multi-conditional score ∇xt log p(xt |y1 , y2 ).
+
+B. Algorithm
+
+Algorithm 1 Bounding Boxes Arrangement
+Input: Adjacency matrix A of bounding boxes, the number of bounding boxes n.
+Output: Array channels containing the assigned channel for each bounding box.
+ 1: channels ← array of length n initialized with 0
+ 2: for i = 1 to n do
+ 3:   Ci ← ∅
+ 4:   for j = 1 to i do
+ 5:      if A[i][j] = 1 and channels[j] ̸= 0 then
+ 6:         Add channels[j] to Ci
+ 7:      end if
+ 8:   end for
+ 9:   Assign the smallest channel not in Ci to channels[i]
+10: end for
+Return channels
+
+C. Implementation details
+Dataset preparation. In the GWHD, the images have high resolution but are relatively few in number. Therefore, we divided
+the original 1024 × 1024 images into 9 images of size 512 × 512 with step size 256. After splitting, there are a total of 58,635
+images in GWHD. For the COCO 2017 dataset, we train with the official training set and test the proposed L2I method on
+the validation set.
+Domain adaption. To evaluate the effectiveness of DODA for domain adaptation, we focus on the domains within the
+GWHD test set where AP50 lower than 0.8. For each domain, we use DODA to generate a 200 image dataset, then fine-tune
+the YOLOX-L on this synthetic data for one epoch.
+L2I on COCO. Following the setting of [6, 7], we apply the proposed LI2I method to Stable Diffusion [39] v1.5. To preserve
+the knowledge learned from billions of images [44], we use the encoder of U-Net as the layout encoder, and following [64]
+initialize it with the weight of the diffusion model. Since Stable Diffusion is a T2I model, we constructed a simple text
+prompt for our method: ”a photograph with (Ncls 1
+                                                  )(Cls1 ), . . . , (Ncls
+                                                                      i
+                                                                          )(Clsi )”, where Clsi is the category, and Ncls
+                                                                                                                      i
+                                                                                                                          denotes
+the number of objects belonging to that category. Since COCO contains multiple categories, we design a layout coding
+method that different from Sec. 3.3.2, objects of the same category are depicted with the same hue but weaker brightness,
+and the bounding box of each object is drawn in descending order of area.
+Hyperparameters. By default, we use 4 NVIDIAA-V100-32GB, but all models in this paper can be trained on one single
+V100, and the GPU Memory usage and approximate computational requirements for one GPU are provided in the last two
+rows of Table 9 and Table 10. When training with multiple cards, all parameters including Learning Rate are the same, except
+Iterations.
+
+D. Evaluation metrics
+Fréchet Inception Distance (FID) [19] reflects the quality of the generated image. FID measures similarity of features
+between two image sets and the features extracted by the pre-trained Inception-V3 [48].
+Inception Score (IS) [41] uses a pre-trained Inception-V3 [48] to classify the generated images, reflecting the diversity and
+quality of the images. When calculating the IS for Table 3, as in the original paper, we divided the data into 10 splits. The
+error bar for IS is the standard deviation between the splits.
+COCO Metrics refers to fine-tuning detectors using synthetic data, and then calculating AP according to the official COCO.
+YOLO Score uses a pre-trained YOLOX-L [15] to detect the generated image, and calculates the AP between the detection
+result and the input label, which reflects the ability of the generated model to control the layout.
+Feature Similarity (FS). As discussed in Sec.3.3.1, domain shift manifests in feature differences, the domain encoder should
+guide diffusion to generate images aligned with reference images’ features. Here we use DINO-V2 [36] to extract features
+Table 9. Hyperparameters for pre-training DODA. DODA leverages latent diffusion (LDM) [39] as the base diffusion model, which uses
+variational autoencoder (VAE) [25] to encode the image into the latent space and thus reduces the computation, so the pre-training of
+DODA is divided into two stages: the VAE and LDM.
+
+                                                                          VAE                        LDM
+                   Dataset                                      All images in GWHD          All images in GWHD
+                   Target Image Shape                              256 × 256 × 3               256 × 256 × 3
+                   Domain Reference Image Shape                           -                    224 × 224 × 3
+                                                                    Random Rotation             Random Rotation
+                                            Target Image             Random Crop                 Random Crop
+                   Data Augmentation
+                                                                      Random Flip                 Random Flip
+                                           Reference Image                  -                     Random Crop
+                   f                                                        4                          4
+                   Channels                                               128                        224
+                   Channel Multiplier                                     1,2,4                      1,2,4
+                   Attention Resolutions                                    -                         2,4
+                   Number of Heads                                          -                          8
+                   Learning Rate                                          2.5e-6                     2.5e-5
+                   Iterations                                              480k                       600k
+                   Batch Size                                                8                         16
+                   GPU Memory usage                                       32 GB                      16 GB
+                   Computational consumption                           20 v100-days               14 v100-days
+
+
+                                           Table 10. Hyperparameters for layout-to-image.
+
+         Dataset                                     COCO 2017 training            COCO 2017 training        GWHD training
+         Target/Layout Image Shape                       256 × 256 × 3               512 × 512 × 3            256 × 256 × 3
+         Domain Reference Image Shape                          -                           -                  224 × 224 × 3
+                                                          Random Flip                 Random Flip         Random Rotation
+                                   Target Image                                                            Random Crop
+        Data Augmentation
+                                                                                                            Random Flip
+                                Reference Image                 -                           -                 Random Crop
+         Base Model                                          SD1.5                     COCO 256               LDM in Table 9
+         f                                                      8                          8                       4
+         Channels                                              320                        320                     224
+         Channel Multiplier                                  1,2,4,4                    1,2,4,4                  1,2,4
+         Attention Resolutions                                1,2,4                      1,2,4                    2,4
+         Number of Heads                                        8                          8                       8
+         Learning Rate                                       2.5e-5                      2.5e-5                    1e-5
+         Iterations                                          100K                         30K                      80K
+         Batch Size                                            16                           8                       16
+         GPU Memory usage                                    27 GB                       25 GB                    20 GB
+         Computational consumption                       40 v100-hours               56 v100-hours            40 v100-hours
+
+
+
+from the generated images and their corresponding reference images, calculate the cosine similarity for each pair, and then
+compute the average similarity across multiple image pairs. Compared with FID, FS provides more fine-grained information.
+           Figure 4. Ablations on the number of generated images. For most domains, 200 generated images are sufficient.
+
+
+
+E. More Ablation
+Channel coding. Table 11 evaluates the effectiveness of our channel coding component. By representing overlapping
+instances through different color channels, the model better distinguish overlapped instances and thus more accurately control
+the layout.
+Reference image selection method. In the main experiments, we randomly sample reference images xref from the entire set
+of target domain images x. In this section, we investigate how the choice of reference images affects the generated data. We
+first sample different numbers of images from x to create reference pools xipool of varying sizes, and then randomly sample
+xref from each xipool . For each xipool , we repeat the sampling process 5 times to compute the standard deviation. As shown
+in Table 12, when the reference pool is extremely small, the diversity of xref is low, resulting in low AP scores, and the
+standard deviation is large because the sampling bias is amplified. Once the size of the xipool exceeds 100, the AP stabilizes.
+Number of generated images. We investigate changes in the performance of using different amounts of generated data. As
+shown in Fig. 4, for most domains, a dataset consisting of 200 synthetic images is sufficient to convey the characteristics
+of the target domain. Increasing the number of images does not significantly improve performance. To ensure consistency
+across experiments, we use 200 images by default for all domains.
+
+
+         Table 11. Ablations on the layout channel coding. Channel coding can help the model more accurately control layout.
+
+                                                                     YOLO Score↑
+                               Channel coding
+                                                    mAP       AP50    AP75     APs     APm        APl
+                                       ✗            26.4      67.8    14.5     20.0    31.3       28.6
+                                       ✓            27.4      70.0    15.3     20.8    32.7       29.9
+
+
+
+
+                                      Table 12. Ablations on the selecting of reference images.
+
+                                              References pool size           AP50
+                                                         0                  30.5
+                                                        10              37.22±8.89
+                                                       100              48.00±1.92
+                                                       400              49.36±1.55
+                                                       1600             48.58±1.95
+Figure 5. Examples of generated images in domain “Ukyoto 1”. Left, many generated images have unnatural black edges. Middle, normal
+generated images, which are better aligned with the input layout (blue bounding boxes) than the images with black edges. Right, some real
+images used for pre-training also have black edges.
+
+
+F. Influence of Noisy Samples in Pre-training Data
+On the “Ukyoto 1” domain, the improvement in mAP is only marginal. As shown in Fig. 5 left, we observed many images
+with an unusual black area. Compared to images without black edges (Fig. 5 middle), these images also show poorer
+alignment with the given layout. The black regions and the poorer alignment degrade the quality of generated data. Upon
+further inspection, we found that these black regions originate from the real images used for pre-training (as illustrated in
+Fig. 5 right). When preparing the pre-training dataset, it necessary to filter out such images to improve data quality.
+
+G. Qualitative Results of Agricultural Object Detection Domain Adaptation
+
+
+
+
+                            Figure 6. Visualization of generated data and detection results on target domains.
+H. Qualitative comparisons with previous L2I methods on COCO
+
+
+
+
+Figure 7. Visualization of comparisons between our proposed LI2I method and previous LT2I methods on COCO. LI2I generates images
+with more detail and greater control over layout, especially for small objects.
+

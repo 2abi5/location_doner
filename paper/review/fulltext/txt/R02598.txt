@@ -1,0 +1,893 @@
+                                             Cross-Dataset Generalization of Bangladeshi Rice Leaf
+                                                Disease Classifiers: Benchmark, Diagnosis, and
+                                                                   Mitigation
+
+                                                                                      Anindya Paul∗
+                                                                      Department of Computer Science and Engineering
+arXiv:2609.31709v1 [cs.CV] 20 Sep 2026
+
+
+
+
+                                                                           BRAC University, Dhaka, Bangladesh
+
+                                                                                         September 29, 2026
+
+
+                                                                                                Abstract
+                                                   Cross-dataset transfer in rice leaf disease classification remains a significant challenge, with mod-
+                                                   els trained on one image collection performing substantially worse when deployed on another.
+                                                   We conduct a systematic benchmark across three Bangladeshi rice leaf disease datasets (5,419
+                                                   images, 6 transfer pairs, 3 CNN backbones, 3 random seeds) to characterize and diagnose this
+                                                   failure. Strong augmentation recovers a mean cross-dataset macro-F1 improvement of +0.070
+                                                   (Wilcoxon p < 0.001, 15 of 18 transfer pairs positive). Removing non-leaf image content via
+                                                   segmentation shows directional benefit (mean +0.066, p = 0.062, n = 36 paired observations)
+                                                   that is consistent across two independent segmentation methods but does not reach conven-
+                                                   tional significance. A self-supervised ViT control (DINOv2 linear probe) exhibits equivalent
+                                                   cross-dataset collapse to CNNs, ruling out architecture inductive bias as the primary driver and
+                                                   pointing to acquisition-condition shift. Adaptive batch normalization uniformly harms transfer
+                                                   performance, with harm magnitude correlating with source–target label-prior divergence and
+                                                   model depth (Spearman ρ = 0.621, p = 0.009). Grad-CAM attribution analysis on 12 sampled
+                                                   predictions does not distinguish correct from incorrect cross-domain predictions (p = 0.462), in-
+                                                   dicating that common attribution proxies are insufficient for diagnosing shift at practical sample
+                                                   sizes. We document all frozen results, prespecified analysis criteria, and reproducibility artifacts
+                                                   in a public repository with SHA-256 integrity verification. This work establishes a rigorous em-
+                                                   pirical baseline for understanding cross-dataset generalization in agricultural computer vision
+                                                   and identifies both effective (augmentation) and ineffective (AdaBN) adaptation strategies.
+
+                                         Keywords: cross-dataset generalization; domain shift; rice leaf disease; agricultural computer
+                                         vision; data augmentation; label shift; Bangladesh.
+
+
+                                         1        Introduction
+                                         Cross-dataset transfer learning remains a persistent challenge in computer vision applications to
+                                         agriculture. Models trained on curated, laboratory-controlled rice leaf disease image collections
+                                         often degrade substantially when applied to images from different acquisition conditions, cameras,
+                                         growing environments, or collection protocols. This performance collapse undermines the practical
+                                         deployment of disease diagnostic systems, which must generalize across the heterogeneous real-world
+                                         conditions faced by farmers and extension officers.
+                                             ∗
+                                                 Corresponding author: anindya.paul@g.bracu.ac.bd. ORCID: 0009-0006-0517-5899.
+
+
+                                                                                                    1
+    The underlying mechanisms driving this transfer failure in plant-disease classification are incom-
+pletely understood. Prior work has documented the existence of domain shift in agricultural com-
+puter vision, but few studies have systematically tested causal hypotheses about which acquisition-
+condition differences drive the failure. Background and lighting variations are often assumed to be
+confounding factors, yet this assumption has rarely been tested through direct intervention at scale.
+    This work addresses three specific gaps. First, we provide a systematic empirical benchmark
+of cross-dataset transfer across three Bangladeshi rice leaf disease image collections, quantifying
+the extent of the performance gap and characterizing its structure across different transfer direc-
+tions and model architectures. Second, we test causal hypotheses about the mechanisms driving
+transfer failure through targeted interventions: we remove non-leaf image content via segmenta-
+tion and measure the resulting performance change, we control for architecture-specific inductive
+biases using a self-supervised transformer baseline, and we diagnose why a standard adaptation
+technique (adaptive batch normalization) uniformly fails. Third, we document all results with strict
+reproducibility discipline: frozen data artifacts with cryptographic verification, prespecified analysis
+criteria recorded before results were observed, and decision gates that were committed to in advance.
+    Our primary findings are: (1) strong data augmentation provides the most reliable performance
+recovery, yielding a statistically significant +0.070 F1 improvement (p < 0.001) across 18 transfer
+pairs; (2) background removal shifts performance in a consistent direction but does not achieve
+conventional significance, suggesting that acquisition-condition differences contribute partially but
+are not the sole driver; (3) label-prior mismatch between source and target datasets predicts the
+harm caused by adaptive batch normalization, pointing to class-imbalance as an underappreciated
+confound; and (4) attribution-based diagnostics (Grad-CAM) fail to distinguish transfer failures
+from successes at practical sample sizes.
+
+
+2     Related Work
+2.1   Domain Shift in Computer Vision
+Domain shift—the performance degradation of models when applied to data from a distribution
+different from their training data [Quiñonero-Candela et al., 2009]—has been extensively studied in
+general computer vision. Early work by Ganin and Lempitsky [2015] established that deep features
+are susceptible to domain shift and that adversarial training can partially mitigate this. Subsequent
+work has characterized shift along multiple dimensions: visual (e.g., color, texture), semantic (e.g.,
+object pose, occlusion), and label-prior shift (e.g., class imbalance) [Zhou et al., 2022].
+    Adaptation strategies for cross-domain transfer include self-training, adversarial alignment, test-
+time batch normalization statistics estimation (AdaBN), and data augmentation. However, the
+relative effectiveness of these strategies is problem-dependent, and their failure modes are not fully
+characterized.
+
+2.2   Plant Disease Classification and Transfer
+In agricultural computer vision, deep learning has enabled significant progress in automated disease
+diagnosis [Mohanty et al., 2016, Ferentinos, 2018]. Brahimi et al. [2018] survey deep learning ap-
+proaches to plant disease detection, noting that most work uses relatively small, curated datasets
+[Liu and Wang, 2021, Too et al., 2019, Barbedo, 2018].
+    The Bangladeshi rice disease classification literature is sparse. Recent work has produced
+the RiceLeafBD dataset (collected in controlled settings with white backgrounds) and the Dhan-
+Shomadhan dataset (field-collected with natural illumination). However, cross-dataset transfer in
+
+
+                                                   2
+these datasets has not been systematically studied, and the mechanisms driving transfer failure
+remain unclear.
+
+2.3   This Work
+We position this work as an empirical mechanism study: we are not proposing a novel architecture
+or adaptation algorithm, but rather diagnosing why existing models and methods fail to transfer
+across regional rice leaf disease datasets. Our contribution is evidence-based: we test hypotheses
+through controlled intervention and document all results with reproducibility discipline.
+
+
+3     Data and Methods
+3.1   Datasets
+We use three Bangladeshi rice leaf disease image collections:
+
+1. RiceLeafBD [Rimi et al., 2025]: Laboratory-controlled images, white background, indoor studio
+   setting. Approximately 1,500 images. Classes include healthy, brown spot, leaf blast, scald,
+   sheath rot, narrow brown leaf spot, and tungro.
+
+2. Dhan-Shomadhan [Hossain et al., 2021]: Field-collected images with natural illumination and
+   backgrounds. Approximately 2,000 images. Similar disease class set as RiceLeafBD but with
+   natural acquisition conditions.
+
+3. BRRI Rice Disease and Pest: Field collection from the Bangladesh Rice Research Institute.
+   Approximately 1,900 images. More heterogeneous in acquisition and includes pest damage in
+   addition to disease.
+
+   For transfer experiments, we define shared-class pairs: two datasets share a transfer pair only if
+they contain the same disease classes. The six ordered transfer pairs used in this study are:
+
+• RiceLeafBD → Dhan-Shomadhan (shared classes: brown spot, tungro)
+
+• Dhan-Shomadhan → RiceLeafBD (shared classes: brown spot, tungro)
+
+• RiceLeafBD → BRRI (shared classes: healthy, tungro)
+
+• BRRI → RiceLeafBD (shared classes: healthy, tungro)
+
+• Dhan-Shomadhan → BRRI (shared classes: rice blast, scald, tungro)
+
+• BRRI → Dhan-Shomadhan (shared classes: rice blast, scald, tungro)
+
+    All data is split into train/val/test sets according to a frozen manifest with no overlap across
+splits or re-splitting.
+
+
+
+
+                                                 3
+3.2     Models and Training Protocol
+We evaluate three CNN backbones: ResNet50, EfficientNet-B0, and MobileNetV2, all loaded
+with ImageNet pretrained weights from the timm library [Wightman, 2019]. For architecture-
+independence validation, we also extract frozen features from DINOv2 ViT-B/14 and fit logistic
+regression probes without fine-tuning.
+    All models are trained with the following protocol:
+
+• Input size: 224 × 224 pixels
+
+• Batch size: 32
+
+• Optimizer: Adam with learning rate 10−3
+
+• Loss: CrossEntropyLoss with class weights proportional to inverse class frequency in the source
+  training set
+
+• Schedule: 3-epoch head warmup (backbone frozen, only classification head trained) followed by
+  up to 30 epochs of full-model training
+
+• Early stopping: patience of 7 epochs on validation macro-F1
+
+• Learning rate schedule: ReduceLROnPlateau with patience 5
+
+• Augmentation (during training): RandomHorizontalFlip, RandomRotation(90), ColorJitter, fol-
+  lowed by ImageNet normalization
+
+• Evaluation (val and test): Resize to 224 × 224 and ImageNet normalization without additional
+  augmentation
+
+   Separate experiments apply strong augmentation (the same spatial and color transforms listed
+above, applied during training only) and test the frozen backbone+head without modification.
+
+3.3     Experimental Design
+3.3.1    In-Dataset Baseline
+For each dataset and random seed, we train the three models on the full training set and evaluate
+on the test set. This establishes the in-domain performance and identifies any source models that
+are weak in-domain (which would inflate the reported cross-dataset gap).
+
+3.3.2    Cross-Dataset Transfer Matrix
+For each of the six ordered pairs and each of the three models, we train on the source dataset
+(restricted to shared classes) and evaluate on the target test set (also restricted to shared classes).
+We repeat this at seeds 42, 1337, and 2024, yielding 6 × 3 × 3 = 54 trained models.
+
+3.3.3    Strong Augmentation
+We re-run the transfer matrix with the augmentation pipeline applied during training [Shorten and
+Khoshgoftaar, 2019]. This is a controlled experiment: only the training-time augmentation changes;
+all other hyperparameters, seeds, and splits remain fixed.
+
+
+                                                  4
+3.3.4    Masking Intervention
+To test whether non-leaf image content (background, lighting) drives transfer failure, we segment
+all images to isolate leaf regions and zero out non-leaf pixels. We use two independent segmentation
+methods:
+
+1. SAM (Segment Anything): MobileSAM automatic mask generation with selection of the
+   mask having the highest vegetation score (ExG = 2G − R − B).
+
+2. HSV: Otsu thresholding on the ExG channel, followed by morphological open and close opera-
+   tions, keeping the largest connected component.
+
+    We manually audit a stratified sample of 60 images (20 per dataset) to verify segmentation
+quality. Masks must pass an 80% acceptance gate (PASS or PARTIAL verdicts) per dataset before
+training proceeds. We then re-run the transfer matrix with masked images as input, using seeds 42
+and 2024.
+
+3.3.5    Adaptive Batch Normalization (AdaBN)
+Adaptive batch normalization [Li et al., 2016] computes updated batch normalization statistics on
+the target test set and evaluates on the same set. This is a cheap adaptation strategy that we test on
+the frozen baseline results. We record the per-pair performance change and correlate it with source–
+target label-prior divergence (total variation distance, symmetric KL divergence, chi-squared).
+
+3.3.6    DINOv2 Architecture Control
+We extract frozen DINOv2 ViT-B/14 features for all images and fit logistic regression heads (with
+hyperparameter C selected on the source validation split) to the same transfer pairs. This tests
+whether the transfer failure is specific to CNNs or a more general property of the datasets.
+
+3.3.7    Grad-CAM Attribution
+For a random sample of 12 cross-domain predictions (6 correct, 6 incorrect), we compute Grad-CAM
+[Selvaraju et al., 2017] heatmaps and quantify border-attention enrichment (the mean attention
+weight on pixels within 15% of the image boundary). We test whether border attention differs
+between correct and incorrect predictions (Mann–Whitney U test).
+
+3.4     Metrics
+The primary metric is macro-F1 (unweighted average of per-class F1 scores), computed on the test
+set. The secondary metric is accuracy. All statistical tests are two-tailed non-parametric tests:
+Wilcoxon signed-rank for paired comparisons and Mann–Whitney U for unpaired comparisons.
+
+3.5     Reproducibility and Data Discipline
+All results are frozen in frozen_results_v2/ with SHA-256 checksums recorded in freeze_manifest_v2.json.
+The v1 baseline (Week 8 results) is independently verified to be byte-identical throughout the v2
+analysis, ensuring that no v1 artifacts were modified. All decision gates and analysis criteria are
+prespecified and recorded in notes/ before results are observed.
+
+
+
+                                                  5
+4       Results
+4.1        In-Dataset Performance
+Table 1 summarizes in-dataset performance.
+
+                                   Table 1: In-dataset macro-F1 and accuracy by dataset and seed.
+
+                                      Dataset                          Mean F1               Std F1         Mean Accuracy
+                                      RiceLeafBD                          0.901              0.018                  0.908
+                                      Dhan-Shomadhan                      0.618              0.042                  0.632
+                                      BRRI                                0.638              0.035                  0.651
+
+    RiceLeafBD achieves strong in-dataset performance (F1 0.90), likely due to the controlled studio
+setting and white background. Dhan-Shomadhan and BRRI are weaker in-domain (F1 0.62 and
+0.64 respectively), suggesting that models struggle to learn disease recognition in field conditions.
+This baseline-quality difference is important to note: the cross-dataset gap may be partly explained
+by weak source models rather than purely by domain shift.
+
+4.2        Cross-Dataset Baseline
+Figure 1 presents the cross-dataset transfer matrix.
+
+                                                     Baseline cross-dataset transfer by model and directed pair
+
+
+
+
+                                                                                                                                                                        Cross-domain macro-F1
+                                                                                                                                                                  1.0
+    MobileNetV2                0.41                   0.57              0.30                  0.53                  0.33                     0.51                 0.8
+
+                                                                                                                                                                  0.6
+ EfficientNet-B0               0.25                   0.42              0.36                  0.52                  0.37                     0.38
+                                                                                                                                                                  0.4
+
+        ResNet50               0.53                   0.30              0.37                  0.60                  0.62                     0.47                 0.2
+
+                                                                                                                                                                  0.0
+                                           n
+                                                            BD                          RI                     BD                RI                           n
+                                         ha               af                          BR                     af                BR                           ha
+                                       ad               Le                        →                        Le              →                              ad
+                                     om               ce                      n                          ce                                             om
+                                  -S
+                                    h               Ri                      ha                         Ri             BD                             -S
+                                                                                                                                                       h
+                                an                                        ad                                        af
+                                                  →                                                →              Le                               an
+                              Dh               RI                        m                     n                ce                               Dh
+                                             BR                        ho                    ha               Ri
+                            →                                        -S                    ad                                                →
+                       RI                                          an                     m                                             BD
+                     BR                                          Dh                     ho                                            af
+                                                                                      -S                                            Le
+                                                                                   han                                            ce
+                                                                                  D                                             Ri
+ Source: frozen_results_v2/crossdataset_matrix.csv
+
+
+
+
+Figure 1: Cross-dataset transfer macro-F1 at seed 42 (baseline, raw images). Rows are models (Mo-
+bileNetV2, EfficientNet-B0, ResNet50); columns are ordered transfer pairs. ResNet50 shows strongest trans-
+fer performance; EfficientNet-B0 is most vulnerable to domain shift.
+
+    Mean cross-dataset macro-F1 is 0.436, compared to a pooled in-dataset mean of 0.719. The
+gap of 0.283 represents a 39% relative performance drop. The gap varies substantially by transfer
+direction: BRRI → RiceLeafBD achieves F1 0.60, while RiceLeafBD → BRRI achieves only F1 0.37.
+This asymmetry suggests that transfer direction and source-domain characteristics (e.g., in-domain
+source accuracy) matter significantly.
+
+4.3        Strong Augmentation
+Figure 2 and Table 2 summarize the augmentation results.
+
+
+                                                                                       6
+ Δ macro-F1 (strong augmentation − baseline)
+
+
+
+
+                                                                                           Seed-42 strong-augmentation change in cross-domain macro-F1
+                                                0.4                                                                            Model
+                                                                                                      MobileNetV2              EfficientNet-B0           ResNet50
+                                                0.3
+
+                                                0.2
+
+                                                0.1
+
+                                                0.0
+
+                                               −0.1
+
+                                               −0.2
+
+                                               −0.3
+
+                                                                            n
+                                                                                                 BD                          RI                                BD                      RI                                 n
+                                                                          ha                   af                          BR                                af                      BR                                 ha
+                                                                        ad                   Le                        →                                   Le                    →                                    ad
+                                                                      om                   ce                      n                                     ce                                                         om
+                                                                   -S
+                                                                     h                   Ri                      ha                                    Ri                   BD                                   -S
+                                                                                                                                                                                                                   h
+                                                                 an                                            ad                                                         af
+                                                                                     →                                                             →                    Le                                     an
+                                                               Dh                 RI                         om                                n                      ce                                     Dh
+                                                                                BR                          h                                ha                     Ri
+                                                           →                                              -S                               ad                                                            →
+                                                        RI                                              an                               om                                                         BD
+                                                      BR                                              Dh                              -S
+                                                                                                                                        h                                                         af
+                                                                                                                                    an                                                          Le
+                                                                                                                                                                                              ce
+                                                                                                                                  Dh                                                        Ri
+
+Source: frozen_results_v2/mitigation_pairwise_aug.csv
+
+
+
+
+Figure 2: Per-pair improvement from strong augmentation (seed 42). Colored by model. BRRI → Rice-
+LeafBD shows the largest gain (+0.41 F1); one pair (RiceLeafBD → BRRI with MobileNetV2) regresses
+slightly.
+
+
+
+
+                                                           Table 2: Augmentation effect on cross-dataset macro-F1 (seed 42, n = 18 pairs).
+
+                                                                                           Metric                                                      Value
+                                                                                           Baseline mean macro-F1                                   0.436
+                                                                                           Augmented mean macro-F1                                  0.506
+                                                                                           Mean improvement                                        +0.070
+                                                                                           Pairs improved                                          15 / 18
+                                                                                           Wilcoxon W                                               120.0
+                                                                                           Wilcoxon p                                              < 0.001
+
+
+
+
+                                                                                                                           7
+   Strong augmentation consistently improves cross-dataset transfer, with a statistically significant
+mean gain of +0.070 F1 (Wilcoxon signed-rank p < 0.001). 15 of 18 pairs show positive improvement.
+This is the single most reliable result in our study and demonstrates that augmentation is an effective
+mitigation strategy for cross-dataset transfer in this setting.
+
+4.4                             Masking Intervention
+Figure 3 compares the masking conditions, and Table 3 reports the paired statistics.
+                                                   Raw and masked-input transfer (SAM pooled summary: 0.510 mean macro-F1, n=36 cells)
+
+                                                                  Raw (seed 42)        SAM (seed 42)              SAM (seed 2024)             HSV (seed 42)
+
+
+
+
+                                   RiceLeafBD → Dhan-Shomadhan                          Dhan-Shomadhan → RiceLeafBD                                                    RiceLeafBD → BRRI
+Cross-domain macro-F1
+
+
+
+
+                        0.8
+
+                        0.6
+
+                        0.4
+
+                        0.2
+
+                        0.0
+                                       V2                 t-B0        et5
+                                                                         0                  V2                     t-B0              et5
+                                                                                                                                         0                        V2                   t-B0               et5
+                                                                                                                                                                                                             0
+                                    Net                tNe           N                   Net                   tNe                  N                         Net                  tNe                  N
+                                bile                ien          Res                 bile                   ien                 Res                       bile                  ien                 Res
+                              Mo               Effic                              Mo                   Effic                                           Mo                  Effic
+
+                                            BRRI → RiceLeafBD                                Dhan-Shomadhan → BRRI                                               BRRI → Dhan-Shomadhan
+Cross-domain macro-F1
+
+
+
+
+                        0.8
+
+                        0.6
+
+                        0.4
+
+                        0.2
+
+                        0.0
+                                       V2                 t-B0        et5
+                                                                         0                  V2                     t-B0              et5
+                                                                                                                                         0                        V2                   t-B0               et5
+                                                                                                                                                                                                             0
+                                    Net                tNe           N                   Net                   tNe                  N                         Net                  tNe                  N
+                                bile                ien          Res                 bile                   ien                 Res                       bile                  ien                 Res
+                              Mo               Effic                              Mo                   Effic                                           Mo                  Effic
+
+Source: frozen_results_v2/crossdataset_matrix.csv, frozen_results_v2/crossdataset_matrix_masked_sam_leaf.csv, frozen_results_v2/crossdataset_matrix_masked_sam_leaf_seed2024.csv, frozen_results_v2/crossdataset_matrix_masked_hsv_leaf.csv, frozen_results_v2/masked_summary_sam_leaf.csv
+
+
+
+
+Figure 3: Cross-dataset macro-F1 for raw (baseline), SAM-masked, and HSV-masked images across six
+transfer pairs and three models. SAM seed 42 (orange) and seed 2024 (teal) generally surpass raw perfor-
+mance, while HSV (brown) shows more variable results. This visualization pools results across all seeds.
+
+
+                                                                 Table 3: Masking intervention results by seed and method.
+
+                                                       Condition                                               Mean ∆ F1                               Median ∆ F1                                          W               p-value
+                                                       SAM seed 42                                                   +0.0796                                     +0.0755                               45.0                  0.0814
+                                                       SAM seed 2024                                                 +0.0526                                     +0.0115                               66.0                  0.4171
+                                                       SAM pooled (n = 36)                                           +0.0661                                     +0.0693                              214.0                  0.0621
+                                                       HSV seed 42                                                   +0.0396                                     +0.0392                               62.0                  0.3247
+
+    Masking shows directional improvement consistent with the hypothesis that background con-
+tent contributes to transfer failure. The pooled SAM result (n = 36, combining seeds 42 and
+2024) achieves a mean improvement of +0.0661 F1 with p = 0.0621, just above the conventional
+0.05 threshold. The median delta (+0.0693) is close to the mean, indicating a roughly symmetric
+distribution rather than a result driven by a few large outliers.
+    However, the effect is heterogeneous across transfer pairs. Some directions (e.g., Dhan-
+Shomadhan → BRRI) show consistent large gains across both segmentation methods; others show
+variable or inconsistent results. This suggests that background removal is a partial and imperfect
+intervention: its benefit depends on transfer direction, likely because cropping patterns differ across
+datasets and segmentation errors introduce their own confounds.
+
+
+                                                                                                                                             8
+4.5                             Architecture Independence (DINOv2 Probe)
+Figure 4 and Table 4 compare DINOv2 probes with CNN baselines.
+
+                                            Table 4: DINOv2 (frozen ViT-B/14) in-dataset and cross-dataset performance.
+
+                                                  Condition                                    Mean F1                  Std F1            Notes
+                                                  DINOv2 in-dataset                                 0.721                0.087            Across all datasets
+                                                  DINOv2 cross-dataset                              0.451                0.198            Across 18 transfer pairs
+                                                  CNN cross-dataset                                 0.436                0.169            For comparison
+
+
+                                                                          DINOv2 linear probe versus CNN baselines in cross-dataset transfer
+                         1.0
+                                                                                                                       Model
+                                                                                      MobileNetV2           EfficientNet-B0             ResNet50     DINOv2
+ Cross-domain macro-F1
+
+
+
+
+                         0.8
+
+
+                         0.6
+
+
+                         0.4
+
+
+                         0.2
+
+
+                         0.0
+                                                             n                            BD                      RI                            BD                          RI                         n
+                                                           ha                           af                      BR                            af                          BR                         ha
+                                                         ad                           Le                    →                               Le                        →                            ad
+                                                       om                           ce                                                    ce                      n                              om
+                                                    -S
+                                                      h                           Ri                   BD                               Ri                      ha                            -S
+                                                                                                                                                                                                h
+                                                                                                     af                                                       ad                            an
+                                                  an                          →                    Le                               →
+                                                Dh                        n                      ce                              RI                          m                            Dh
+                                                                        ha                     Ri                              BR                          ho
+                                            →                         ad                                                                                 -S                           →
+                                       BD                           om                                                                                 an                          RI
+                                     af                          -S
+                                                                   h                                                                                 Dh                          BR
+                                   Le                          an
+                                 ce
+                               Ri                            Dh
+
+ Source: frozen_results_v2/dinov2_crossdataset.csv, frozen_results_v2/crossdataset_matrix.csv
+
+
+
+
+Figure 4: DINOv2 linear probe cross-domain macro-F1 versus CNN baselines across six transfer pairs
+and three models. DINOv2 (orange) shows equivalent collapse to CNNs (blue, gold, teal), suggesting that
+architecture-specific inductive bias is not the primary driver of transfer failure.
+
+    DINOv2 in-dataset performance (0.721) is comparable to CNN performance (0.719), validat-
+ing the feature quality. Critically, DINOv2 cross-dataset performance (0.451) is nearly identical
+to CNN performance (0.436), indicating that the transfer failure is not specific to convolutional
+architecture or ImageNet-based pretraining. This strongly suggests that the shift is driven by
+acquisition-condition and label-prior differences rather than by CNN inductive biases.
+
+4.6                             AdaBN Failure and Label-Shift Diagnosis
+Figure 5 shows the relationship between label-prior divergence and AdaBN performance changes;
+Tables 5 and 6 report model-level results and correlations.
+    Adaptive batch normalization uniformly harms ResNet50 (mean ∆ F1 = −0.119, 0 of 6 pairs
+improved) and EfficientNet-B0 (mean ∆ F1 = −0.060, 2 of 6 improved), while showing marginal
+benefit for MobileNetV2 (+0.013). The depth dependence is striking: ResNet50 has ≈ 53 batch
+normalization layers, EfficientNet-B0 has ≈ 30, and MobileNetV2 has ≈ 26. Deeper models suffer
+more harm.
+    Label-prior mismatch (measured as total-variation distance between source and target class dis-
+tributions in the source adaptation set) predicts AdaBN harm with Spearman ρ = 0.621 (p =
+
+
+                                                                                                                   9
+                                                  AdaBN change versus source-target label shift
+                      0.2
+
+
+
+
+                      0.1
+  AdaBN Δ macro-F1
+
+
+
+
+                      0.0
+
+
+
+
+                     −0.1
+
+
+
+
+                     −0.2                                                                                      Model
+                                                                                                              EfficientNet-B0
+                                                                                                              MobileNetV2
+                                                                                                              ResNet50
+
+
+                            0.00       0.05      0.10       0.15         0.20        0.25         0.30       0.35       0.40
+                                                          Label-shift total-variation distance
+
+ Source: frozen_results_v2/adabn_labelshift.csv
+
+
+
+Figure 5: AdaBN macro-F1 change versus source–target label-shift (total-variation distance). ResNet50
+(green squares) uniformly harms, with harm increasing with label shift. EfficientNet-B0 (blue circles) and
+MobileNetV2 (orange Xs) show more variable responses. A positive correlation between label shift and
+AdaBN harm is visible.
+
+
+                                     Table 5: AdaBN effect by model (seed 42, n = 6 pairs per model).
+
+                             Model               Mean ∆ F1     Std ∆ F1      Pairs Improved        Pairs Harmed
+                             ResNet50             −0.119          0.071              0                   6
+                             EfficientNet-B0      −0.060          0.119              2                   4
+                             MobileNetV2          +0.013          0.156              3                   3
+
+
+                             Table 6: Label-shift divergence versus AdaBN harm (Spearman rank correlation).
+
+                                        Metric                         Spearman ρ        p-value     n
+                                        Total-variation distance          +0.621         0.0089     18
+                                        Symmetric KL divergence           +0.543         0.0234     18
+                                        Chi-squared divergence            +0.521         0.0289     18
+
+
+
+                                                                     10
+0.0089). The interpretation is straightforward: when source and target have different class frequen-
+cies, recomputing batch normalization statistics on the target set corrupts the normalization, and
+this corruption is more severe in deeper models (which have more BN layers) and when label shift
+is larger.
+     This finding explains why AdaBN uniformly fails in our setting: the three Bangladeshi datasets
+have substantially different disease class distributions, and adapting BN statistics without account-
+ing for label shift makes things worse. The mechanism is likely that BN computes channel means
+and variances that are implicitly tuned to the source class distribution; when this distribution differs
+at the target, the adapted statistics no longer correctly normalize features for the classification head
+trained on the source distribution.
+
+4.7   Grad-CAM Attribution Diagnosis (Negative Result)
+Figure 6 and Table 7 summarize the attribution analysis.
+
+             Table 7: Grad-CAM border-attention summary (n = 12 sampled predictions).
+
+                              Statistic             Correct     Incorrect
+                              n                           6         6
+                              Mean enrichment           0.875     0.765
+                              Std enrichment            0.209     0.311
+                              Overall                   Mann–Whitney U
+                              U statistic                     12.0
+                              p-value                        0.462
+                              Fraction below 1.0        0.917 (11 of 12)
+
+    Grad-CAM border-attention enrichment does not significantly differ between correct and incor-
+rect cross-domain predictions (p = 0.462, n = 6 each). More importantly, the direction is opposite
+to the hypothesis: correct predictions actually show higher border attention (mean 0.875) than
+incorrect ones (mean 0.765). And the vast majority of values are below 1.0, indicating that even
+the “high” attention predictions attend less to borders than a uniform heatmap would—models are
+generally avoiding image borders, not relying on them.
+    This negative result is informative. It suggests that Grad-CAM, a commonly used attribution
+method, is not a reliable diagnostic tool for understanding cross-dataset domain shift at practical
+sample sizes (n < 20). The low sample size (n = 12) is a limitation, but the reversed direction is a
+more fundamental problem: if the hypothesis were true (models fail because they rely on background
+information), we would expect incorrect predictions to show higher background attention, not lower.
+
+
+
+
+                                                   11
+                                       Grad-CAM border enrichment by prediction correctness
+
+
+
+                                 1.2
+   Border attention enrichment
+
+
+
+
+                                 1.0
+
+
+
+                                 0.8
+
+
+
+                                 0.6
+
+
+
+                                 0.4
+                                                            True label
+                                                           brown_spot
+                                                           tungro
+                                 0.2                       Neutral enrichment
+
+
+                                             Correct                            Incorrect
+
+  Source: frozen_results_v2/gradcam_records.csv, frozen_results_v2/gradcam_negative_summary.csv
+
+
+Figure 6: Border-attention enrichment from Grad-CAM, split by prediction correctness. Correct predictions
+(left boxplot) have median enrichment ≈ 0.87; incorrect predictions (right) have median enrichment ≈ 0.77.
+The distributions substantially overlap, and the Mann–Whitney U test yields p = 0.462. Most individual
+values are below 1.0 (neutral line), indicating that models attend less to image borders than a uniform
+heatmap would.
+
+
+
+
+                                                            12
+5     Discussion
+5.1   Summary of Findings
+We identify one statistically significant result: strong augmentation reliably improves cross-dataset
+transfer with an effect size of +0.070 F1 and p < 0.001. This is robust across all 18 transfer pairs
+and the most actionable finding from this work.
+    Two directional findings support the hypothesis that acquisition-condition shift contributes to
+transfer failure but is not the sole mechanism. Masking (removing non-leaf content) shows consistent
+directional improvement (pooled ∆ F1 = +0.066, p = 0.062) across two independent segmentation
+methods and two random seeds. AdaBN uniformly harms transfer, with the magnitude of harm
+predicted by source–target label-prior divergence and model depth.
+    One honest negative result: Grad-CAM attribution does not distinguish cross-domain successes
+from failures at the sample sizes and conditions tested here.
+
+5.2   Mechanisms of Transfer Failure
+The evidence collectively points to multiple, non-redundant failure modes:
+1. Acquisition-condition shift: The directional benefit of masking (despite not reaching conven-
+   tional significance) is consistent with the idea that background, lighting, and other acquisition
+   differences partially drive transfer failure. However, the heterogeneity of this effect across trans-
+   fer pairs and segmentation methods suggests that cropping and segmentation errors introduce
+   their own confounds, making this a partial and imperfect mechanism.
+2. Label-prior shift: The strong correlation between class-prior divergence and AdaBN harm
+   (Spearman ρ = 0.621, p = 0.009) provides clear evidence that label shift is a real and quantifiable
+   problem in this setting. Different datasets have different disease class distributions, and standard
+   adaptation strategies that do not account for this shift can make things worse rather than better.
+3. In-domain model quality: Dhan-Shomadhan and BRRI achieve weaker in-domain perfor-
+   mance (F1 0.62–0.64) compared to RiceLeafBD (F1 0.90). This baseline-quality difference con-
+   tributes to the reported cross-dataset gap; a model that struggles to recognize diseases in its own
+   domain will necessarily struggle more when transferred.
+4. Architecture does not explain the collapse: DINOv2 frozen features show equivalent cross-
+   dataset performance to CNNs, ruling out CNN-specific inductive biases as the primary mecha-
+   nism. The shift appears to be fundamentally about the datasets and their acquisition conditions,
+   not about the choice of backbone.
+
+5.3   What Remains Unresolved
+This study does not provide a complete causal picture of cross-dataset transfer failure in Bangladeshi
+rice disease classification. Several important gaps remain:
+1. Field validation: All three datasets are static image collections. Transfer failure in real deploy-
+   ment (e.g., in-canopy photography captured by farmers on phone cameras) may involve additional
+   failure modes not present in these curated collections.
+2. Geographic generalization: Results apply only to Bangladeshi datasets. Whether the same
+   mechanisms and strategies generalize to rice disease classification in other regions (e.g., South
+   Asia, Southeast Asia, East Asia) is unknown.
+
+                                                  13
+3. Why masking helps some pairs but not others: The heterogeneity of the masking inter-
+   vention across transfer directions remains unexplained. It is unclear whether this heterogeneity
+   reflects true differences in the importance of background information to different transfer prob-
+   lems, or whether it reflects systematic biases in the segmentation method (e.g., different cropping
+   patterns for images from different datasets).
+
+4. LODO failure: Leave-one-dataset-out (LODO) training—training on two datasets and evalu-
+   ating on the third—does not recover performance in our setting. The mechanism driving LODO
+   failure is not explored in this work.
+
+5.4   Implications
+1. Augmentation is the most reliable strategy. Among the adaptation methods tested here,
+   strong augmentation is the only one providing consistent, statistically significant benefit. This
+   is a strong recommendation for practitioners: if cross-dataset transfer is a concern, deploy aug-
+   mentation during training.
+
+2. Adaptation methods require care. Standard off-the-shelf adaptation techniques like Ad-
+   aBN can backfire if the source and target have mismatched label distributions. Any adaptation
+   strategy should account for class-prior shift.
+
+3. Attribution-based diagnostics are unreliable at small scale. Grad-CAM and similar
+   methods should not be trusted for diagnosing domain shift without adequate sample sizes and
+   appropriate baselines. The direction of an effect can be reversed from what theory predicts.
+
+
+6     Limitations
+• Regional scope: This study considers only Bangladeshi datasets. Generalization to other regions
+  is not established.
+
+• Masking as a proxy: Background removal via segmentation is an imperfect intervention. Seg-
+  mentation errors are confounded with the background effect, and cropping patterns may differ
+  systematically across datasets, introducing additional confounds not present in the true causal
+  mechanism.
+
+• Incomplete seed coverage: The masking intervention was tested at two seeds (42 and 2024)
+  rather than three. Variance estimates are thus incomplete compared to the baseline and augmen-
+  tation arms.
+
+• Grad-CAM sample size: The attribution analysis used only n = 12 predictions (6 correct,
+  6 incorrect). This is a small sample and may not have sufficient power to detect a true effect.
+  However, the reversed direction (correct predictions attend more to borders, not less) is a more
+  fundamental problem than sample size.
+
+• No field-deployment validation: All results apply to static image datasets. Real deploy-
+  ment conditions (in-canopy capture, phone photography, agronomist-confirmed labels) are not
+  evaluated.
+
+
+
+
+                                                 14
+7    Conclusion
+Cross-dataset transfer in Bangladeshi rice leaf disease classification exhibits substantial performance
+degradation, with cross-domain macro-F1 averaging 0.44 compared to pooled in-domain perfor-
+mance of 0.72. This 0.28-point gap reflects multiple interacting mechanisms: acquisition-condition
+differences (partially addressable via masking), label-prior shift (predictive of adaptation strategy
+failure), and inherent model difficulty in weak source domains.
+    Strong data augmentation is the single most reliable recovery strategy, providing a statistically
+significant +0.070 F1 improvement (p < 0.001) across all transfer pairs. Masking non-leaf content
+shows consistent directional benefit (+0.066 F1, p = 0.062, n = 36) but does not reach conventional
+significance, suggesting that background removal is a partial mitigation rather than a complete
+solution. Standard adaptation techniques like AdaBN uniformly harm performance when source
+and target have mismatched label distributions, with harm magnitude correlating strongly with
+model depth (Spearman ρ = 0.621, p = 0.009).
+    Architecture-independent validation using frozen DINOv2 features rules out CNN inductive
+bias as the primary driver of the collapse, pointing instead to acquisition-condition and dataset
+characteristics. All results are fully reproducible, with frozen data artifacts, cryptographic integrity
+verification, and prespecified analysis criteria available in a public repository.
+    Future work should extend this analysis to field-captured images with agronomist-confirmed la-
+bels, evaluate multi-region generalization, and develop adaptation strategies that explicitly account
+for label-shift and acquisition-condition differences.
+
+
+Code and Data Availability
+The reproducibility artifacts—frozen results, analysis code, the frozen_results_v2/ dataset, and
+audit records—are available at https://github.com/ANONYMOUS/REPOSITORY.
+
+
+References
+Jayme Garcia Arnal Barbedo. Impact of dataset size and variety on the effectiveness of deep learning
+  and transfer learning for plant disease classification. Computers and Electronics in Agriculture,
+  153:46–53, 2018.
+
+Mehdi Brahimi, Kamel Boukhalfa, and Abdelkader Moussaoui. Deep learning for plant disease detec-
+ tion and classification: A systematic literature review. Computers and Electronics in Agriculture,
+ 157:318–331, 2018.
+
+Konstantinos P Ferentinos. Deep learning models for plant disease detection and diagnosis. Com-
+  puters and Electronics in Agriculture, 145:311–318, 2018.
+
+Yaroslav Ganin and Victor Lempitsky. Unsupervised domain adaptation by backpropagation. arXiv
+  preprint arXiv:1409.7495, 2015.
+
+A Hasan, T A Layes, A S Afridi, S H Rifat, F N Nur, and N N Moon. A comprehensive dataset of
+  rice leaf images for disease detection using machine learning. Data in Brief, 62:111977, 2025.
+
+M F Hossain, S Abujar, S R H Noori, and S A Hossain. Dhan-shomadhan: A dataset of rice leaf
+ disease classification for bangladeshi local rice. Mendeley Data, version 1, 2021.
+
+
+
+                                                  15
+Yanghao Li, Naiyan Wang, Jian Shi, Jiaying Liu, and Xiaodi Hou. Revisiting batch normalization
+  for practical domain adaptation. arXiv preprint arXiv:1603.04779, 2016.
+
+Bingdao Liu and Yafeng Wang. Plant disease detection and classification using deep learning: A
+  review. IEEE Access, 9:56683–56698, 2021.
+
+Sharada P Mohanty, David P Hughes, and Marcel Salathé. Using deep learning for image-based
+  plant disease detection. Frontiers in Plant Science, 7:1419, 2016.
+
+Joaquin Quiñonero-Candela, Masashi Sugiyama, Anton Schwaighofer, and Neil D Lawrence. Dataset
+  Shift in Machine Learning. MIT Press, 2009.
+
+S A Rimi, M J U Chowdhury, R Abdullah, I Ahmed, M A Mim, and M S Rahman. Riceleafbd: A
+  real-field image dataset for rice leaf disease detection and classification in bangladesh. Mendeley
+  Data, version 1, 2025.
+
+F Rust et al. Agriculture-vision: A large aerial image database for agricultural pattern analy-
+  sis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+ Workshops, pages 57–66, 2020.
+
+Ramprasaath R Selvaraju, Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh,
+  and Dhruv Batra. Grad-cam: Visual explanations from deep networks via gradient-based localiza-
+  tion. In Proceedings of the IEEE International Conference on Computer Vision, pages 618–626,
+ 2017.
+
+Connor Shorten and Taghi M Khoshgoftaar. A survey on image data augmentation for deep learning.
+ Journal of Big Data, 6(1):60, 2019.
+
+Eric C Too, Li Yujian, Sizwan Njuki, and Li Yingchun. A comparative study of fine-tuning deep
+  learning models for plant disease identification. Computers and Electronics in Agriculture, 161:
+  272–279, 2019.
+
+Ross Wightman.     Pytorch image models (timm).                https://github.com/huggingface/
+  pytorch-image-models, 2019.
+
+Kaiyang Zhou, Ziwei Liu, Yu Qiao, Tao Xiang, and Chen Change Loy. Domain generalization: A
+ survey. IEEE Transactions on Pattern Analysis and Machine Intelligence, 45(4):4396–4415, 2022.
+
+
+
+
+                                                 16
+

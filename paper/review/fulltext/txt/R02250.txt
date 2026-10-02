@@ -1,0 +1,632 @@
+                                               TinyCNN: A 193K-Parameter Network for
+                                               On-Device Plant Disease Detection, with a
+                                                  Cross-Dataset Robustness Diagnosis
+
+                                                           Ngoc-Bao Ho-Lam1,2        and Thai-Anh Nguyen3
+                                                              1
+                                                                University of Science, VNU-HCM, Vietnam
+                                                      2
+                                                         Vietnam National University, Ho Chi Minh City, Vietnam
+arXiv:2609.20290v1 [cs.CV] 29 Jul 2026
+
+
+
+
+                                             3
+                                               Faculty of Information Technology, Van Lang School of Technology, Van Lang
+                                                                 University, Ho Chi Minh City, Vietnam
+                                                                     hlnbao23@apcs.fitus.edu.vn
+                                                                           anh.nt@vlu.edu.vn
+
+
+
+                                                 Abstract. Detecting crop disease early is central to sustainable agricul-
+                                                 ture and food security under United Nations Sustainable Development
+                                                 Goal 2 (Zero Hunger), and is especially urgent in resource-constrained
+                                                 regions where expert diagnosis is scarce but low-cost mobile devices are
+                                                 widespread. This paper presents TinyCNN, a lightweight convolutional
+                                                 neural network for on-device plant disease classification. TinyCNN uses
+                                                 depthwise separable convolution blocks and contains only 193,190 train-
+                                                 able parameters with 110.05M MACs for a 224 × 224 input image. On
+                                                 the 38-class PlantVillage benchmark, TinyCNN achieves 98.88% test
+                                                 accuracy and 98.03% macro-F1 while being approximately 58× smaller
+                                                 than ResNet18 and 11.8× smaller than a MobileNetV2 teacher, directly
+                                                 reducing the energy, memory, and cost footprint of inference in line with
+                                                 Green AI principles. The paper further analyzes vanilla knowledge dis-
+                                                 tillation as a sustainable model-compression strategy; an ablation over
+                                                 α ∈ {0.3, 0.5, 0.7} and T ∈ {2, 4} selects α = 0.3, T = 4, producing
+                                                 a distilled TinyCNN with 98.81% test accuracy. Finally, cross-dataset
+                                                 evaluation from PlantVillage to PlantDoc reveals a substantial robustness
+                                                 gap under real-world conditions, which a Grad-CAM analysis attributes
+                                                 to off-leaf, background-driven attention consistent with shortcut learning.
+                                                 TinyCNN is thus an energy-efficient, deployable building block for sus-
+                                                 tainable agricultural intelligence, while field robustness remains the key
+                                                 barrier to durable real-world impact.
+
+                                                 Keywords: Sustainable agriculture, plant disease detection, lightweight
+                                                 CNN, edge AI, Green AI, knowledge distillation, PlantVillage, PlantDoc.
+
+
+                                         1     Introduction
+                                         Plant diseases are a major threat to agricultural productivity and food security,
+                                         causing substantial yield losses worldwide [1]. Containing them is therefore central
+                                         to the United Nations Sustainable Development agenda, contributing directly to
+2         Ho-Lam and Nguyen
+
+Zero Hunger (SDG 2) and, through resource-efficient computation, to Responsible
+Consumption and Production (SDG 12), with reduced operational energy serving
+as a proxy for the carbon reductions targeted by Climate Action (SDG 13). Early,
+accurate diagnosis matters most in rural and resource-constrained regions, where
+expert plant pathologists are scarce but low-cost smartphones are increasingly
+ubiquitous. Such settings call for first-line visual diagnosis that runs on the device
+itself, which in turn demands models that are accurate, compact, and energy-
+efficient rather than dependent on cloud connectivity or high-end hardware.
+    Recent deep models reach strong accuracy on benchmarks such as PlantVillage
+[2], but accuracy alone is insufficient for sustainable deployment: large CNNs
+demand memory, computation, and energy that exceed low-resource devices and
+inflate the carbon footprint of inference [14,15]. Plant disease detection should
+therefore be treated jointly as a classification and a sustainability/deployment
+problem.
+    This paper proposes TinyCNN, a compact network that factorizes standard
+convolution into depthwise and pointwise operations [9,10] to reach 98.88%
+accuracy and 98.03% macro-F1 on the 38-class PlantVillage benchmark with only
+193,190 parameters and 110.05M MACs, making it approximately 58× smaller
+than ResNet18 and 11.8× smaller than the MobileNetV2 teacher at lower CPU
+latency.
+    We also analyze knowledge distillation (KD), which trains a small student
+from the hard labels and the softened predictions of a larger teacher [7], as a
+complementary compression strategy. KD need not improve a student when
+the teacher is near-saturated or the teacher-student capacity gap is large [16];
+we call a dataset on which both models already reach near-ceiling accuracy a
+saturated benchmark. Ablating the distillation weight α and temperature T and
+selecting α = 0.3, T = 4, our distilled TinyCNN matches but does not exceed the
+scratch-trained model, indicating limited benefit once the student already has
+sufficient capacity.
+    Finally, cross-dataset evaluation on PlantDoc [3] shows that all models,
+though strong on PlantVillage, degrade sharply under real-world conditions (e.g.,
+MobileNetV2 falls from 99.77% to 28.57%), confirming that high in-distribution
+accuracy does not guarantee field reliability.
+    The main contributions of this paper are as follows:
+    – Lightweight architecture. We propose TinyCNN, a 193K-parameter net-
+      work for on-device plant disease classification that reaches 98.88% accuracy
+      on PlantVillage while being ∼58× smaller than ResNet18.
+    – A quantitative shortcut-learning diagnosis. We introduce an off-leaf
+      ratio and use Grad-CAM to show that PlantVillage-trained models attend
+      predominantly to background rather than disease tissue, even when their
+      predictions are correct, giving a mechanistic explanation for their cross-dataset
+      collapse.
+    – A knowledge distillation insight. We show that on a near-saturated
+      benchmark vanilla logit-based KD acts only as a tunable regularizer, and
+      that α and T interact and must be tuned jointly rather than independently.
+                           TinyCNN for On-Device Plant Disease Detection         3
+
+2     Related Work
+
+2.1   Deep Learning for Plant Disease Detection
+Deep learning has become a dominant approach for image-based plant disease
+recognition. PlantVillage is one of the most widely used datasets in this area,
+providing labeled images of healthy and diseased plant leaves across multiple crop
+species [2]. Many CNN-based methods have reported very high accuracy on this
+benchmark, demonstrating the effectiveness of convolutional feature extraction for
+disease classification [4,5,6]. However, PlantVillage images are mostly captured
+under controlled conditions, often with clean backgrounds and consistent image
+composition. As a result, high PlantVillage accuracy may overestimate real-world
+performance.
+    To address this limitation, PlantDoc was introduced as a more challenging
+benchmark containing plant disease images captured in natural environments [3].
+These images include complex backgrounds, varying illumination, occlusion, and
+uncontrolled camera conditions. Cross-dataset evaluation from PlantVillage to
+PlantDoc is therefore important for measuring whether a model learns robust
+disease-related features or relies on dataset-specific visual patterns. Prior work
+has documented this PlantVillage-to-PlantDoc accuracy drop; the present paper
+instead explains its mechanism, using Grad-CAM to show quantitatively that
+the collapse coincides with model attention drifting off the leaf onto background
+context.
+
+
+2.2   Lightweight CNNs and Edge AI
+Efficient neural network design is essential for edge AI and sustainable computing.
+MobileNets introduced depthwise separable convolution to reduce computation
+while maintaining competitive accuracy [9]. MobileNetV2 further improved this
+design using inverted residuals and linear bottlenecks [8]. Other compact archi-
+tectures, such as ShuffleNet and EfficientNet, also explore accuracy-efficiency
+trade-offs through channel shuffling, compound scaling, or optimized architecture
+search [12,13].
+    In agriculture, deployment on smartphones, embedded boards, or low-power
+monitors makes such efficiency essential, and Green AI further motivates smaller,
+lower-energy models [14,15]. TinyCNN follows this direction with a task-specific
+compact design rather than a larger general-purpose CNN.
+
+
+2.3   Knowledge Distillation
+Knowledge distillation was popularized by Hinton et al., who showed that a
+student model can learn from the softened output distribution of a teacher model
+[7]. The teacher distribution may contain “dark knowledge”, such as similarity
+between classes, which is not captured by one-hot labels. KD has since been
+applied to many model compression and transfer learning tasks [18,19,20].
+4         Ho-Lam and Nguyen
+
+    However, KD performance depends strongly on the teacher, student, data
+distribution, and hyperparameters. Mirzadeh et al. showed that a large teacher-
+student capacity gap can make distillation less effective, motivating teacher-
+assistant distillation [16]. Other studies have also shown that stronger teachers are
+not always better teachers for small students [17]. In the context of PlantVillage,
+where both teacher and student can reach near-ceiling accuracy, KD must be
+analyzed carefully rather than assumed to improve performance.
+
+
+3      Method
+3.1     TinyCNN Architecture
+TinyCNN is designed as a compact convolutional neural network for 38-class
+plant disease classification under edge-device constraints. The model takes an
+RGB image of size 224 × 224 as input and produces a probability distribution
+over plant disease classes. The main design goal is to obtain a favorable trade-
+off between accuracy and computational efficiency by reducing the number of
+parameters and multiply-accumulate operations (MACs), while still preserving
+enough representational capacity for fine-grained disease symptoms.
+    The overall architecture follows a simple hierarchical CNN design. It starts
+with a standard convolutional stem that extracts low-level visual patterns such
+as edges, textures, and color variations. The stem is followed by four depthwise
+separable convolution blocks. These blocks progressively reduce the spatial res-
+olution while increasing the channel dimension, allowing the network to learn
+more abstract disease-related features at lower computational cost. Finally, global
+average pooling is used to aggregate spatial information, followed by dropout and
+a fully connected classifier. Fig. 1 illustrates the overall TinyCNN architecture.
+
+                               Depthwise separable blocks (×4)
+
+
+                  64        128        256       256       256            FC
+
+
+       Input   Conv stem   56²·128   28²·256   14²·256 14²·256   GAP Classifier Output
+      224²·3    112²·64                                          256-d   256→38   38 cls
+
+Fig. 1. Architecture of the proposed TinyCNN for on-device plant disease detection. A
+3 × 3 convolutional stem is followed by four depthwise separable convolution blocks,
+adaptive global average pooling, and a lightweight linear classifier. Block height encodes
+spatial resolution and block depth encodes channel count. The model has 193,190
+trainable parameters and 110.05M MACs for a 3 × 224 × 224 input.
+      The model can be summarized as:
+
+           x → Conv Stem → DSConv Blocks → GAP → Dropout → FC.                             (1)
+
+    The convolutional stem consists of a 3×3 convolution from 3 input channels to
+64 channels with stride 2, followed by batch normalization and ReLU6 activation.
+ReLU6 is used because it is commonly adopted in mobile-oriented architectures
+                            TinyCNN for On-Device Plant Disease Detection          5
+
+[9,8] and provides bounded activation values, which can be beneficial for efficient
+deployment and later quantization.
+    Each depthwise separable block factorizes a standard convolution into a
+depthwise 3 × 3 convolution (one spatial filter per channel) and a pointwise
+1 × 1 convolution (cross-channel mixing), each followed by batch normalization
+and ReLU6; this factorization sharply reduces computation. The four blocks are
+configured as 64 → 128 (stride 2), 128 → 256 (stride 2), 256 → 256 (stride 2),
+and 256 → 256 (stride 1): the first three reduce spatial resolution while raising
+the semantic level, and the last refines the high-level features. Adaptive global
+average pooling then produces a 256-dimensional vector, and a dropout layer
+(p=0.2) precedes the final linear classifier. The complete model contains 193,190
+trainable parameters and 110.05M MACs for a 224 × 224 input, making it suitable
+for on-device deployment.
+
+
+3.2   Teacher and Baseline Models
+To evaluate TinyCNN in a deployment-oriented setting, we compare it with
+two pretrained convolutional architectures: MobileNetV2 and ResNet18. Both
+models are initialized with ImageNet-pretrained weights, following the common
+transfer learning practice in plant disease recognition, where pretrained visual
+features can accelerate convergence and improve performance when fine-tuned
+on agricultural image datasets [5,6].
+    MobileNetV2, our teacher, balances accuracy and efficiency while remaining
+substantially larger than TinyCNN; it is built on inverted residual blocks and
+linear bottlenecks [8]. We replace its ImageNet classifier with a task-specific head:
+
+                        Dropout(0.2) → Linear(1280, 38).                         (2)
+
+The resulting teacher has 2,272,550 parameters and 326.26M MACs, making it a
+strong yet efficient source of soft-label supervision for the TinyCNN student.
+     ResNet18, a standard high-capacity residual baseline [11], is not used as a
+teacher but as a reference for the efficiency–accuracy frontier. Its ImageNet head
+is likewise replaced with a 38-class layer, giving 11,196,006 parameters and 1.82B
+MACs.
+     Together, these baselines let us assess whether a compact student can approach
+a stronger mobile-oriented teacher (MobileNetV2) and how TinyCNN sits on
+the efficiency–accuracy frontier relative to a conventional high-capacity CNN
+(ResNet18).
+
+
+3.3   Knowledge Distillation Objective
+Knowledge distillation transfers predictive information from the frozen,
+PlantVillage-fine-tuned MobileNetV2 teacher to the TinyCNN student. For each
+image, the teacher and student produce logits zt and zs , and the student is trained
+with two signals: a cross-entropy loss on the hard label y, and a distillation loss
+6       Ho-Lam and Nguyen
+
+that matches the teacher’s softened class distribution. For a temperature value
+T , the softened probability of class i is defined as:
+                                        exp(zi /T )
+                             pTi (z) = P               .                         (3)
+                                         j exp(zj /T )
+
+    A larger temperature produces a softer probability distribution, making
+non-maximum classes more visible. These secondary probabilities can encode
+inter-class similarity, such as visually similar plant diseases, and are commonly
+referred to as dark knowledge [7]. The complete distillation objective is:
+
+             LKD = (1 − α)LCE (zs , y) + αT 2 LKL pT (zt ) ∥ pT (zs ) .
+                                                                     
+                                                                              (4)
+
+    Here, α weights the teacher supervision and T controls its smoothness; the
+factor T 2 preserves the gradient scale across temperatures [7]. A larger α makes
+the student rely more on the teacher, while a smaller α keeps the ground-truth
+labels as the dominant signal.
+
+
+4     Experimental Setup
+4.1   Datasets
+The in-distribution dataset is PlantVillage [2], a widely used benchmark of
+leaf images across multiple crop species and disease categories. We merge the
+available training and validation folders into a single set of 54,305 images across
+38 classes, then re-split it with a stratified 70:15:15 ratio into 38,013 training,
+8,146 validation, and 8,146 test images, preserving the class distribution across
+splits.
+    For out-of-distribution evaluation, we use PlantDoc [3], which contains plant
+disease images captured under more realistic field conditions. Unlike PlantVillage,
+PlantDoc includes complex backgrounds, variable lighting, and uncontrolled
+image composition, making it suitable for evaluating cross-dataset robustness.
+In this study, we use the PlantDoc test set containing 252 images across 27
+mapped classes. Each PlantDoc class is manually mapped to its corresponding
+PlantVillage class. Fig. 2 illustrates the visual gap between the two datasets for
+several representative classes.
+    Two evaluation settings are used for PlantDoc. In the strict setting, the model
+predicts over all 38 PlantVillage classes, which tests whether the model can
+select the correct mapped class without any restriction. In the restricted setting,
+predictions are limited to the mapped PlantVillage classes only, which evaluates
+performance after removing unmapped output classes from consideration.
+
+4.2   Data Preprocessing and Augmentation
+All images are resized to 224 × 224 for compatibility across TinyCNN, Mo-
+bileNetV2, and ResNet18, matching the input of the ImageNet-pretrained back-
+bones [8,11]. For training, each image is resized so its shorter side is ⌊1.15 × 224⌋
+                                    TinyCNN for On-Device Plant Disease Detection                         7
+
+
+
+PlantVillage
+   (lab)
+(in-the-wild)
+  PlantDoc
+
+
+
+
+                       Apple scab      Corn rust   Grape black rot   Tomato bact. spot   Tomato healthy
+
+Fig. 2. Visual comparison between PlantVillage (top, controlled laboratory conditions)
+and PlantDoc (bottom, in-the-wild field conditions) for five representative classes.
+PlantDoc images exhibit complex backgrounds, variable illumination, occlusion, and
+uncontrolled composition, which motivates the cross-dataset robustness evaluation in
+Section 5.3.
+and then randomly resized-cropped with scale (0.7, 1.0), followed by random hori-
+zontal flipping (p=0.5), random rotation within ±15◦ , and color jitter (brightness,
+contrast, saturation = 0.2) to simulate field variation in orientation, lighting, and
+capture conditions [22]. For validation and testing, images are resized and center-
+cropped to 224 × 224 for deterministic evaluation. All images are normalized
+with the ImageNet mean and standard deviation, consistent with the pretrained
+backbones [21].
+
+4.3             Training Configuration
+All models follow a consistent protocol for fair comparison. We use AdamW
+(weight decay 10−4 ) [23], a cosine-annealing schedule [24], label smoothing 0.1
+[25], and gradient clipping at maximum norm 1.0 [26], with batch size 96 and
+a fixed seed of 42. The ImageNet-pretrained MobileNetV2 and ResNet18 are
+fine-tuned at learning rate 10−4 , whereas TinyCNN is trained from scratch at
+10−3 .
+    The MobileNetV2 teacher, ResNet18 baseline, scratch-trained TinyCNN, and
+final distilled TinyCNN are each trained for 15 epochs; each candidate in the KD
+ablation is trained for 8 epochs to compare (α, T ) settings efficiently before final
+retraining.
+
+4.4             Evaluation Metrics
+We report accuracy and macro-F1 on the PlantVillage test set; macro-F1 weights
+all classes equally and is important under the class imbalance typical of dis-
+ease datasets [27,28]. For deployment efficiency we report trainable parameters,
+multiply-accumulate operations (MACs), state-dict size, and CPU latency, the
+last measured at batch size 1 to approximate single-image on-device inference
+[9,8]. For cross-dataset robustness we additionally report strict and restricted
+accuracy and macro-F1 on PlantDoc.
+8       Ho-Lam and Nguyen
+
+5     Results
+
+5.1   PlantVillage Performance
+Table 1 reports the PlantVillage test performance and efficiency metrics. Mo-
+bileNetV2 achieves the highest accuracy, with 99.77% accuracy and 99.65%
+macro-F1. ResNet18 obtains 99.67% accuracy and 99.49% macro-F1. TinyCNN
+trained from scratch achieves 98.88% accuracy and 98.03% macro-F1 with only
+193K parameters.
+         Table 1. PlantVillage test performance and efficiency comparison.
+
+Model                      Params MACs         Size  Mean Lat. Acc. Macro-F1
+MobileNetV2 teacher         2.27M 326.26M 26.36 MB 17.95 ms 99.77    99.65
+ResNet18                    11.20M 1823.54M 128.25 MB 16.75 ms 99.67 99.49
+TinyCNN scratch              0.19M 110.05M 2.26 MB    4.27 ms 98.88  98.03
+TinyCNN KD (α = 0.3, T = 4) 0.19M 110.05M 2.26 MB      3.92 ms 98.81 97.72
+    The results show that TinyCNN provides a strong efficiency-accuracy trade-off.
+Compared with ResNet18, TinyCNN is approximately 58× smaller in parameters
+and requires about 16.6× fewer MACs; compared with MobileNetV2, it is 11.8×
+smaller and 4.2× faster on CPU, at a cost of only 0.89 percentage points of
+accuracy. MobileNetV2 is slightly slower than ResNet18 on CPU despite far fewer
+MACs, which is expected because its depthwise convolutions are memory-bound
+and less cache-friendly. Since the scratch-trained and distilled TinyCNN share
+an identical architecture, their inference cost is effectively the same; the small
+latency difference is measurement variance, not a speed-up from distillation.
+
+
+5.2   Knowledge Distillation Hyperparameter Analysis
+To determine the final distillation setting, we conduct a small ablation study
+over the distillation weight and temperature. Specifically, we evaluate α ∈
+{0.3, 0.5, 0.7} and T ∈ {2, 4}. Each candidate configuration is trained for 8
+epochs and compared using validation accuracy and macro-F1. The best valida-
+tion configuration is then selected and retrained for 15 epochs to obtain the final
+distilled TinyCNN model.
+Table 2. Knowledge distillation hyperparameter ablation. Each configuration is trained
+for 8 epochs and selected based on validation performance.
+
+                           α T Val. Acc. Val. F1 Test Acc.
+                          0.3 2 94.00     91.32    94.00
+                          0.3 4 97.62 96.16 97.86
+                          0.5 2 97.46     95.64    97.46
+                          0.5 4 97.43     95.04    97.54
+                          0.7 2 97.13     94.55    97.14
+                          0.7 4 96.98     93.85    97.29
+   As shown in Table 2, the best validation result is obtained with α = 0.3 and
+T = 4, reaching 97.62% validation accuracy and 96.16% validation macro-F1
+                           TinyCNN for On-Device Plant Disease Detection          9
+
+during the ablation stage. We caution against reading this as a simple “lower α
+is always better” trend, because the effect of α is not monotone and interacts
+with the temperature T . At T = 4, decreasing α from 0.7 to 0.3 improves
+validation accuracy (96.98% → 97.62%), consistent with keeping the ground-
+truth cross-entropy as the dominant learning signal. At T = 2, however, the
+same low-α setting is the weakest configuration (94.00%), while the intermediate
+α = 0.5 performs best. The most plausible explanation is that a low distillation
+weight becomes beneficial only once the teacher distribution has been sufficiently
+softened: at T = 2 the soft targets remain sharp and close to one-hot, so a small
+α provides too weak a learning signal within the short 8-epoch ablation budget.
+This also accounts for the comparatively low 94.00% outlier at (α = 0.3, T = 2),
+and indicates that α and T should be tuned jointly rather than independently.
+    This behavior is consistent with previous observations that knowledge dis-
+tillation is sensitive to the teacher-student capacity relationship and does not
+always improve a compact student model [16,17,18]. In our case, the MobileNetV2
+teacher reaches 99.77% test accuracy on PlantVillage while the scratch-trained
+TinyCNN already reaches 98.88%, so the student appears to have enough capacity
+to learn the main discriminative patterns from hard labels alone.
+    After selecting α = 0.3, T = 4, we retrain the final distilled TinyCNN for 15
+epochs. It reaches 98.81% test accuracy and 97.72% macro-F1, essentially match-
+ing the scratch-trained TinyCNN (98.88%, 98.03%). Under a single fixed seed, a
+0.07-point gap lies within run-to-run variance, so the conservative conclusion is
+that vanilla KD yields no measurable improvement on this saturated benchmark:
+even at T = 4, which softens the teacher and exposes its dark knowledge, the
+soft targets add little beyond the one-hot labels because teacher and student
+already agree on almost all examples. For compact models near the dataset
+ceiling, architecture design thus matters more than teacher supervision, and
+further gains likely require feature-level distillation, attention transfer, or more
+challenging training data.
+
+5.3   Cross-Dataset Evaluation on PlantDoc
+Table 3 reports cross-dataset evaluation from PlantVillage to PlantDoc. The
+results reveal a large domain shift. MobileNetV2 achieves the best strict accuracy,
+but only reaches 28.57%. ResNet18 achieves 26.98%, while TinyCNN scratch
+obtains 13.10%. Among KD ablation checkpoints, α = 0.7, T = 2 achieves the
+best strict and restricted PlantDoc accuracy, but the absolute performance
+remains low. Notably, the configuration that maximizes in-distribution validation
+accuracy (α = 0.3, T = 4) is not the one with the highest out-of-distribution
+accuracy (α = 0.7, T = 2); these PlantDoc differences are small, but the pattern
+cautions that in-distribution model selection need not track field robustness.
+For transparency, the KD rows are 8-epoch ablation checkpoints whereas the
+baselines are fully trained (15-epoch) networks.
+    The PlantDoc results show that strong in-distribution performance does not
+guarantee field robustness. Across the n=252 mapped images, MobileNetV2 falls
+from 99.77% PlantVillage accuracy to 28.57% strict PlantDoc accuracy (95%
+10      Ho-Lam and Nguyen
+
+                  Table 3. Cross-dataset evaluation on PlantDoc.
+
+Model                       Strict Acc. Strict Macro-F1 Restricted Acc. Restricted Macro-F1
+MobileNetV2 teacher            28.57          20.73          31.35              27.64
+ResNet18                       26.98          20.94          30.16              28.09
+TinyCNN scratch                13.10           8.94          17.06              14.29
+TinyCNN KD (α = 0.3, T = 2)    10.71           7.10          14.68              11.66
+TinyCNN KD (α = 0.3, T = 4)    13.10           9.91          15.08              12.57
+TinyCNN KD (α = 0.5, T = 2)    10.32           7.83          16.27              14.86
+TinyCNN KD (α = 0.5, T = 4)     8.33           5.92          12.70              10.61
+TinyCNN KD (α = 0.7, T = 2)    13.89          11.46          17.86              15.70
+TinyCNN KD (α = 0.7, T = 4)    13.49           9.50          17.06              14.12
+Wilson interval 23.3–34.4%) and TinyCNN from 98.88% to 13.10% (9.5–17.8%);
+the resulting gaps of 71.20 and 85.78 percentage points far exceed these intervals.
+Because the test set is small, within-group differences warrant caution: the two
+strongest models overlap (ResNet18 21.9–32.8% vs. MobileNetV2 23.3–34.4%)
+and the KD-checkpoint rows in Table 3 differ within overlapping Wilson intervals,
+so the robust finding is the uniformly low absolute accuracy rather than the rank
+order of individual rows.
+    To understand why performance collapses under domain shift, we perform
+a Grad-CAM error analysis [30] of the predicted class on representative Plant-
+Doc images. As Fig. 3 shows, attention frequently drifts off the leaf onto the
+background; we summarize this with an off-leaf ratio, the fraction of Grad-CAM
+activation mass outside the leaf region, which exceeds 80% across the displayed
+cases. Crucially, high off-leaf attention appears not only in misclassifications (e.g.,
+Early blight read as healthy) but also in correctly classified “healthy” samples, so
+the model can be right for the wrong reasons. This is characteristic of shortcut
+learning [31], where a model exploits dataset-specific cues such as the uniform
+laboratory backgrounds of PlantVillage that do not transfer to cluttered field
+conditions, giving a mechanistic explanation for the gap in Table 3: the mod-
+els have partly learned to recognize acquisition conditions rather than disease
+symptoms.
+
+5.4   Discussion
+Taken together, the experiments yield three deployment-oriented messages. (i) A
+task-specific compact architecture suffices on a controlled benchmark: TinyCNN
+matches much larger backbones on PlantVillage while using 11.8× fewer param-
+eters and ∼ 3× less per-image CPU compute than the MobileNetV2 teacher,
+directly lowering the energy and memory footprint of inference and making con-
+tinuous monitoring feasible on battery- or solar-powered edge hardware [9,8,14];
+as a first-order estimate, at the measured 4.27 ms CPU latency and a represen-
+tative edge-CPU draw of a few watts, a single inference costs on the order of
+ten millijoules (an order-of-magnitude figure, not a calibrated measurement), so
+the 4.2× latency reduction over MobileNetV2 translates into a comparable per-
+inference energy saving. (ii) On a near-saturated benchmark, vanilla logit-based
+KD behaves only as a tunable regularizer: with a sufficiently capable student,
+                                              TinyCNN for On-Device Plant Disease Detection                                          11
+
+
+
+   Input
+(on pred. class)
+  Grad-CAM
+
+
+
+
+                         true: Early blight   true: healthy   true: healthy     true: Apple scab     true: healthy   true: healthy
+                           pred: healthy      pred: healthy   pred: healthy   pred: Bacterial spot   pred: healthy   pred: healthy
+                           off-leaf=84%       off-leaf=83%    off-leaf=83%        off-leaf=82%       off-leaf=81%    off-leaf=81%
+
+
+Fig. 3. Grad-CAM error analysis on PlantDoc. The top row shows input images and the
+bottom row shows Grad-CAM saliency for the predicted class. In every case the off-leaf
+ratio (the fraction of activation mass outside the leaf region) exceeds 80%, revealing that
+the model attends to background context rather than disease symptoms. High off-leaf
+attention appears both in misclassified samples and in correctly classified “healthy”
+samples, indicating reliance on spurious, dataset-specific cues (shortcut learning) rather
+than transferable disease features.
+the soft labels add little beyond the hard labels [16,17,18]. (iii) In-distribution
+accuracy is not a proxy for field reliability: all models collapse on PlantDoc,
+and Grad-CAM traces this to off-leaf, background-driven attention, a form of
+shortcut learning that does not transfer across domains [30,31]. Closing this gap
+will require domain generalization and field-oriented training rather than larger
+backbones [22,29].
+    Limitations. Three caveats temper these conclusions. All results use a single
+training seed, so we report differences only when they exceed plausible run-to-
+run variance; multi-seed estimates would strengthen the KD comparison. The
+mapped PlantDoc set is small (252 images, 27 classes), so its numbers measure
+domain-shift sensitivity rather than full field performance. Finally, the off-leaf
+ratio depends on the leaf segmentation used to define the leaf region and is
+reported as a qualitative diagnostic.
+
+
+6                  Conclusion
+This paper presented TinyCNN, a 193,190-parameter depthwise-separable network
+for sustainable on-device plant disease detection that reaches 98.88% accuracy and
+98.03% macro-F1 on the 38-class PlantVillage benchmark while being roughly 58×
+smaller than ResNet18, making it well suited to low-resource edge deployment.
+    This paper also analyzed vanilla knowledge distillation with a MobileNetV2
+teacher. An ablation over α and T selected α = 0.3, T = 4, but the distilled
+model is statistically indistinguishable from the scratch-trained TinyCNN: on a
+near-saturated benchmark with a sufficiently capable student, vanilla logit-based
+distillation provides no measurable benefit, and α and T must be tuned jointly.
+    Finally, cross-dataset evaluation on PlantDoc revealed a substantial robustness
+gap that Grad-CAM traces to off-leaf, background-driven attention: strong
+performance on controlled datasets does not imply field reliability. Future work
+12      Ho-Lam and Nguyen
+
+should prioritize domain generalization, field-oriented augmentation, on-device
+quantization (ONNX/TFLite), and multi-seed validation on real edge hardware.
+
+
+Acknowledgments
+This research is supported by research funding from Faculty of Information
+Technology, University of Science, Vietnam National University - Ho Chi Minh
+City.
+
+
+References
+ 1. S. Savary, L. Willocquet, S. J. Pethybridge, P. Esker, N. McRoberts, and A. Nelson,
+    “The global burden of pathogens and pests on major food crops,” Nature Ecology &
+    Evolution, vol. 3, no. 3, pp. 430–439, 2019.
+ 2. D. P. Hughes and M. Salathé, “An open access repository of images on plant
+    health to enable the development of mobile disease diagnostics,” arXiv preprint
+    arXiv:1511.08060, 2015.
+ 3. D. Singh, N. Jain, P. Jain, P. Kayal, S. Kumawat, and N. Batra, “PlantDoc: A
+    dataset for visual plant disease detection,” in Proc. ACM India Joint International
+    Conference on Data Science and Management of Data, 2020, pp. 249–253.
+ 4. S. P. Mohanty, D. P. Hughes, and M. Salathé, “Using deep learning for image-based
+    plant disease detection,” Frontiers in Plant Science, vol. 7, p. 1419, 2016.
+ 5. E. C. Too, L. Yujian, S. Njuki, and L. Yingchun, “A comparative study of fine-tuning
+    deep learning models for plant disease identification,” Computers and Electronics
+    in Agriculture, vol. 161, pp. 272–279, 2019.
+ 6. K. P. Ferentinos, “Deep learning models for plant disease detection and diagnosis,”
+    Computers and Electronics in Agriculture, vol. 145, pp. 311–318, 2018.
+ 7. G. Hinton, O. Vinyals, and J. Dean, “Distilling the knowledge in a neural network,”
+    in Proc. NeurIPS Deep Learning and Representation Learning Workshop, 2015.
+ 8. M. Sandler, A. Howard, M. Zhu, A. Zhmoginov, and L.-C. Chen, “MobileNetV2:
+    Inverted residuals and linear bottlenecks,” in Proc. IEEE/CVF Conference on
+    Computer Vision and Pattern Recognition, 2018, pp. 4510–4520.
+ 9. A. G. Howard, M. Zhu, B. Chen, D. Kalenichenko, W. Wang, T. Weyand, M.
+    Andreetto, and H. Adam, “MobileNets: Efficient convolutional neural networks for
+    mobile vision applications,” arXiv preprint arXiv:1704.04861, 2017.
+10. F. Chollet, “Xception: Deep learning with depthwise separable convolutions,” in
+    Proc. IEEE Conference on Computer Vision and Pattern Recognition, 2017, pp.
+    1251–1258.
+11. K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,”
+    in Proc. IEEE Conference on Computer Vision and Pattern Recognition, 2016, pp.
+    770–778.
+12. X. Zhang, X. Zhou, M. Lin, and J. Sun, “ShuffleNet: An extremely efficient convolu-
+    tional neural network for mobile devices,” in Proc. IEEE Conference on Computer
+    Vision and Pattern Recognition, 2018, pp. 6848–6856.
+13. M. Tan and Q. Le, “EfficientNet: Rethinking model scaling for convolutional
+    neural networks,” in Proc. International Conference on Machine Learning, 2019,
+    pp. 6105–6114.
+                            TinyCNN for On-Device Plant Disease Detection            13
+
+14. R. Schwartz, J. Dodge, N. A. Smith, and O. Etzioni, “Green AI,” Communications
+    of the ACM, vol. 63, no. 12, pp. 54–63, 2020.
+15. E. Strubell, A. Ganesh, and A. McCallum, “Energy and policy considerations for
+    deep learning in NLP,” in Proc. Annual Meeting of the Association for Computational
+    Linguistics, 2019, pp. 3645–3650.
+16. S. I. Mirzadeh, M. Farajtabar, A. Li, N. Levine, A. Matsukawa, and H. Ghasemzadeh,
+    “Improved knowledge distillation via teacher assistant,” in Proc. AAAI Conference
+    on Artificial Intelligence, vol. 34, no. 04, 2020, pp. 5191–5198.
+17. J. H. Cho and B. Hariharan, “On the efficacy of knowledge distillation,” in Proc.
+    IEEE/CVF International Conference on Computer Vision, 2019, pp. 4794–4802.
+18. J. Gou, B. Yu, S. J. Maybank, and D. Tao, “Knowledge distillation: A survey,”
+    International Journal of Computer Vision, vol. 129, no. 6, pp. 1789–1819, 2021.
+19. A. Romero, N. Ballas, S. E. Kahou, A. Chassang, C. Gatta, and Y. Bengio,
+    “FitNets: Hints for thin deep nets,” in Proc. International Conference on Learning
+    Representations, 2015.
+20. N. Passalis and A. Tefas, “Learning deep representations with probabilistic knowl-
+    edge transfer,” in Proc. European Conference on Computer Vision, 2018, pp. 268–
+    284.
+21. J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “ImageNet: A large-
+    scale hierarchical image database,” in Proc. IEEE Conference on Computer Vision
+    and Pattern Recognition, 2009, pp. 248–255.
+22. C. Shorten and T. M. Khoshgoftaar, “A survey on image data augmentation for
+    deep learning,” Journal of Big Data, vol. 6, no. 1, pp. 1–48, 2019.
+23. I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in Proc.
+    International Conference on Learning Representations, 2019.
+24. I. Loshchilov and F. Hutter, “SGDR: Stochastic gradient descent with warm restarts,”
+    in Proc. International Conference on Learning Representations, 2017.
+25. C. Szegedy, V. Vanhoucke, S. Ioffe, J. Shlens, and Z. Wojna, “Rethinking the
+    Inception architecture for computer vision,” in Proc. IEEE Conference on Computer
+    Vision and Pattern Recognition, 2016, pp. 2818–2826.
+26. R. Pascanu, T. Mikolov, and Y. Bengio, “On the difficulty of training recurrent
+    neural networks,” in Proc. International Conference on Machine Learning, 2013,
+    pp. 1310–1318.
+27. M. Sokolova and G. Lapalme, “A systematic analysis of performance measures
+    for classification tasks,” Information Processing & Management, vol. 45, no. 4, pp.
+    427–437, 2009.
+28. D. M. W. Powers, “Evaluation: From precision, recall and F-measure to ROC, in-
+    formedness, markedness and correlation,” Journal of Machine Learning Technologies,
+    vol. 2, no. 1, pp. 37–63, 2011.
+29. K. Zhou, Z. Liu, Y. Qiao, T. Xiang, and C. C. Loy, “Domain generalization: A
+    survey,” IEEE Transactions on Pattern Analysis and Machine Intelligence, vol. 45,
+    no. 4, pp. 4396–4415, 2023.
+30. R. R. Selvaraju, M. Cogswell, A. Das, R. Vedantam, D. Parikh, and D. Batra, “Grad-
+    CAM: Visual explanations from deep networks via gradient-based localization,” in
+    Proc. IEEE International Conference on Computer Vision, 2017, pp. 618–626.
+31. R. Geirhos, J.-H. Jacobsen, C. Michaelis, R. Zemel, W. Brendel, M. Bethge, and
+    F. A. Wichmann, “Shortcut learning in deep neural networks,” Nature Machine
+    Intelligence, vol. 2, no. 11, pp. 665–673, 2020.
+

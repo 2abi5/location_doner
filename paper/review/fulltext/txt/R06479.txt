@@ -1,0 +1,438 @@
+                                                   Semi-Supervised Weed Detection in Vegetable Fields: In-domain and
+                                                                     Cross-domain Experiments
+
+                                                                                    Boyang Denga , Yuzhen Lua , Daniel Brainardb
+                                                                                  Yuzhen Lu (luyuzhen@msu.edu) is the corresponding author
+
+                                                       a Department of Agricultural and Biosystems Engineering, Michigan State University, East Lansing, MI 48824, USA
+                                                                     b Department of Horticulture, Michigan State University, East Lansing, MI 48824, USA
+arXiv:2502.17673v1 [cs.CV] 24 Feb 2025
+
+
+
+
+                                         Abstract
+                                         Robust weed detection remains a challenging task in precision weeding, requiring not only potent weed detection
+                                         models but also large-scale, labeled data. However, the labeled data adequate for model training is practically difficult
+                                         to come by due to the time-consuming, labor-intensive process that requires specialized expertise to recognize plant
+                                         species. This study introduces semi-supervised object detection (SSOD) methods for leveraging unlabeled data for
+                                         enhanced weed detection and proposes a new YOLOv8-based SSOD method, i.e., WeedTeacher. An experimental
+                                         comparison of four SSOD methods, including three existing frameworks (i.e., DenseTeacher, EfficientTeacher, and
+                                         SmallTeacher) and WeedTeacher, alongside fully supervised baselines, was conducted for weed detection in both in-
+                                         domain and cross-domain contexts. A new, diverse weed dataset was created as the testbed, comprising a total of
+                                         19,931 field images from two differing domains, including 8,435 labeled (basic-domain) images acquired by hand-
+                                         holding devices from 2021 to 2023 and 11,496 unlabeled (new-domain) images acquired by a ground-based mobile
+                                         platform in 2024. The in-domain experiment with models trained using 10% of the labeled, basic-domain images and
+                                         tested on the remaining 90% of the data, showed that the YOLOv8-based WeedTeacher achieved the highest accuracy
+                                         among all four SSOD methods, with an improvement of 2.6% mAP@50 and 3.1% mAP@50:95 over its supervised
+                                         baseline (i.e., YOLOv8l). In the cross-domain experiment where the unlabeled new-domain data was incorporated, all
+                                         four SSOD methods, however, resulted in no or limited improvements over their supervised counterparts. Research is
+                                         needed to address the difficulty of cross-domain data utilization for robust weed detection.
+                                         Keywords: Domain shift, Precision agriculture, Deep semi-supervised learning, Weed detection.
+
+
+                                         1. Introduction                                                           Machine vision technologies have advanced rapidly in
+                                                                                                                recent years, becoming a powerful tool for weed recogni-
+                                            Weeds pose a persistent challenge in crop production,               tion and precision weed control (Li et al., 2022). Taking
+                                         as the competition between weeds and crops for resources               advantage of imaging sensors and dedicated machine vi-
+                                         (e.g., light, nutrients, and water) can dramatically dimin-            sion algorithms for plant perception, site-specific weed
+                                         ish crop yield and quality. Among various biotic stres-                management promises to be practically implemented.
+                                         sors for crops, weeds account for an average of 31.5%                  Significant progress has been made in developing various
+                                         of global yield losses, resulting in an annual economic                machine vision-based weeding systems (Machleb et al.,
+                                         loss of over $30 billion (Kubiak et al., 2022). Weed man-              2020; Allmendinger et al., 2022; Young et al., 2023).
+                                         agement in vegetable crops faces particular challenges                 For example, Bawden et al. (2017) designed the AgBotII
+                                         due to the vulnerability of the cropping systems (West-                robotic prototype that integrated with vision-based plant
+                                         wood et al., 2018) and the limited herbicide options avail-            detection and classification for targeted treatment of in-
+                                         able (Boyd et al., 2022). Vegetables often have a shorter              dividual weed species. Their system achieved 92.3% ac-
+                                         growing season and less competitive ability, making them               curacy in identifying four weed species in a cotton field.
+                                         susceptible to yield losses when weeds are not well con-               The weeding actuator consisted of a hoe-style mechani-
+                                         trolled (Pannacci et al., 2017). Significant efforts includ-           cal module and a sprayer for weed-species-specific treat-
+                                         ing manual labor are thus often needed to effectively man-             ment based on weed detection, although incorrect treat-
+                                         age weeds in vegetables.
+
+
+
+                                         This work has been submitted to IFAC for possible publication                                                            February 26, 2025
+ments occurred due to misclassified weed species (Baw-               detector. It is noted that most existing SSOD techniques
+den et al., 2017). Recently, Upadhyay et al. (2024) devel-           were not designed for or may not generalize well to agri-
+oped a YOLOv4-based smart sprayer system to achieve                  cultural images.
+an average effective spraying rate of 90.6% in their field              Currently, there are only a handful of studies on
+experiment. However, their field experiment was con-                 SSL-based weed recognition.          Tseng et al. (2023)
+ducted on a single weed species, and the error rate of               proposed SmallTeacher with calibrated teacher-student
+9.4% was due to inaccurate weed detection. Therefore,                learning and FasterRCNN for weed detection, achieving a
+although significant progress has been made, improving               mAP@50 improvement of 3.88% on a two-class dataset
+weed detection performance remains a demanding task                  with 960 labeled images, compared to fully supervised
+for practical weed management.                                       baselines. Li et al. (2024) reported improved detection
+   As artificial intelligence (AI) is impacting agricul-             through SSL on two public cotton weed datasets (Dang
+ture, deep learning (DL) has become the cutting-edge                 et al., 2023; Rahman et al., 2023). To achieve a bet-
+for agricultural applications, beyond traditional image              ter balance between accuracy and efficiency, Saleh et al.
+processing and feature-engineering approaches. How-                  (2024) adapted the one-stage detector YOLOv5 for semi-
+ever, DL architectures generally require large-scale, an-            supervised weed detection, where multi-scale feature ex-
+notated datasets for supervised training, which is cru-              traction was implemented in the detector and a dynamic
+cial for developing robust machine vision systems ca-                pseudo-label assigner was used with a modified overall
+pable of adapting to diverse field conditions. Over the              training loss to reduce the effect of unreliable labels. All
+past ten years, numerous weed datasets have been created             these studies did not examine cross-domain weed detec-
+and made publicly available (Lu and Young, 2020; Deng                tion, which is important for real-world applications.
+et al., 2024b), although most of these datasets may be                  Inspired by SmallTeacher (Tseng et al., 2023) and
+insufficient to ensure satisfactory results because of lim-          MixPL (Chen et al., 2023), this study proposes a new
+ited representations of natural variability in weeds/crops           WeedTeacher that integrates YOLOv8 for enhanced weed
+and environmental factors. Compared to data collection               detection. The main contributions of this work are three-
+processes, annotating acquired images is indeed a rate-              fold: 1) the first integration of SSOD with YOLOv8 for
+limiting bottleneck due to the resources and expertise               multi-class weed detection, 2) a new, diverse dataset from
+needed to identify plant species and label individual in-            four seasons with a total of 19,931 field images as the
+stances, rendering it difficult and costly to label large vol-       weed detection testbed, and 3) performance comparison
+umes of data. In this regard, there is growing interest              of WeedTeacher and three existing SSOD methods (i.e.,
+in pursuing semi-supervised learning (SSL) techniques                EfficientTeacher, DenseTeacher, SmallTeacher), along-
+(Yang et al., 2022) to boost the performance of supervised           side their supervised baselines, for weed detection in both
+models while saving efforts for image annotation, by ex-             in-domain and cross-domain contexts.
+ploiting extensive amounts of unlabeled data and jointly
+learning from labeled and unlabeled data.                            2. Materials and Methods
+   As an extension of SSL traditionally for image classifi-
+cation, semi-supervised object detection (SSOD) focuses              2.1. Dataset Preparation
+on bounding box-based object detection tasks (Wang                      The weed dataset here consists of two subsets repre-
+et al., 2023), which generally involves implementing a               senting two distinct domains. One subset is the public
+teacher-student learning framework, i.e., firstly training           3SeasonWeedDet10 dataset (Lu, 2025), which consists
+an initial detector (teacher) using labeled data, then gen-          of 8,436 images of 10 weed classes; it was created in
+erating pseudo labels by the trained detector (teacher)              our earlier study to assess stable diffusion for weed im-
+and boxes on unlabeled data, and finally utilizing them              age generation (Deng and Lu, 2025). The images were
+alongside the existing labeled data to retrain the detection         collected over three consecutive years, including 4,704
+model (student). Different SSOD methods have been pro-               in 2021, 1,948 in 2022, and 1,784 in 2023, under nat-
+posed over the past five years in the computer vision field,         ural light conditions from diverse field sites in Missis-
+which differ mainly in pseudo-label selection and mod-               sippi and Michigan, and most of them were captured us-
+eling architectures. For instance, DenseTeacher (Zhou                ing handheld color cameras or smartphones. This dataset
+et al., 2022) introduced dense pseudo-maps and a region              was fully labeled with 27,963 bounding boxes for weed
+division strategy selection technique to enhance training            instances. A detailed description of data curation and
+without complex post-processing, while EfficientTeacher              statistics is given in Lu (2025) and Deng and Lu (2025).
+(Xu et al., 2023) aimed to improve pseudo-label consis-                 The other subset contains 11,496 unlabeled images ac-
+tency and training efficiency for one-stage, anchor-based            quired by a ground-based mobile platform (Deng et al.,
+
+
+
+                                                                 2
+                                                                         and the availability of their open-source implementation.
+                                                                         DenseTeacher stands out for its focus on dense predic-
+                                                                         tions, extending the teacher’s supervision beyond bound-
+                                                                         ing boxes to finer details across the feature map, improv-
+                                                                         ing the detection of small or overlapping objects. Effi-
+                                                                         cientTeacher induces a pseudo-label assigner for a refined
+                                                                         use of pseudo labels from dense detectors and an epoch
+                                                                         adaptor method for stable and efficient end-to-end train-
+                                                                         ing. As done in the original implementation of the two
+                                                                         SSOD methods, DenseTeacher and EfficientTeacher were
+                                                                         applied to FCOS (Tian et al., 2020) and YOLOv5 (Jocher,
+                                                                         2020), respectively, for weed detection here.
+                                                                            SmallTeacher (Tseng et al., 2023) was perhaps the
+Figure 1: The ground-based mobile platform for acquiring images in       first method proposed specifically for agricultural images,
+vegetable fields in 2024.
+                                                                         which is featured by calibrated teacher-student learning
+                                                                         through dynamic per-class calibration, weak teacher en-
+2024a), as shown in Figure 1. A color camera, with                       sembling using test-time augmentations, and weighted
+an output image resolution of 1616×2256 pixels (after                    boxes fusion (WBF) (Solovyev et al., 2021). The Small-
+applying a region of interest in the camera setup), was                  Teacher method was applied to Faster-RCNN (Ren et al.,
+mounted at a height of 70 cm above the ground, point-                    2020) for weed detection on a small, two-class dataset of
+ing downwards and covering the width of approximately                    960 images with the crops and weeds labeled. Although
+106 cm (2-3 crop rows). The platform was enclosed by                     it achieved improvements over full-supervised baselines,
+black panels to suppress the effect of variable field light,             the method did not generalize well to weed datasets in-
+and light sources were configured to provide controlled                  volving more complex field scenes and weed classes
+lighting during data collection. Images were collected                   based on our experimentation. Moreover, fast, source-
+in experimental field plots with five vegetable crops (i.e.,             efficient one-stage object detectors with high accuracy are
+turnips, carrots, cabbage, onions, and beets), grown un-                 more desirable for real-world applications. In this regard,
+der weed management, on the horticultural farm (Holt,                    a new SSOD method that integrates YOLOv8 (Jocher
+MI) of Michigan State University, during September and                   et al., 2023) for weed detection, i.e., WeedTeacher, was
+October of 2024. This subset shares the primary weeds in                 proposed in this study. Figure 3 shows the framework of
+the first subset (3SeasonWeedDet10) but with crop plants                 the proposed WeedTeacher.
+present in acquired images, and it is unlabeled.                            WeedTeacher integrates the dynamic per-class con-
+   Since the images in the two subsets have distinct dis-                fidence calibration and the WBF-based weak teacher
+tributions from vision examination (Figure 2), because                   ensembling of SmallTeacher into the YOLOv8 semi-
+of different methods for data collection and other fac-                  supervised training pipeline. To enhance efficiency,
+tors (e.g., field conditions), the two sets were considered              up to 1,000 unlabeled images were utilized for per-
+to represent different domains. The new domain sub-                      epoch threshold updates in WeedTeacher. The YOLOv8-
+set poses added challenges to weed detection, because                    based teacher model initialization and updates employ
+of comparatively low image quality (e.g., even lighting,                 the YOLOv5-based EfficientTeacher mechanism, which
+complex field scenes) (Figure 2). In this study, the fully               can be seamlessly transferred to the YOLOv8 training
+labeled subset is regarded as the basic domain, while the                process. Inspired by MixPL (Chen et al., 2023), which
+second unlabeled set is referred to as the new domain.                   shows that combining Mixup and Mosaic augmentations
+                                                                         helps reduce the negative impact of missed and incor-
+                                                                         rect pseudo-labels while introducing meaningful pertur-
+2.2. SSOD for In-domain and Cross-domain Weed De-
+                                                                         bations for accurate positive samples, the two advanced
+     tection
+                                                                         augmentations are thus incorporated in WeedTeacher dur-
+   Three existing SSOD frameworks were examined in                       ing data augmentation of teacher-predicted unlabeled im-
+this study for semi-supervised weed detection, that is,                  ages in training the student model. In addition, since stu-
+DenseTeacher (Zhou et al., 2022), EfficientTeacher (Xu                   dent models often struggle with predicting unlabeled im-
+et al., 2023), and SmallTeacher (Tseng et al., 2023).                    ages at the beginning, the first half of the training epochs
+The first two methods were chosen given their demon-                     serve as a burn-in phase to establish a stable founda-
+strated performance in generic object detection tasks                    tion before incorporating pseudo-labels from the teacher
+
+
+
+                                                                     3
+                    Figure 2: Example images from the labeled basic domain (left) and the unlabeled new domain (right).
+
+
+
+model. The WeedTeacher process is applied to the second                   2.3. Experimental Setup
+half of the training process.
+                                                                             Two experiments were conducted to evaluate SSOD
+                                                                          methods for weed detection. First, models were trained
+                                                                          using 10% of labeled images from the basic domain, with
+                                                                          the remaining 90% treated as unlabeled, which is referred
+                                                                          to as an in-domain weed detection configuration. In the
+                                                                          second experiment, all basic domain images were used as
+                                                                          labeled, while the unlabeled new domain images were in-
+                                                                          corporated to train models, which is referred to as a cross-
+                                                                          domain detection setup. In each scenario, fully super-
+                                                                          vised baseline models were trained for comparison. Fig-
+                                                                          ure 4 illustrates the modeling pipeline.
+                                                                             The DenseTeacher and EfficientTeacher models were
+                                                                          trained using the open-sourced packages (Zhou et al.,
+                                                                          2022; Xu et al., 2023), with default hyperparame-
+                                                                          ters, except that the learning rate for the DenseTeacher
+                                                                          was empirically adjusted to 0.001. Likewise, for the
+                                                                          WeedTeacher, the default hyperparameters of YOLOv8l
+                                                                          (large) were applied, including a learning rate of 0.01.
+Figure 3: YOLOv8-based WeedTeacher framework. EMA denotes ex-             Original high-resolution weed images were resized to the
+ponential moving average. Teacher and student models share the same       size of 960 × 960 pixels by scaling the longer side to 960
+YOLOv8-large architecture.                                                and padding the shorter side to maintain the aspect ratio.
+
+
+
+                                                                      4
+                                                                             2.4. Performance Metrics
+
+                                                                                Weed detection performance, in both semi-supervised
+                                                                             and fully supervised schemes, was assessed using
+                                                                             mean Average Precision (mAP). The metrics included
+                                                                             mAP@50, based on an Intersection over Union (IoU) at a
+                                                                             threshold of 0.5, and mAP@50:95, which represents the
+                                                                             average mAP across IoU thresholds from 0.50 to 0.95 in
+                                                                             an increment of 0.05. The two metrics are commonly
+                                                                             used for assessing object detectors in various applica-
+                                                                             tions. The basic formula for mAP is as follows:
+
+                                                                                                            N
+                                                                                                         1 X
+                                                                                                mAP =          APi                 (1)
+                                                                                                         N i=1
+
+                                                                                where N represents the number of weed classes, i.e.,
+                                                                             10 in this study, and APi denotes the average precision
+                                                                             for class i.
+
+
+                                                                             3. Results and Discussion
+
+                                                                             3.1. In-domain Weed Detection
+
+                                                                                Table 1 shows the in-domain weed detection re-
+                                                                             sults. Among four supervised baselines trained with la-
+                                                                             beled data, YOLOv8l gave the best accuracy, followed
+Figure 4: The modeling pipeline of semi-supervised weed detection ex-        by YOLOv5l, FCOS, and Faster-RCNN. For the four
+periments. The yellow path represents modeling data within the basic         SSOD frameworks, SmallTeacher gave the lowest ac-
+domain, while the blue path indicates the experiment incorporating the
+                                                                             curacy and slightly underperformed its supervised base-
+new domain images as unlabeled data.
+                                                                             line (Faster-RCNN), indicating deficiencies in the frame-
+                                                                             work. DenseTeacher experienced a marked drop of
+                                                                             13.4% in mAP@50 (-13.4%) and 12.5% in mAP@50:95,
+All models were trained for 36 epochs with a batch size                      compared to its YOLOv5 baseline. The poor perfor-
+of 4, which allowed adequate convergence from empirical                      mance remains to be ascertained, despite the demon-
+observations.                                                                strated efficacy of DenseTeacher on generic computer vi-
+                                                                             sion datasets (e.g., COCO) (Zhou et al., 2022). In con-
+   Throughout the training process for all the SSOD                          trast, EfficientTeacher achieved improvements of 11.9%
+frameworks, the exponential moving average (EMA) was                         in mAP@50 and 7.9% in mAP@50:90, over its super-
+employed for updating teacher models. Moreover, as                           vised counterparts. Compared to EfficientTeacher, the
+in our prior study (Deng et al., 2024b), the Monte-                          proposed YOLOv8-based WeedTeacher yielded smaller
+Carlo cross-validation with three replications, in which                     (2.6% in mAP@50 and 3.1 in mAP@50:95) yet mean-
+the dataset was split into training, validation, and testing                 ingful improvements, and notably, it outperformed three
+sets according to a ratio of 75% : 5% : 20% using a dif-                     other SSOD frameworks by a large margin, which might
+ferent seed in each replication. Performance metrics on                      be largely attributed to the use of YOLOv8l in the frame-
+the test set were averaged across the three replications for                 work. Although it is tempting to upgrade FCOS and
+model assessment. The experiments were conducted us-                         YOLOv5l with YOLOv8l in DenseTeacher and Efficient-
+ing Python packages including PaddlePaddle (v3.0.0) for                      Teacher, respectively, the difficulty in implementing the
+DenseTeacher and PyTorch (v1.13.1) for SmallTeacher,                         two frameworks on such a more advanced detector as
+EfficientTeacher, and WeedTeacher on a workstation with                      YOLOv8, which remains to be addressed, hindered the
+an Intel i9-10900X CPU (256 GB RAM) and NVIDIA                               exploitation of the two frameworks for a fairer perfor-
+RTX A6000 GPU (48 GB).                                                       mance comparison.
+
+
+
+                                                                         5
+Table 1: In-domain weed detection on the basic domain dataset (Fig-             3.3. Discussion
+ure 4). “Full” and “Semi” denote the fully supervised and semi-
+supervised models, respectively. The “Full” model is based on 10%
+labeled training data, while the “Semi” additionally incorporates the re-          The utilization of unlabeled, in-domain images for
+maining 90% of data treated as unlabeled.                                       SSOD has been explored in many studies (Zhou et al.,
+                                                                                2022; Xu et al., 2023; Tseng et al., 2023). In this context,
+ Frameworks                         mAP@50             mAP@50:95                the common practice to evaluate SSOD performance is
+ DenseTeacher             Full      66.9               43.6                     to split a fully labeled dataset into various proportions,
+ (FCOS)                   Semi      53.5 (-13.4)       31.1 (-12.5)             designating a subset as labeled and the rest as unlabeled,
+ EfficientTeacher         Full      61.5               42.5                     followed by validation on different portions of labeled
+ (YOLOv5l)                Semi      73.4 (+11.9)       50.4 (+7.9)              data. In this study, incorporating unlabeled new-domain
+ SmallTeacher             Full      53.8               25.5                     images was evaluated for the first time. As shown in Ta-
+ (Faster R-CNN)           Semi      53.1 (-0.7)        24.9 (-0.6)              ble 2, using unlabeled label images from a new, differ-
+ WeedTeacher              Full      85.0               74.1                     ing domain, for even the state-of-the-art SSOD methods,
+ (YOLOv8l)                Semi      87.6 (+2.6)        77.2 (+3.1)              results in minimal or no improvement compared to su-
+                                                                                pervised baselines, indicating the challenges with cross-
+                                                                                domain weed detection (Deng et al., 2024b). The ap-
+3.2. Cross-domain Weed Detection                                                proaches specifically for cross-domain object detection,
+                                                                                such as HarmoniousTeacher (Deng et al., 2023) and Ver-
+   For the cross-domain weed detection (Table 2), the su-                       satileTeacher (Yang et al., 2025), and domain adaptation
+pervised baseline detectors showed a similar trend, with                        techniques can potentially help. An intuitive strategy may
+YOLOv8l remaining the best detector. With more la-                              involve annotating a small portion of the new domain to
+beled data for training, all models improved substantially                      enable the adaptation of models to the new domain (Inoue
+compared to those in the in-domain experiment where                             et al., 2023). These approaches need further exploration
+only 10% of labeled data were included. For SSOD,                               in future work.
+DenseTeacher slightly improved over its supervised base-                           The rapid advancements of object detectors demand
+line, although the method performed unsatisfactorily in                         SSOD frameworks that are easily adaptable. Given the
+the in-domain experiment. In contrast, all the other SSOD                       diversity of two-stage anchor-based, one-stage anchor-
+frameworks did not yield improvements but instead ex-                           free, and one-stage anchor-based detectors, it is desirable
+perienced a slight degradation. Overall, there was no or                        for SSOD frameworks that can readily adapt to different
+limited impact due to incorporating unlabeled data from                         types of detectors instead of being tied to specific detec-
+a new domain on weed detection, underscoring the chal-                          tor architectures. Although it is difficult to predict which
+lenge with cross-domain weed detection. In such con-                            type of detector will achieve state-of-the-art performance
+texts, even high-confidence pseudo-labels predicted by                          at any given time, generally newer versions of the detec-
+the teacher model could be inaccurate, thus compromis-                          tors tend to improve over older ones, and the performance
+ing student model performance. Research is needed to                            gain due to implementing more advanced detectors of-
+explore more effective approaches for unlabeled, cross-                         ten outweighs the benefits of the SSOD framework itself.
+domain data utilization.                                                        Therefore, scaling the SSOD to advanced detectors can
+                                                                                be more rewarding than optimizing the framework solely
+Table 2: Cross-domain weed detection (Figure 4). “Full” uses all ba-            for older detectors.
+sic domain data alone while “Semi” additionally incorporates unlabeled             Currently, most existing SSOD frameworks are de-
+data from a new domain.                                                         signed for or evaluated on older detection architectures
+                                                                                (e.g., Faster R-CNN, FCOS, and YOLOv5), and adapt-
+ Frameworks                          mAP@50            mAP@50:95
+                                                                                ing them to newer, more advanced detectors is not a triv-
+ DenseTeacher             Full       87.9              73.8
+                                                                                ial task. The complexity is caused by the intricate im-
+ (FCOS)                   Semi       88.5 (+0.6)       74.2 (+0.4)
+                                                                                plementation requirements of SSOD, such as integrating
+ EfficientTeacher         Full       93                79.9
+                                                                                the teacher model into the detection pipeline and mod-
+ (YOLOv5l)                Semi       92.6 (-0.4)       80.8 (+0.9)
+                                                                                ifying student losses or introducing new loss functions
+ SmallTeacher             Full       82.8              61.9
+                                                                                that involve the teacher model. Modifications to loss
+ (Faster R-CNN)           Semi       82.7 (-0.1)       61.8 (-0.1)
+                                                                                functions create difficulties when implementing SSOD in
+ WeedTeacher              Full       94.6              87
+                                                                                new detectors with innovative structures. Hence, achiev-
+ (YOLOv8l)                Semi       94.5 (-0.1)       86.7 (-0.3)
+                                                                                ing SSOD by primarily relying on pre-epoch or teacher-
+                                                                                based operations (e.g., dynamic per-class calibration and
+
+
+
+                                                                            6
+weak teacher ensembling) along with effective data aug-                       Z. Chen, W. Zhang, X. Wang, K. Chen, and Z. Wang. Mixed
+mentation can greatly enhance the transferability of the                         pseudo labels for semi-supervised object detection. arXiv preprint
+                                                                                 arXiv:2312.07006, 2023.
+SSOD framework. The WeedTeacher proposed in this                              F. Dang, D. Chen, Y. Lu, and Z. Li. Yoloweeds: A novel benchmark
+study, which requires no modifications to the detector’s                         of yolo object detectors for multi-class weed detection in cotton pro-
+loss functions, offers flexibility and compatibility with                        duction systems. Computers and Electronics in Agriculture, 205:
+evolving detector designs and thus the ease of integration                       107655, 2023.
+                                                                              B. Deng and Y. Lu. Weed image augmentation by controlnet-added sta-
+with advanced detectors such as YOLOv8. The integra-                             ble diffusion for multi-class weed detection. Computers and Elec-
+tion with the latest versions of YOLO detectors, such as                         tronics in Agriculture, 232:110123, 2025.
+YOLOv11 (Jocher and Qiu, 2024) and YOLOv12 (Tian                              B. Deng, Y. Lu, and D. Brainard. Development and preliminary eval-
+et al., 2025), will be pursued in future work.                                   uation of a vision-guided smart sprayer prototype towards precision
+                                                                                 vegetable weeding. ASABE Annual International Meeting 2400059,
+                                                                                 2024a. doi: https://doi.org/10.13031/aim.202400089.
+4. Conclusion                                                                 B. Deng, Y. Lu, and J. Xu. Weed database development: An up-
+                                                                                 dated survey of public weed datasets and cross-season weed detec-
+   This study presents the new WeedTeacher that in-                              tion adaptation. Ecological Informatics, 81:102546, 2024b.
+                                                                              N. Inoue, R. Furuta, T. Yamasaki, and K. Aizawa. Cross-domain
+tegrates with YOLOv8l for enhanced weed detection                                weakly-supervised object detection through progressive domain
+through leveraging unlabeled data, and a compari-                                adaptation. In IEEE Conference on Computer Vision and Pattern
+son of the method with three existing SSOD methods                               Recognition, pages 5001–5009, 2023.
+(i.e., DenseTeacher, EfficientTeacher, and SmallTeacher)                      G. Jocher. Yolov5 by ultralytics (version 7.0) [computer software]. Zen-
+                                                                                 odo, 2020. doi: https://doi.org/10.5281/zenodo.3908559.
+alongside supervised baselines for both in-domain and                         G. Jocher and J. Qiu. Ultralytics yolo11. 2024. URL https:
+cross-domain weed detection. A new four-season weed                              //github.com/ultralytics/ultralytics.
+dataset consisting of 19,931 field images, with 11,496 un-                    G. Jocher, J. Qiu, and A. Chaurasia. Ultralytics yolo (version 8.0.0)
+labeled from a new domain, was created as the testbed.                           [computer software]. 2023. doi: https://doi.org/10.5281/zenodo.
+                                                                                 3908559.
+For in-domain detection, WeedTeacher performed the                            N. P. Kubiak, A. Wolna-Maruwka, A. Niewiadomska, and A. Pilarska.
+best among all four SSOD methods and improved over                               The problem of weed infestation of agricultural plantations vs. the
+the YOLOv8l baseline by 2.6% mAP@50 and 3.1%                                     assumptions of the european biodiversity strategy. Agronomy, 12(8):
+                                                                                 1808, 2022.
+mAP@50:95. The cross-domain experiment resulted
+                                                                              J. Li, D. Chen, X. Yin, and Z. Li. Performance evaluation of semi-
+in no or minimal efficacy of all four SSOD methods                               supervised learning frameworks for multi-class weed detection.
+for weed detection, compared to their supervised base-                           Frontiers in Plant Science, 15:1396568, 2024.
+lines, highlighting the challenges of utilizing unlabeled                     Y. Li, Z. Guo, F. Shuang, M. Zhang, and X. Li. Key technologies of
+                                                                                 machine vision for weeding robots: A review and benchmark. Com-
+cross-domain images. Research is needed to develop                               puters and Electronics in Agriculture, 196:106880, 2022.
+approaches for enhanced cross-domain weed detection                           Y. Lu. 3seasonweeddet10: a three-season, 10-class dataset for bench-
+while effectively leveraging unlabeled new-domain data.                          marking ai models for robust weed detection [data set]. Zenodo,
+                                                                                 2025. doi: https://doi.org/10.5281/zenodo.14861516.
+                                                                              Y. Lu and S. Young. A survey of public datasets for computer vision
+Acknowledgment                                                                   tasks in precision agriculture. Computers and Electronics in Agri-
+                                                                                 culture, 178:105760, 2020.
+   This work was supported by the Discretionary Fund-                         J. Machleb, G. G. Peteinatos, B. L. Kollenda, D. Andújar, and R. Ger-
+ing Initiative of Michigan State University and the Farm                         hards. Key technologies of machine vision for weeding robots: A
+                                                                                 review and benchmark. Computers and Electronics in Agriculture,
+Innovation Grant of the Michigan Department of Agricul-                          176:105638, 2020.
+ture and Rural Development.                                                   E. Pannacci, B. Lattanzi, and F. Tei. Non-chemical weed management
+                                                                                 strategies in minor crops: A review. Crop protection, 96:44–58,
+                                                                                 2017.
+References                                                                    A. Rahman, Y. Lu, and H. Wang. Performance evaluation of deep learn-
+A. Allmendinger, M. Spaeth, P. G. G. Saile, M., and R. Gerhards. Pre-            ing object detectors for weed detection for cotton. Smart Agricul-
+   cision chemical weed management strategies: A review and a design             tural Technology, 3:100126, 2023.
+   of a new cnn-based modular spot sprayer. Agronomy, 12(7):1620,             S. Ren, K. He, R. Girshick, and J. Sun. Faster r-cnn: Towards real-
+   2022.                                                                         time object detection with region proposal networks. IEEE Trans-
+O. Bawden, J. Kulk, R. Russell, C. McCool, A. English, F. Dayoub,                actions on Pattern Analysis and Machine Intelligence, 39(6):1137–
+   C. Lehnert, and T. Perez. Robot for weed species plant-specific man-          1149, 2020.
+   agement. Journal of Field Robotics, 34(6):1179–1199, 2017.                 A. Saleh, A. Olsen, J. Wood, B. Philippa, and M. Azghadi. Semi-
+N. S. Boyd, M. L. Moretti, L. M. Sosnoskie, V. Singh, R. Kanissery.,             supervised weed detection for rapid deployment and enhanced ef-
+   S. Sharpe., T. Besançon., S. Culpepper., R. Nurse, H. Hatterman-             ficiency. arXiv preprint arXiv:2405.07399, 2024.
+   Valenti, E. Mosqueda, D. RObinson, W. Cutulle, and R. Sandhu.              R. Solovyev, W. Wang, and T. Gabruseva. Weighted boxes fusion: En-
+   Occurrence and management of herbicide resistance in annual veg-              sembling boxes from different object detection models. Image and
+   etable production systems in north america. Weed science, 70(5):              Vision Computing, 107:104117, 2021.
+   515–528, 2022.                                                             Y. Tian, Q. Ye, and D. Doermann. Yolov12: Attention-centric real-time
+
+
+
+
+                                                                          7
+   object detectors. arXiv preprint arXiv:2502.12524, 2025.
+Z. Tian, H. Shen, C.and Chen, and T. He. Fcos: A simple and strong
+   anchor-free object detector. IEEE Transactions on Pattern Analysis
+   and Machine Intelligence, 44:1922–1933, 2020.
+G. Tseng, K. Sinkovics, T. Watsham, D. Rolnick, and T. C. Walters.
+   Semi-supervised object detection for agriculture. In 2nd AAAI Work-
+   shop on AI for Agriculture and Food Systems, 2023.
+A. Upadhyay, G. C. Sunil, Y. Zhang, C. Koparan, and X. Sun. De-
+   velopment and evaluation of a machine vision and deep learning-
+   based smart sprayer system for site-specific weed management in
+   row crops: An edge computing approach. Journal of Agriculture
+   and Food Research, 18:101331, 2024.
+Y. Wang, Z. Liu, and S. Lian.          Semi-supervised object detec-
+   tion: A survey on recent research and progress. arXiv preprint
+   arXiv:2306.14106, 2023.
+J. H. Westwood, R. Charudattan, S. O. Duke, S. A. Fennimore, P. Mar-
+   rone, D. C. Slaughter, C. Swanton, and R. Zollinger. Weed man-
+   agement in 2050: Perspectives on the future of weed science. Weed
+   science, 66(3):275–285, 2018.
+B. Xu, M. Chen, W. Guan, and L. Hu.                   Efficient teacher:
+   Semi-supervised object detection for yolov5.          arXiv preprint
+   arXiv:2302.07577, 2023.
+R. Yang, T. Tian, and J. Tian. Versatile teacher: a class-aware
+   teacher–student framework for cross-domain adaptation. Pattern
+   Recognition, 158:111024, 2025.
+X. Yang, Z. Song, I. King, and Z. Xu. A survey on deep semi-supervised
+   learning. IEEE Transactions on Knowledge and Data Engineering,
+   35(9):8934–8954, 2022.
+S. Young, G. Meyer, and W. Woldt. Integrated weed management in
+   organic farming. In Organic Farming (Second Edition), pages 31–
+   109. Woodhead publishing, 2023.
+H. Zhou, Z. Ge, S. Liu, W. Mao, Z. Li, H. Yu, and J. Sun. Dense
+   teacher: Dense pseudo-labels for semi-supervised object detection.
+   In European Conference on Computer Vision, pages 35–50, 2022.
+
+
+
+
+                                                                           8
+

@@ -1,0 +1,1224 @@
+                                         JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                        1
+
+
+
+
+                                            DepthCropSeg++: Scaling a Crop Segmentation Foundation Model
+                                                                                           With Depth-Labeled Data
+                                                                         Jiafei Zhang, Songliang Cao, Binghui Xu, Yanan Li, Weiwei Jia,
+                                                                       Tingting Wu, Hao Lu, Member, IEEE, Weijuan Hu, and Zhiguo Han
+
+
+
+                                            Abstract—We introduce DepthCropSeg++, a foundation model                      (+0.36% and +48.57% respectively). The model particularly
+                                         for crop segmentation, capable of segmenting different crop                      excels in challenging scenarios including night-time environment
+                                         species under open in-field environment. Crop segmentation is                    (86.90% mIoU), high-density canopies (99.86% mIoU), and un-
+                                         a fundamental task for modern agriculture, which closely relates                 seen crop varieties (90.09% mIoU), indicating a new state of the
+                                         to many downstream tasks such as plant phenotyping, density                      art for crop segmentation.
+arXiv:2601.12366v1 [cs.CV] 18 Jan 2026
+
+
+
+
+                                         estimation, and weed control. In the era of foundation models, a
+                                         number of generic large language and vision models have been                        Index Terms—Crop segmentation, Foundation model, Agricul-
+                                         developed. These models have demonstrated remarkable real-                       tural vision, Plant phenotyping, Vision transformer
+                                         world generalization due to significant model capacity and large-
+                                         scale datasets. However, current crop segmentation models mostly                                       I. I NTRODUCTION
+                                         learn from limited data due to expensive pixel-level labelling
+                                         cost, often performing well only under specific crop types or
+                                         controlled environment. In this work, we follow the vein of our
+                                         previous work DepthCropSeg, an almost unsupervised approach
+                                                                                                                          P    LANT phenotyping refers to the comprehensive mea-
+                                                                                                                               surement and analysis of plant traits, including morphol-
+                                                                                                                          ogy, physiology, and biochemical characteristics [1]. Accurate
+                                         to crop segmentation, to scale up a cross-species and cross-                     phenotyping is essential for understanding plant responses
+                                         scene crop segmentation dataset, with 28, 406 images across 30+
+                                         species and 15 environmental conditions. We also build upon a                    to environmental changes and for developing strategies to
+                                         state-of-the-art semantic segmentation architecture ViT-Adapter                  enhance plant resilience and productivity. Crop segmentation
+                                         architecture, enhance it with dynamic upsampling for improved                    is one of fundamental tasks in this regime, as it provides
+                                         detail awareness, and train the model with a two-stage self-                     the basis for extracting various traits from plant images. In
+                                         training pipeline. To systematically validate model performance,                 quantitative remote sensing of vegetation, crop segmentation
+                                         we conduct comprehensive experiments to justify the effectiveness
+                                         and generalization capabilities across multiple crop datasets. Re-               also supports the extraction of canopy structure parameters
+                                         sults demonstrate that DepthCropSeg++ achieves 93.11% mIoU                       such as Green fraction (GF), Green area index (GAI), and
+                                         on a comprehensive testing set, outperforming both supervised                    Leaf angle distribution (LAD), which dynamically affects the
+                                         baselines and general-purpose vision foundation models like                      productivity of crops [2]. The accuracy of crop segmentation
+                                         Segmentation Anything Model (SAM) by significant margins                         directly influences the performance of plant phenotyping [3]
+                                                                                                                          and other related agricultural vision tasks such as density
+                                            This work was jointly supported by the Key Technology Research and            estimation [4], [5], cover crop identification [6] and weed
+                                         Development Program of Shanghai under Grant No. 25N32800100, National
+                                         Key R & D Program of China under Grant No. 2023YFF1001502, Na-                   control [7].
+                                         tional Natural Science Foundation of China Under Grant No. 32370435,                To enhance performance in these agricultural downstream
+                                         Central Government’s Guidance Fund for Local Science and Technology              tasks, researchers have explored many methods [8]. Currently,
+                                         Development Under Grant No. 2024ZY-CGZY-19, Hubei Provincial Natural
+                                         Science Foundation of China under Grant No. 2024AFB566, and PhenoTrait           the mainstream ones are those based on deep learning. How-
+                                         Foundation. Part of work was done when Binghui Xu was with School of             ever, existing crop segmentation models [9]–[11] generally ex-
+                                         Artificial Intelligence and Automation, Huazhong University of Science and       hibit limited specificity, often achieving optimal performance
+                                         Technology, Wuhan, 430074, China and when Binghui Xu and Songliang
+                                         Cao were interns at PhenoTrait Technology. (Jiafei Zhang and Binghui Xu          only under specific crop varieties and imaging conditions.
+                                         contributed equally to this work.) (Corresponding author: Weijuan Hu and         This is because the inherent particularities of agricultural
+                                         Zhiguo Han.)                                                                     imagery primarily constrain the generalization capabilities of
+                                            J. Zhang and Z. Han are with MetaPheno Laboratory, Shanghai 201114,
+                                         China, and with PhenoTrait Technology Co., Ltd., Beijing 100096, China           segmentation models: i) there are significant morphological
+                                         (e-mail: {joyce.zhang,david.han}@phenotrait.com).                                and textural variations between different varieties of crops; ii)
+                                            B. Xu is with Wuhan Digital Engineering Institute, Wuhan 430205, China        significant variations exist in the same plant across different
+                                         (e-mail: {xubh810@foxmail.com).
+                                            S. Cao and H. Lu are with National Key Laboratory of Multispectral In-        growth stages [12]; iii) complex field environments present
+                                         formation Intelligent Processing Technology, School of Artificial Intelligence   intense illumination variations, cluttered backgrounds, and in-
+                                         and Automation, Huazhong University of Science and Technology, Wuhan,            consistent imaging conditions; iv) if crops are densely planted,
+                                         430074, China (e-mail: {songliangcao@126.com, hlu@hust.edu.cn).
+                                            Y. Li is with Hubei Key Laboratory of Intelligent Robot, School of            severe shading may also occur [13]; and v) the high cost of
+                                         Computer Science and Engineering, School of Artificial Intelligence, Wuhan       acquiring high-quality agricultural images with fine-grained
+                                         Institute of Technology, Wuhan, 450205, China (e-mail: yananli@wit.edu.cn).      annotations limits the construction of large-scale datasets [14].
+                                            W. Jia is with Beijing Agricultural Technology Extension Station, Beijing
+                                         100029, China (e-mail: jiaweiwei2003@163.com).                                   Faced with these challenges, current research usually aims to
+                                            T. Wu is with College of Mechanical and Electronic Engineering, Northwest     improve performance only by modifying model architectures,
+                                         A&F University, Yangling 712100, China (e-mail: tt wu@nwsuaf.edu.cn).            yet they are often limited to small single-category datasets.
+                                            W. Hu is with Laboratory of Advanced Breeding Technologies, Institute of
+                                         Genetics and Developmental Biology, Chinese Academy of Sciences, Beijing         Consequently, When application scenarios change, it becomes
+                                         100101, China (e-mail: wjhu@genetics.ac.cn).                                     necessary to recollect data and retrain models. Due to the
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                 2
+
+
+
+
+         Input                                    Segmentation                 Input                                                      Segmentation
+                                                     masks                                                                                   masks
+
+                           Segmentation
+                               model
+                             for corn
+
+
+                                                                                                       Universal crop
+                           Segmentation                                                              segmentation model
+                               model
+                              for rice                                                                 DepthCropSeg++
+
+
+                           Segmentation
+                               model
+                           for amaranth
+
+
+ （a）Crop segmentation models for single crops and scenes                    （b）Universal crop segmentation model for cross crops and scenes
+
+Fig. 1. Comparison between specialized and general-purpose crop segmentation models. (a) Specialized models require separate training for each crop variety,
+while (b) the general-purpose model enables precise segmentation of arbitrary plant species and scenarios using a single strongly generalized model
+
+
+
+typical crop growth cycle lasting from three months to ten                     images were captured under diverse environmental conditions
+months, data collection is often challenging. Meanwhile, there                 (e.g., sunny, cloudy, nighttime) and from multiple viewing
+will be a large amount of repetitive pixel-level annotation                    angles. To improve the model’s ability to handle complex
+work. To improve the efficiency of related tasks, building a                   scenes, we specifically augmented the dataset with images
+crop segmentation model with cross-species and cross-scene                     densely populated with crops, as these are challenging for
+adaptability has become an urgent necessity.                                   DepthCropSeg. Second, we integrate the dynamic upsampling
+    In the field of computer vision, foundation model is the                   operator FADE(Fusing the Assets of Decoder and Encoder
+key to improve model performance in various downstream                         for Task-Agnostic Upsampling) [19] into ViT-Adapter. Unlike
+tasks. In recent years, general purpose vision foundation                      general-purpose applications, agricultural images often involve
+models (VFMs), exemplified by SAM [15], DINOv2 [16]                            intricate object shapes, overlapping leaves, and ambiguous
+and InternVL [17], have achieved significant advancements.                     boundaries. These segmentation boundaries directly affect the
+These models demonstrate the potential for enhancing the                       calculation of phenotypic parameters. By fusing the assets
+generalization of the model through large-scale, heterogeneous                 of decoder and encoder, FADE can upsample feature maps
+data training. However, due to the difference in distribution                  accurately, which enhance the ability of model to solve fine
+between natural images and agricultural images, performance                    structures. Finally, we design a two-stage training strategy to
+tends to decline when applied to downstream agricultural                       progressively enhance segmentation quality. In the first stage,
+tasks. The solution to this challenge is straightforward: collect              we train a base model using the initial pseudo-labels generated
+large-scale agricultural data and train a foundation model on                  by DepthCropSeg. During the second stage, predictions from
+it. To bypass the high cost of pixel-level annotation, we pre-                 the base model are leveraged to refine pseudo-labels by pre-
+viously proposed DepthCropSeg [18], an almost unsupervised                     serving consistent regions. Inconsistent regions are excluded
+segmentation method that generates high-quality pseudo-labels                  from loss calculation. This progressive refinement not only
+from depth maps without manual pixel-level annotations. The                    mitigates the noise inherent in unsupervised labels but also
+proposed DepthCropSeg facilitates comprehensive exploitation                   significantly boosts the model’s generalization across unseen
+of massive unlabeled agricultural imagery.                                     crop types and field conditions. To systematically evaluate
+                                                                               model performance, we conduct comprehensive validation of
+   Building upon this foundation, we present an enhanced                       the segmentation effectiveness and generalization capabilities
+version DepthCropSeg++, a foundation model for crop seg-                       of DepthCropSeg++ across multiple crop datasets. Experi-
+mentation. As shown in Fig. 1, compared with traditional                       mental results demonstrate that our method not only achieves
+specialized models, our proposed framework adopts a unified                    superior performance on known crops but also exhibits robust
+architecture that enables cross-crop and cross-environment im-                 generalization to novel varieties and complex environments,
+age segmentation, which demonstrating superior adaptability                    outperforming the upper bound of models trained with manual
+and generalization capabilities. First, we utilize DepthCropSeg                annotations.
+for rapid pseudo-masks generation and expand the training
+                                                                                  The contributions of this work include the following:
+dataset from 3, 577 to 28, 406 images, an order of magnitude
+greater than the number of images used to train DepthCropSeg.                     • DepthCropSeg++: a foundation model for crop segmen-
+The large-scale dataset includes over 30 plant species, in-                         tation with cross-species and cross-scene capabilities;
+cluding major crops like rice, corn, wheat, and soybean. The                      • We scale up a large-scale crop segmentation dataset fol-
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                                                             3
+
+
+
+                                                          Vision Transformer（ViT）                                                       introduces image-related prior knowledge (inductive biases)
+                          Patch
+                        Embedding
+                                                    Block 1                      Block 2                             Block N
+                                                                                                                                        into the pre-trained ViT network through randomly initialized
+                          Spatial        Injector        Extractor    Injector        Extractor        Injector             Extractor
+                                                                                                                                        adapter modules, making the model more aligned with these
+                       Prior Module          1               1            2               2                N                    N
+                                                                                                                                        target tasks. This approach achieves decoupling between up-
+                                                                ViT-Adapter
+
+                       Block N            Input                      FADE                         Extractor                             stream pre-training and downstream fine-tuning phases while
+    Position                              Feature                                                     N               2H
+    Embedding                    H                                                                                Guided
+                                                                                                                                        delivering performance comparable to or even surpassing
+                                         C                                                                        Feature
+                                     W
+    Element-wise
+    Addition
+                                                     Semi-shift                                                             2W      C   pyramidal/hierarchical models.
+                                                    Convolution
+    Dynamic                                                                                                                                ViT-Adapter was the first Transformer-based segmentation
+
+
+
+
+                                                                                                  Gated Feature
+                                                                                                   Refinement
+    Convolution                                                 Upsampling       Pre-upsampled
+                                                                  Kernels            Feature                          2H
+                                                 2H                                                                                     model to surpass 60% mIoU on the ADE20K benchmark,
+ H : Hight W : Width
+ C : #Channel                                            2W
+                                                               K2                                                             2W
+                                                                                                                                    C
+                                                                                                                                        later achieving up to 61.5% mIoU. Without using external
+                                             Dynamic Feature Pre-upsampling
+ K : Kernel Size                                                                                                                        datasets such as Objects365, it also reached state-of-the-art
+                                                                                                                                        performance in object detection and instance segmentation.
+Fig. 2. Architecture of the baseline model in DepthCropSeg++: ViT-Adapter                                                               Additionally, compared to the original ViT, ViT-Adapter re-
+with FADE upsampling.                                                                                                                   duces computational complexity by introducing lightweight
+                                                                                                                                        adapter modules, which makes it more suitable for real-world
+                                                                                                                                        agricultural applications with limited computational resources.
+     lowing depth-informed pseudo labelling and fast manual
+                                                                                                                                        This ViT-Adapter baseline forms the foundation upon which
+     screening, including 28, 406 images, 30+ species, and 15
+                                                                                                                                        we introduce further enhancements for robust crop segmenta-
+     environmental conditions;
+                                                                                                                                        tion.
+   • We upgrade the base model architecture of DepthCropSeg
+     to the state-of-the-art ViT-Adapter and further improve its
+     detail awareness with dynamic upsampling.                                                                                          B. Optimization: FADE for Boundary-Aware Upsampling
+                                                                                                                                           Crop segmentation represents a dense prediction task that
+                            II. DATASETS AND M ETHODS                                                                                   requires high-quality feature upsampling to recover high-
+                                                                                                                                        resolution features from input images. However, the bilinear
+   In this section, we first describe the baseline model em-                                                                            interpolation used in the upsampling of ViT-Adapter intro-
+ployed in DepthCropSeg++, and review the process by which                                                                               duces smoothing effects, leading to blurred crop boundaries
+DepthCropSeg generates pseudo masks from depth informa-                                                                                 and detail loss, thereby compromising model adaptability in
+tion. Subsequently, we introduce how the cross-scenario crop                                                                            complex field environments.
+dataset is extended for training purposes. Finally, we present                                                                             To address this issue, we replace the upsampling layers
+the training details and strategies of our foundational crop                                                                            in the ViT-Adapter decoder with a task-agnostic dynamic
+segmentation model, DepthCropSeg++.                                                                                                     upsampling operator called FADE (Fusing the Assets of De-
+                                                                                                                                        coder and Encoder). As shown in Fig. 2, FADE integrates
+A. Baseline: Vision Transformer with ViT-Adapter                                                                                        both shallow CNN encoder features and global Transformer
+                                                                                                                                        decoder features to dynamically generate upsampling kernels.
+   In recent years, attention-based Transformer models have
+                                                                                                                                        This allows more precise recovery of crop boundaries and
+achieved remarkable advancements in computer vision tasks.
+                                                                                                                                        improves segmentation accuracy for fine structures such as
+Compared with traditional convolutional neural networks,
+                                                                                                                                        leaves and stems.
+Transformers demonstrate superior global feature modeling
+                                                                                                                                           Unlike previous methods such as CARAFE [20] or In-
+capabilities, making them particularly well-suited for object
+                                                                                                                                        dexNet [21], which tend to perform well only on specific tasks,
+recognition and segmentation tasks in complex scenarios. Con-
+                                                                                                                                        FADE offers strong generalization across region-sensitive and
+sequently, designing Transformer-based visual backbone net-
+                                                                                                                                        detail-sensitive tasks. It achieves this by computing gating
+works has become a prominent research direction in computer
+                                                                                                                                        weights that adaptively fuse encoder and decoder features.
+vision. ViT-Adapter constitutes an architectural advancement,
+                                                                                                                                        Near object boundaries, FADE assigns higher weights to
+featuring a task-specific dense prediction adapter tailored for
+                                                                                                                                        encoder features to sharpen edges, while inside object regions,
+the original Vision Transformer (ViT). In this study, the ViT-
+                                                                                                                                        decoder features dominate to ensure semantic consistency.
+Adapter is adopted as the core architecture to increase the
+                                                                                                                                        Moreover, FADE is computationally efficient and does not
+generalizability of crop segmentation models in diverse crop
+                                                                                                                                        rely on high-resolution guidance features, making it especially
+varieties, illumination conditions, and field settings.
+                                                                                                                                        suitable for deployment on resource-constrained agricultural
+   Current dominant technical approach for vision Transform-
+                                                                                                                                        platforms such as UAVs and field robots. The integration
+ers typically follows a three-stage pipeline: architectural design
+                                                                                                                                        of FADE thus represents the first key component in our
+of pyramidal/hierarchical structures, followed by large-scale
+                                                                                                                                        optimization pipeline for DepthCropSeg++.
+pre-training on image datasets, and culminating in down-
+stream task adaptation through fine-tuning. As illustrated in
+Fig. 2, ViT-Adapter demonstrates enhanced flexibility through                                                                           C. DepthCropSeg Revisited
+its architectural design. The framework employs a straight-                                                                                To reduce the annotation burden in crop segmenta-
+tube structured general model (e.g., the original ViT), which                                                                           tion, DepthCropSeg [18] introduces an almost unsupervised
+can leverage multimodal data beyond images during pre-                                                                                  pipeline that directly generates pseudo masks from monocular
+training. When adapting to downstream tasks, ViT-Adapter                                                                                depth maps, avoiding the need for pixel-level manual labels.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                              4
+
+
+
+                                                                                                   TABLE I
+                                                                              S UMMARY OF THE SUPERVISED BENCHMARK TRAINING SET
+
+                                       Dataset               CWFID                 CVPPP   EWS    PhenoBench   VegAnn    Crop And Weed       Total
+                                       #Images                      40              810     164      1407       3289           5694         11406
+
+
+                                            Clover
+                                    Peach
+
+
+
+
+                                                            lane
+                      Tom
+
+
+
+
+                                                            e
+                   M
+
+
+
+
+                                                     Purs
+
+                                                        ttl
+                          ato
+
+
+
+
+        Cy
+                           aiz
+
+
+
+
+             pe                                      Ne
+                              e
+
+
+
+
+                 ru
+                                S
+
+
+
+
+     Tu             s
+                              eed
+
+
+
+                                               ss
+
+
+
+
+        l   ip                                              r
+                                            Gra
+
+
+
+
+                                                         he
+                                 lin
+
+
+
+
+                                                       Ot ops             ••••••
+                                    g
+
+
+
+
+   Mint                 Herbac                          cr
+                                                              es
+                        eous                             Leav                                         0°                      45°                          90°
+   Corn
+                              field crops
+
+                  t                                                Pe
+             lle                                                      an
+       mi                                                                ut
+                         ce
+
+
+                                      Soybe
+                        Ri
+
+
+
+
+                                       an
+
+
+
+
+  (a) Variety distribution of the dataset                                                  (b) Schematic diagrams of crop images taken from different angles
+
+
+Fig. 3. Species distribution and imaging angles in extended datasets
+
+
+
+   At the core of this approach is Depth Anything V2 [22], a                                           is then used to infer segmentation predictions on the same
+high-performance monocular depth estimation model capable                                              dataset. A trimap is constructed by comparing the original
+of producing high-resolution, semantically meaningful depth                                            pseudo masks and predicted masks, defining confident fore-
+maps from single RGB images. Given an input crop image,                                                ground, confident background, and uncertain regions. In the
+Depth Anything V2 infers a corresponding depth map that                                                second stage, the model is fine-tuned using this refined super-
+captures spatial structure and depth discontinuities, which is                                         vision, where ambiguous pixels are excluded from the loss
+critical for distinguishing foreground plants from the back-                                           computation. Optional depth-guided post-processing further
+ground.                                                                                                enhances mask precision.
+   To transform the raw depth map into a pseudo mask,                                                     In this work, we build upon and extend DepthCropSeg by
+DepthCropSeg proposes a gradient-guided histogram thresh-                                              leveraging its ability to rapidly generate high-quality pseudo
+olding method. This process begins with depth normalization,                                           crop masks from depth images. Specifically, we utilize this
+followed by edge detection, gradient-weighted enhancement,                                             mechanism to construct an expanded large-scale crop segmen-
+and sigmoid-based curve fitting. The final threshold is selected                                       tation dataset, which serves as the foundation for training our
+based on the point of maximum gradient change in the fitted                                            baseline segmentation model DepthCropSeg++.
+curve, enabling robust separation between crop and back-
+ground. This multi-stage process is designed to be adaptive
+across different illumination conditions and crop varieties. It                                        D. Cross-Scenario Dataset Extension
+is crucial to note that the key to accurate mask generation lies                                          The performance of crop segmentation models largely de-
+in the relative depth gap between the plant and the ground,                                            pends on the quality and diversity of training data. A limited or
+regardless of the absolute depth values. Additionally, thanks                                          homogeneous dataset may fail to capture the variability of real-
+to the robust generalization capabilities of Depth Anything                                            world agricultural conditions, resulting in overfitting and poor
+V2, this method can accurately extract plant masks in most                                             generalization. To address this, we construct a comprehensive
+complex scenarios (e.g., water reflections, shadows).                                                  cross-scenario dataset for robust model training, consisting of
+   To further improve pseudo label quality, a coarse-to-fine                                           both a fully supervised benchmark dataset and an expanded
+manual filtering step is employed. Masks with significant noise                                        set of large-scale pseudo-labeled samples.
+or structural inaccuracies are removed by lightweight manual                                              1) Fully Supervised Benchmark Training Set: Due to the
+intervention enables the efficient generation of a large number                                        high cost of pixel-level annotations in agricultural scenarios,
+of high-quality pseudo masks suitable for model training.                                              the number of manually labeled crop segmentation datasets
+   DepthCropSeg also incorporates a depth-informed two-stage                                           remains limited. We compile six publicly available datasets
+self-training framework. In the first stage, a segmentation                                            containing a total of 11,406 high-quality, human-annotated
+model is trained using the selected pseudo masks. This model                                           crop images. These datasets, primarily developed for specific
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                                                 5
+
+
+
+                                                                    TABLE II
+                                                  C OMPARISON OF E XTENDED T RAINING DATASETS
+
+
+               Dataset             Quantity     Classes       Species                    Resolution            Location          Acquisition Device
+
+               CWD30               219,778        30        Crops/Weeds                  4032×3024             Roadsides                    Mixed
+               Deep Weeds           17,509        9         Carrot/Weeds                 1296×966               Fields                      Tripod
+               Plant Seedlings      11,078        12           Weeds                     355×355                 Trays                      Tripod
+               Apple Leaf           1,730         12           Weeds                     355×355                 Trays                      Tripod
+               PDD271              101,165       271      Fruits/Vegetables              256×256                Fields            Handheld Camera
+               Night Rice            288          1            Rice                      2318×2318              Fields                   Phenotyping
+                                                                                                                                          Platform
+
+
+
+                                                                                                                     Extended Dataset (28601 images)
+                                                                                         Fully supervised              Newly added dataset (16907)               Nighttime Rice Dataset
+                                                                                              （11406)        Non-fully covered (12927)    Fully covered (3980)            (288)
+
+
+
+
+                                                                           RGB
+                                                                                                 Manually            DepthCropSeg                                         Manually
+                                                                                                                                               All-ones mask              annotated
+                                                                                                 annotated
+
+
+
+                                                                           Mask
+
+
+                                                                                                                     Extended Test Set (6760 images)
+                                                                                          Fully supervised   Added fully covered data Nighttime Rice Dataset Nighttime Soybean
+Fig. 4. Examples of full-coverage crop images                                                   (5998)                 (643)                   (72)                  (47)
+                                                                              RGB
+
+
+
+
+tasks, are summarized in Table I. They cover a narrow range                                      Manually            All-ones mask
+                                                                                                                                                    Manually                Manually
+                                                                                                 annotated                                          annotated               annotated
+of crop types and lack sufficient environmental diversity (e.g.,
+                                                                              Mask
+
+
+
+
+lighting variation, background clutter), limiting their applica-
+bility in diverse field conditions. Therefore, we use this dataset
+to establish an upper-bound performance for fully supervised
+training.                                                                  Fig. 5. Composition of extended training and test sets
+   2) Large-scale Cross-Scenario Extended Dataset: To en-
+hance the segmentation accuracy and generalizability of
+DepthCropSeg++, we propose a depth-guided dataset expan-                                   matrices matching image dimensions.
+sion strategy that addresses three fundamental constraints:                  Specifically, the extended training set comprises 5 unla-
+insufficient data scale, limited crop variety, and complex                 beled public datasets and 1 manually annotated night rice
+environmental conditions. Our expansion is driven by three                 dataset, significantly expanding crop varieties, imaging angles,
+key principles:                                                            and lighting conditions. Table II compares these 6 extended
+ (1) Cross-Species Expansion. Incorporating 5 public                       datasets:
+     datasets containing diverse crop species, with species                          • CWD30 [23]: Contains 219, 770 high-resolution images
+     distribution shown in Fig. 3(a). This enhances model                              of 20 weed and 10 crop species across growth stages,
+     cross-species adaptability through morphological and                              angles, and environments from diverse geographical lo-
+     textural variations. Since our task is crop binarization,                         cations.
+     incorporating more crop varieties will not introduce                            • Plant Seedlings [24]: 5, 539 images of 12 common
+     sample imbalance but instead serve to enhance model                               Danish agricultural species (e.g., sugar beet, mustard) in
+     robustness.                                                                       355×355 resolution, captured under controlled conditions.
+ (2) Multi-Environment Expansion. New datasets in-                                   • Apple     Leaf [25]: 1, 730 images categorizing
+     clude images captured under various conditions: dif-                              healthy/diseased apple leaves (scab, powdery mildew),
+     ferent lighting (sunny, cloudy, night), imaging angles                            captured via tripod-mounted cameras.
+     (Fig. 3(b)), and field backgrounds. Notably, a self-                            • Deep Weeds [26]: 17, 509 images of 8 Australian weed
+     collected nighttime rice dataset supplements the under-                           species in complex grassland environments.
+     represented nighttime scenes.                                                   • PDD271 [27]: 220, 592 images covering 271 plant dis-
+ (3) Full-Coverage Image Expansion. Fully vegetated im-                                ease categories across fruits, vegetables, and field crops,
+     ages shown as Fig. 4 are difficult to segment from                                captured 20-30cm from plants.
+     DepthCropSeg. Thus, we add such images to train and                             • Night Rice Dataset [3]: 360 manually annotated im-
+     test sets. Their pseudo-masks are generated as all-ones                           ages captured by high-throughput phenotyping platforms
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                                                       6
+
+
+
+ 70.00%                                                                   70.00%
+ 60.00%                                                                   60.00%
+ 50.00%                                                                   50.00%
+ 40.00%                                                                   40.00%
+ 30.00%                                                                   30.00%
+ 20.00%                                                                   20.00%
+ 10.00%                                                                   10.00%
+  0.00%                                                                    0.00%
+
+
+
+
+                                                                                                     %
+               0%
+
+               0%
+
+               0%
+
+               0%
+
+               0%
+
+               0%
+
+               0%
+
+               0%
+
+
+                %
+
+
+
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+                                                                                                    0%
+
+
+                                                                                                     %
+                 :
+              0%
+
+
+
+
+                                                                                       0
+             00
+
+
+
+
+                                                                                                  00
+            ~2
+
+            ~3
+
+            ~4
+
+            ~5
+
+            ~6
+
+            ~7
+
+            ~8
+
+            ~9
+
+
+
+
+                                                                                    ~1
+
+                                                                                                 ~2
+
+                                                                                                 ~3
+
+                                                                                                 ~4
+
+                                                                                                 ~5
+
+                                                                                                 ~6
+
+                                                                                                 ~7
+
+                                                                                                 ~8
+
+                                                                                                 ~9
+           ~1
+
+
+
+
+          ~1
+
+
+
+
+                                                                                                ~1
+          %
+
+          %
+
+          %
+
+          %
+
+          %
+
+          %
+
+          %
+
+          %
+
+
+
+
+                                                                                  0%
+
+
+                                                                                                %
+
+                                                                                                %
+
+                                                                                                %
+
+                                                                                                %
+
+                                                                                                %
+
+                                                                                                %
+
+                                                                                                %
+
+                                                                                                %
+       0%
+
+
+
+
+        %
+
+
+
+
+                                                                                              %
+       10
+
+       20
+
+       30
+
+       40
+
+       50
+
+       60
+
+       70
+
+       80
+
+
+
+
+                                                                                             10
+
+                                                                                             20
+
+                                                                                             30
+
+                                                                                             40
+
+                                                                                             50
+
+                                                                                             60
+
+                                                                                             70
+
+                                                                                             80
+      90
+
+
+
+
+                                                                                            90
+                Manually annotated                                                                     Pre-extended                              Post-extended
+                人工标注的训练集                     扩展后的训练集
+                                             Extended Training Set                                     扩展前测试集                                    扩展后测试集
+                                                                                                                                                 Test Set
+                 Training Set                                                                           Test Set
+            (a) Before and A�er Training Set Extension                                              (b) Before and A�er Test Set Extension
+
+Fig. 6. Canopy coverage distribution before and after dataset expansion
+
+
+
+      TraitDiscover (PhenoTrait Technology Co., Ltd.) located                 11406         Train                     t
+                                                                                                                                  Result 1                                -- Fully supervised
+                                                                            Ground Truth                          tes
+      in various regions across China under controlled night                                          Model A
+      lighting.                                                               11406         Test                          28601
+                                                                                                                         Test Mask
+                                                                                                                                      Train      Model B    test   Result 2 -- Semi
+                                                                                                                                                                                 supervised
+                                                                              17195
+   For unlabeled data, we partition images based on coverage
+completeness (fully covered vs. partially covered) and apply                  11406
+                                                                                            FADE
+                                                                            Ground Truth              Model C      test              Result 3
+different pseudo-labeling strategies:                                         17195
+                                                                                            Train
+                                                                           Depth-Informed
+   • Non-full-coverage        images:      we     applied    the               Mask
+                                                                                                                                                 FADE
+                                                                                                      Model B                        11406                 Model
+                                                                                            test                Inters                                             test       Result 4
+      DepthCropSeg pipeline to generate pseudo masks                          17195
+                                                                                                      Model C
+                                                                                                                      ectio
+                                                                                                                             n
+                                                                                                                                  Ground Truth
+
+                                                                                                                                     17195
+                                                                                                                                                 Train      D
+
+      and manually filtered 12, 927 high-quality samples from                                                                     Op�mized
+                                                                                                                                    Mask
+                                                                                                                                                                          -- DepthCropSeg++
+
+      260, 260 images. This process takes about 12 hours.
+      The quality control protocol follows our prior work,                Fig. 7. Two-stage training strategy for DepthCropSeg++.
+      DepthCropSeg. Specifically, we exclude data instances
+      that are fatally flawed or contain only partially labeled
+      crops as foreground.                                                     simulate plant size variations, camera angles, and spa-
+   • Full-coverage images: We manually selected 4,623 sam-
+                                                                               tial orientation, enhancing the model’s generalization to
+      ples (3,980 training, 643 testing) and assigned all-ones                 different crop structures and growth stages.
+      mask to each full-coverage image. The process of select-             (2) Color perturbations: To address illumination variability
+      ing full-coverage images takes 2 hours.                                  (e.g., sunny, cloudy, nighttime conditions), random ad-
+                                                                               justments in brightness, contrast, saturation, and hue are
+   The final training set consists of 28, 601 images, combining
+                                                                               applied to reduce dependency on specific lighting.
+11, 406 supervised samples, 17, 195 pseudo-labeled samples
+                                                                           (3) Normalization: All images are normalized with their
+generated via depth estimation and manual filtering. The new
+                                                                               dataset-specific mean and standard deviation, thereby
+test set comprises 6, 760 images from 10 datasets, plus 72 from
+                                                                               stabilizing training and mitigating cross-dataset domain
+nighttime rice and 47 manually labeled nighttime soybean
+                                                                               shifts.
+images for generalization assessment.
+                                                                           (4) Image padding: To preserve small-object information
+   Fig. 5 illustrates the composition of the dataset, with de-
+                                                                               during resizing and ensure consistent input dimensions,
+tailed statistics provided in Table III. Fig. 6 shows increased
+                                                                               images are zero-padded when necessary.
+high-density canopy coverage in extended datasets, better
+reflecting field conditions.                                                 These preprocessing techniques enable the model to better
+                                                                          adapt to diverse crop types and field imaging scenarios while
+                                                                          reducing overfitting.
+E. Training Strategies and Implementation Details                            2) Implementation and Training Details:
+   This section presents the proposed DepthCropSeg++ train-                    a) Training Setting: We adopt the BEiT-Adapter-Large
+ing pipeline, including data pre-processing, training configu-            architecture as the backbone of DepthCropSeg++, enhanced
+rations, and our two-stage training strategy.                             with multi-scale deformable attention modules for effective
+   1) Data Preprocessing: To improve model robustness un-                 feature representation. The model is initialized with weights
+der diverse field conditions, we apply a set of data augmenta-            pretrained on the COCO-Stuff 164k dataset for 80k iterations.
+tion techniques tailored to crop segmentation tasks:                      Fine-tuning on our agricultural dataset is performed using the
+ (1) Geometric transformations: Random scaling (to 3584×                  AdamW optimizer with a learning rate of 2e−5, weight decay
+     896), cropping, and horizontal flipping (50% probability)            of 0.05, and a layer-wise learning rate decay factor of 0.9.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                       7
+
+
+
+                                                                                     TABLE III
+                                                                S TATISTICS OF E XTENDED T RAINING AND T EST S ETS
+
+               Dataset                                                  Training Set                                        Test Set
+                                                  DepthCropSeg         Full-Coverage           Total          Full-Coverage              Total
+               Supervised Set                             -                  -                11,406                  -                 5,998
+               CWD30                                    7,115                -                 7,115                  -                    -
+               Apple Leaf                                390                278                 668                  30                   30
+               Deep Weeds                                196                802                 998                  150                 150
+               Plant Seedlings                          4,429                -                 4,429                  -                    -
+               Sample                                    797               2,900               3,697                 463                 463
+               Night Rice                                 -                  -                  288                   -                  72
+               Night Soybean                              -                  -                   -                    -                  47
+               Total                                                                          28,601                                    6,760
+
+
+   Training Dataset                                Mask Generation                      Two-stage Training with FADE                          DepthCropSeg++
+                             Manually annotated
+
+
+
+
+       Public Dataset
+                                                                                                       Upsampling
+                                                                                        Encoder         Kernels            FADE
+
+                                                                                                                      Upsampled
+                                                                                        Decoder                        Feature
+
+    Extended Dataset                                                                               ViT-Adapter
+                             Depth Informed
+
+
+
+
+                                                                                                  Trimap Generation
+
+
+                                                                                                   +
+  coverage
+
+
+
+
+                                                                                                                                  supervise
+                                                  All-ones
+
+
+
+
+                                                                            supervise
+                                                   mask
+    Full-
+
+
+
+
+                                                                                                                                               Universal Crop
+                                                                                                                                               Segmentation
+
+
+Fig. 8. Overview of the DepthCropSeg++ technical pipeline.
+
+
+
+     b) Experimental Platform: All experiments are con-                                    (i.e., inconsistent labels) are assigned a value of 255 and
+ducted on the Ubuntu 20.04 system with Python version                                      ignored during training. This filtered supervision is used to
+3.8, PyTorch version 1.9.0, CUDA version 11.8, and on a                                    retrain the model in the second stage.
+workstation with four 48 GB RTXA6000 GPUs, two 10-core                                       In both stages, the ViT-Adapter decoder is enhanced by
+Intel Xeon Silver 4210R CPUs, and 256 GB RAM.                                              replacing bilinear upsampling with the FADE module, which
+   3) Two-Stage Self-Training Strategy: As illustrated in                                  improves boundary segmentation accuracy, particularly in
+Fig. 7, we adopt a two-stage self-training framework to max-                               densely vegetated and fine-structure regions. In the original
+imize the utility of the expanded dataset (Table III). The full                            ViT-Adapter, the low-resolution features produced by the ViT
+training set contains 28, 601 images, including 11, 406 fully                              backbone blocks are upsampled and then added to the multi-
+labeled samples and 17, 195 pseudo-labeled samples generated                               scale features extracted by the adapter. The default upsampling
+via depth estimation and manual filtering.                                                 method is bilinear interpolation, and we replace all such
+   We first train DepthCropSeg++ on the complete training set                              upsampling operations with the proposed FADE module. The
+using the current pseudo masks. This stage enables the model                               pipeline of DepthCropSeg++ is shown in Fig. 8.
+to learn coarse semantic priors from both manually labeled                                    4) Testing Protocol: The evaluation is conducted on a
+and pseudo labeled images.                                                                 6, 760 − image test set covering various crops, imaging
+   The trained model is used to re-infer segmentation maps on                              angles, and lighting conditions (Table III). Notably, the test set
+the entire training set. We then compare the new predictions                               exclusively includes 47 manually labeled nighttime soybean
+with the initial pseudo masks and construct a trimap: pixels                               images. This exclusive inclusion is particularly for evaluating
+with consistent predictions are retained, while uncertain pixels                           the model’s generalization capability under both unseen and
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                 8
+
+
+
+ SAM
+ HQ-SAM
+ DepthCropSeg++
+
+
+
+
+Fig. 9. Visual comparison with vision foundation models
+
+
+
+                                      TABLE IV                                                                   TABLE VI
+                  B ENCHMARK C OMPARISON R ESULTS OF D EPTH C ROP S EG ++                    S TATISTICAL C OMPARISON OF M ODEL P ERFORMANCE
+
+
+               Depth-based             Two-stage               FADE                  Parameter             DepthCropSeg++             Fully Supervised
+                                                                           mIoU
+              Pseudo-masks            Self-training          Upsampling
+                                                                                     Experimental Data   (93.47, 93.43, 93.47)    (93.02, 93.01, 93.07)
+                                                                           92.36     Mean±Std               93.457 ± 0.023            93.033 ± 0.032
+                    ✓                                                      92.86     Variance                   0.0005                    0.0010
+                    ✓                      ✓                               92.88
+                                                                                     95% CI                              (0.362, 0.485)
+                    ✓                      ✓                     ✓         93.11
+                                                                                     t-statistic                             19.259
+         SAM                                                               32.80     P-value                                 0.0001
+         HQ-SAM                                                            44.54
+         GWFSS Top-Solution                                                69.50
+         Fully Supervised                                                  92.75   A. Benchmark Comparison Experiments
+                                                                                      We first present the experimental results by compar-
+                                            TABLE V                                ing DepthCropSeg++ with fully supervised baselines, semi-
+                  C OMPARISON RESULTS OF DIFFERENT UPSAMPLING METHOD               supervised approaches, and state-of-the-art general-purpose
+                                                                                   visual foundation models. The quantitative results are sum-
+        Method            Params(M)       GFLOPs      FPS     Memory(G)   mIoU     marized in Table IV.
+        bilinear             570.59         2473      1.44       7.38     92.88       For DepthCropSeg++, we evaluate the cumulative impact
+        CARAFE               +0.35             +2     1.44       7.38     92.93    of integrating each key component into the ViT-Adapter
+        DySample             +0.10          +0.3      1.44       7.38     92.93
+                                                                                   backbone. Specifically, we report performance after (1) using
+                                                                                   depth-informed pseudo masks, (2) applying two-stage self-
+        FADE                 +0.44             +3     1.44       7.38     93.11
+                                                                                   training refinement, and (3) incorporating the FADE dynamic
+                                                                                   upsampling module. The first row in Table IV shows the
+                                                                                   result of a semi-supervised baseline using expanded data
+challenging field conditions.                                                      with conventional semi-supervised pseudo masks. We also
+                                                                                   include the performance of a fully supervised benchmark
+                                                                                   model trained only on 11, 406 manually annotated images, as
+                                        III. R ESULTS
+                                                                                   well as two leading class-agnostic visual segmentation models:
+   This section presents the performance of DepthCropSeg++                         SAM and HQ-SAM. To this end, we incorporate the winning
+through qualitative and quantitative comparisons with fully su-                    solution [28] of the Global Wheat Full Semantic Segmentation
+pervised benchmarks, semi-supervised baselines, and general                        competition (GWFSS [29]) to represent a domain-specific
+vision foundation models (SAM and HQ-SAM) across various                           approach.
+complex environments.                                                                 As shown in Table IV, the semi-supervised approach
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                  9
+
+
+
+ Maize
+
+
+
+
+         2024-10-09                     2024-10-13                          2025-05-29                         2025-06-06
+ Wheat
+
+
+
+
+         2024-03-20                      2024-04-10                         2024-04-25                         2024-05-31
+
+Fig. 10. Segmentation Results of DepthCropSeg++ on Different Crops and Time Points
+
+
+
+achieves a mIoU of 92.36%. Incorporating only depth-
+                                                                             a                 b                       c
+informed pseudo masks raises the mIoU to 92.86%, while
+adding two-stage self-training slightly improves it to 92.88%.
+The gains from two-stage self-training appear limited on our
+dataset, primarily because performance has nearly reached
+saturation. This policy demonstrates more pronounced im-
+provements in the DepthCropSeg experiments. Introducing the                  d                 e                       f
+FADE module further increases the mIoU to 93.11%. The fully
+supervised benchmark model reaches an mIoU of 92.75%. In
+comparison, SAM and HQ-SAM achieve mIoUs of 32.80%
+and 44.54%, respectively, on the test set of 6, 760 images.
+The domain-specific approach reaches an mIoU of 69.50%.
+We also conducte multiple experiments simultaneously on full              Fig. 11. Some failure cases of DepthCropSeg++.
+supervision and DepthCropSeg++ under identical experimental
+settings. The results are shown in Table VI. Statistical analysis
+indicates that the p-value is less than 0.001, demonstrating a            annotations in agricultural scenarios, most existing test sets are
+significant difference.                                                   derived from the same sources as the fully supervised training
+   To further investigate the impact of upsampling operators on           data, which may introduce bias when assessing generalization.
+model performance, we compared various upsampling opera-                  Therefore, we curated subsets that explicitly test the adaptabil-
+tors. As shown in Table V, comparative experiments reveal                 ity and robustness of our model:
+that all evaluated upsampling methods achieve competitive                    • Unseen soybean subset: to evaluate adaptability to novel
+performance with only marginal increases in model com-                          crop species not seen during training.
+plexity. Notably, FADE attains the highest mIoU of 93.11%,                   • Nighttime rice subset: to assess robustness under chal-
+surpassing the bilinear baseline by 0.23%, with a negligible                    lenging imaging conditions with complex lighting and
+parameter increment of 0.44M.                                                   textures.
+   We      further     evaluate    SAM,      HQ-SAM,         and             • Full-coverage crop subset: to examine performance in
+DepthCropSeg++ on visual segmentation tasks with point-                         dense canopy scenes commonly encountered in field
+based prompts. For SAM and HQ-SAM, we randomly select                           environments.
+1–10 foreground and background points per image and report                   The quantitative results are summarized in Table VII. In
+the best mIoU result per image.                                           addition to mIoU, we report boundary Intersection over Union
+   Fig. 9 shows qualitative prediction examples from SAM,                 (bIoU), a metric designed to more accurately assess boundary
+HQ-SAM, and DepthCropSeg++ on representative crop im-                     segmentation performance.
+ages. The green pentagrams indicate foreground prompts, and                  On the unseen soybean subset, DepthCropSeg++ achieves
+red dots indicate background prompts.                                     the highest mIoU of 90.09%, outperforming SAM (29.98%),
+                                                                          HQ-SAM (35.15%), GWFSS Top-Solution (42.35%), and the
+B. Performance Validation on Specific Datasets                            fully supervised model (89.59%). Its bIoU also improves by
+   To comprehensively evaluate the practical performance of               approximately 1.9% over the fully supervised model, demon-
+the benchmark models and DepthCropSeg++ under differ-                     strating accurate boundary handling on unseen samples.
+ent conditions, we conducted targeted experiments on three                   On the nighttime rice subset, DepthCropSeg++ achieves an
+representative data subsets. Given the high cost of manual                mIoU of 86.90%, the best among all models.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                             10
+
+
+
+                                                             TABLE VII
+                               P ERFORMANCE (%) C OMPARISON ON S PECIFIC S UBSETS . B EST P ERFORMANCE I S IN
+                                                             B OLDFACE .
+
+                                                            Soybean                Rice           Fully Coverage
+                          Method
+                                                     mIoU        bIoU      mIoU           bIoU    mIoU      bIoU
+                          SAM                        29.98        1.16     49.04           3.84   72.32     12.89
+                          HQ-SAM                     35.15        4.17     69.12          21.41   78.97     15.83
+                          GWFSS Top-Solution         42.35       12.28     84.30          18.04   36.01      9.00
+                          DepthCropSeg               76.46       29.04     62.21          38.85   68.85     26.77
+                          DepthCropSeg++             90.09       17.38     86.90          21.35   99.86     47.42
+                          Fully Supervised           89.59       15.48     86.67          20.35   96.54     20.36
+
+
+
+   On the full-coverage crop subset, it reaches an almost                      c) Adaptability to Crop Images Unseen During Train-
+perfect mIoU of 99.86% and a bIoU of 47.42%. Notably,                    ing: Fig. 14 presents segmentation results on potted soy-
+DepthCropSeg and GWFSS Top-Solution perform poorly on                    bean plants that were never seen during training, including
+this subset (mIoU 68.85% and 36.01%, respectively), reflect-             low-light conditions, different camera angles (0°, 45°, 90°),
+ing its known failure cases in high-density scenes.                      and varying growth stages. The model consistently produces
+   Across all subsets, SAM and HQ-SAM perform signifi-                   complete segmentations, accurately distinguishing foreground
+cantly worse than agriculture-specific models, with low mIoU             crops from background structures such as support rods. Addi-
+and bIoU scores, especially under challenging nighttime con-             tionally, we tested smartphone-captured images of ornamental
+ditions.                                                                 plants that were also not present in the training set. Despite
+   Furthermore, we attempted to evaluate our model on other              unfamiliar species and device characteristics, the model ef-
+crop datasets. Since most publicly available labeled data were           fectively excluded background shadows and irrigation pipes,
+already included in our training and testing sets, we conducted          accurately identifying crop regions. These results demonstrate
+test visualizations using collected complex scene images.                the model’s adaptability to crop images unseen during training,
+Specifically, we performed inference on images of maize                  indicating its capacity to generalize beyond the specific crops
+and wheat crops at different growth stages under nighttime               and conditions seen in the training data.
+conditions. As shown in Fig 10, DepthCropSeg++ can handle
+crop recognition in such complex scenarios and has the ability           D. Failure Cases
+to generalize across different growth stages.                               Here we show some failure cases of DepthCropSeg++.
+                                                                         Although DepthCropSeg++ performs robustly across a wide
+                                                                         range of species, scenes, and imaging conditions, several
+C. Qualitative Validation on Field Crop Data                             failure patterns remain observable in particularly demanding
+                                                                         cases (Fig. 11). Specifically, in high vegetation coverage
+     a) Performance in Representative Field Scenarios: We                scenarios (a), poles may be mis-segmented as vegetation. In
+evaluated segmentation performance across five representative            scenes with withered weeds (b), a portion of the dried plants
+agricultural field scenes: (a) cloudy soil fields, (b) nighttime         can be incorrectly classified as healthy vegetation. Repetitive
+rice paddies with strong reflections, (c) sunny fields with high         row-wise soil patterns (c) occasionally introduce faint linear
+contrast and shadows, (d) densely planted crops, and (e) crops           artifacts, while plants with certain complex morphologies (d)
+affected by pest or disease damage.                                      may be partially fragmented in the segmentation output. Under
+   As shown in Fig. 12, DepthCropSeg++ achieves high-                    extremely low-light conditions (e), some soil clumps can be er-
+quality segmentation in all these challenging scenarios, pro-            roneously segmented as vegetation. In large-scale aerial views
+ducing smooth regional masks with clear boundaries. In par-              (f), extreme scale compression may lead to discontinuous
+ticular, incorporating full-coverage samples in training signifi-        segmentation.
+cantly improves performance in dense canopy conditions. Ad-                 These cases reflect the inherent long-tail complexity of
+ditionally, the model effectively handles damaged or irregular           open-field imagery—where lighting, scale, and structural vari-
+plant structures commonly encountered in real fields.                    ation can deviate sharply from dominant patterns, even in
+     b) Robustness Under Varying Illumination: We evaluated              substantially expanded datasets. They highlight potential di-
+OurMethod’s robustness across illumination variations using              rections for future improvement, such as enhancing structural
+crop images captured under strong, moderate, and low light               cue extraction or developing adaptive scale modeling to further
+conditions. As shown in Fig. 13, the model accurately seg-               strengthen robustness.
+ments crop regions even under low-light conditions where dis-
+tinguishing the foreground from the background is challenging                                 IV. D ISCUSSION
+to the human eye. The segmentation quality remains stable                     a) DepthCropSeg Provides High-Quality Pseudo Labels
+across all illumination levels.                                          for Baseline Training: DepthCropSeg leverages Depth Any-
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                  11
+
+
+
+
+   (a) Soil fields on cloudy days                                                        (b) Rice with water surface reflection at night
+
+
+
+
+   (c) Crop images with shadows on sunny days
+
+
+
+
+   (d) Crop images with high density
+
+
+
+
+   (e) Crop plants damaged by diseases and pests
+
+Fig. 12. Segmentation performance of DepthCropSeg++ under five representative agricultural field scenarios.
+   高光照
+ high light
+    中光照light
+ moderate
+  低光照
+ low light
+
+
+
+
+Fig. 13. Segmentation performance of DepthCropSeg++ under varying illumination conditions.
+
+
+
+thing V2 to generate monocular depth maps, from which                         from an initial pool of 260, 260 crop images. By compar-
+pseudo crop segmentation masks are automatically derived                      ison, achieving comparable annotation quality and quantity
+based on depth features. This approach dramatically re-                       through manual labeling would require a minimum effort of
+duces the reliance on manual annotations. In our experi-                      six months. The experimental results demonstrate that these
+ments, DepthCropSeg required only approximately 12 hours to                   pseudo masks achieve sufficient accuracy for training: models
+screen and obtain 12, 927 high-quality pseudo-labeled samples                 trained on DepthCropSeg-generated pseudo labels surpassed
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                          12
+
+
+
+
+ (a) Performance of the model on potted soybean data that did not appear during training
+
+
+
+
+ (b) Performance of the model on images taken by mobile phones that did not appear during training
+
+Fig. 14. Segmentation performance of DepthCropSeg++ on unseen data
+
+
+
+those trained using conventional semi-supervised methods,            expanding the training dataset with large-scale, diverse, and
+achieving a 0.75% improvement in mIoU (Table IV). These              complex scene data, including densely covered crop images
+findings indicate that DepthCropSeg offers an efficient and          paired with full-foreground pseudo masks, the model achieves
+precise pseudo-labeling pipeline, laying a solid data foundation     high robustness under various conditions.
+for training baseline models.                                           (1) On the full-coverage dataset, DepthCropSeg++ achieves
+      b) Key Optimization Strategies Improve Segmentation            a nearly perfect mIoU (99.86%) and shows improvements
+Performance: To further enhance segmentation accuracy and            of 3.32% in mIoU and 27.06% in bIoU compared to the
+boundary quality, we introduced two core optimization strate-        fully supervised benchmark (Table VII), demonstrating that
+gies into DepthCropSeg++: a two-stage self-training frame-           incorporating dense canopy samples significantly enhances the
+work and the FADE dynamic upsampling module.                         model performance in this common field scenario.
+   First, the two-stage self-training approach refines the ini-         (2) Across various real-world field conditions, such as dif-
+tial pseudo masks produced by DepthCropSeg through a                 ferent weather, plant densities, occlusions, and crops affected
+confidence-guided filtering process. This strategy effectively       by pests or diseases (Fig. 12), the model maintains consistently
+mitigates the impact of noisy labels and improves the model’s        high segmentation accuracy.
+ability to accurately recognize true crop regions. Although             (3) Even in challenging low-light conditions, where human
+the overall improvement in mIoU is relatively modest, the            observers can barely distinguish crops from the background,
+contribution to model robustness is notable.                         the model delivers segmentation results comparable to those
+   Second, replacing bilinear interpolation with the FADE dy-        under high illumination (Fig. 13), indicating strong illumina-
+namic upsampling module significantly improves the model’s           tion robustness.
+boundary segmentation capabilities. Unlike traditional up-              (4) DepthCropSeg++ also shows excellent adaptability to
+sampling methods, FADE performs structure-aware dynamic              unseen crop types during training. On the nighttime soybean
+kernel generation guided by encoder features, effectively            dataset, which was never seen during training, the model
+reducing boundary blurring and detail loss. Incorporating            achieves an mIoU of 90.09% (Table VII). Furthermore, on
+FADE results in an approximate 0.25% increase in mIoU and            potted soybean images with varying lighting, camera angles,
+brings even more substantial improvements in edge precision,         and growth stages, none of which appeared in the training
+underscoring its importance to the overall performance of            or test sets, the model produces accurate segmentations. Even
+DepthCropSeg++.                                                      on smartphone-captured ornamental plant images, the model
+      c) DepthCropSeg++ Demonstrates Outstanding Gener-              effectively excludes background interference (Fig. 14). These
+alization: DepthCropSeg++ exhibits strong segmentation per-          results suggest that DepthCropSeg++ has learned cross-species
+formance across diverse agricultural scenes and crop types. By       generalizable features rather than relying solely on specific
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                   13
+
+
+
+crop morphologies.                                                               [14] S. A. Zamani and Y. Baleghi, “A novel plant arrangement-based image
+                                                                                      augmentation method for crop, weed, and background segmentation in
+                                                                                      agricultural field images,” Computers and Electronics in Agriculture,
+                                                                                      vol. 233, p. 110151, 2025.
+                           V. C ONCLUSION                                        [15] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson,
+                                                                                      T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo et al., “Segment anything,”
+   In this work, we present DepthCropSeg++, a foundational                            in Proc. IEEE/CVF Int. Conf. Comput. Vis., 2023, pp. 4015–4026.
+crop segmentation model tailored for complex agricultural                        [16] M. Oquab, T. Darcet, T. Moutakanni, H. V. Vo, M. Szafraniec,
+scenarios. Trained on a large-scale, cross-scenario agricul-                          V. Khalidov et al., “Dinov2: Learning robust visual features
+                                                                                      without supervision,” arXiv:2304.07193, 2023. [Online]. Available:
+tural dataset with DepthCropSeg-generated pseudo-masks,                               https://arxiv.org/abs/2304.07193
+DepthCropSeg++ reduces annotation costs and improves seg-                        [17] Z. Chen, J. Wu, W. Wang, W. Su, G. Chen, S. Xing, M. Zhong, Q. Zhang,
+mentation accuracy through a two-stage self-training strat-                           X. Zhu, L. Lu et al., “Internvl: Scaling up vision foundation models
+                                                                                      and aligning for generic visual-linguistic tasks,” in Proceedings of the
+egy. It leverages ViT-Adapter for robust multi-scale feature                          IEEE/CVF conference on computer vision and pattern recognition, 2024,
+extraction and integrates the FADE upsampling module to                               pp. 24 185–24 198.
+enhance boundary precision. Experimental results demonstrate                     [18] S. Cao, B. Xu, W. Zhou, L. Zhou, J. Zhang, Y. Zheng, W. Hu, Z. Han,
+                                                                                      and H. Lu, “The blessing of depth anything: An almost unsupervised
+its superior generalization and performance (93.11% mIoU),                            approach to crop segmentation with depth-informed pseudo labeling,”
+surpassing both fully supervised and general vision mod-                              Plant Phenomics, vol. 7, no. 1, p. 100005, 2025.
+els. This study offers a new paradigm for efficient, high-                       [19] H. Lu, W. Liu, H. Fu, and Z. Cao, “Fade: A task-agnostic upsampling
+                                                                                      operator for encoder–decoder architectures,” Int. J. Comput. Vis., 2024.
+performance agricultural perception, with future work aimed                      [20] J. Wang, K. Chen, R. Xu, Z. Liu, C. C. Loy, and D. Lin, “Carafe:
+at 3D phenotyping and edge deployment.                                                Content-aware reassembly of features,” in Proc. IEEE/CVF Int. Conf.
+                                                                                      Comput. Vis., 2019, pp. 3007–3016.
+                                                                                 [21] H. Lu, Y. Dai, C. Shen, and S. Xu, “Indices matter: Learning to index
+                              R EFERENCES                                             for deep image matting,” in Proc. IEEE/CVF Int. Conf. Comput. Vis.,
+                                                                                      2019, pp. 3266–3275.
+                                                                                 [22] L. Yang, B. Kang, Z. Huang, Z. Zhao, X. Xu, J. Feng, and H. Zhao,
+ [1] Z. Han, T. Wu, and J. L. Araus, “Plant phenotyping trinity: health
+                                                                                      “Depth anything v2,” arXiv Comput. Res. Repository, 2024.
+     checks for plants,” Trends in Plant Science, 2025. [Online]. Available:
+                                                                                 [23] T. Ilyas, D. M. S. Arsa, K. Ahmad, J. Lee, O. Won, H. Lee, H. Kim, and
+     https://www.sciencedirect.com/science/article/pii/S1360138525001396
+                                                                                      D. S. Park, “Cwd30: A new benchmark dataset for crop weed recognition
+ [2] Y. Gao, L. Li, M. Weiss, W. Guo, M. Shi, H. Lu, R. Jiang, Y. Ding,
+                                                                                      in precision agriculture,” Comput. Electron. Agric., vol. 229, p. 109737,
+     T. Nampally, P. Rajalakshmi et al., “Bridging real and simulated data
+                                                                                      2025.
+     for cross-spatial-resolution vegetation segmentation with application to
+                                                                                 [24] Vbookshelf. (2018) V2 plant seedlings dataset. [Online]. Available:
+     rice crops,” ISPRS Journal of Photogrammetry and Remote Sensing, vol.
+                                                                                      https://www.kaggle.com/datasets/vbookshelf/v2-plant-seedlings-dataset
+     218, pp. 133–150, 2024.
+                                                                                 [25] A. M. Hashan. (2020) Apple leaf disease symptoms dataset. [Online].
+ [3] B. Xu, J. Zhang, Z. Tang, Y. Zhang, L. Xu, H. Lu, Z. Han, and W. Hu,             Available: https://www.kaggle.com/datasets/mhantor/apple-leaf-diseases
+     “Nighttime environment enables robust field-based high-throughput           [26] A. Olsen, D. A. Konovalov, B. Philippa, P. Ridd, J. C. Wood, J. Johns,
+     plant phenotyping: A system platform and a case study on rice,”                  W. Banks, B. Girgenti, O. Kenny, J. Whinney, B. Calvert, M. Rahimi
+     Computers and Electronics in Agriculture, vol. 235, p. 110337, 2025.             Azghadi, and R. D. White, “DeepWeeds: A Multiclass Weed Species
+ [4] S. J. Sheather, “Density estimation,” Statistical science, pp. 588–597,          Image Dataset for Deep Learning,” Sci. Rep., vol. 9, no. 2058, 2 2019.
+     2004.                                                                            [Online]. Available: https://doi.org/10.1038/s41598-018-38343-3
+ [5] D. W. Scott, Multivariate density estimation: theory, practice, and         [27] A. L.-S. B. Dataset, “Plant disease recognition: A large-scale benchmark
+     visualization. John Wiley & Sons, 2015.                                          dataset and a visual region and loss reweighting approach,” IEEE Trans.
+ [6] M. Cruz-Ramı́rez, C. Hervás-Martı́nez, M. Jurado-Expósito, and                 Image Process., vol. 30, pp. 2003–2015, 2021.
+     F. López-Granados, “A multi-objective neural network based method          [28] S. Cao, T. Hu, and H. Lu, “First place solution to the mlcas 2025 gwfss
+     for cover crop identification from remote sensed data,” Expert Systems           challenge: The devil is in the detail and minority,” in Proceedings of
+     with Applications, vol. 39, no. 11, pp. 10 038–10 048, 2012.                     the IEEE/CVF International Conference on Computer Vision, 2025, pp.
+ [7] H. Gao, M. Qi, B. Du, S. Yang, H. Li, T. Wang, W. Zhong, and Y. Tang,            7102–7109.
+     “An accurate semantic segmentation model for bean seedlings and weeds       [29] Z. Wang, R. Zenkl, L. Greche, B. De Solan, L. Bernigaud Samatan,
+     identification based on improved erfnet,” Scientific Reports, vol. 14,           S. Ouahid, A. Visioni, C. A. Robles-Zazueta, F. Pinto, I. Perez-Olivera
+     no. 1, p. 12288, 2024.                                                           et al., “The global wheat full semantic organ segmentation (gwfss)
+ [8] E. Hamuda, M. Glavin, and E. Jones, “A survey of image processing                dataset,” bioRxiv, pp. 2025–03, 2025.
+     techniques for plant extraction and segmentation in the field,” Comput.
+     Electron. Agric., vol. 125, pp. 184–199, Jul. 2016.
+ [9] Y. Zhang and C. Lv, “Tinysegformer: A lightweight visual segmentation
+     model for real-time agricultural pest detection,” Computers and Elec-
+     tronics in Agriculture, vol. 218, p. 108740, 2024. [Online]. Available:
+     https://www.sciencedirect.com/science/article/pii/S0168169924001315
+[10] M. A. Bhatti, Z. Zeeshan, S. M.S., U. A. Bhatti, A. Khan, Y. Y. Ghadi,
+     S. Alsenan, Y. Li, M. Asif, and T. Afzal, “Advanced plant disease
+     segmentation in precision agriculture using optimal dimensionality re-
+     duction with fuzzy c-means clustering and deep learning,” IEEE Journal
+     of Selected Topics in Applied Earth Observations and Remote Sensing,
+     vol. 17, pp. 18 264–18 277, 2024.
+[11] S. Ebrahimi and S. Kumar, “What helps to detect what? explainable ai
+     and multi-sensor fusion for semantic segmentation of simultaneous crop
+     and land cover land use delineation,” IEEE Journal of Selected Topics
+     in Applied Earth Observations and Remote Sensing, 2025.
+[12] Z. Luo, W. Yang, Y. Yuan, R. Gou, and X. Li, “Semantic segmentation
+     of agricultural images: A survey,” Information Processing in Agriculture,
+     vol. 11, no. 2, pp. 172–186, 2024.
+[13] H. Xiong, Z. Cao, H. Lu, S. Madec, L. Liu, and C. Shen,
+     “Tasselnetv2: in-field counting of wheat spikes with context-augmented
+     local regression networks,” Plant Methods, vol. 15, no. 1, p. 150, Dec
+     2019. [Online]. Available: https://doi.org/10.1186/s13007-019-0537-2
+

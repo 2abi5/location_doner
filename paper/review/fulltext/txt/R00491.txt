@@ -1,0 +1,874 @@
+                                                                                                                                                   ORIGINAL RESEARCH
+                                                                                                                                              published: 03 February 2022
+                                                                                                                                            doi: 10.3389/fpls.2022.731816
+
+
+
+
+                                             Background-Aware Domain
+                                             Adaptation for Plant Counting
+                                             Min Shi, Xing-Yi Li, Hao Lu and Zhi-Guo Cao*
+
+                                             Key Laboratory of Image Processing and Intelligent Control, Ministry of Education, School of Artificial Intelligence and
+                                             Automation, Huazhong University of Science and Technology, Wuhan, China
+
+
+
+                                             Deep learning-based object counting models have recently been considered preferable
+                                             choices for plant counting. However, the performance of these data-driven methods
+                                             would probably deteriorate when a discrepancy exists between the training and testing
+                                             data. Such a discrepancy is also known as the domain gap. One way to mitigate the
+                                             performance drop is to use unlabeled data sampled from the testing environment to
+                                             correct the model behavior. This problem setting is also called unsupervised domain
+                                             adaptation (UDA). Despite UDA has been a long-standing topic in machine learning
+                                             society, UDA methods are less studied for plant counting. In this paper, we first evaluate
+                                             some frequently-used UDA methods on the plant counting task, including feature-level
+                                             and image-level methods. By analyzing the failure patterns of these methods, we
+                                             propose a novel background-aware domain adaptation (BADA) module to address the
+                                             drawbacks. We show that BADA can easily fit into object counting models to improve the
+                                             cross-domain plant counting performance, especially on background areas. Benefiting
+                         Edited by:          from learning where to count, background counting errors are reduced. We also show
+                Kioumars Ghamkhar,
+                                             that BADA can work with adversarial training strategies to further enhance the robustness
+        AgResearch Ltd, New Zealand
+                                             of counting models against the domain gap. We evaluated our method on 7 different
+                        Reviewed by:
+     Mohsen Yoosefzadeh Najafabadi,          domain adaptation settings, including different camera views, cultivars, locations, and
+        University of Guelph, Canada         image acquisition devices. Results demonstrate that our method achieved the lowest
+                      Youshan Zhang,
+      Cornell University, United States
+                                             Mean Absolute Error on 6 out of the 7 settings. The usefulness of BADA is also supported
+                  *Correspondence:
+                                             by controlled ablation studies and visualizations.
+                        Zhi-Guo Cao
+                                             Keywords: plant counting, maize tassels, rice plants, domain adaptation, adversarial training, local count models
+                  zgcao@hust.edu.cn
+
+
+                   Specialty section:
+                                             1. INTRODUCTION
+         This article was submitted to
+ Technical Advances in Plant Science,
+                                             Estimating the number of plants accurately and efficiently is an important task in agriculture
+               a section of the journal
+            Frontiers in Plant Science
+                                             breeding and plant phenotyping. Counting plants (Liu et al., 2020) or their flowers (Lu et al., 2017b)
+                                             and fruits (Bargoti and Underwood, 2017) can help farmers to monitor the status of crops and
+            Received: 28 June 2021
+                                             estimate yield. Recently, deep learning-based object counting models (Zhang et al., 2015), which
+         Accepted: 10 January 2022
+        Published: 03 February 2022
+                                             directly infer object counts from a single image, can be a promising choice for plant counting.
+                                             Thanks to the strong representation ability of convolutional neural networks (CNNs), these
+                             Citation:
+     Shi M, Li X-Y, Lu H and Cao Z-G
+                                             methods can achieve high accuracy on standard plant counting datasets (Lu et al., 2017b; David
+   (2022) Background-Aware Domain            et al., 2020). It seems that the applications of counting models are around the corner. However, a
+       Adaptation for Plant Counting.        vital problem has been neglected: the training data can be significantly different from the scenes
+         Front. Plant Sci. 13:731816.        where the counting models are deployed. Such a difference is given as a scientific term domain
+      doi: 10.3389/fpls.2022.731816          gap. In plant counting, various factors can contribute to domain gaps, e.g., different camera views,
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                     1                                          February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                         Background-Aware Domain Adaptation
+
+
+
+cultivars, object sizes or background. The performance of a                             image perspectives are less diverse than those in crowd counting
+counting model trained on one domain (source domain) usually                            datasets, these factors make the domain adaptation for plant
+deteriorates when tested on another domain (target domain) due                          counting tricky. Some typical causes of domain gaps are shown
+to the domain gap. A straight-forward solution is to annotate                           in Figure 1.
+additional data, while the consumption of time and labor is                                 In this work, we first evaluated some frequently-used UDA
+expensive. Naturally, one comes to the thought whether the                              methods in the context of plant counting and analyzed the
+unlabeled data in the target domain can be used to correct the                          weaknesses that these methods expose. In particular, we found
+model performance as much as possible. This problem setting is                          that the counting models produce large errors on background
+called unsupervised domain adaptation (UDA).                                            areas that show similar appearances with the plants, e.g., similar
+   UDA is a long-standing topic in machine learning. A large                            colors or textures. Targeting these weaknesses, we propose a
+number of task-specific UDA methods have been proposed                                  novel background-aware domain adaptation (BADA) module.
+for tasks such as semantic segmentation (Vu et al., 2019),                              This module can fit into existing plant counting models to
+image classification (Ganin and Lempitsky, 2015), and object                            enhance their cross-domain performance. Specifically, BADA is
+detection (D’Innocente et al., 2020; Xu et al., 2020). By                               implemented as a parallel branch in the CNN model. This branch
+contrast, UDA for object counting, especially for plant counting,                       aims to segment areas which potentially contain counting objects,
+has been less studied. To our knowledge, existing UDA                                   i.e., the foreground. The predicted foregrounds are merged into
+methods (Giuffrida et al., 2019; Ayalew et al., 2020) applied                           the feature maps as useful cues. In this way the network learns
+to plant counting are often direct adoptions of generic UDA                             where to count. We also found that adding only a background-
+ideas without considering the particularities of domain gaps in                         aware branch was insufficient to yield satisfactory cross-domain
+plant counting. In fact, different from crowd counting or car                           performance. Hence, two additional domain discriminators were
+counting, domain gaps in plant counting are much more diverse.                          connected to the input feature maps and the output foreground
+The shapes of plants can change with time, cultivars and their                          masks. We use adversarial training strategy to jointly optimize
+growth environment; plants in different locations show different                        the discriminators and other parts of the model, facilitating
+appearances; different image acquisition devices and viewpoints                         to extract domain-invariant features and refine the predicted
+also intensify the domain gap. Considering that camera views and                        foreground masks.
+
+
+
+
+  FIGURE 1 | Typical causes of domain gaps in plant counting. (A) Different camera views. (B) Scale variations in different locations. (C) Different appearances due to
+  different growth stages.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                    2                                         February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                      Background-Aware Domain Adaptation
+
+
+
+   We evaluated our method on three public datasets: MTC (Lu               neural network is trained to predict density maps (Lempitsky
+et al., 2017b), RPC (Liu et al., 2020) and MTC-UAV (Lu                     and Zisserman, 2010) for target objects, where the value of each
+et al., 2021), including 7 different and representative domain             pixel denotes the local counting value. The integral of the density
+adaptation settings close to real applications. We split data into         map is equal to the total number of objects. Inspired by the
+different domains by different cultivars, locations, and image             success of these methods in crowd counting, a constellation of
+acquisition devices. It is worth noticing that one of our settings         methods (Lu et al., 2017b; Xiong et al., 2019a; Liu et al., 2020) and
+was to train a model using images captured by phenopoles and to            datasets (David et al., 2020; Lu et al., 2021) are proposed for plant
+test the model on images captured by UAVs. The results showed              counting. However, existing plant counting methods neglect the
+that, comparing with directly applying generic UDA ideas, our              influence of domain gap, which is common in real applications.
+method achieved better cross-domain performance. We also                      Unsupervised domain adaptation. The harm of domain gaps
+verified each module of our method via ablation study. Moreover,           is common for data-driven methods (Ganin and Lempitsky,
+the visualizations further show that our method significantly              2015; Vu et al., 2019). Therefore, UDA has been a long-standing
+improves the performance on background areas.                              topic in deep learning society, where unlabeled data collected in
+   Our contributions have two folds:                                       the target domain are utilized to prompt the model performance
+                                                                           on the target domain. Ben-David et al. (2010) theoretically
+• We present a thorough evaluation of some frequently-used
+                                                                           prove that domain adaptation can be achieved by narrowing the
+  UDA methods under several plant counting tasks and analyze
+                                                                           domain gap. One can achieve this from the feature level, or, more
+  their weaknesses;
+                                                                           directly, from the image level. The feature-level methods (Ganin
+• We propose a novel background-aware UDA module, which
+                                                                           and Lempitsky, 2015; Tzeng et al., 2017) align the feature to
+  can easily fit into existing object counting models to prompt
+                                                                           be domain-invariant. And the image-level methods (Zhu et al.,
+  cross-domain performance.
+                                                                           2017; Wang et al., 2019; Yang and Soatto, 2020; Yang et al.,
+                                                                           2020) manipulate the styles of images, e.g., hues, illuminations,
+2. RELATED WORK                                                            textures to make the images in two different domains closer.
+                                                                           Some of the UDA methods are proposed to address the domain
+In this section, we briefly review the applications of machine             gap for plant counting (Giuffrida et al., 2019; Ayalew et al.,
+learning in plant science. Then we focus on the object counting            2020). However, existing UDA methods for plant counting
+methods and the unsupervised domain adaptation (UDA)                       directly adopt the generic feature-level UDA methods. This
+methods in open literature.                                                motivates us to test different UDA methods under the context of
+   Machine Learning. Machine learning is a useful tool                     plant counting.
+for plant science, which can model the relationships and
+patterns between targets and factors given a set of data.
+It is widely used in many none-destructive phenotyping
+                                                                           3. MATERIALS AND METHODS
+tasks, e.g., field estimation (Yoosefzadeh-Najafabadi et al.,              3.1. Plant Counting Datasets
+2021) and plant identification (Tsaftaris et al., 2016). A                 We evaluated the performance of UDA on three public plant
+dominating trend in machine learning is deep learning, as                  counting datasets: Maize Tassel Counting (MTC) dataset (Lu
+deep learning models can learn to extract robust features and              et al., 2017b), Rice Plant Counting (RPC) dataset (Liu et al.,
+complete the tasks in a end-to-end manner. Deep learning-                  2020) and Maize Tassel Counting UAV (MTC-UAV) (Lu et al.,
+based methods have shown great advantages in different                     2021) dataset. Here, we briefly introduce the statistics and
+tasks of plant phenomics, e.g., plant counting (Lu et al.,                 characteristics of these datasets.
+2017b), detection (Bargoti and Underwood, 2017; Madec
+et al., 2019), segmentation (Tsaftaris et al., 2016), and                  3.1.1. The MTC Dataset
+classification (Lu et al., 2017a). For in-field plant counting tasks       The MTC dataset contains 361 images of maize fields. Each
+(from RGB images), deep learning-based methods show great                  center of maize tassel is manually annotated with a dot. The
+robustness against different illuminations, scales and complex             samples were collected from 4 different places in China, including
+backgrounds (Lu et al., 2017b). The release of datasets (David             6 different maize cultivars. We split the dataset into 6 domains
+et al., 2020; Lu et al., 2021) also accelerates the development            according to cultivars. As shown in Figure 2, domain gaps not
+of deep learning-based plant counting methods. Therefore,                  only reflect in the different shapes of maize tassels, but also reflect
+the deep learning has become the default choice for in-field               in different backgrounds, illuminations and camera views.
+plant counting.
+   Object counting. Plant counting is a subset of object counting.         3.1.2. The RPC Dataset
+Object counting aims to inference the number of target objects             The RPC dataset contains 382 images of rice seedlings captured
+in the input images. Current cutting-edge object counting                  in Jiangxi, China and Guangxi, China. The rice seedlings are
+methods (Lempitsky and Zisserman, 2010; Zhang et al., 2015;                manually annotated with dots. We split the dataset into 2
+Arteta et al., 2016; Onoro-Rubio and López-Sastre, 2016; Li et al.,        domains according to locations. For samples from Guangxi,
+2018; Ma et al., 2019; Xiong et al., 2019b; Wang et al., 2020)             the images were captured shortly after the rice seedlings were
+utilize the power of deep learning and formulate the object                transplanted, while most of the rice seedlings in Jiangxi had been
+counting problem as a regression task. A fully-convolutional               growing for some time. Thus, rice seedlings in Guangxi were
+
+
+Frontiers in Plant Science | www.frontiersin.org                       3                                    February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                     Background-Aware Domain Adaptation
+
+
+
+much smaller and with less occlusions. On the contrary, rice                          3.1.3. The MTC-UAV Dataset
+seedlings in Jiangxi had grown more leaves and block each other.                      The MTC-UAV dataset is very different from the two
+Besides, the hues and camera views are very different, images                         aforementioned plant counting datasets, as the samples were
+from Guangxi show dimmer illuminations and hues. We show                              captured by an unmanned aircraft vehicle (UAV). The UAV took
+some typical samples in Figure 3.                                                     306 pictures of an experimental field which covered around 1 ha.
+
+
+
+
+  FIGURE 2 | Samples in MTC datasets. (A) Images captured at different locations. Camera views, backgrounds and illuminations are different. (B–G) Maize tassels of
+  different cultivars.
+
+
+
+
+  FIGURE 3 | Samples from RPC datasets. (A) Images captured in Guangxi. (B) Images captured in Jiangxi.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                  4                                        February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                              Background-Aware Domain Adaptation
+
+
+
+Images were captured at the height of 12.5 m, and the focal length                    the counting feature maps Mc . And the segmentation branch
+of the camera was 28 mm. Thus, the ground sampling resolution                         segments the regions which potentially contain the counting
+is about 0.3 cm/pixel.                                                                objects, i.e., the foreground mask. The foreground mask Ms is
+    This dataset was adopted to evaluate the UDA performance                          then concatenated with Mc to form the input of local count
+between different image acquisition devices. This setup is                            regressor FC . FC outputs the local count map for the input image.
+challenging as camera views, perspectives, and object scales in                          To extract domain-invariant features, we applied two domain
+images captured by a UAV are significantly different from those                       discriminators, including a feature discriminator DF and a mask
+of the images captured by phenopoles.                                                 discriminator DM . The discriminators are fully-convolutional,
+                                                                                      which receive the feature map Mf and the foreground mask Ms as
+3.2. Background-Aware Domain                                                          inputs, and output domain class maps. The adversarial training
+Adaptation                                                                            strategy was imposed on the discriminators. Segmentation
+Assume that we have two domains of data under different                               branch FS , feature discriminator DF , and mask discriminator DM
+distributions: labeled data from the source domain and unlabeled                      together constitute the BADA module.
+data from the target domain. Labeled data from source domain                             To train the network, we jointly optimized three loss
+can be denoted by Ds {Xs , Ys }, where Xs denotes the images in                       functions: counting loss, segmentation loss and the adversarial
+the source domain and Ys stores the point annotations for each                        training loss.
+image. Unlabeled data is denoted by Dt {Xt }. UDA for plant
+                                                                                      3.2.1. Feature Encoder
+counting aims at jointly utilizing Ds and Dt to prompt counting
+                                                                                      We adopted part of the VGG16 (Simonyan and Zisserman,
+performance on the target domain.
+                                                                                      2014) network as the feature encoder. As shown in Figure 5, the
+   We verified our BADA module on a popular and straight-
+                                                                                      feature encoder includes 3 stride-2 max pooling layers. Given
+forward object counting method CSRNet (Li et al., 2018). For
+                                                                                      an image of size H × W, the feature encoder outputs features
+convenience, we first define the variables in Table 1 and the I/O                                       H W
+of each module in Table 2, where FE , FD , FS , FC , FF and FM are                    maps Mf ∈ R512× 8 × 8 . At the beginning of the training process,
+parameterized by θE , θD , θS , θC , θF and θM , respectively. [Ms , Mc ]             the feature encoder was initialized by parameters pretrained on
+denotes the channel-wise concatenation of Ms and Mc .                                 ImageNet (Deng et al., 2009).
+   As shown in Figure 4, the input of the whole model is an RGB
+image. The image is first processed by the feature encoder FE to                      3.2.2. Multi-Branch Decoder
+obtain feature maps Mf . Then, the extracted feature maps Mf are                      The multi-branch decoder consists of a counting feature
+sent to the counting feature decoder FD and the segmentation                          decoder FD and a segmentation branch FS . FD and FS share
+branch FS . FD further refines the feature maps to generate                           almost the same network architecture. Both the two branches
+                                                                                      replace standard convolutions with dilated convolutions,
+                                                                                      which can enlarge the receptive fields without introducing
+                                                                                      extra parameters.
+TABLE 1 | Definition of variables.                                                       As shown in Figure 5, Mf is sent to FD and FS .
+                                                                                      FD outputs feature maps Mc with 64 channels. The last
+Variable                                                             Symbol           softmax layer of the FS outputs a 2-channel segmentation
+                                                                                      map, where each pixel can be viewed as a 2-d vector.
+Input image                                                          I
+                                                                                      The second element refers to the probability of a pixel
+Source image                                                         Is
+                                                                                      being the foreground. We denote the second channel as the
+Target image                                                         It
+                                                                                      segmentation mask Ms . Ms and Mc are concatenated to form
+Basic feature maps                                                   Mf
+                                                                                      a feature map with 65 channels as the output of multi-
+Counting feature maps                                                Mc
+                                                                                      branch decoder.
+Estimated foreground mask                                            Ms
+Estimated local count map                                            Cest             3.2.3. Local Count Regressor
+Domain class map for feature map                                     Cf               Most object counting methods are based on density map
+Domain class map for foreground mask                                 Cm               regression, which predicts the counting value pixel by pixel.
+                                                                                      However, this paradigm is not robust to shape variations of
+                                                                                      non-rigid objects in plant counting, e.g., maize tassels or rice
+TABLE 2 | I/O for each module.
+                                                                                      seedlings. In plant counting, shape and appearance of an object
+Module                                    Symbol    I/O function                      often change with different growth stages and cultivars. Density
+                                                                                      map-based methods tend to generate responses at every pixel
+Feature extractor                         FE        Mf = FE (I, θE )                  that shares similar patterns with the counting objects. Thus, per-
+Counting feature decoder                  FD        Mc = FD (Mf , θD )                pixel density estimation often leads to accumulated error when
+Segmentation branch                       FS        Ms = FS (I, θS )                  summing the density map. To alleviate this, we followed Lu
+Local count regressor                     FC        Cest = FC ([Ms , Mc ], θC )       et al. (2017b) to estimate patch-wise counting values. As shown
+Feature discriminator                     DF        Cf = DF (Mf , θF )                in Figure 5, the local count regressor FC includes two average
+Foreground mask discriminator             DM        Cm = DM (Ms , θM )                pooling layers with the stride of 2 and 4, respectively. Thus,
+
+
+Frontiers in Plant Science | www.frontiersin.org                                  5                                 February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                        Background-Aware Domain Adaptation
+
+
+
+
+  FIGURE 4 | The overview of our method. The BADA module works as a parallel branch in the CNN model. Two discriminators are connected to the input and output
+  of BADA model and are imposed with adversarial training strategies.
+
+
+
+
+  FIGURE 5 | The architecture of our model. (A) The architecture of the feature encoder. (B) The architecture of the multi-branch decoder and the local count regressor.
+  (C,D) The architecture of the feature discriminator and the foreground mask discriminator.
+
+
+given an image of size H × W, the spatial resolution of the                             3.2.4. Discriminator
+                                  H
+estimated local count map Cest is 64 ×W64 . Each element in Cest                        Adding a segmentation branch can guide the network to learn
+denotes the number of counting objects in a 64 × 64 patch of the                        where to count (Lu et al., 2021; Modolo et al., 2021). Nevertheless,
+input image.                                                                            under the cross-domain setting, the segmentation branch also
+
+
+Frontiers in Plant Science | www.frontiersin.org                                    6                                         February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                             Background-Aware Domain Adaptation
+
+
+
+suffers from the domain gap. The foreground masks may also                  and w, respectively. In our method, we set h = 64 and w = 64.
+contain some false positives. Thus, we added two domain                     Then, we define the counting loss by:
+discriminators: a feature discriminator DF and a foreground
+                                                                                                             N
+mask discriminator DM . DF aims to force Mf extracted by FE                                              1 X
+                                                                                                  Lc =       |Cest (i) − Cgt (i)|,                      (4)
+to be domain-invariant. DM can help the segmentation branch                                              N
+                                                                                                            i=1
+to predict foreground mask Ms with reasonable shapes and high
+accuracy on both the source domain and target domain. This is               where N = H · W, i.e., the number of pixels in the local
+motivated by the observation that the shape of the foreground               count map.
+mask is irregular and scattered when directly applying the model            2) Segmentation loss
+on target domain without discriminators. Readers can refer to               Akin to semantic segmentation (Lin et al., 2017), the foreground
+section 4.4.2 for detailed visualizations.                                  segmentation can be viewed as a 2-class semantic segmentation
+   The architectures of DF and DM are shown in Figure 5.                    task, and can be supervised by the cross-entropy loss. However,
+The softmax layer outputs a domain class map Cf (Cm ).                      pixel-wise foreground labels are not available in plant counting
+Each element in Cf (Cm ) can be viewed as a 2-d vector, and                 datasets. Thus, we generated pseudo foreground masks Sgt from
+the first element in the vector denotes the probability of the              ground truth density maps. Sgt is obtained by
+corresponding 4 × 4 patch in Mf (Ms ) being the target domain.                                          (
+Similarly, the second dimension denotes the probability being the                                         0, Dgt (i) < tc
+                                                                                              Sgt (i) =                   ,               (5)
+source domain.                                                                                            1, Dgt (i) ≥ tc
+   To train the discriminator, we adopted the adversarial training
+strategy (Ganin and Lempitsky, 2015). While discriminators DF               where tc is a pre-defined threshold. For different datasets, tc can
+and DM learn to classify Mf and Ms into source and target                   be adjusted conditioned on the empirical estimate of object size
+domains, FE and FS attempt to confuse the discriminators by                 to make sure that every counting object can be fully covered by
+generating domain-invariant Mf and Ms . This can be achieved                the foreground mask.
+by adding a gradient reversal layer (Ganin and Lempitsky, 2015)                The standard cross-entropy loss was adopted as the
+before the input layers of the two discriminators. During forward           segmentation loss. Given the estimated foreground mask
+propagation, the gradient reversal layer passes the input to the            Ms and the ground truth Sgt , the segmentation loss Ls can be
+next layer with no change, but reverses the sign of the gradient            formulated by
+during back propagation. The operation rule of the gradient
+reversal layer can be defined by                                                       N
+                                                                                     1 X                                                         
+                                                                            Ls = −        Sgt (i) log (Sest (i)) + 1 − Sgt (i) · log (1 − Sest (i)) , (6)
+                          (                                                          N
+                            Rλ (x) = x                                                  i=1
+                            dRλ            ,                   (1)
+                             dx = −λI                                       where N = H · W, i.e., the number of pixels in the
+where x denotes the input of the gradient reverse layer, and I              foreground mask.
+denotes the identity matrix. λ is a pre-defined parameter which             3) Loss for adversarial training
+adjusts the attenuation ratio when propagating the gradients                 The adversarial training loss function La supervises the training
+back. This is useful as the adversarial training could interfere with       of domain discriminators. We labeled the source domain as 1 and
+the main task (counting) at the beginning of the training process.          the target domain as 0. Then, the ground truth domain class map
+We will discuss the updating strategy of λ in section 3.2.6.                Agt can be obtained by
+                                                                                                          (
+3.2.5. Loss Function                                                                                         1, I ∈ It
+                                                                                                   Agt =               ,                   (7)
+1) Counting loss                                                                                             0, I ∈ Is
+The counting loss Lc is used to measure the differences between
+estimated local count maps Cest and the ground truth local count            where 1 and 0 denote matrices filled with ones and zeros. I ∈ It
+maps Cgt . One can obtain Cgt from the ground truth density map             denotes the image I belongs to the source domain, and I ∈ It
+Dgt . Supposing the image Ii have n annotated points P ∈ Rn×2               means I comes from the target domain.
+and the corresponding density map can be defined by                            Let the second channel of Cf and Cm be Aest , i.e., the
+                                                                            probability that the feature maps (foreground masks) are from
+                                 n
+                                 X                                          the source domain. Then, the adversarial training loss La is
+                                       N µ = Pk , σ 2 ,
+                                                     
+                       Dgt,i =                                   (2)        defined by
+                                 k=1
+
+where N µ = Pk , σ 2 denotes a 2-d Gaussian kernel with the
+                     
+                                                                                        N
+                                                                                      1 X
+                                                                                           Agt (i) log AFest (i) + 1 − Agt (i) · log 1 − AFest (i)
+                                                                                                                                                
+mean Pk and the variance σ 2 . Then the ground truth local count            La = −
+                                                                                      N
+map Cgt can be obtained by                                                                i=1
+                                                                                                                                                               ,
+                                                                                        N
+                                                                                      1 X
+                                                                                                Agt (i) log AM                                M
+                                                                                                                                                   
+                              Cgt = Dgt ∗ 1h×w .                 (3)              −                          est (i) + 1 − Agt (i) · log 1 − Aest (i)
+                                                                                      N
+                                                                                          i=1
+∗1h×w denotes the convolution operation using a h × w matrix                                                                                            (8)
+with all ones as kernel. The horizontal and vertical strides are h          where N = H · W.
+
+Frontiers in Plant Science | www.frontiersin.org                        7                                         February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                             Background-Aware Domain Adaptation
+
+
+
+3.2.6. Implementation Details                                            4.1. Evaluation Metrics
+1) Training details                                                      We used mean absolute error (MAE) and root mean square error
+We used PyTorch (Paszke et al., 2019) to train and evaluate              (MSE) as the main evaluation metrics, which can be defined by:
+our model. Stochastic gradient descent (SGD) was adopted as the
+optimizer. We trained the datasets for 500 epochs. The initial                                                1 XN
+                                                                                            MAE =                    |yˆn − yn |,                     (10)
+learning rate was set to 0.01, and at the 250th and the 400th                                                 N  n=1
+epoch, the learning rate decayed by 10 times.
+   As the resolution of samples was high, images were resized                                              r
+during training and evaluation. For data augmentation, 512 ×                                                   1 XN
+                                                                                           MSE =                      |yˆn − yn |2 ,                  (11)
+512 patches were randomly cropped from resized images,                                                         N  n=1
+and then the cropped images were flipped along horizontal
+                                                                         where N denotes the number of samples on the test set. yˆn and
+directions randomly.
+                                                                         yn denote the estimated count and the ground truth count of
+2) Parameters update
+                                                                         the nth sample.
+ Here we specify the parameter updating strategy during training.
+                                                                            To measure the ratio of counting error to the total count of
+At each epoch, Lc and Ld were jointly optimized while La was
+                                                                         each sample, we used mean absolute percentage error (MAPE),
+optimized separately. The detailed updating strategy is defined in
+                                                                         which can be calculated by:
+Algorithm 1.
+                                                                                                       1 XN |yˆn − yn |
+                                                                                      MAPE =                            × 100%.                       (12)
+                                                                                                       N  n=1    yn
+ Algorithm 1: Parameters updating strategy
+   input : Image from source domain Is , image from target               In addition, we measured the correlation between estimated
+           domain It                                                     counts and annotations by R2 :
+           Ground truth density map Dgt
+                                                                                                                PN
+ 1 begin                                                                                                                 [yˆn − yn ]2
+ 2    Update λ of the gradient reversal layer with Equation (9)                             R = 1 − Pn=1
+                                                                                                 2
+                                                                                                     N
+                                                                                                                                            .         (13)
+                                                                                                                                        2
+                                                                                                                    n=1 (ȳn − yn )
+ 3    Input Is to obtain Cest , Ms , Cf and Cm
+ 4    Calculate Lc and Ls and update parameters                             We also noticed that, the false positive responses in the
+ 5    Calculate La for source domain and update parameters               estimated density maps may compensate for errors from missing
+ 6    Input It to obtain Cf and Cm                                       targets. This indicated that MAE may not fully reflect the real
+ 7    Calculate La for target domain and update parameters               performance of counting models. Therefore, we designed a
+ 8    end iteration                                                      decoupled MAE where errors on target areas and background
+ 9 end                                                                   areas are calculated independently and then summed up, instead
+                                                                         of directly comparing the total counts. For example, if the model
+                                                                         wrongly predicts density responses on background and omits
+                                                                         some targets. The density responses on background will not
+  At the beginning of each epoch, λ of the gradient reverse layer        compensate for the error on real targets when calculating metrics.
+was updated by                                                           To be specific, DMAE is defined as follows,
+
+                                                                                          1 XN                                     
+                                  2                                           DMAE =             |ŷb,n − yb,n | + |ŷf ,n − yf ,n | .                (14)
+                         λ=               − 1,                (9)                        N  n=1
+                            1 + exp γ · p
+                                                                         ŷb,n and ŷf ,n denote the estimated object count in the background
+                                                                         areas and target areas. Similarly, yb,n and yf ,n denote the ground
+where p denotes the ratio of the current epoch to total epochs.          truth count in the background areas and target areas. To obtain
+And γ denotes a pre-defined parameter that controls the speed            ŷb,n and ŷf ,n , we used the same pesudo segmentation mask Sgt
+when λ ascends. As the training proceeds, λ increases from 0 to 1.       mentioned in section 3.2.5 to divide the image into background
+                                                                         areas B and target areas. This process can be defined as follows,
+
+4. EXPERIMENTS
+                                                                                                 X                               X
+                                                                                       ŷb,n =             Dest (i) , ŷf ,n =         Dest (i) .     (15)
+                                                                                                     i∈B                         i∈B
+                                                                                                                                  /
+Here we report the experiments results. We first evaluated
+multiple UDA methods on 7 different domain adaptation                    yb,n and yf ,n can be obtained likewise.
+settings. The results were compared with our method. The
+efficiency of each module in our method was verified via ablation        4.2. Experimental Settings
+study. We also conducted visualizations to show the qualitative          Here we specify the experimental settings, including the split of
+results of our method. First, we introduce the evaluation metrics.       source domain and the introduction of other tested algorithm.
+
+
+Frontiers in Plant Science | www.frontiersin.org                     8                                            February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                               Background-Aware Domain Adaptation
+
+
+
+4.2.1. The MTC Dataset                                                  domain and data from MTC-UAV dataset as target domain to
+We split the MTC dataset according to cultivars. As Zhengdan            constitute a domain adaptation setting.
+No.958 contains more samples while samples of other cultivars
+are much fewer, we used Zhengdan No.958 as the source                   4.3. Comparison With Other Methods
+domain, and the other 5 cultivars as the target domains.                As UDA for plant counting has seldom been studied, we first
+Accordingly, there were 5 different adaptation pairs for MTC            evaluated some frequently-used UDA methods. We trained
+dataset. For convenience, we named the adaptation pairs by              these methods on the plant counting datasets using official
+abbreviation, e.g., adaption from Zhengdan No.958 to Jundan             implementations (CSRNet, FDA, PCEDA) when available. If no
+No.20 was marked as Z→Jun. The abbreviations for cultivars              codes are released, we implement the method according to the
+Zhengdan No.958, Jundan No.20, Wuyue No.3, Jidan No.32,                 their papers (CSRNet_DA, MFA).
+Tianlong No.9 and Nongda No.108 were Z, Jun, W, Ji, T and
+N, respectively.                                                        4.3.1. Baseline Approaches
+                                                                        1) CSRNet
+4.2.2. The RPC Dataset                                                     CSRNet (Li et al., 2018) is a generic object counting method
+We split the RPC dataset into two domains according to different        with simple network architecture and competitive performance.
+locations. Since only 62 images were captured from Guangxi, we          For a fair comparison, all the UDA methods compared were
+adapted the model from Jiangxi to Guangxi, marking this setting         based on CSRNet. We trained the counting model with
+as J→G.                                                                 only source data and directly evaluated the model on the
+                                                                        target domain.
+4.2.3. The MTC-UAV Dataset                                              2) CSRNet_DA
+The MTC-UAV dataset and the MTC dataset shared the same                    CSRNet_DA refers to a naïve upgrade of CSRNet. We added
+counting object. We used data from MTC dataset as source                a discriminator for CSRNet and applied adversarial training
+
+
+
+TABLE 3 | Quantitative comparisons on MTC dataset.
+
+Settings                                           Z→Jun                                                 Z→W
+                                                                        2
+methods               MAE              MSE         MAPE    DMAE     R            MAE        MSE         MAPE            DMAE              R2
+
+CSRNet                 5.89            8.22        77.5%   6.52    0.9682        3.56        4.56        5.9%            45.23          0.9106
+CSRNet_DA              2.38            3.33        13.7%   7.56    0.9864        5.46        7.41        9.9%            15.77          0.8173
+PCEDA                  4.53            6.58        41.3%   10.68   0.9369        3.47        2.46        5.7%            29.86          0.9388
+FDA                    4.92            6.44        57.0%   6.23    0.9853        2.48        2.99        4.3%            5.92           0.9573
+MFA                    4.02            5.65        37.1%   6.11    0.9655        3.76        4.72        6.6%            9.17           0.9463
+Ours                   1.92            2.83        10.1%   3.78    0.9884        3.83        5.13        6.7%            7.98           0.9041
+
+Settings                                            Z→Ji                                                 Z→T
+
+methods               MAE              MSE         MAPE    DMAE     R2           MAE        MSE         MAPE            DMAE              R2
+
+CSRNet                 0.92            1.16        10.3%   14.2    0.9776       15.76       19.42       134.9%           35.87          0.9039
+CSRNet_DA              0.68            0.85        10.9%   5.11    0.9869       12.38       15.14       102.9%           26.32          0.9275
+PCEDA                  0.97            1.27        12.8%   6.76    0.9752       16.61       23.09       116.9%           39.83          0.6549
+FDA                    0.66            0.92        9.1%    1.82    0.9856       12.29       16.14       138.0%           28.35          0.9312
+MFA                    0.83            1.09        14.2%   1.81    0.9762       13.77       16.81       94.8%            33.93          0.8567
+Ours                   0.50            0.69        9.5%    2.92    0.9939        6.96        9.33       31.9%            11.61          0.9115
+
+Settings                                            Z→N                                                  Avg.
+
+methods               MAE              MSE         MAPE    DMAE     R2           MAE        MSE         MAPE            DMAE              R2
+
+CSRNet                 2.59            3.57        11.2%   24.92   0.9891        5.74        7.39       48.0%            12.01          0.9499
+CSRNet_DA              1.88            2.43        9.2%    5.83    0.9864        4.56        5.83       29.3%            5.232          0.9409
+PCEDA                  2.45            3.18        18.7%   15.23   0.9765        5.61        7.72       39.1%            9.454          0.8965
+FDA                    1.84            2.44        9.9%    3.92    0.9850        4.44        5.79       43.7%            4.316          0.9689
+MFA                    2.04            2.87        7.6%    3.47    0.9706        4.88        6.22       32.1%            5.148          0.9431
+Ours                   1.54            2.06        7.0%    3.41    0.9846        2.95        4.01       13.0%            2.49           0.9565
+
+The best performance is in boldface.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                    9                                February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                Background-Aware Domain Adaptation
+
+
+
+strategy discussed in section 3.2.5. The discriminator receives                    conducted on 2 intermediate feature maps and the estimated
+the features extracted by decoder as input and outputs domain                      density maps. Specifically, two discriminators are connected to
+class maps.                                                                        the output of VGG16 backbone and the output of the decoder.
+3) Multi-level feature-aware domain adaptation                                     4) PCEDA
+   Multi-level Feature Aware (MFA) domain adaption is a                               PCEDA is an image-level unsupervised domain adaptation
+feature-level UDA method purposed by Gao et al. (2021).                            method based on Cycle GAN framework (Zhu et al., 2017).
+Multi-level refers to a setup where the adversarial training is                    Most image-level domain adaptation methods are designed for
+
+
+
+
+  FIGURE 6 | Qualitative comparisons on MTC dataset. From top to bottom alternating: RGB image, ground truth density map, density maps (count maps) estimated
+  by CSRNet, CSRNet_DA, FDA, MFA, PCEDA, and our method. Numbers in the upper left corner of estimated density maps (count maps) represent the ground-truth
+  or predicted counting value (rounded).
+
+
+TABLE 4 | Quantitative comparisons under J→G setup (RPC dataset) and MTC→MTC-UAV setup.
+
+                                                   J→G setup                                                        MTC→MTC-UAV setup
+
+Method                 MAE             MSE           MAPE        DMAE              R2          MAE          MSE           MAPE            DMAE             R2
+
+CSRNet                310.09           326.50       38.16%       310.44         0.1467         54.27        73.58         32.86%          98.14          0.6425
+CSRNet_DA             209.56           282.93       26.46%       209.76         0.2599         43.17        60.61         25.77%          61.52          0.7252
+PCEDA                 152.41           203.14       18.95%       152.55         0.1926         57.56        75.37         33.90%          69.10          0.6442
+FDA                   356.28           370.63       44.06%       356.54         0.2433         36.78        51.06         21.83%          102.31         0.8247
+MFA                   243.05           283.61       30.48%       244.14         0.1593         46.56        65.91         29.11%          62.42          0.6755
+Ours                  111.17           161.46       14.54%       117.27         0.2057         35.88        47.41         23.99%          60.04          0.8655
+
+The best performance is in boldface.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                              10                                      February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                 Background-Aware Domain Adaptation
+
+
+
+adaptation between synthetic data and real-world data. Since                        transferred images to train CSRNet, and directly evaluated the
+evident and unified style differences exist between computer-                       model on target data.
+rendered images and real-world images, directly applying GAN                        5) Fourier domain adaptation
+to transfer images between two real-world domains could                                Fourier Domain Adaptation (FDA) (Yang and Soatto, 2020)
+produce many artifacts. To alleviate this, we used PCEDA (Yang                      is image-level UDA method which does not need to train a
+et al., 2020), which preserves the high-frequency details of the                    complex GAN. The transfer process is achieved by swapping
+source images, to evaluate the GAN-based UDA method.                                low frequency spectrums of two images. This simple procedure
+    PCEDA adds a phase consistency constraint between the                           can achieve comparable performance on UDA semantic
+original images and the transferred images. Fourier transform                       segmentation benchmarks against GAN-based methods.
+of an image consists of phase and amplitude, and the phase
+contains the semantic information (edges, textures) of the image.                   4.3.2. Comparison on the MTC Dataset
+The phase consistency requires the phases of the original and                       Table 3 presents the quantitative comparison of aforementioned
+transferred images to be close. Thus, instead of manipulating                       methods on 5 different domain adaptation settings of the MTC
+the shapes or textures, the generator tends to transfer the                         dataset. Comparing with the non-adaptation method CSRNet,
+illuminations, hues or colors to target domain. For different                       all UDA methods more or less reduced the MAE, MSE as well
+domain adaptation setups, we used the official implementation                       as the MAPE. We also noticed that, even with comparable
+to transfer source images to the target domain, and used the                        MAE (Z→W), the UDA methods can improve the DMAE by
+
+
+
+
+  FIGURE 7 | Visualizations on RPC dataset. From top to bottom alternating: RGB image, ground truth density map, density maps (count maps) predicted by CSRNet,
+  CSRNet DA, FDA, MFA, PCEDA, and our method. Numbers on the upper left corner of the estimated density maps (count maps) represent the ground-truth or
+  predicted counting value (rounded).
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                               11                                      February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                 Background-Aware Domain Adaptation
+
+
+
+
+  FIGURE 8 | Visualizations on MTC-UAV dataset. From top to bottom alternating: RGB image, ground truth density maps, density maps (count maps) predicted by
+  CSRNet, CSRNet DA, FDA, MFA, PCEDA, and our method. Numbers on the upper left corner represent the ground-truth or predicted counting value (rounded).
+
+
+TABLE 5 | Ablation study on regression targets and discriminator configurations (MAE).
+
+                        Settings                                     Z→Jun                   Z→W                Z→Ji                 Z→T                   Z→N
+
+Regression                      Density map regression               2.37                    4.76               1.31                 7.01                  1.87
+  Target                        Local count regression               1.92                    3.83               0.50                 6.96                  1.54
+
+                                None                                 2.15                    2.37               0.85                 13.37                 1.51
+                                DF                                   1.88                    2.65               1.06                 8.64                  1.48
+Discriminators
+                                DM                                   2.11                    3.48               0.79                 11.02                 1.41
+                                DF + DM                              1.92                    3.83               0.50                 6.96                  1.54
+
+The best performance is in boldface.
+
+
+
+
+a large margin, indicating that UDA methods can also generate                          method was more stable under different settings. On a difficult
+more correct density maps. Then we focused on the comparison                           setting Z→T, BADA reduced the MAE and DMAE by 43% and
+between different UDA methods. Averaging the performance                               56% comparing with the second best method. Domain gap under
+of five settings, the proposed method obtained the best MAE,                           Z→T is dramatic due to different viewpoints, illuminations and
+MSE, MAPE and DMAE. Comparing with the second best, our                                background elements. We believe results under Z→T setup can
+method brought a relative improvement 42% on the DMAE. For                             better reflect the adaptation effectiveness of UDA methods. The
+different domain adaptation settings, our method obtained the                          visualizations of different methods on MTC dataset are shown in
+best MAE except for Z→W. It can also be observed that our                              Figure 6.
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                  12                                   February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                  Background-Aware Domain Adaptation
+
+
+
+4.3.3. Comparisons on RPC Dataset                                                   adapted the model from MTC dataset to MTC-UAV dataset
+The experiments on RPC dataset further demonstrated the                             under this setting. As shown in Table 4, our method surpassed
+effectiveness of our method. As shown in Table 4, our method                        others in all metrics except for MAPE. The visualizations on
+achieved the lowest MAE, MSE, MAPE, and DMAE. Most                                  MTC-UAV dataset is illustrated in Figure 8.
+of the methods underestimated the number of rice seedlings,
+mainly because the rice seedlings in the target domain are                          4.4. Ablation Study
+smaller than those in the source domain due to different                            First, we compared two different regression paradigms: local
+growth stages. The other methods only generated responses                           count regression and density map regression. Then we
+for rice seedlings with more leaves and larger scales. In                           demonstrated the effectiveness of the feature discriminator and
+contrast, our method attained the accurate prediction results.                      foreground mask discriminator in the proposed BADA module.
+The visualizations on RPC dataset are illustrated in Figure 7.
+For results on the RSC dataset, the DMAE were very close                            4.4.1. Local Count Regression
+to the MAE, as the targets appeared densely throughout                              We found that local count regression were more robust than
+the images.                                                                         density map regression for cross-domain settings. To verify this,
+                                                                                    we replaced the local count regressor of the original BADANet
+4.3.4. Comparisons on MTC-UAV Dataset                                               with a local count regressor without any downsampling
+Nowadays, UAVs have become useful image acquisition devices                         operations. The local count regressor consisted of a series of
+for agriculture. In practice, a model trained with images collected                 convolution layers and directly predicted the density maps. The
+by phenopoles may be tested on images collected by UAVs. We                         training strategy was kept the same. As shown in Table 5, on
+
+
+
+
+  FIGURE 9 | Visualizations of model with and without discriminators. From left to right are input images, ground truth density maps, estimated foreground mask
+  without discriminators, estimated local count maps without discriminators, estimated foreground masks with discriminators, estimated local count maps with
+  discriminators. The foreground masks have been binarized. The white numbers on the corners of ground truth density maps and estimated local count maps denote
+  the ground truth counts and the inferred counts, respectively.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                               13                                       February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                     Background-Aware Domain Adaptation
+
+
+
+all settings of the MTC dataset, local count regression obtained                       Figure 9, although the estimated foreground masks were correct,
+better results than the density map regression.                                        non-adversarial method produced more errors.
+
+4.4.2. Discriminators                                                                  5. DISCUSSION
+The domain discriminators were imposed at the input and
+output of BADA module. The feature discriminator DF can                                Here we conclude all the tested methods and discuss their
+help the CNNs extract domain-invariant feature maps. And the                           advantages and drawbacks. For all the tested domain adaptation
+mask discriminator DM can help refine the predicted foreground                         settings, we find that UDA methods more or less improve the
+masks. As shown in Table 5, the combination of DF and DM                               cross-domain performance, which demonstrates the necessity
+can achieve lowest MAEs on 2 different settings, and the                               and effectiveness of domain adaptation. According to the
+performance was more stable than only applying one or none of                          proposed metric DMAE, UDA method can also help the model
+the discriminator. Although on some settings, the full method                          predict more precise density maps. Among all the UDA methods,
+slightly fell behind the other versions. We believe this was                           the proposed BADA module is more stable and obtains the best
+because the domain gaps in these settings were not obvious,                            MAE and DMAE on 5 out of the 7 domain adaptation settings,
+as the MAEs were already relatively low when no domain                                 which demonstrates its effectiveness.
+adaptation modules were attached. Under such circumstances,                                For feature-level domain adaptation methods (CSRNet_DA,
+the adversarial training strategy might hurt the training process.                     MFA and our method), the results show that adversarial
+    To understand the effectiveness of discriminators more                             training can help aligning the features for different domains
+intuitively, we show the visualizations of methods with/without                        in plant counting datasets. Compared with CSRNet_DA, MFA
+discriminators in Figure 9. With foreground mask discriminator                         aligns features at different scales with multiple discriminators.
+DM , the network was more confident about the segmentation                             MFA showed marginal improvement on MTC datasets, while
+results and produced less error. The shapes of foreground masks                        significant improvements on the setting MTC→MTC-UAV were
+were regular and neat. By contrast, when no discriminators                             obtained. This indicates that multi-scale adversarial training
+were attached, the shapes of foreground masks were irregular                           is more suitable when objects in different domains are with
+and scattered. Besides, more backgrounds were mistaken                                 different scales. This also inspires us that the proposed BADA
+for foregrounds, which provided incorrect target distribution                          module can be further improved with multi-scale adaptation
+information for the network. For scenes on row 3, 4, and 5 of                          strategy. Our methods aligns the features as well as the
+
+
+
+
+  FIGURE 10 | Visualizations of style transferred images with different image-level UDA methods. From top to bottom alternating: source domain image, transferred
+  images by PCEDA and transferred images with FDA.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                  14                                       February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                                Background-Aware Domain Adaptation
+
+
+
+foreground segmentation results. The visualizations show that,                               performance due to the characteristics of domain gaps in plant
+our method can better distinguish the targets and other                                      counting. Particularly, the counting models produced large errors
+background elements and generate more precise density maps                                   on background areas. To address this, we purpose a flexible
+comparing with other UDA methods. Therefore, the overall MAE                                 background-aware domain adaptation module, which can easily
+and DMAE can be effectively reduced.                                                         fit into existing object counting methods and enhance the
+   For image-level domain adaptaion methods (FDA and                                         cross-domain performance. We evaluated our methods under 7
+PCEDA), domain adaptation is achieved by aligning the                                        different domain adaptation settings. The results showed that our
+image styles. We visualize the transferred images in Figure 10.                              method can obtain better cross-domain accuracy than existing
+Although these methods fail to modify the core difference                                    UDA methods on plant counting task.
+like camera views, target scales and appearances, some global                                    Nowadays, despite the rapid development of deep learning-
+style like illuminations, hues and textures can be transferred                               based plant counting methods, the scale and diversity of plant
+between source and target domain. However, the transferred                                   counting datasets are still limited. When applying data-driven
+images showed some artifacts. For example, some blue and red                                 plant counting methods on new scenes, it is necessary to
+shadows can be observed in the transferred images from the                                   consider the hazard of domain gaps. We hope our work can
+source domain of J→G settings. The PCEDA model recognized                                    help more researchers and practitioners noticing this issue and
+the texture of blue and red poles in the target domain while                                 bring more solutions for UDA in plant counting. In the future,
+incorrectly added it on irrelevant objects like plants. We also                              we will investigate how to extract more generic features for
+noticed that the better quality of transferred images may not                                plant counting.
+guarantee better cross-dataset counting performance. FDA can
+better boost the cross-domain performance on MTC dataset,
+while the quality of style transfer was inferior to PCEDA.
+                                                                                             DATA AVAILABILITY STATEMENT
+However, when failure cases occur, the image-based UDA                                       The original contributions presented in the study are included
+method will significantly harm the cross-domain performance.                                 in the article/supplementary material, further inquiries can be
+As shown in the third row of Figure 10. FDA generated wrong                                  directed to the corresponding author.
+hues and colors for the source domain, which led to performance
+drop on setting J→G in Table 4. While the experimental results
+showed that these methods can improve the performance, we                                    AUTHOR CONTRIBUTIONS
+were suspicious whether the boost came from the reduction of
+image-level domain gaps, or from data augmentation. As style-                                MS proposed the idea of BADA module, implemented the
+transfer can be viewed as a data augmentation method which                                   algorithm in PyTorch, conducted the experiments, analyzed
+will change the hues, contrasts or illuminations of the original                             the results, drafted, and revised the manuscript. X-YL helped
+images. To validate this, we also conducted an experiment where                              draft the manuscript and organized part of the figures and tables.
+we randomly swap the low frequency spectrums of two source                                   HL helped refine the idea, organized part of the experiments,
+domain images (identical to FDA) on the MTC dataset, and                                     and revised the manuscript. Z-GC provided the funding and
+obtained almost the same performance improvement.                                            supervised the study. All authors contributed to the article and
+                                                                                             approved the submitted version.
+6. CONCLUSION
+                                                                                             FUNDING
+In this paper, we investigate the influence of domain gap for deep
+learning-based plant counting method and show how to alleviate                               This work was supported in part by the National Natural Science
+the influence with unsupervised domain adaptation methods. We                                Foundation of China under grant no. 61876211 and in part
+evaluated the performance of several popular UDA methods. We                                 by the Chinese Fundamental Research Funds for the Central
+found that these methods only prompted limited cross-domain                                  Universities under grant no. 2021XXJS095.
+
+
+REFERENCES                                                                                   David, E., Madec, S., Sadeghi-Tehran, P., Aasen, H., Zheng, B., Liu, S., et al. (2020).
+                                                                                                Global wheat head detection (gwhd) dataset: a large and diverse dataset of high
+Arteta, C., Lempitsky, V., and Zisserman, A. (2016). “Counting in the wild,” in                 resolution rgb labelled images to develop and benchmark wheat head detection
+   Proceedings of European Conference on Computer Vision (ECCV) (Amsterdam),                    methods. Plant Phenomics 2020: 3521852. doi: 10.34133/2020/3521852
+   483–498.                                                                                  Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. (2009). “ImageNet: a
+Ayalew, T. W., Ubbens, J. R., and Stavness, I. (2020). “Unsupervised domain                     large-scale hierarchical image database,” in 2009 IEEE Conference on Computer
+   adaptation for plant organ counting,” in Proceedings of European Conference                  Vision and Pattern Recognition (Miami, FL: IEEE), 248–255.
+   on Computer Vision (ECCV), 330–346.                                                       D’Innocente, A., Borlino, F. C., Bucci, S., Caputo, B., and Tommasi, T. (2020).
+Bargoti, S., and Underwood, J. (2017). “Deep fruit detection in orchards,” in 2017              “One-shot unsupervised cross-domain detection,” in Proceedings of European
+   IEEE International Conference on Robotics and Automation (ICRA) (Singapore:                  Conference on Computer Vision (ECCV), eds A. Vedaldi, H. Bischof, T. Brox,
+   IEEE), 3626–3633.                                                                            and J.-M. Frahm, 732–748.
+Ben-David, S., Blitzer, J., Crammer, K., Kulesza, A., Pereira, F., and Vaughan, J. W.        Ganin, Y., and Lempitsky, V. (2015). “Unsupervised domain adaptation by
+   (2010). A theory of learning from different domains. Mach. Learn. 79, 151–175.               backpropagation,” in Proceedings of International Conference on Machine
+   doi: 10.1007/s10994-009-5152-4                                                               Learning (ICML), volume 37 of Proceedings of Machine Learning Research
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                        15                                           February 2022 | Volume 13 | Article 731816
+Shi et al.                                                                                                                               Background-Aware Domain Adaptation
+
+
+
+    (Lille: PMLR), 1180–1189. Available online at: http://proceedings.mlr.press/             Tzeng, E., Hoffman, J., Saenko, K., and Darrell, T. (2017). “Adversarial
+    v37/ganin15.html                                                                            discriminative domain adaptation,” in 2017 IEEE Conference on Computer
+Gao, J., Yuan, Y., and Wang, Q. (2021). Feature-aware adaptation and density                    Vision and Pattern Recognition (CVPR) (Honolulu, HI: IEEE), 2962–2971.
+    alignment for crowd counting in video surveillance. IEEE Trans. Cybern. 51,              Vu, T.-H., Jain, H., Bucher, M., Cord, M., and Pérez, P. (2019). “Advent: adversarial
+    1–12. doi: 10.1109/TCYB.2020.3034316                                                        entropy minimization for domain adaptation in semantic segmentation,” in
+Giuffrida, M. V., Dobrescu, A., Doerner, P., and Tsaftaris, S. A. (2019).                       Proceedings of IEEE Conference on Computer Vision and Pattern Recognition
+    “Leaf counting without annotations using adversarial unsupervised domain                    (CVPR) (Long Beach, CA), 2512–2521.
+    adaptation,” in 2019 IEEE/CVF Conference on Computer Vision and Pattern                  Wang, B., Liu, H., Samaras, D., and Nguyen, M. H. (2020). “Distribution matching
+    Recognition Workshops (CVPRW) (Long Beach, CA: IEEE), 2590–2599.                            for crowd counting,” in Proceedings of Advances in Neural Information
+Lempitsky, V., and Zisserman, A. (2010). “Learning,” in Proceedings of                          Processing Systems (NeurIPS), Vol. 33. Available online at: https://papers.nips.
+    Advances in Neural Information Processing Systems (NeurIPS), Vol. 23,                       cc/paper/2020/file/11d558033a1016fcc82560c65cca5f-Paper.pdf
+    1324–1332. Available online at: https://proceedings.neurips.cc/paper/2010/file/          Wang, Q., Gao, J., Lin, W., and Yuan, Y. (2019). “Learning from synthetic data for
+    fe73f687e5bc5280214e0486b273a5f9-Paper.pdf.                                                 crowd counting in the wild,” in 2019 IEEE/CVF Conference on Computer Vision
+Li, Y., Zhang, X., and Chen, D. (2018). “Csrnet: dilated convolutional neural                   and Pattern Recognition (CVPR) (Long Beach, CA: IEEE), 8190–8199.
+    networks for understanding the highly congested scenes,” in 2018 IEEE/CVF                Xiong, H., Cao, Z., Lu, H., Madec, S., and Shen, C. (2019a). Tasselnetv2: in-field
+    Conference on Computer Vision and Pattern Recognition (Salt Lake City, UT:                  counting of wheat spikes with context-augmented local regression networks.
+    IEEE), 1091–1100.                                                                           Plant Methods 15:150. doi: 10.1186/s13007-019-0537-2
+Lin, G., Milan, A., Shen, C., and Reid, I. (2017). “Refinenet: multi-path refinement         Xiong, H., Lu, H., Liu, C., Liu, L., Cao, Z., and Shen, C. (2019b). “From open set
+    networks for high-resolution semantic segmentation,” in 2017 IEEE Conference                to closed set: Counting objects by spatial divide-and-conquer,” in Proceedings of
+    on Computer Vision and Pattern Recognition (CVPR) (Honolulu, HI: IEEE),                     IEEE International Conference on Computer Vision (ICCV) (Seoul), 8362–8371.
+    1925–1934.                                                                               Xu, M., Wang, H., Ni, B., Tian, Q., and Zhang, W. (2020). “Cross-domain detection
+Liu, L., Lu, H., Li, Y., and Cao, Z. (2020). High-throughput rice density estimation            via graph-induced prototype alignment,” in Proceedings of IEEE Conference on
+    from transplantation to tillering stages using deep networks. Plant Phenomics               Computer Vision and Pattern Recognition (CVPR), 12352–12361.
+    2020:1375957. doi: 10.34133/2020/1375957                                                 Yang, Y., Lao, D., Sundaramoorthi, G., and Soatto, S. (2020). “Phase consistent
+Lu, H., Cao, Z., Xiao, Y., Fang, Z., and Zhu, Y. (2017a). Towards fine-grained                  ecological domain adaptation,” in Proceedings of IEEE Conference on Computer
+    maize tassel flowering status recognition: dataset, theory and practice. Appl.              Vision and Pattern Recognition (CVPR), 9008–9017.
+    Soft. Comput. 56, 34–45. doi: 10.1016/j.asoc.2017.02.026                                 Yang, Y., and Soatto, S. (2020). “Fda: fourier domain adaptation for semantic
+Lu, H., Cao, Z., Xiao, Y., Zhuang, B., and Shen, C. (2017b). TasselNet: counting                segmentation,” in Proceedings of IEEE Conference on Computer Vision and
+    maize tassels in the wild via local counts regression network. Plant Methods                Pattern Recognition (CVPR), 4084–4094.
+    13:79. doi: 10.1186/s13007-017-0224-0                                                    Yoosefzadeh-Najafabadi, M., Tulpan, D., and Eskandari, M. (2021). Using
+Lu, H., Liu, L., Li, Y. N., Zhao, X. M., Wang, X. Q., and Cao, Z. G.                            hybrid artificial intelligence and evolutionary optimization algorithms
+    (2021). Tasselnetv3: explainable plant counting with guided upsampling                      for estimating soybean yield and fresh biomass using hyperspectral
+    and background suppression. IEEE Trans. Geosci. Remote Sens. 60, 1–15.                      vegetation indices. Remote Sens. 13, 2555–2575. doi: 10.3390/rs131
+    doi: 10.1109/TGRS.2021.3058962                                                              32555
+Ma, Z., Wei, X., Hong, X., and Gong, Y. (2019). “Bayesian loss for                           Zhang, C., Li, H., Wang, X., and Yang, X. (2015). “Cross-scene crowd counting via
+    crowd count estimation with point supervision,” in Proceedings of                           deep convolutional neural networks,” in 2015 IEEE Conference on Computer
+    IEEE International Conference on Computer Vision (ICCV) (Seoul),                            Vision and Pattern Recognition (CVPR) (Boston, MA: IEEE), 833–841.
+    6142–6151.                                                                               Zhu, J., Park, T., Isola, P., and Efros, A. A. (2017). “Unpaired image-
+Madec, S., Jin, X., Lu, H., de Solan, B., Liu, S., Duyme, F., et al. (2019). Ear                to-image translation using cycle-consistent adversarial networks,” in 2017
+    density estimation from high resolution rgb imagery using deep learning                     IEEE International Conference on Computer Vision (ICCV) (Venice: IEEE),
+    technique. Agric. Forest Meteorol. 264, 225–234. doi: 10.1016/j.agrformet.201               2242–2251.
+    8.10.013
+Modolo, D., Shuai, B., Varior, R. R., and Tighe, J. (2021). “Understanding the               Conflict of Interest: The authors declare that the research was conducted in the
+    impact of mistakes on background regions in crowd counting,” in Proceedings              absence of any commercial or financial relationships that could be construed as a
+    of Winter Conference on Applications of Computer Vision (WACV), 1650–1659.               potential conflict of interest.
+Onoro-Rubio, D., and López-Sastre, R. J. (2016). “Towards perspective-free object
+    counting with deep learning,” in Proceedings of European Conference on                   Publisher’s Note: All claims expressed in this article are solely those of the authors
+    Computer Vision (ECCV) (Amsterdam), 615–629.                                             and do not necessarily represent those of their affiliated organizations, or those of
+Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., et al. (2019).
+                                                                                             the publisher, the editors and the reviewers. Any product that may be evaluated in
+    “PyTorch: an imperative style, high-performance deep learning library,” in
+                                                                                             this article, or claim that may be made by its manufacturer, is not guaranteed or
+    Proceedings of Advances in Neural Information Processing Systems (NeurIPS)
+    (Curran Associates, Inc.), 8026–8037. Available online at: https://proceedings.          endorsed by the publisher.
+    neurips.cc/paper/2019/file/bdbca288fee7f92f2bfa9f7012727740-Paper.pdf
+Simonyan, K., and Zisserman, A. (2014). Very deep convolutional networks for                 Copyright © 2022 Shi, Li, Lu and Cao. This is an open-access article distributed
+    large-scale image recognition. arXiv preprint arXiv:1409.1556. Available online          under the terms of the Creative Commons Attribution License (CC BY). The use,
+    at: https://arxiv.org/pdf/1409.1556.pdf.                                                 distribution or reproduction in other forums is permitted, provided the original
+Tsaftaris, S. A., Minervini, M., and Scharr, H. (2016). Machine learning for                 author(s) and the copyright owner(s) are credited and that the original publication
+    plant phenotyping needs image processing. Trends Plant Sci. 21, 989–991.                 in this journal is cited, in accordance with accepted academic practice. No use,
+    doi: 10.1016/j.tplants.2016.10.002                                                       distribution or reproduction is permitted which does not comply with these terms.
+
+
+
+
+Frontiers in Plant Science | www.frontiersin.org                                        16                                           February 2022 | Volume 13 | Article 731816
+

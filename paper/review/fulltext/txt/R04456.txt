@@ -1,0 +1,1884 @@
+                                Highlights
+                                DirPA: Addressing Prior Shift in Imbalanced Few-shot Crop-type Classification
+                               Joana Reuss, Ekaterina Gikalo, Marco Körner
+
+                                         • Extensive validation of Dirichlet Prior Augmentation for
+                                           prior shift in FSL
+                                         • Cross-dataset stability shown across eight European coun-
+                                           tries
+
+                                         • Strong correlation between class imbalance, prior shift,
+                                           and Dirichlet gains
+arXiv:2603.12905v2 [cs.LG] 20 Jul 2026
+          DirPA: Addressing Prior Shift in Imbalanced Few-shot Crop-type Classification
+
+                                               Joana Reussa,∗, Ekaterina Gikaloa , Marco Körnera,b,c
+        a Technical University of Munich (TUM), TUM School of Engineering and Design, Department of Aerospace and Geodesy, Chair of Remote Sensing
+
+                                                            Technology, Munich, 80333, Germany
+                           b Technical University of Munich (TUM), Munich Data Science Institute (MDSI), Garching, 85748, Germany
+                                         c ELLIS Unit Jena, University of Jena, Jena, Germany, Jena, 07743, Germany
+
+
+
+
+Abstract
+Real-world agricultural monitoring is often hampered by severe class imbalance and high label acquisition costs, resulting in
+significant data scarcity. In few-shot learning (FSL)—a framework specifically designed for data-scarce settings—, training sets
+are often artificially balanced. However, this creates a disconnect from the long-tailed distributions observed in nature, leading
+to a distribution shift that undermines the model’s ability to generalize to real-world agricultural tasks. We previously introduced
+Dirichlet Prior Augmentation (DirPA; Reuss et al., 2026a) to proactively mitigate the effects of such label distribution skews during
+model training. In this work, we extend the original study’s geographical scope. Specifically, we evaluate this extended approach
+across multiple countries in the European Union (EU), moving beyond localized experiments to test the method’s resilience across
+diverse agricultural environments. Our results demonstrate the effectiveness of DirPA across different geographical regions. We show
+that DirPA not only improves system robustness and stabilizes training under extreme long-tailed distributions, regardless of the
+target region, but also substantially improves individual class-specific performance by proactively simulating priors.
+Keywords: few-shot learning, DirPA, prior shift, Dirichlet distribution, crop-type classification, EuroCropsML.
+
+
+1. Introduction                                                                 the number of distinct classes and k the number of samples per
+                                                                                class. Therefore, in common FSL, the target dataset consists
+    With climate change on the rise, today’s agricultural prac-                 of a balanced training (support) set and a corresponding, also
+tices, as we know them, are severely at risk. Therefore, not                    balanced, test (query) set. Conversely, real-world agricultural
+only recently, food security has been appointed as one of the                   data is characterized by high class imbalance, with the major-
+17 Sustainable Development Goals (SDGs) of the 2030 Agenda                      ity of samples belonging to a limited number of classes (e.g.,
+for Sustainable Development by the United Nations (UN). As                      wheat) and a considerable amount of underrepresented crops
+a result, agriculture-related tasks such as crop mapping, yield                 (e.g., parsley). Therefore, various studies have recommended
+estimation, water stress monitoring, and tracking pest or dis-                  the use of arbitrary and imbalanced test sets to better reflect
+ease outbreaks are becoming increasingly important. The sheer                   real-world scenarios (Reuss et al., 2026b; Ochal et al., 2023;
+amount of remote sensing (RS) data provided by Earth obser-                     Mohammadi et al., 2024). In doing so, we induce a prior dis-
+vation (EO) and meteorological satellites, as well as the latest                tribution shift, where the training prior ptrain (y) differs from the
+advancements in machine learning (ML) and, particularly, deep                   final real-world test prior ptest (y), potentially resulting in the
+learning (DL), have significantly contributed to solving such                   model learning a strong, incorrect bias, which often leads to
+tasks, for instance in Sainte Fare Garnot et al. (2020); Bermúdez               poor generalization (Reuss et al., 2026b,a).
+et al. (2017); Rußwurm and Körner (2020); Saini and Ghosh                            In the past, such prior shifts have traditionally been ad-
+(2018). However, data-driven DL models require vast amounts                     dressed, for instance, via the adjustment of class probabilit-
+of annotated data to achieve acceptable performances. This                      ies at inference-time (Lipton et al., 2018; Kluger et al., 2021),
+frequently poses a significant challenge in agricultural applica-               cf. Section 2. We previously demonstrated, however, that our
+tions, as labeled crop data is often rare and unevenly distributed              novel Dirichlet Prior Augmentation (DirPA; Reuss et al., 2026a)
+globally, due to high acquisition costs and the impracticality of               method proactively addresses prior shifts during training, lead-
+manual annotation. Consequently, the need for DL approaches                     ing to improved model performance and robustness without
+that rely less on substantial amounts of data has emerged as a                  requiring additional inference-time adjustments (Reuss et al.,
+major research direction. A state-of-the-art (SOTA) framework                   2026a). However, while DirPA improved overall classification
+that aims to increase model performance on a target task with                   accuracy aOA and Cohen’s kappa κ, initial experiments showed
+very limited amounts of data, is few-shot learning (FSL). FSL is                inferior performance on macro metrics.
+typically defined as an n-way k-shot problem, where n defines                        Building upon our previous work (Reuss et al., 2026a), this
+                                                                                study represents a major expansion. We now apply DirPA across
+∗   Corresponding author.                                                       an extensive geographical area to assess its operational stabil-
+    E-Mail address: joana.reuss@tum.de (J. Reuss)
+ity and reliability under diverse environmental and agricultural                                         ∆ Prior shift
+                                                                                                                                      Train data
+conditions.
+
+
+
+
+                                                                                Label probability p(y)
+                                                                                                                                      Test data
+    The main contributions are:
+   1. Geographical expansion: We apply the DirPA method
+      to a large-scale, real-world dataset covering eight diverse
+      European countries, demonstrating cross-dataset stability.
+   2. Imbalance-dependent performance: We reveal a strong
+      correlation between the dataset’s structural class imbal-                                                          Label y
+      ance and the magnitude of performance gains.
+                                                                         Figure 1. Visualization of a label (prior) distribution shift between train dataset
+   3. Hierarchical robustness: We show that DirPA enhances               and a long-tailed test dataset.
+      classification reliability by boosting parent-level accuracy
+      and F1-scores, ensuring accurate land-cover identification
+      even when fine-grained distinctions are constrained by             2.1.2. FSL in remote sensing
+      data scarcity.                                                          In recent years, researchers have widely applied FSL in agri-
+                                                                         cultural applications to address data scarcity. First, Rußwurm
+2. Related work                                                          et al. (2020) and Wang et al. (2020) demonstrated the superiority
+                                                                         of algorithms based on Model-agnostic Meta-learning (MAML;
+    We study few-shot crop-type classification under realistic           Finn et al., 2017) compared to regular transfer learning on land-
+long-tailed label distributions, where balanced training sets in-        cover classification. Tseng et al. (2022) extended the original
+duce an artificial prior shift between training and evaluation. In       MAML algorithm to explicitly support agricultural monitoring
+this section, we review the few-shot paradigm, imbalance-aware           by incorporating additional metadata, such as spatial coordin-
+training frameworks, and prior-shift handling.                           ates. Furthermore, Keraani et al. (2022) proposed a temporal
+                                                                         attention-based encoder for few-shot crop classification and em-
+2.1. Few-shot learning via knowledge transfer                            ployed transfer learning, training on an imbalanced dataset using
+    A common approach in FSL is to leverage prior know-                  FL and data augmentation. Addressing the need for realistic
+ledge gained from training on a distinct source task. Various            FSL benchmarks, we provided a comprehensive cross-regional
+approaches have been explored to equip a model with relev-               benchmark study using the few-shot crop-type dataset Euro-
+ant knowledge before being trained on a data-scarce target               CropsML (Reuss et al., 2026b, 2025). Their findings show that,
+task, among the most prominent being transfer learning, meta-            while meta-learning achieves superior performances compared
+learning, and self-supervised learning (SSL). While both meta-           to regular transfer learning and self-supervised learning, it comes
+learning and SSL have been shown to achieve good performance,            at the expense of substantially increased computational costs.
+they come with high computational costs (Reuss et al., 2026b).           Moreover, they highlight that none of the evaluated methods
+Although FSL and the concept of meta-learning are frequently             were able to overcome the distributional discrepancy between
+used as synonyms, FSL may also denote a task defined strictly            the balanced training set and the imbalanced test set.
+by its low-data constraints (Reuss et al., 2026a). We adopt this
+broader definition of FSL, acknowledging recent findings on              2.2. Prior shift in FSL
+transfer learning—via regular pre-training and subsequent fine-              In FSL, training episodes are typically constructed with bal-
+tuning—achieving competitive results compared to complex                 anced class priors, whereas deployment data is often long-tailed.
+meta-learning algorithms across a wide range of agricultural             This induces a shift in the label (prior) distribution, as visualized
+applications (Kurian et al., 2024; Alem and Kumar, 2022; Wang            in Figure 1, which biases posterior predictions and can degrade
+et al., 2018; Rouba and Larabi, 2023). Transfer learning lever-          performance. Prior-shift methods, therefore, either estimate the
+ages the transferability of latent features, assuming that the           test distribution and recalibrate predictions at inference time or
+source-domain knowledge generalizes sufficiently to overcome             aim to reduce sensitivity to unknown priors during training.
+the lack of samples from the target domain.                                  Recent studies often address the problem of prior distribution
+                                                                         shifts at inference time. Black Box Shift Estimation (BBSE;
+2.1.1. Class imbalance                                                   Lipton et al., 2018) estimates the test distribution ptest (y) to
+    Ochal et al. (2023) provide a detailed comparison and evalu-         improve generalization for symptom-diagnosis detection. Sipka
+ation of various existing few-shot learning methods under class          et al. (2022) present a novel prior estimation approach based on
+imbalance. They found that classical data-level rebalancing,             confusion matrices, addressing infeasible solutions arising from
+in particular, random oversampling applied to the support set,           inconsistent decision probability and confusion matrix estimates.
+yields consistent improvements across different model archi-                 Kluger et al. (2021) directly tackles the problem of label
+tectures and imbalance distributions. In contrast, loss-based            (prior) and feature (covariate) distribution shift in few-shot crop-
+reweighting strategies, including weighted loss and focal loss           type classification using crop statistics, assuming that the distri-
+(FL; Lin et al., 2020), provide limited or inconsistent gains and        bution of the test set is known. Specifically, to address the prior
+generally underperform random oversampling.                              distribution shift, they reweigh the posterior probabilities.
+                                                                     2
+   Our focus is on demonstrating that DirPA’s training-time                  Table 1. Dataset details of EuroCropsML 2.0. The # Crop classes column refers
+                                                                             to the number of unique crop types in HCAT level 6. The # Parcels column
+regularization yields a robust pipeline that requires no post-               refers to unique parcel geometries after removing potential duplicates from the
+hoc adjustment. While existing inference-time approaches are                 EuroCrops reference data and filtering out clouds, cirrus, snow, and ice.
+complementary to our work, a direct comparison is therefore
+beyond the scope of this study.
+                                                                                          Country                    # Crop classes   # Parcels
+2.3. Dirichlet priors and distribution augmentation
+                                                                                          Austria                             98      2 589 192
+     The Dirichlet distribution Dir(α) is often used to model the                         Belgium                            136        560 671
+prior in Bayesian statistics (Reuss et al., 2026a). Among others,                           Flanders                          120         223 269
+previous work addressed supervised clustering (Daumé III and                                Wallonia                           91         337 402
+Marcu, 2005) and the utilization of Dirichlet priors within a                             Estonia                            127        175 905
+Bayesian framework for regression (Rademacher and Doroslov-                               Germany                            198      1 632 620
+ački, 2021). The Dirichlet distribution offers several desirable                           Lower Saxony                      150         901 364
+properties as a Bayesian prior (cf. Rademacher and Doroslov-                                North Rhine-Westphalia            175         731 256
+ački, 2021). First, it has full support over the space of probability                    Latvia                             108        431 143
+distributions, ensuring that the true data-generating distribution                        Lithuania                           22      1 101 839
+remains learnable regardless of the initial prior specification.                          Portugal                            84         99 612
+Second, it is the conjugate prior for multinomial data (e.g., cat-                        Slovakia                           121        251 250
+egorical counts), yielding closed-form posterior distributions                            Slovenia                           112        818 902
+that simplify mathematical derivations and improve computa-                               Spain                               10        962 111
+tional efficiency. Finally, it provides controllable informative-                           Navarra                             10        962 111
+ness through the localization parameter α0 , which explicitly
+governs the bias-variance trade-off, and allows the prior to range
+from highly opinionated to effectively non-informative, depend-              multi-temporal Sentinel-2 L1C (top-of-atmosphere) observa-
+ing on the degree of prior knowledge.                                        tions paired with multi-class crop annotations originating from
+     Most previous few-shot learning studies employing Dirichlet             the EuroCrops reference dataset (Schneider et al., 2023). All
+priors typically assume a balanced training (support) and test               crop labels follow the Hierarchical Crop and Agriculture Tax-
+(query) set. Consequently, they often use Dirichlet sampling                 onomy (HCAT; Schneider et al., 2023, 2021), where, for instance,
+primarily to simulate imbalanced test distributions. Specifically,           level 3 represents general land cover types and level 6 the most-
+Veilleux et al. (2021) model the class marginal distribution of              granular crop type, distinguished by seasonality, if applicable.
+the query set as a random variable drawn from a Dirichlet dis-                   We extend the geographic coverage of the original Euro-
+tribution. Their analysis shows that several SOTA transductive               CropsML with 2021 parcel-level crop data from Austria, Bel-
+few-shot methods implicitly encode a class-balance prior and suf-            gium (Flanders and Wallonia), Estonia, Germany (Lower Sax-
+fer significant performance degradation under Dirichlet-sampled              ony (LS) and North Rhine-Westfalia (NRW)), Lithuania, Latvia,
+query sets. Similarly, Mohammadi et al. (2024) adopt Dirichlet-              Portugal, Slovakia, Slovenia, and Spain (Navarra). While we
+distributed query sampling to evaluate few-shot learning meth-               adhere to the original processing pipeline for median-based par-
+ods for crop mapping. They demonstrate that commonly used                    cel aggregation, all observations have been reprocessed using
+balanced-query evaluations systematically overestimate model                 the Sentinel-2 L1C Collection 1 (Enache et al., 2023; European
+performance. Using realistic Dirichlet-sampled query sets, they              Space Agency (ESA), 2021). This ensures a harmonized data
+report consistent performance drops across methods. These                    standard across the full geographic coverage. Furthermore, we
+approaches essentially serve as a few-shot evaluation method,                refine the cloud-removal step by also accounting for thin cirrus
+as they solely focus on simulating artificially imbalanced test              and snow or ice, following the classification approach of the
+sets. Contrarily, we introduced Dirichlet priors during training,            L2A algorithm (Louis et al., 2022). An overview of the dataset
+based on the assumption of having a balanced training set and an             details is given in Table 1.
+imbalanced test set (Reuss et al., 2026a). They employ DirPA,
+which proactively tackles this distribution shift directly during            3.1. Dataset split
+training by sampling pseudo-priors from the symmetric Dirichlet
+distribution. By learning across a wide variety of priors, the                    We define a universal pre-training dataset comprising Austria
+model learns a prior-agnostic representation, ensuring stable                and Germany. All other remaining countries are utilized as indi-
+generalization to real-world imbalanced distributions without                vidual fine-tuning sets. Figure 2 illustrates the pre-training and
+requiring prior knowledge of the target domain at test time.                 fine-tuning countries in detail. Pre-training on a joint Austrian-
+                                                                             German dataset offers several advantages and specific character-
+                                                                             istics, which we outline below.
+3. Dataset
+                                                                             Class distribution. Both countries exhibit diverse class distri-
+    We conduct all training and evaluation on EuroCropsML
+                                                                             butions and highly diverse reporting structures, resulting in
+2.0, an extension and refinement of the EuroCropsML data-
+                                                                             very fine-grained crop classes. This enables the training of
+set (Reuss et al., 2025). EuroCropsML provides parcel-level,
+                                                                         3
+                                                                                                                                  Germany (LS)
+                                                                                                           20
+
+
+
+
+                                                                                          # Crop classes
+                                                                                                           15
+
+                                                                                                           10
+
+                                                                                                            5
+
+                                                                                                            0
+                                                                                                                100   101       102         103        104    105
+                                                                                                                                 Germany (NRW)
+                                                                                                           20
+
+
+
+
+                                                                                          # Crop classes
+                                                                                                           15
+
+                                                                                                           10
+
+                                                                                                           5
+
+                                                                                                           0
+                                                                                                                100   101       102         103        104    105
+                                                                                                                                      Austria
+                                                                                                           20
+
+                                                                                          # Crop classes   15
+
+                                                                                                           10
+
+                                                                                                           5
+
+                                                                                                           0
+Figure 2. Pre-training and fine-tuning country split. Countries colored in blue                                 100   101       102         103        104    105
+are used for pre-training, whereas those colored in green are used for fine-tuning.
+The darker the coloring, the denser the labeled agricultural fields.                                                   # Parcels per crop class (log scale)
+
+                                                                                          Figure 3. EuroCropsML 2.0 binned class distribution for Germany (LS and
+                                                                                          NRW) and Austria, shown on a logarithmic scale, with the pasture meadow
+a rich feature extractor and is necessary for a successful trans-
+                                                                                          grassland grass class removed.
+fer to fine-grained target tasks. Specifically, Austria contains
+2 589 192 samples, while LS and NRW comprise 901 364 and
+731 256 samples, respectively. Despite the larger total sample                            of varying levels of domain shift.
+count in Austria, Germany exhibits a higher number of unique
+crop classes with very few samples, as shown in Figure 3.                                 Agricultural practices. Austria is characterized by a higher num-
+Across both Austria and Germany, the pasture meadow grassland                             ber of small-scale agricultural fields, with a median field area
+grass class dominates by a wide margin, accounting for 42% of                             of 0.46 ha compared to a mean of 1.22 ha. In contrast, NRW
+samples in Germany (LS: 41%, NRW: 43%) and 51% in Aus-                                    and LS exhibit larger typical field sizes, with medians of 1.18 ha
+tria. When excluding the dominant pasture meadow grassland                                and 1.86 ha and means of 2.04 ha and 2.87 ha, respectively. As
+grass class, crop distributions in Germany are similar across                             a result, the per-field median-pixel estimates of EuroCropsML
+LS and NRW. In LS, grain maize corn popcorn is the most fre-                              2.0 in Austria are derived from a much smaller number of pixels,
+quent crop class at 22%, followed by winter common soft wheat                             thereby increasing their sensitivity to outliers. Conversely, the
+at 14%. In NRW, grain maize corn popcorn contributes 18%,                                 larger parcel sizes observed in Germany allow for aggregation
+while winter common soft wheat accounts for 16%. In contrast,                             over a much greater number of pixels, thereby yielding more
+Austria exhibits a different composition, with the most prevalent                         robust spectral reflectance values.
+classes being tree wood forest (13%) and vineyards wine vine
+rebland grapes (13%). A detailed visualization of overlapping                             3.2. Fine-tuning split
+classes between the pre-training countries and each fine-tuning                               Most fine-tuning countries exhibit a long-tailed data distri-
+country is shown in Figure 4. With regard to Spain, the class                             bution. Therefore, simply applying a random train, validation,
+not known or other class is excluded, given its inclusion of all                          and test split would result in zero-shot classification and non-
+elements not categorized as agricultural fields.                                          representative validation sets. Our objective is to establish a
+                                                                                          robust and realistic training-validation environment while re-
+Biogeographical regions. Both countries are located in central
+                                                                                          serving a large, representative set for the final evaluation. Con-
+Europe. Hence, they are mostly characterized by the Continental
+                                                                                          sequently, the overall split was prioritized as follows:
+biogeographical zone, with marginal overlaps from the Alpine or
+Atlantic regions (European Environment Agency (EEA), 2016),                               Test set 20% of the total dataset for the final, unbiased perform-
+cf. Figure 5. This establishes a central European baseline that                                 ance evaluation.
+avoids severe climatic conditions and permits the investigation
+                                                                                      4
+                                                 Belgium                         Estonia
+
+                                                    38                             35
+
+
+                                            9                38             4               40
+                                                    50                             48
+     29           69             129
+                                       20                         90   25                        89
+                                                    19                             21
+
+      Austria          Germany         Austria           Germany       Austria            Germany
+                 Latvia                          Lithuania                       Portugal
+
+                  29                                4                              31
+
+
+           5               30               1                5              8               15
+                  44                                12                             30
+
+      24                        99     28                        124   21                       114
+                  25                                57                             38
+
+      Austria             Germany      Austria           Germany       Austria            Germany
+                Slovakia                         Slovenia                         Spain
+
+                  33                                28                              2
+
+
+           11              29               12               25             1               0
+                  48                                47                              6
+
+      18                     100       17                        104   28                       129
+                  21                                22                             63
+
+      Austria             Germany      Austria           Germany       Austria            Germany
+
+
+Figure 4. The number of annotated crop classes that are shared and distinct
+between the pre-training countries—Austria and Germany—and the respective
+fine-tuning country.
+                                                                                                                     Alpine            Atlantic          Continental       Steppic
+                                                                                                                     Anatolian         Black Sea         Pannonian
+Validation set A small, efficient set of 5000 samples for hyper-                                                     Arctic            Boreal            Mediterranean
+
+      parameter tuning and early stopping.
+                                                                                                          Figure 5. Biogeographical regions present in EuroCropsML 2.0, as defined by
+Training set The remaining samples for training.                                                          the (European Environment Agency (EEA), 2016).
+We employ a class-aware splitting strategy to ensure that all
+fine-tuning classes are represented in the training set, serving
+                                                                                                          and test set. Furthermore, Table 3 shows the Gini coefficient CG
+as a prerequisite for assuming known crop types in real-world
+                                                                                                          (Ceriani and Verme, 2011) of each fine-tuning test set, represent-
+scenarios. Let Nc be the total number of available samples for
+                                                                                                          ing the level of class imbalance. The Gini coefficient provides
+class c. We employ the following allocation protocol:
+                                                                                                          a single bounded and interpretable scalar that quantifies the
+     1. Nc = 1: The sample is allocated to the training set.                                              class imbalance, enabling a fair comparison across datasets with
+                                                                                                          different numbers of classes.
+     2. Nc = 2: One sample is allocated to the training and one to                                            We evaluate various few-shot settings with 1, 5, 10, 20, or
+        either validation or test.                                                                        100 shots (cf. Reuss et al., 2025, 2026a), where ‘k-shot’ denotes
+                                                                                                          a maximum of k samples per class, using all available samples
+     3. Nc = 3: One sample is assigned to each subset.
+                                                                                                          when a class contains fewer than k. This allows us to determine
+     4. Nc > 3: The samples are randomly distributed between                                              the performance impact of the prior adjustment across different
+        the test and validation sets to fulfill the remaining capacity                                    degrees of prior shifts. For each country, we compared the
+        required to meet the 20% test target and 5000 validation                                          class distributions between the few-shot training set and the final
+        target1 , while maintaining the class distribution of the                                         test set to gauge the extent of the prior shift. In particular, we
+        original pool. All samples not selected for the validation                                        calculated the Bhattacharyya distance DB (Bhattacharyya, 1946)
+        or test sets are added to the training set.                                                       to quantify the statistical overlap between crop classes, as shown
+                                                                                                          in Table 4.
+This strategy ensures that the final validation set, although small,
+contains a proportional representation of all classes with Nc ≥ 3,
+thereby preventing evaluation biases. Table 2 gives an overview                                           4. Methodology
+of the final number of distinct crop classes in each validation                                               We adopt the DirPA method (Reuss et al., 2026a), where
+                                                                                                          class-prior uncertainty is modeled via a symmetric Dirichlet
+1   This is constrained by the class distribution and, consequently, on occasion,
+                                                                                                          distribution and injected into the classifier logits during the
+    results in slightly lower or higher values. These values are generated to meet                        training process.
+    the criterion of maximizing the class overlap across all three subsets.
+
+                                                                                                      5
+Table 2. Class distribution of the EuroCropsML 2.0 fine-tuning sets, showing                                Table 4. Bhattacharyya distance for fine-tuning countries in EuroCropsML 2.0,
+the number of distinct crop classes. The total number of classes in the training                            calculated between the fixed test set and the few-shot training sets. The distance
+set equals the number of available crop types and can be extracted from Table 1.                            is 0 if the two distributions are identical and increases as they become more
+                                                                                                            distinct.
+  Country       # Crop classes
+                                                                                                                    Country      k-shot training set
+                Train \ (validation ∪ test)           Validation       Test         Validation ∩ test
+                                                                                                                                 1            5         10             20      100
+  Belgium                                     2            133         133                     132
+  Estonia                                    15            107         108                     103                  Belgium      0.880        0.850     0.827          0.786   0.637
+  Latvia                                      2            106         105                     105                  Estonia      0.857        0.740     0.691          0.629   0.450
+  Lithuania                                   0             22          22                      22                  Latvia       0.736        0.716     0.688          0.655   0.539
+  Portugal                                   10             72          71                      69                  Lithuania    0.365        0.365     0.365          0.365   0.365
+  Slovakia                                   10            107         107                     103                  Portugal     0.705        0.588     0.552          0.495   0.370
+  Slovenia                                    5            105         105                     103                  Slovakia     0.773        0.680     0.645          0.605   0.462
+  Spain                                       0              9           9                       9                  Slovenia     0.866        0.804     0.782          0.750   0.621
+                                                                                                                    Spain        0.213        0.213     0.213          0.213   0.213
+Table 3. Gini coefficient for the test sets of the EuroCropsML 2.0 fine-tuning
+countries, a measure of dataset skewness. A value of 0 indicates a perfectly bal-                           Algorithm 1 Dirichlet Prior Augmentation
+anced class distribution, while a value approaching 1 means almost all samples
+belong to a single majority class.                                                                          Require: α, τ ∈ R+
+                                                                                                            Require: σ(·) (Softmax activation function)
+                                 Country          Gini coefficient CG                                       Require: fθ (model parameterized by θ)
+                                                                                                             1: for each training step s = 1 to S do
+                                 Belgium                        0.939
+                                                                                                             2:     sample mini-batch of data points D(s) = {(xi , yi )}bi=1
+                                 Estonia                        0.919
+                                                                                                             3:     sample pseudo-prior π̃(s) ∼ Dir(α · 1)
+                                 Latvia                         0.910
+                                                                                                             4:     for each data point (xi , yi ) in D(s) do
+                                 Lithuania                      0.761
+                                                                                                             5:         compute base logits: zi ← fθ (xi )
+                                 Portugal                       0.881
+                                                                                                             6:         adjust logits: z′i ← zi + τ log(π̃(s) )
+                                 Slovakia                       0.904
+                                                                                                             7:         compute predictive distribution: p̂i ← σ(z′i )
+                                 Slovenia                       0.928
+                                                                                                             8:     end for
+                                 Spain                          0.634
+                                                                                                                    compute mini-batch loss Lbatch ← b1 bi=1 L( p̂i , yi )
+                                                                                                                                                              P
+                                                                                                             9:
+                                                                                                            10:     update θ via backpropagation
+                                                                                                            11: end for
+4.1. DirPA: Dirichlet prior augmentation
+    Let fθ be a model parameterized by θ and let zi = fθ (xi ) ∈
+RK denote logits for sample xi over K classes. At each iteration                                            4.2. Transformer model
+s, a pseudo-prior                                                                                               In alignment with Reuss et al. (2026a), all experiments from
+                                                                                                            Section 5 are conducted using a state-of-the-art Transformer
+                      π̃   (s)
+                                 ∼ Dir(α · 1),            π̃   (s)
+                                                                     ∈∆   K−1
+                                                                                ,
+                                                                                                            encoder architecture (Vaswani et al., 2017) stacked with a linear
+is sampled from the symmetric Dirichlet distribution defined                                                classification layer on top. To encode the temporal information,
+over the (K − 1)-dimensional simplex ∆K−1 = {π ∈ RK :                                                       we apply sinusoidal positional encodings with a maximum se-
+                                                                                                            quence length of T max = 366 days, representing a full leap year.
+   c=1 πc = 1, πc ≥ 0}. The parameter α ∈ R+ controls the degree
+PK
+of imbalance. A small value (α < 1) samples highly skewed                                                   While the encoder serves as the model’s feature extractor, the lin-
+(imbalanced) distributions, while α ≥ 1 samples distributions                                               ear layer maps these features to the final class log-probabilities.
+closer to uniform, as visualized in Figure 6. The sampled prior                                             We refer to the encoder
+is incorporated through a logit adjustment,
+                                                                                                                                     fθbackbone
+                                                                                                                                        backbone
+                                                                                                                                                 : RTmax ×d → Rne
+                                  z′i ← zi + τ log(π̃(s) ),
+                                                                                                            as the backbone and to the classification layer
+with τ ∈ R+ being a scaling factor. The modified logits z′i are
+                                                                                                                                           fθhead  : R ne → R K
+subsequently passed through the Softmax function to obtain class                                                                              head
+
+probabilities                                                                                               as the head. d ∈ {1, . . . , 13} denotes the number of bands, ne ∈
+                                 exp(z′i,c )                                                                N the Transformer’s embedding dimension, and θbackbone the
+                                                                                                            backbone’s and θhead the head’s trainable parameter.
+                       
+             p̂i,c = σ z′i,c = PK            ′
+                                               ,                      c = 1, . . . , K.
+                                k=1 exp(zi,k )                                                                  Subsequently, the full model is decomposed as
+Figure 7 illustrates the sampling process for K = 5 classes and                                                                         fθ = fθhead  ◦ fθbackbone  ,
+different values of α.
+                                                                                                                                                head      backbone
+
+
+
+
+                                                                                                        6
+                                                                                                                                       high density
+
+
+
+
+                                                                                                                                        low density
+                       (a) α = (0.5, 0.5, 0.5)                  (b) α = (30, 30, 30)                       (c) α = (5, 5, 5)
+
+Figure 6. Dirichlet density for K = 3 classes, defined over the (K − 1) = 2-simplex. The plots show different concentration parameters α = α · 1, where 1 = (1, 1, 1)⊤
+(Reuss et al., 2026a).
+
+
+
+where θ = [θbackbone , θhead ] represents all trainable model para-                        5.2. Pre-training
+meters.                                                                                        First, we pre-train the model using downsampled parcel-
+                                                                                           level data from Austria and Germany. We downsample all 226
+5. Experiments                                                                             distinct crop classes to at most 10 000 samples per class. If fewer
+                                                                                           samples are available for a given class, all available samples
+    Across all experiments, we employ a standard Transformer                               are retained for that class. We use the standard CE with label
+encoder consisting of four layers. Each layer features eight at-                           smoothing and one cosine annealing cycle. We train the model
+tention heads and a feed-forward network with a hidden layer of                            for a total of 100 epochs and validate after each epoch on the
+dimension 1024. Initially, input tokens are projected into a latent                        full pre-training validation set. If the validation loss does not
+space of dimension 256 using internal embeddings. Regarding                                decrease for more than 15 epochs, we stop training. For details
+the spectral resolution, we retain 12 of the 13 Sentinel-2 bands,                          on hyperparameter tuning, please refer to Appendix B.1.
+excluding B10 (cirrus), which is utilized solely for cloud detec-
+tion during pre-processing, cf. Section 3. To obtain reflectance                           5.3. Fine-tuning
+values, the raw data is normalized by a factor of 104 . The result-                             Pre-training is followed by fine-tuning on each of the remain-
+ing values are clipped to the range [0.0, 1.2] and subsequently                            ing EuroCropsML 2.0 countries separately. For each fine-tuning
+adjusted by an offset of 10−4 . No-data values are either masked                           case, we reinitialize the linear head f head with the number of
+out or set to 0.0. For both pre-training and fine-tuning, all hy-                          fine-tuning classes, cf. Table 1. For all experiments, we train for
+perparameters are optimized on the respective validation set.                              up to 200 epochs with a batch size of 16. Training is terminated
+For the tuning trial runs, we employ a multi-variate Bayesian                              if the validation loss fails to improve for 20 consecutive epochs.
+tree-Parzen estimator (TPE) with percentile pruning within the                             We use Cohen’s kappa κ evaluated on the validation set as the
+Optuna framework (Akiba et al., 2019).                                                     primary criterion for checkpoint selection, prioritizing models
+    All code used for training and evaluation will be made avail-                          with robust inter-class reliability. This model state is then eval-
+able upon publication.                                                                     uated on the held-out test set. As a chance-corrected metric, κ
+                                                                                           ensures that the selected hyperparameters (cf. Appendix B.2) and
+5.1. Additional baselines and experiments                                                  checkpoints reflect genuine discriminative performance across
+    In addition to the standard cross-entropy loss (CE) and focal                          all classes, particularly in the presence of significant class imbal-
+loss (FL) experiments, we include random oversampling (ROS)                                ance. This approach mitigates the accuracy paradox, in which
+as a baseline for handling imbalanced support sets (Ochal et al.,                          high overall performance can be misleadingly achieved by fre-
+2023). For each k-shot task, if a class contains fewer than k                              quent exploitation of the majority class. Furthermore, we favor
+samples, we randomly duplicate existing samples until exactly k                            Cohen’s kappa over macro-averaged F1-scores, as the latter
+are available. Furthermore, to demonstrate that DirPA’s benefits                           tends to exhibit high variance across episodes in very low-shot
+generalize across different architectures, we conduct additional                           regimes (1-shot, 5-shot)—a single misclassified sample in a rare
+experiments using the Pretrained Remote Sensing Transformer                                class can produce large swings in the score, making it an unreli-
+(PRESTO; Tseng et al., 2023), an established model explicitly                              able signal for model selection. Apparent improvements in F1-
+designed for pixel-wise time series and downstream few-shot                                score in such settings are often attributable to chance rather than
+classification. Although also Transformer-based, PRESTO dif-                               genuine model improvement. Cohen’s kappa, computed over
+fers in its use of self-supervised pre-training and per-channel                            the full confusion matrix, is statistically more stable and there-
+tokenization with learned channel embeddings. In alignment                                 fore a more robust criterion for optimization. All fine-tuning
+with Tseng et al. (2023), we remove bands B01, B09, and B10.                               experiments are conducted a total of five times with different
+We use the pre-trained weights to initialize the model backbone                            random seeds r ∈ {0, 1, 42, 123, 1234}. The chosen random seed
+and evaluate PRESTO with and without DirPA on a subset of                                  influences, for instance, the initialization of random parameters
+countries.                                                                                 and mini-batch sampling. We conduct all fine-tuning experi-
+                                                                                           ments with both cross-entropy loss and focal loss (without a
+                                                                                       7
+                               Sparse Dirichlet prior (α = 0.5)                           land cover classes (HCAT level 3). Note that the training process
+                     1                                                                    does not directly leverage the hierarchical structure of the dataset
+                                               Iteration 1        Iteration 2             and is performed only at the granular class level 6. Predictions
+                    0.8                        Iteration 3        Iteration 4             at level 3 are derived by mapping the predicted level 6 crop
+ Pseudo-prior π̃c
+
+
+
+
+                                                                                          type to its corresponding parent category within the hierarch-
+                    0.6
+                                                                                          ical structure. In the 1-shot scenarios, CE and CE ROS yield
+                    0.4                                                                   identical results, since no oversampling occurs when each class
+                                                                                          is expected to have only one sample. Given the architectural
+                    0.2                                                     Uniform       differences between PRESTO and our pre-trained model, we
+                                                                                          evaluate the results independently from the main comparison.
+                     0
+                          c1       c2        c3         c4         c5
+                                                                                          Belgium Table 5a shows the classification results in Belgium.
+                                                                                                Across all few-shot settings, the combination of CE DirPA
+                               Dense Dirichlet prior (α = 5.0)
+                                                                                                consistently outperforms the baseline (and all other meth-
+                     1
+                                               Iteration 1        Iteration 2
+                                                                                                ods) in both Cohen’s kappa and overall accuracy. For
+                    0.8                        Iteration 3        Iteration 4
+                                                                                                kappa, DirPA achieves a relative performance gain of up
+ Pseudo-prior π̃c
+
+
+
+
+                                                                                                to 33% (5-shot), maintaining a steady improvement of
+                    0.6                                                                        10% even in the 100-shot. Furthermore, it also achieves
+                                                                                                the highest F1-scores for 1- and 5-shot. While FL with
+                    0.4                                                                         prior augmentation generally improves performance, it
+                                                                                                falls short of the baseline in the 5-shot benchmark, though
+                    0.2                                                     Uniform
+                                                                                                it remains effective for F1-scores for 10- and 100-shot.
+                     0                                                                          In terms of broader parent-level metrics, presented in
+                          c1       c2        c3         c4         c5                           Table 5b, DirPA again shows superior performance for
+                                        Class label y                                           accuracy when paired with CE. For F1-score, CE DirPA
+                                                                                                outperforms the baseline in the 5- and 20-shot settings.
+                                                                                                When incorporated into FL, it, however, often falls short
+Figure 7. Visualization of four possible draws of the pseudo-prior π̃(s) ∼ Dir(α·1)             in terms of F1-scores, compared to its baseline.
+for K = 5 classes at consecutive training iterations s. The orange sampling
+(α = 0.5) produces sparse draws, with a different class dominating at each
+iteration. With α = 5 (teal), the draws remain closer to the uniform distribution,
+                                                                                          Estonia When combined with CE, DirPA shows consistent su-
+indicated by the dashed line. Resampling the pseudo-prior at each iteration                    perior performance compared to the CE baseline (and all
+exposes the model to a diverse set of imbalance patterns without assuming any                  other options) in terms of kappa and accuracy (Table 6a).
+fixed test distribution.                                                                       The highest relative performance gain in kappa even reaches
+                                                                                               53% (1-shot), with gains again persisting at 9% even in
+class-imbalance factor) in order to validate DirPA across varying                              the 100-shot case. For 1-shot, it surpasses the remaining
+optimization landscapes. By utilizing FL, we can analyze the                                   methods in terms of F1-score. For the combination of FL
+synergy between Dirichlet priors and difficulty-awareness. Both                                and prior augmentation, we can observe a similar pattern
+loss functions are trained with and without Dirichlet priors. We                               to the one in Belgium, where DirPA enables FL to often
+append the postfix ‘DirPA’ whenever the DirPA method is used.                                  surpass the CE baseline in terms of kappa and accuracy.
+                                                                                               Furthermore, for 5-shot, it improves all three metrics com-
+                                                                                               pared to its baseline. Moreover, DirPA yields noticeable
+6. Results                                                                                     gains on broader parent-level metrics (Table 6b), con-
+                                                                                               sistently outperforming the non-DirPA baselines, except
+    Cohen’s kappa serves as our main validation and evalu-
+                                                                                               when paired with FL in the 1-shot benchmark task. The
+ation metric. In addition, in order to analyze the trade-off
+                                                                                               greatest improvement is observed for 1-shot CE, where
+between overall system robustness, overall performance, and
+                                                                                               DirPA achieves 27% performance gain in accuracy and
+class-specific performance, we also report overall classification
+                                                                                               31% in F1-score.
+accuracy aOA (micro-averaged) and F1-score (macro-averaged).
+Tables 5 to 12 show the test metrics for each country and al-                             Latvia For Latvia (Table 7a), incorporating prior augmentation
+gorithm. Furthermore, a visual representation of performance                                   with FL yields substantial gains in kappa and accuracy
+gains in relation to a country’s Gini coefficient (cf. Table 3) and                            across all few-shot tasks. Most notably, for 5-shot, DirPA
+the Bhattacharyya distance between the test set and each few-                                  improves all three metrics compared to the FL baseline,
+shot training set (cf. Table 4) is shown in Figures 8 and 9. The                               showing increases of 41% (kappa), 44% (accuracy), and
+postfix DirPA is appended to the name of the loss function if the                              9% (F1-score). Although the improvements are less con-
+DirPA method has been utilized. All test metrics are reported                                  sistent when paired with CE, the method still provides a
+using the best-performing model, measured by validation kappa.                                 performance boost in terms of kappa and accuracy for 1-,
+In addition to the most-granular classification results on HCAT                                10-, and 20-shot settings. Similar results are observed for
+level 6, we also report test accuracies and F1-scores on broader
+                                                                                      8
+Table 5. Few-shot classification results for Belgium. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader
+land cover classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs,
+cf. Section 5. The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the
+other loss function is shown in bold black. The best-performing PRESTO model is highlighted in bold teal.
+
+                                                            (a) Fine-grained classification results on HCAT level 6.
+
+                                          Algorithm/Loss    Benchmark task (k-shot)
+                                                                 1                    5               10                20             100
+                                          CE                0.170 ± 0.011    0.278 ± 0.029      0.403 ± 0.040     0.462 ± 0.015    0.545 ± 0.012
+                                          FL                0.156 ± 0.020    0.268 ± 0.020      0.378 ± 0.030     0.435 ± 0.023    0.508 ± 0.025
+                                          CE ROS            0.170 ± 0.011    0.263 ± 0.036      0.418 ± 0.043     0.407 ± 0.032    0.482 ± 0.018
+                              Kappa
+
+
+
+
+                                          CE DirPA          0.221 ± 0.010    0.371 ± 0.039      0.492 ± 0.052     0.530 ± 0.040    0.597 ± 0.027
+                                          FL DirPA          0.176 ± 0.036    0.248 ± 0.053      0.405 ± 0.028     0.439 ± 0.063    0.536 ± 0.022
+                                          CE PRESTO         0.046 ± 0.016    0.106 ± 0.014      0.205 ± 0.041     0.273 ± 0.016    0.379 ± 0.034
+                                          CE PRESTO DirPA   0.054 ± 0.035    0.159 ± 0.045      0.233 ± 0.087     0.265 ± 0.032    0.359 ± 0.041
+                                          CE                0.185 ± 0.013    0.333 ± 0.053      0.480 ± 0.058     0.546 ± 0.019    0.627 ± 0.014
+                                          FL                0.170 ± 0.022    0.325 ± 0.041      0.462 ± 0.041     0.513 ± 0.027    0.594 ± 0.023
+                              Accuracy
+
+
+
+
+                                          CE ROS            0.185 ± 0.013    0.305 ± 0.050      0.516 ± 0.064     0.483 ± 0.038    0.560 ± 0.017
+                                          CE DirPA          0.254 ± 0.040    0.469 ± 0.044      0.589 ± 0.061     0.625 ± 0.049    0.687 ± 0.025
+                                          FL DirPA          0.194 ± 0.039    0.282 ± 0.075      0.478 ± 0.038     0.520 ± 0.064    0.619 ± 0.022
+                                          CE PRESTO         0.055 ± 0.020    0.151 ± 0.063      0.315 ± 0.095     0.354 ± 0.018    0.464 ± 0.041
+                                          CE PRESTO DirPA   0.111 ± 0.099    0.361 ± 0.155      0.355 ± 0.155     0.372 ± 0.035    0.445 ± 0.052
+                                          CE                0.084 ± 0.007    0.124 ± 0.018      0.149 ± 0.010     0.179 ± 0.017    0.236 ± 0.010
+                                          FL                0.085 ± 0.007    0.121 ± 0.017      0.140 ± 0.016     0.182 ± 0.010    0.221 ± 0.024
+                                                            0.084 ± 0.007    0.117 ± 0.020      0.128 ± 0.025     0.171 ± 0.010    0.220 ± 0.006
+                              F1-score
+
+
+
+
+                                          CE ROS
+                                          CE DirPA          0.087 ± 0.006    0.128 ± 0.015      0.144 ± 0.017     0.161 ± 0.025    0.215 ± 0.029
+                                          FL DirPA          0.081 ± 0.007    0.121 ± 0.023      0.146 ± 0.012     0.175 ± 0.018    0.232 ± 0.019
+                                          CE PRESTO         0.015 ± 0.006    0.036 ± 0.014      0.048 ± 0.018     0.083 ± 0.009    0.132 ± 0.018
+                                          CE PRESTO DirPA   0.010 ± 0.005    0.015 ± 0.016      0.038 ± 0.021     0.068 ± 0.008    0.123 ± 0.014
+
+
+                                                                  (b) Classification results on HCAT level 3.
+
+                                          Algorithm/Loss    Benchmark task (k-shot)
+                                                                  1                   5               10                20              100
+                                          CE                0.397 ± 0.015     0.488 ± 0.072     0.609 ± 0.058      0.664 ± 0.021   0.720 ± 0.015
+                                          FL                0.390 ± 0.004     0.492 ± 0.060     0.613 ± 0.041      0.631 ± 0.024   0.700 ± 0.018
+                               Accuracy
+
+
+
+
+                                          CE ROS            0.397 ± 0.015     0.455 ± 0.038     0.675 ± 0.074      0.615 ± 0.036   0.665 ± 0.009
+                                          CE DirPA          0.422 ± 0.074     0.618 ± 0.047     0.710 ± 0.052      0.738 ± 0.050   0.785 ± 0.023
+                                          FL DirPA          0.392 ± 0.007     0.436 ± 0.074     0.592 ± 0.041      0.648 ± 0.041   0.720 ± 0.020
+                                          CE PRESTO         0.350 ± 0.021     0.421 ± 0.080     0.574 ± 0.129      0.568 ± 0.025   0.620 ± 0.042
+                                          CE PRESTO DirPA   0.417 ± 0.073     0.583 ± 0.127     0.602 ± 0.169      0.625 ± 0.018   0.618 ± 0.040
+                                          CE                0.167 ± 0.018     0.202 ± 0.034     0.280 ± 0.006      0.341 ± 0.025   0.458 ± 0.037
+                                          FL                0.157 ± 0.012     0.205 ± 0.038     0.278 ± 0.015      0.335 ± 0.048   0.403 ± 0.070
+                                                            0.167 ± 0.018     0.184 ± 0.027     0.306 ± 0.025      0.311 ± 0.012   0.370 ± 0.006
+                               F1-score
+
+
+
+
+                                          CE ROS
+                                          CE DirPA          0.161 ± 0.038     0.242 ± 0.039     0.297 ± 0.022      0.351 ± 0.018   0.422 ± 0.036
+                                          FL DirPA          0.155 ± 0.015     0.173 ± 0.055     0.274 ± 0.014      0.327 ± 0.033   0.435 ± 0.049
+                                          CE PRESTO         0.111 ± 0.017     0.144 ± 0.020     0.242 ± 0.106      0.273 ± 0.023   0.326 ± 0.036
+                                          CE PRESTO DirPA   0.129 ± 0.019     0.157 ± 0.024     0.211 ± 0.031      0.299 ± 0.023   0.323 ± 0.014
+
+
+
+
+                                                                                          9
+Table 6. Few-shot classification results for Estonia. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader land cover
+classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs, cf. Section 5.
+The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the other loss
+function is shown in bold black. The best-performing PRESTO model is highlighted in bold teal.
+
+                                                            (a) Fine-grained classification results on HCAT level 6.
+
+                                          Algorithm/Loss    Benchmark task (k-shot)
+                                                                 1                    5               10                20             100
+                                          CE                0.200 ± 0.035    0.275 ± 0.013      0.334 ± 0.017     0.383 ± 0.016    0.487 ± 0.018
+                                          FL                0.198 ± 0.029    0.241 ± 0.021      0.308 ± 0.028     0.372 ± 0.035    0.473 ± 0.026
+                                          CE ROS            0.200 ± 0.035    0.235 ± 0.019      0.292 ± 0.030     0.348 ± 0.033    0.427 ± 0.020
+                              Kappa
+
+
+
+
+                                          CE DirPA          0.306 ± 0.060    0.401 ± 0.037      0.448 ± 0.032     0.479 ± 0.025    0.532 ± 0.008
+                                          FL DirPA          0.188 ± 0.059    0.295 ± 0.035      0.349 ± 0.089     0.379 ± 0.040    0.484 ± 0.029
+                                          CE PRESTO         0.052 ± 0.016    0.109 ± 0.024      0.139 ± 0.031     0.160 ± 0.016    0.282 ± 0.033
+                                          CE PRESTO DirPA   0.098 ± 0.036    0.144 ± 0.050      0.181 ± 0.049     0.182 ± 0.052    0.276 ± 0.030
+                                          CE                0.268 ± 0.061    0.350 ± 0.023      0.420 ± 0.030     0.479 ± 0.034    0.575 ± 0.020
+                                          FL                0.268 ± 0.049    0.311 ± 0.034      0.384 ± 0.040     0.465 ± 0.053    0.565 ± 0.029
+                              Accuracy
+
+
+
+
+                                          CE ROS            0.268 ± 0.061    0.291 ± 0.041      0.361 ± 0.045     0.429 ± 0.047    0.512 ± 0.022
+                                          CE DirPA          0.436 ± 0.090    0.529 ± 0.044      0.570 ± 0.047     0.601 ± 0.025    0.640 ± 0.026
+                                          FL DirPA          0.252 ± 0.111    0.380 ± 0.060      0.441 ± 0.137     0.483 ± 0.071    0.580 ± 0.035
+                                          CE PRESTO         0.095 ± 0.062    0.197 ± 0.080      0.222 ± 0.058     0.247 ± 0.039    0.399 ± 0.068
+                                          CE PRESTO DirPA   0.283 ± 0.163    0.295 ± 0.122      0.343 ± 0.116     0.298 ± 0.125    0.390 ± 0.040
+                                          CE                0.049 ± 0.005    0.094 ± 0.005      0.115 ± 0.005     0.117 ± 0.024    0.174 ± 0.009
+                                          FL                0.048 ± 0.004    0.086 ± 0.009      0.110 ± 0.013     0.112 ± 0.013    0.155 ± 0.018
+                                                            0.049 ± 0.005    0.083 ± 0.007      0.095 ± 0.007     0.115 ± 0.011    0.154 ± 0.004
+                              F1-score
+
+
+
+
+                                          CE ROS
+                                          CE DirPA          0.050 ± 0.007    0.078 ± 0.019      0.101 ± 0.016     0.095 ± 0.004    0.127 ± 0.029
+                                          FL DirPA          0.049 ± 0.003    0.089 ± 0.014      0.094 ± 0.015     0.099 ± 0.027    0.140 ± 0.036
+                                          CE PRESTO         0.011 ± 0.004    0.020 ± 0.008      0.026 ± 0.003     0.038 ± 0.017    0.064 ± 0.016
+                                          CE PRESTO DirPA   0.009 ± 0.003    0.018 ± 0.007      0.019 ± 0.007     0.030 ± 0.006    0.064 ± 0.020
+
+
+                                                                  (b) Classification results on HCAT level 3.
+
+                                          Algorithm/Loss    Benchmark task (k-shot)
+                                                                  1                   5               10                20              100
+                                          CE                0.577 ± 0.058     0.623 ± 0.029     0.669 ± 0.042      0.706 ± 0.039   0.760 ± 0.018
+                                          FL                0.579 ± 0.054     0.599 ± 0.045     0.637 ± 0.036      0.693 ± 0.049   0.757 ± 0.028
+                               Accuracy
+
+
+
+
+                                          CE ROS            0.577 ± 0.058     0.571 ± 0.053     0.616 ± 0.042      0.667 ± 0.046   0.711 ± 0.024
+                                          CE DirPA          0.730 ± 0.066     0.757 ± 0.041     0.785 ± 0.034      0.812 ± 0.032   0.816 ± 0.021
+                                          FL DirPA          0.567 ± 0.115     0.643 ± 0.047     0.676 ± 0.127      0.717 ± 0.079   0.776 ± 0.039
+                                          CE PRESTO         0.458 ± 0.050     0.550 ± 0.087     0.577 ± 0.036      0.581 ± 0.046   0.685 ± 0.077
+                                          CE PRESTO DirPA   0.579 ± 0.085     0.612 ± 0.076     0.668 ± 0.096      0.605 ± 0.100   0.698 ± 0.045
+                                          CE                0.209 ± 0.026     0.233 ± 0.014     0.261 ± 0.017      0.272 ± 0.014   0.307 ± 0.007
+                                          FL                0.213 ± 0.027     0.219 ± 0.022     0.243 ± 0.013      0.266 ± 0.021   0.303 ± 0.006
+                                                            0.209 ± 0.026     0.202 ± 0.028     0.230 ± 0.023      0.254 ± 0.021   0.285 ± 0.009
+                               F1-score
+
+
+
+
+                                          CE ROS
+                                          CE DirPA          0.273 ± 0.022     0.287 ± 0.012     0.299 ± 0.014      0.311 ± 0.011   0.313 ± 0.016
+                                          FL DirPA          0.197 ± 0.061     0.242 ± 0.021     0.253 ± 0.063      0.271 ± 0.028   0.308 ± 0.011
+                                          CE PRESTO         0.152 ± 0.034     0.195 ± 0.025     0.203 ± 0.020      0.213 ± 0.021   0.255 ± 0.028
+                                          CE PRESTO DirPA   0.194 ± 0.036     0.220 ± 0.016     0.234 ± 0.027      0.217 ± 0.046   0.256 ± 0.015
+
+
+
+
+                                                                                          10
+Table 7. Few-shot classification results for Latvia. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader land cover
+classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs, cf. Section 5.
+The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the other loss
+function is shown in bold black.
+
+                                                              (a) Fine-grained classification results on HCAT level 6.
+
+                                           Algorithm/Loss   Benchmark task (k-shot)
+                                                                 1                    5               10                 20            100
+                                           CE               0.141 ± 0.012     0.243 ± 0.031     0.251 ± 0.023      0.290 ± 0.024   0.417 ± 0.025
+                                           FL               0.155 ± 0.022     0.244 ± 0.059     0.243 ± 0.058      0.306 ± 0.023   0.397 ± 0.025
+                                Kappa
+
+
+
+
+                                           CE ROS           0.141 ± 0.012     0.203 ± 0.026     0.239 ± 0.040      0.299 ± 0.038   0.367 ± 0.015
+                                           CE DirPA         0.143 ± 0.025     0.243 ± 0.017     0.263 ± 0.057      0.306 ± 0.041   0.411 ± 0.053
+                                           FL DirPA         0.204 ± 0.055     0.345 ± 0.077     0.339 ± 0.057      0.384 ± 0.061   0.424 ± 0.029
+                                           CE               0.187 ± 0.031     0.305 ± 0.052     0.312 ± 0.035      0.337 ± 0.029   0.485 ± 0.028
+                                Accuracy
+
+
+
+
+                                           FL               0.214 ± 0.039     0.307 ± 0.090     0.304 ± 0.088      0.367 ± 0.034   0.464 ± 0.028
+                                           CE ROS           0.187 ± 0.031     0.254 ± 0.033     0.291 ± 0.058      0.357 ± 0.054   0.429 ± 0.017
+                                           CE DirPA         0.197 ± 0.043     0.304 ± 0.027     0.333 ± 0.092      0.372 ± 0.067   0.490 ± 0.071
+                                           FL DirPA         0.290 ± 0.087     0.442 ± 0.104     0.442 ± 0.075      0.477 ± 0.074   0.503 ± 0.032
+                                           CE               0.048 ± 0.004     0.089 ± 0.008     0.100 ± 0.007      0.130 ± 0.004   0.168 ± 0.005
+                                                            0.047 ± 0.006     0.081 ± 0.004     0.097 ± 0.009      0.125 ± 0.023   0.166 ± 0.007
+                                F1-score
+
+
+
+
+                                           FL
+                                           CE ROS           0.048 ± 0.004     0.094 ± 0.003     0.099 ± 0.010      0.121 ± 0.009   0.152 ± 0.011
+                                           CE DirPA         0.047 ± 0.005     0.092 ± 0.011     0.087 ± 0.014      0.116 ± 0.022   0.137 ± 0.031
+                                           FL DirPA         0.042 ± 0.009     0.088 ± 0.009     0.088 ± 0.015      0.107 ± 0.012   0.145 ± 0.015
+
+
+                                                                     (b) Classification results on HCAT level 3.
+
+                                           Algorithm/Loss   Benchmark task (k-shot)
+                                                                 1                    5               10                 20            100
+                                           CE               0.559 ± 0.037     0.634 ± 0.045     0.637 ± 0.032      0.615 ± 0.028   0.731 ± 0.020
+                                Accuracy
+
+
+
+
+                                           FL               0.579 ± 0.023     0.627 ± 0.090     0.613 ± 0.072      0.652 ± 0.037   0.715 ± 0.019
+                                           CE ROS           0.559 ± 0.037     0.585 ± 0.029     0.610 ± 0.048      0.651 ± 0.050   0.686 ± 0.012
+                                           CE DirPA         0.568 ± 0.053     0.623 ± 0.033     0.656 ± 0.073      0.653 ± 0.068   0.731 ± 0.058
+                                           FL DirPA         0.626 ± 0.065     0.719 ± 0.082     0.726 ± 0.053      0.751 ± 0.047   0.751 ± 0.025
+                                           CE               0.238 ± 0.040     0.296 ± 0.033     0.301 ± 0.021      0.283 ± 0.019   0.377 ± 0.010
+                                                            0.256 ± 0.024     0.295 ± 0.067     0.276 ± 0.051      0.311 ± 0.020   0.366 ± 0.017
+                                F1-score
+
+
+
+
+                                           FL
+                                           CE ROS           0.238 ± 0.040     0.277 ± 0.025     0.283 ± 0.035      0.304 ± 0.031   0.338 ± 0.006
+                                           CE DirPA         0.258 ± 0.031     0.293 ± 0.012     0.302 ± 0.050      0.306 ± 0.038   0.369 ± 0.021
+                                           FL DirPA         0.277 ± 0.044     0.352 ± 0.056     0.351 ± 0.037      0.367 ± 0.032   0.377 ± 0.020
+
+
+
+
+                                                                                          11
+Table 8. Few-shot classification results for Lithuania. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader
+land cover classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs,
+cf. Section 5. The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the
+other loss function is shown in bold black.
+
+                                                             (a) Fine-grained classification results on HCAT level 6.
+
+                                          Algorithm/Loss   Benchmark task (k-shot)
+                                                                1                    5               10                 20            100
+                                          CE               0.337 ± 0.042     0.441 ± 0.021     0.470 ± 0.019      0.538 ± 0.022   0.606 ± 0.007
+                                          FL               0.375 ± 0.042     0.456 ± 0.032     0.546 ± 0.046      0.577 ± 0.018   0.641 ± 0.019
+                               Kappa
+
+
+
+
+                                          CE ROS           0.337 ± 0.042     0.435 ± 0.024     0.491 ± 0.021      0.550 ± 0.033   0.605 ± 0.021
+                                          CE DirPA         0.347 ± 0.036     0.510 ± 0.044     0.495 ± 0.041      0.576 ± 0.073   0.637 ± 0.034
+                                          FL DirPA         0.445 ± 0.018     0.575 ± 0.020     0.637 ± 0.018      0.640 ± 0.032   0.675 ± 0.018
+                                          CE               0.431 ± 0.061     0.525 ± 0.020     0.552 ± 0.029      0.614 ± 0.026   0.682 ± 0.005
+                               Accuracy
+
+
+
+
+                                          FL               0.479 ± 0.048     0.548 ± 0.043     0.632 ± 0.054      0.662 ± 0.026   0.719 ± 0.020
+                                          CE ROS           0.431 ± 0.061     0.521 ± 0.024     0.572 ± 0.023      0.627 ± 0.035   0.678 ± 0.020
+                                          CE DirPA         0.436 ± 0.040     0.606 ± 0.042     0.579 ± 0.041      0.653 ± 0.074   0.710 ± 0.033
+                                          FL DirPA         0.565 ± 0.028     0.668 ± 0.020     0.730 ± 0.009      0.724 ± 0.030   0.747 ± 0.018
+                                          CE               0.233 ± 0.036     0.331 ± 0.019     0.351 ± 0.012      0.398 ± 0.014   0.432 ± 0.011
+                                                           0.246 ± 0.041     0.329 ± 0.022     0.360 ± 0.015      0.375 ± 0.039   0.431 ± 0.021
+                               F1-score
+
+
+
+
+                                          FL
+                                          CE ROS           0.233 ± 0.036     0.321 ± 0.019     0.356 ± 0.010      0.396 ± 0.004   0.434 ± 0.017
+                                          CE DirPA         0.248 ± 0.028     0.328 ± 0.025     0.345 ± 0.024      0.401 ± 0.023   0.427 ± 0.025
+                                          FL DirPA         0.251 ± 0.031     0.337 ± 0.020     0.335 ± 0.023      0.384 ± 0.015   0.437 ± 0.021
+
+
+                                                                    (b) Classification results on HCAT level 3.
+
+                                          Algorithm/Loss   Benchmark task (k-shot)
+                                                                1                    5               10                 20            100
+                                          CE               0.685 ± 0.067     0.720 ± 0.021     0.719 ± 0.032      0.748 ± 0.035   0.809 ± 0.007
+                               Accuracy
+
+
+
+
+                                          FL               0.736 ± 0.039     0.757 ± 0.046     0.794 ± 0.065      0.808 ± 0.045   0.847 ± 0.028
+                                          CE ROS           0.685 ± 0.067     0.726 ± 0.027     0.740 ± 0.024      0.758 ± 0.033   0.797 ± 0.017
+                                          CE DirPA         0.687 ± 0.030     0.810 ± 0.025     0.743 ± 0.041      0.783 ± 0.072   0.831 ± 0.032
+                                          FL DirPA         0.798 ± 0.031     0.837 ± 0.018     0.873 ± 0.013      0.858 ± 0.025   0.860 ± 0.019
+                                          CE               0.264 ± 0.034     0.330 ± 0.009     0.324 ± 0.018      0.372 ± 0.029   0.431 ± 0.010
+                                                           0.295 ± 0.019     0.345 ± 0.026     0.367 ± 0.038      0.393 ± 0.015   0.453 ± 0.014
+                               F1-score
+
+
+
+
+                                          FL
+                                          CE ROS           0.264 ± 0.034     0.330 ± 0.015     0.329 ± 0.012      0.390 ± 0.030   0.416 ± 0.021
+                                          CE DirPA         0.274 ± 0.014     0.364 ± 0.012     0.331 ± 0.029      0.396 ± 0.040   0.434 ± 0.010
+                                          FL DirPA         0.313 ± 0.010     0.377 ± 0.018     0.368 ± 0.039      0.421 ± 0.028   0.454 ± 0.012
+
+
+
+
+                                                                                         12
+Table 9. Few-shot classification results for Portugal. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader
+land cover classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs,
+cf. Section 5. The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the
+other loss function is shown in bold black.
+
+                                                              (a) Fine-grained classification results on HCAT level 6.
+
+                                          Algorithm/Loss   Benchmark task (k-shot)
+                                                                 1                   5                10                 20            100
+                                          CE               0.049 ± 0.003     0.092 ± 0.008      0.126 ± 0.006      0.165 ± 0.011   0.286 ± 0.017
+                                          FL               0.043 ± 0.008     0.083 ± 0.005      0.130 ± 0.009      0.168 ± 0.018   0.262 ± 0.018
+                               Kappa
+
+
+
+
+                                          CE ROS           0.049 ± 0.003     0.082 ± 0.008      0.128 ± 0.010      0.170 ± 0.008   0.247 ± 0.010
+                                          CE DirPA         0.049 ± 0.006     0.097 ± 0.007      0.130 ± 0.010      0.176 ± 0.011   0.282 ± 0.012
+                                          FL DirPA         0.055 ± 0.012     0.082 ± 0.002      0.137 ± 0.010      0.181 ± 0.004   0.280 ± 0.017
+                                          CE               0.070 ± 0.009     0.125 ± 0.015      0.162 ± 0.010      0.206 ± 0.009   0.343 ± 0.021
+                               Accuracy
+
+
+
+
+                                          FL               0.063 ± 0.013     0.114 ± 0.008      0.168 ± 0.011      0.217 ± 0.033   0.322 ± 0.017
+                                          CE ROS           0.070 ± 0.009     0.114 ± 0.016      0.167 ± 0.013      0.210 ± 0.011   0.305 ± 0.014
+                                          CE DirPA         0.074 ± 0.011     0.137 ± 0.019      0.170 ± 0.014      0.223 ± 0.015   0.342 ± 0.017
+                                          FL DirPA         0.085 ± 0.024     0.112 ± 0.007      0.182 ± 0.019      0.233 ± 0.020   0.339 ± 0.024
+                                          CE               0.032 ± 0.006     0.056 ± 0.005      0.070 ± 0.003      0.089 ± 0.008   0.132 ± 0.009
+                                                           0.032 ± 0.005     0.052 ± 0.008      0.071 ± 0.004      0.083 ± 0.010   0.130 ± 0.015
+                               F1-score
+
+
+
+
+                                          FL
+                                          CE ROS           0.032 ± 0.006     0.052 ± 0.007      0.067 ± 0.007      0.088 ± 0.002   0.111 ± 0.009
+                                          CE DirPA         0.029 ± 0.009     0.052 ± 0.003      0.073 ± 0.004      0.093 ± 0.004   0.131 ± 0.011
+                                          FL DirPA         0.028 ± 0.007     0.052 ± 0.008      0.072 ± 0.011      0.093 ± 0.008   0.139 ± 0.009
+
+
+                                                                     (b) Classification results on HCAT level 3.
+
+                                          Algorithm/Loss   Benchmark task (k-shot)
+                                                                 1                   5                10                 20            100
+                                          CE               0.313 ± 0.005     0.343 ± 0.012      0.375 ± 0.012      0.420 ± 0.026   0.520 ± 0.015
+                               Accuracy
+
+
+
+
+                                          FL               0.307 ± 0.017     0.333 ± 0.012      0.387 ± 0.013      0.432 ± 0.045   0.502 ± 0.022
+                                          CE ROS           0.313 ± 0.005     0.337 ± 0.020      0.389 ± 0.016      0.430 ± 0.012   0.501 ± 0.016
+                                          CE DirPA         0.308 ± 0.020     0.361 ± 0.011      0.394 ± 0.011      0.436 ± 0.019   0.522 ± 0.016
+                                          FL DirPA         0.312 ± 0.033     0.328 ± 0.021      0.390 ± 0.021      0.429 ± 0.025   0.511 ± 0.020
+                                          CE               0.245 ± 0.010     0.265 ± 0.008      0.297 ± 0.013      0.327 ± 0.025   0.440 ± 0.021
+                                                           0.234 ± 0.014     0.253 ± 0.012      0.310 ± 0.005      0.348 ± 0.049   0.418 ± 0.023
+                               F1-score
+
+
+
+
+                                          FL
+                                          CE ROS           0.245 ± 0.010     0.254 ± 0.019      0.309 ± 0.009      0.337 ± 0.012   0.417 ± 0.019
+                                          CE DirPA         0.229 ± 0.024     0.279 ± 0.013      0.314 ± 0.015      0.359 ± 0.012   0.432 ± 0.013
+                                          FL DirPA         0.238 ± 0.034     0.254 ± 0.007      0.319 ± 0.015      0.347 ± 0.023   0.419 ± 0.018
+
+
+
+
+                                                                                         13
+Table 10. Few-shot classification results for Slovakia. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader
+land cover classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs,
+cf. Section 5. The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the
+other loss function is shown in bold black.
+
+                                                             (a) Fine-grained classification results on HCAT level 6.
+
+                                          Algorithm/Loss   Benchmark task (k-shot)
+                                                                1                    5               10                 20            100
+                                          CE               0.185 ± 0.009     0.443 ± 0.021     0.455 ± 0.034      0.477 ± 0.027   0.565 ± 0.021
+                                          FL               0.175 ± 0.008     0.418 ± 0.036     0.456 ± 0.021      0.458 ± 0.036   0.556 ± 0.015
+                               Kappa
+
+
+
+
+                                          CE ROS           0.185 ± 0.009     0.388 ± 0.020     0.398 ± 0.038      0.426 ± 0.026   0.491 ± 0.027
+                                          CE DirPA         0.182 ± 0.009     0.465 ± 0.031     0.462 ± 0.038      0.527 ± 0.034   0.579 ± 0.010
+                                          FL DirPA         0.177 ± 0.019     0.449 ± 0.046     0.464 ± 0.036      0.510 ± 0.024   0.578 ± 0.025
+                                          CE               0.209 ± 0.012     0.520 ± 0.025     0.526 ± 0.038      0.558 ± 0.037   0.641 ± 0.025
+                               Accuracy
+
+
+
+
+                                          FL               0.197 ± 0.009     0.492 ± 0.045     0.535 ± 0.031      0.533 ± 0.041   0.632 ± 0.016
+                                          CE ROS           0.209 ± 0.012     0.456 ± 0.023     0.465 ± 0.047      0.496 ± 0.034   0.563 ± 0.027
+                                          CE DirPA         0.209 ± 0.013     0.550 ± 0.044     0.533 ± 0.044      0.611 ± 0.036   0.657 ± 0.011
+                                          FL DirPA         0.201 ± 0.024     0.525 ± 0.062     0.538 ± 0.040      0.591 ± 0.027   0.654 ± 0.029
+                                          CE               0.105 ± 0.003     0.159 ± 0.015     0.182 ± 0.009      0.188 ± 0.020   0.233 ± 0.021
+                                                           0.102 ± 0.004     0.154 ± 0.015     0.171 ± 0.014      0.188 ± 0.005   0.221 ± 0.019
+                               F1-score
+
+
+
+
+                                          FL
+                                          CE ROS           0.105 ± 0.003     0.154 ± 0.009     0.159 ± 0.012      0.170 ± 0.008   0.213 ± 0.009
+                                          CE DirPA         0.090 ± 0.023     0.160 ± 0.014     0.191 ± 0.008      0.188 ± 0.016   0.181 ± 0.021
+                                          FL DirPA         0.087 ± 0.024     0.163 ± 0.012     0.184 ± 0.016      0.195 ± 0.011   0.200 ± 0.035
+
+
+                                                                    (b) Classification results on HCAT level 3.
+
+                                          Algorithm/Loss   Benchmark task (k-shot)
+                                                                1                    5               10                 20            100
+                                          CE               0.500 ± 0.030     0.754 ± 0.029     0.746 ± 0.028      0.783 ± 0.050   0.833 ± 0.032
+                               Accuracy
+
+
+
+
+                                          FL               0.496 ± 0.023     0.734 ± 0.041     0.773 ± 0.055      0.755 ± 0.038   0.826 ± 0.016
+                                          CE ROS           0.500 ± 0.030     0.706 ± 0.020     0.709 ± 0.043      0.726 ± 0.038   0.771 ± 0.020
+                                          CE DirPA         0.519 ± 0.021     0.785 ± 0.046     0.752 ± 0.032      0.820 ± 0.025   0.847 ± 0.012
+                                          FL DirPA         0.510 ± 0.029     0.759 ± 0.066     0.768 ± 0.035      0.806 ± 0.028   0.839 ± 0.030
+                                          CE               0.215 ± 0.007     0.358 ± 0.015     0.340 ± 0.021      0.361 ± 0.037   0.423 ± 0.005
+                                                           0.220 ± 0.002     0.335 ± 0.027     0.352 ± 0.039      0.346 ± 0.018   0.411 ± 0.014
+                               F1-score
+
+
+
+
+                                          FL
+                                          CE ROS           0.215 ± 0.007     0.330 ± 0.009     0.313 ± 0.021      0.331 ± 0.022   0.373 ± 0.012
+                                          CE DirPA         0.233 ± 0.014     0.372 ± 0.041     0.340 ± 0.022      0.389 ± 0.035   0.428 ± 0.031
+                                          FL DirPA         0.221 ± 0.013     0.367 ± 0.053     0.361 ± 0.015      0.385 ± 0.027   0.422 ± 0.035
+
+
+
+
+                                                                                         14
+Table 11. Few-shot classification results for Slovenia. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader
+land cover classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs,
+cf. Section 5. The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the
+other loss function is shown in bold black. The best-performing PRESTO model is highlighted in bold teal.
+
+                                                           (a) Fine-grained classification results on HCAT level 6.
+
+                                         Algorithm/Loss    Benchmark task (k-shot)
+                                                                1                    5               10               20             100
+                                         CE                0.216 ± 0.032    0.198 ± 0.025      0.253 ± 0.012     0.288 ± 0.020   0.354 ± 0.018
+                                         FL                0.231 ± 0.030    0.212 ± 0.007      0.276 ± 0.030     0.294 ± 0.005   0.347 ± 0.017
+                                         CE ROS            0.216 ± 0.032    0.180 ± 0.022      0.235 ± 0.012     0.269 ± 0.017   0.293 ± 0.012
+                              Kappa
+
+
+
+
+                                         CE DirPA          0.287 ± 0.032    0.314 ± 0.050      0.345 ± 0.025     0.388 ± 0.038   0.412 ± 0.014
+                                         FL DirPA          0.300 ± 0.030    0.318 ± 0.037      0.327 ± 0.037     0.381 ± 0.044   0.405 ± 0.022
+                                         CE PRESTO         0.039 ± 0.008    0.083 ± 0.024      0.095 ± 0.021     0.127 ± 0.017   0.230 ± 0.027
+                                         CE PRESTO DirPA   0.058 ± 0.035    0.093 ± 0.038      0.099 ± 0.036     0.145 ± 0.035   0.244 ± 0.030
+                                         CE                0.305 ± 0.061    0.270 ± 0.041      0.338 ± 0.019     0.382 ± 0.028   0.456 ± 0.024
+                                         FL                0.348 ± 0.040    0.308 ± 0.012      0.378 ± 0.048     0.406 ± 0.021   0.444 ± 0.022
+                              Accuracy
+
+
+
+
+                                         CE ROS            0.305 ± 0.061    0.247 ± 0.034      0.318 ± 0.018     0.359 ± 0.030   0.377 ± 0.016
+                                         CE DirPA          0.418 ± 0.051    0.449 ± 0.072      0.491 ± 0.033     0.538 ± 0.057   0.549 ± 0.031
+                                         FL DirPA          0.438 ± 0.048    0.454 ± 0.051      0.450 ± 0.053     0.522 ± 0.066   0.523 ± 0.031
+                                         CE PRESTO         0.062 ± 0.025    0.166 ± 0.065      0.166 ± 0.064     0.213 ± 0.059   0.346 ± 0.056
+                                         CE PRESTO DirPA   0.125 ± 0.119    0.216 ± 0.134      0.230 ± 0.125     0.264 ± 0.105   0.386 ± 0.061
+                                         CE                0.071 ± 0.015    0.083 ± 0.006      0.100 ± 0.005     0.106 ± 0.004   0.129 ± 0.004
+                                         FL                0.068 ± 0.010    0.084 ± 0.002      0.104 ± 0.003     0.099 ± 0.011   0.142 ± 0.004
+                                                           0.071 ± 0.015    0.085 ± 0.002      0.095 ± 0.006     0.101 ± 0.005   0.117 ± 0.005
+                              F1-score
+
+
+
+
+                                         CE ROS
+                                         CE DirPA          0.074 ± 0.014    0.087 ± 0.008      0.092 ± 0.005     0.106 ± 0.006   0.114 ± 0.020
+                                         FL DirPA          0.076 ± 0.004    0.089 ± 0.007      0.099 ± 0.003     0.101 ± 0.006   0.122 ± 0.010
+                                         CE PRESTO         0.014 ± 0.003    0.018 ± 0.005      0.027 ± 0.006     0.039 ± 0.006   0.065 ± 0.009
+                                         CE PRESTO DirPA   0.012 ± 0.002    0.013 ± 0.005      0.014 ± 0.006     0.033 ± 0.008   0.058 ± 0.009
+
+
+                                                                 (b) Classification results on HCAT level 3.
+
+                                         Algorithm/Loss    Benchmark task (k-shot)
+                                                                1                    5               10               20             100
+                                         CE                0.540 ± 0.053    0.511 ± 0.041      0.564 ± 0.018     0.596 ± 0.022   0.656 ± 0.022
+                                         FL                0.578 ± 0.031    0.556 ± 0.021      0.610 ± 0.046     0.622 ± 0.029   0.644 ± 0.015
+                              Accuracy
+
+
+
+
+                                         CE ROS            0.540 ± 0.053    0.499 ± 0.030      0.553 ± 0.013     0.582 ± 0.030   0.593 ± 0.027
+                                         CE DirPA          0.633 ± 0.036    0.674 ± 0.070      0.711 ± 0.030     0.727 ± 0.053   0.728 ± 0.034
+                                         FL DirPA          0.640 ± 0.043    0.669 ± 0.061      0.662 ± 0.050     0.716 ± 0.056   0.697 ± 0.028
+                                         CE PRESTO         0.339 ± 0.017    0.454 ± 0.067      0.443 ± 0.058     0.479 ± 0.044   0.587 ± 0.054
+                                         CE PRESTO DirPA   0.355 ± 0.034    0.474 ± 0.149      0.510 ± 0.110     0.526 ± 0.068   0.622 ± 0.050
+                                         CE                0.257 ± 0.030    0.245 ± 0.023      0.279 ± 0.006     0.287 ± 0.011   0.317 ± 0.009
+                                         FL                0.278 ± 0.011    0.268 ± 0.006      0.298 ± 0.017     0.299 ± 0.016   0.313 ± 0.008
+                                                           0.257 ± 0.030    0.237 ± 0.014      0.268 ± 0.009     0.280 ± 0.014   0.289 ± 0.010
+                              F1-score
+
+
+
+
+                                         CE ROS
+                                         CE DirPA          0.295 ± 0.016    0.315 ± 0.027      0.336 ± 0.007     0.340 ± 0.019   0.343 ± 0.013
+                                         FL DirPA          0.295 ± 0.014    0.314 ± 0.023      0.316 ± 0.018     0.333 ± 0.021   0.334 ± 0.012
+                                         CE PRESTO         0.140 ± 0.010    0.205 ± 0.025      0.206 ± 0.025     0.227 ± 0.019   0.281 ± 0.014
+                                         CE PRESTO DirPA   0.144 ± 0.020    0.204 ± 0.042      0.211 ± 0.018     0.243 ± 0.022   0.293 ± 0.015
+
+
+
+
+                                                                                         15
+Table 12. Few-shot classification results for Spain. We show the results for the most-granular crop types, as presented in Table 2, as well as for the broader land cover
+classes (HCAT level 3). We report the metrics’ means ± standard deviations on the test set for each variant and few-shot task, computed over five runs, cf. Section 5.
+The best result for each few-shot scenario is highlighted in bold blue. Depending on which loss function achieves the best result, the top result of the other loss
+function is shown in bold black. The best-performing PRESTO model is highlighted in bold teal.
+
+                                                             (a) Fine-grained classification results on HCAT level 6.
+
+                                           Algorithm/Loss    Benchmark task (k-shot)
+                                                                   1                   5               10                20              100
+                                           CE                0.271 ± 0.011     0.325 ± 0.017     0.341 ± 0.020      0.400 ± 0.023   0.460 ± 0.013
+                                           FL                0.284 ± 0.035     0.344 ± 0.026     0.348 ± 0.029      0.405 ± 0.007   0.466 ± 0.026
+                                           CE ROS            0.271 ± 0.011     0.321 ± 0.016     0.345 ± 0.023      0.402 ± 0.018   0.450 ± 0.013
+                                Kappa
+
+
+
+
+                                           CE DirPA          0.341 ± 0.014     0.356 ± 0.020     0.354 ± 0.012      0.422 ± 0.009   0.462 ± 0.004
+                                           FL DirPA          0.331 ± 0.030     0.349 ± 0.027     0.333 ± 0.030      0.410 ± 0.018   0.453 ± 0.030
+                                           CE PRESTO         0.209 ± 0.039     0.296 ± 0.008     0.286 ± 0.010      0.374 ± 0.015   0.421 ± 0.010
+                                           CE PRESTO DirPA   0.240 ± 0.066     0.314 ± 0.035     0.308 ± 0.014      0.381 ± 0.013   0.438 ± 0.028
+                                           CE                0.403 ± 0.013     0.472 ± 0.023     0.493 ± 0.028      0.522 ± 0.026   0.583 ± 0.016
+                                           FL                0.424 ± 0.047     0.490 ± 0.033     0.498 ± 0.049      0.532 ± 0.011   0.592 ± 0.035
+                                Accuracy
+
+
+
+
+                                           CE ROS            0.403 ± 0.013     0.458 ± 0.018     0.490 ± 0.044      0.532 ± 0.015   0.573 ± 0.016
+                                           CE DirPA          0.525 ± 0.021     0.507 ± 0.029     0.499 ± 0.020      0.551 ± 0.014   0.584 ± 0.005
+                                           FL DirPA          0.516 ± 0.036     0.510 ± 0.023     0.469 ± 0.034      0.542 ± 0.017   0.578 ± 0.033
+                                           CE PRESTO         0.391 ± 0.042     0.426 ± 0.010     0.419 ± 0.009      0.522 ± 0.020   0.552 ± 0.012
+                                           CE PRESTO DirPA   0.438 ± 0.058     0.454 ± 0.059     0.475 ± 0.030      0.524 ± 0.019   0.578 ± 0.032
+                                           CE                0.247 ± 0.008     0.292 ± 0.014     0.301 ± 0.014      0.340 ± 0.016   0.398 ± 0.007
+                                           FL                0.254 ± 0.012     0.294 ± 0.021     0.299 ± 0.015      0.337 ± 0.009   0.395 ± 0.018
+                                                             0.247 ± 0.008     0.286 ± 0.014     0.290 ± 0.020      0.340 ± 0.005   0.381 ± 0.014
+                                F1-score
+
+
+
+
+                                           CE ROS
+                                           CE DirPA          0.271 ± 0.012     0.289 ± 0.008     0.305 ± 0.013      0.353 ± 0.004   0.399 ± 0.007
+                                           FL DirPA          0.252 ± 0.027     0.277 ± 0.041     0.310 ± 0.020      0.340 ± 0.014   0.392 ± 0.019
+                                           CE PRESTO         0.214 ± 0.017     0.289 ± 0.008     0.273 ± 0.024      0.320 ± 0.016   0.362 ± 0.017
+                                           CE PRESTO DirPA   0.190 ± 0.036     0.269 ± 0.035     0.258 ± 0.042      0.317 ± 0.010   0.357 ± 0.020
+
+
+                                                                   (b) Classification results on HCAT level 3.
+
+                                           Algorithm/Loss    Benchmark task (k-shot)
+                                                                  1                    5               10               20              100
+                                           CE                0.456 ± 0.014    0.518 ± 0.012      0.528 ± 0.014     0.566 ± 0.021    0.618 ± 0.013
+                                           FL                0.476 ± 0.036    0.530 ± 0.032      0.532 ± 0.031     0.577 ± 0.005    0.627 ± 0.025
+                              Accuracy
+
+
+
+
+                                           CE ROS            0.456 ± 0.014    0.509 ± 0.022      0.530 ± 0.026     0.575 ± 0.019    0.604 ± 0.015
+                                           CE DirPA          0.555 ± 0.020    0.539 ± 0.019      0.541 ± 0.015     0.596 ± 0.007    0.626 ± 0.007
+                                           FL DirPA          0.537 ± 0.028    0.538 ± 0.030      0.515 ± 0.018     0.589 ± 0.018    0.612 ± 0.028
+                                           CE PRESTO         0.434 ± 0.031    0.481 ± 0.009      0.463 ± 0.009     0.559 ± 0.013    0.599 ± 0.017
+                                           CE PRESTO DirPA   0.457 ± 0.052    0.488 ± 0.044      0.497 ± 0.025     0.557 ± 0.014    0.606 ± 0.025
+                                           CE                0.375 ± 0.009    0.417 ± 0.012      0.422 ± 0.012     0.462 ± 0.016    0.504 ± 0.007
+                                           FL                0.389 ± 0.026    0.419 ± 0.021      0.427 ± 0.017     0.471 ± 0.003    0.510 ± 0.016
+                                                             0.375 ± 0.009    0.405 ± 0.012      0.414 ± 0.008     0.466 ± 0.015    0.493 ± 0.011
+                              F1-score
+
+
+
+
+                                           CE ROS
+                                           CE DirPA          0.423 ± 0.010    0.427 ± 0.011      0.434 ± 0.010     0.478 ± 0.002    0.513 ± 0.007
+                                           FL DirPA          0.404 ± 0.019    0.416 ± 0.026      0.414 ± 0.013     0.474 ± 0.012    0.500 ± 0.020
+                                           CE PRESTO         0.343 ± 0.003    0.396 ± 0.009      0.378 ± 0.012     0.450 ± 0.010    0.491 ± 0.012
+                                           CE PRESTO DirPA   0.327 ± 0.054    0.389 ± 0.037      0.397 ± 0.018     0.453 ± 0.007    0.499 ± 0.011
+
+
+
+
+                                                                                           16
+                                     1                                                                                                                  1
+    Bhattacharyya distance (DB )
+
+
+
+
+                                                                                                                       Bhattacharyya distance (DB )
+                                   0.8                                                                                                                0.8
+          Cohen’s kappa
+
+
+
+
+                                   0.6                                                                                                                0.6
+
+
+                                   0.4                                                                                                                0.4
+
+
+                                   0.2                                                                                                                0.2
+                                      0.6     0.65       0.7      0.75       0.8     0.85        0.9       0.95                                          0.6     0.65       0.7       0.75      0.8      0.85      0.9   0.95
+                                                               Gini coefficient (CG )                                                                                              Gini coefficient (CG )
+
+                                    1                                                                                                                  1
+   Bhattacharyya distance (DB )
+
+
+
+
+                                                                                                                       Bhattacharyya distance (DB )
+                                   0.8                                                                                                                0.8
+           Accuracy
+
+
+
+
+                                   0.6                                                                                                                0.6
+
+
+                                   0.4                                                                                                                0.4
+
+
+                                   0.2                                                                                                                0.2
+                                      0.6     0.65       0.7      0.75       0.8     0.85        0.9       0.95                                          0.6     0.65       0.7       0.75      0.8     0.85       0.9   0.95
+                                                               Gini coefficient (CG )                                                                                              Gini coefficient (CG )
+
+                                    1                                                                                                                  1
+   Bhattacharyya distance (DB )
+
+
+
+
+                                                                                                                       Bhattacharyya distance (DB )
+
+
+
+
+                                   0.8                                                                                                                0.8
+            F1-score
+
+
+
+
+                                   0.6                                                                                                                0.6
+
+
+                                   0.4                                                                                                                0.4
+
+
+                                   0.2                                                                                                                0.2
+                                      0.6     0.65       0.7      0.75       0.8     0.85        0.9       0.95                                          0.6     0.65       0.7       0.75      0.8     0.85       0.9   0.95
+                                                               Gini coefficient (CG )                                                                                              Gini coefficient (CG )
+
+
+                                     (a) Performance gain for CE DirPA compared to its CE baseline.                                                     (b) Performance gain for FL DirPA compared to its FL baseline.
+
+
+                                                       Belgium           Estonia        Latvia        Lithuania        Portugal                                 Slovakia          Slovenia      Spain
+
+
+Figure 8. Performance gains achieved by applying DirPA, visualized relative to the Bhattacharyya distance (cf. Table 4) and Gini coefficient (cf. Table 3). Circular
+markers denote performance gains, while crosses represent losses of the DirPA method. The marker sizes indicate the magnitude of gains or losses compared to the
+respective baseline. An increasing DB is equivalent to a decreasing number of k in the few-shot scenario and represents a bigger prior shift. For Lithuania and Spain,
+DB stays constant since the relative class distribution remains the same in each few-shot task.
+
+
+
+                       HCAT level 3 in Table 7b, where FL DirPA is the top per-                                                                        and loss functions. When combined with FL, the method
+                       former in nearly every scenario, with the sole exception of                                                                     also enhances F1-scores across nearly all benchmarks,
+                       the F1-score at 100-shots. Meanwhile, adding prior aug-                                                                         except for the 10-shot scenario, where it exhibits a loss
+                       mentation to CE improves both accuracy and F1-scores                                                                            of around 7%. For CE, this multi-metric improvement is
+                       on parent-level classes for 1-, 10-, and 20-shot settings.                                                                      observed for both 1- and 20-shot tasks. Regarding HCAT
+                                                                                                                                                       level 3 performance (Table 8b), DirPA consistently out-
+Lithuania For fine-grained classification (Table 8a), incorpor-                                                                                        performs its baselines across both evaluation metrics and
+     ating DirPA yields considerable improvements in both                                                                                              all few-shot settings, regardless of the loss function.
+     Cohen’s kappa and accuracy across all few-shot scenarios
+
+                                                                                                                  17
+                                   1                                                                                                                   1
+   Bhattacharyya distance (DB )
+
+
+
+
+                                                                                                                       Bhattacharyya distance (DB )
+                                  0.8                                                                                                                 0.8
+           Accuracy
+
+
+
+
+                                  0.6                                                                                                                 0.6
+
+
+                                  0.4                                                                                                                 0.4
+
+
+                                  0.2                                                                                                                 0.2
+                                     0.6     0.65       0.7      0.75       0.8     0.85        0.9       0.95                                           0.6     0.65       0.7       0.75      0.8     0.85       0.9   0.95
+                                                              Gini coefficient (CG )                                                                                               Gini coefficient (CG )
+
+                                   1                                                                                                                   1
+   Bhattacharyya distance (DB )
+
+
+
+
+                                                                                                                       Bhattacharyya distance (DB )
+                                  0.8                                                                                                                 0.8
+            F1-score
+
+
+
+
+                                  0.6                                                                                                                 0.6
+
+
+                                  0.4                                                                                                                 0.4
+
+
+                                  0.2                                                                                                                 0.2
+                                     0.6     0.65       0.7      0.75       0.8     0.85        0.9       0.95                                           0.6     0.65       0.7       0.75      0.8     0.85       0.9   0.95
+                                                              Gini coefficient (CG )                                                                                               Gini coefficient (CG )
+
+
+                                    (a) Performance gain for CE DirPA compared to its CE baseline.                                                      (b) Performance gain for FL DirPA compared to its FL baseline.
+
+
+                                                      Belgium           Estonia        Latvia        Lithuania         Portugal                                 Slovakia          Slovenia      Spain
+
+
+Figure 9. Performance gains on HCAT level 3 achieved by applying DirPA, visualized relative to the Bhattacharyya distance (cf. Table 4) and Gini coefficient
+(cf. Table 3). Circular markers denote performance gains, while crosses represent losses of the DirPA method. The marker sizes indicate the magnitude of gains or
+losses in metrics compared to the respective baseline. An increasing DB is equivalent to a decreasing number of k in the few-shot scenario and represents a bigger
+prior shift. For Lithuania and Spain, DB stays constant since the relative class distribution remains the same in each few-shot task.
+
+
+
+Portugal The results for Portugal (Table 9) are more nuanced.                                                         Slovenia Adding prior augmentation consistently improves both
+     However, DirPA still facilitates several key improvements.                                                            Cohen’s kappa and accuracy for all few-shot scenarios,
+     For HCAT level 6, it achieves joint superiority across all                                                            regardless of the loss function used (Table 11a). Further-
+     three metrics for 10- and 20-shot when used with CE and                                                               more, for k ∈ {1, 5, 20}, it either improves or matches (20-
+     for 10-, 20-, and even 100-shot when adding it to FL.                                                                 shot CE) the F1-scores. For the 10- and 100-shot scenario,
+     Parent-level metrics also benefit substantially, particularly                                                         DirPA falls slightly behind the baselines, showing a mar-
+     in the mid-range few-shot tasks (k ∈ {5, 10, 20}) for CE                                                              ginally lower F1-score of 8% or 12% when incorporated
+     and for k ∈ {1, 10, 100} for FL.                                                                                      with CE and 5% or 14% when added to FL. This perform-
+                                                                                                                           ance advantage is even more pronounced for parent-level
+Slovakia For fine-grained classification in Slovakia (Table 10a),                                                          classes (Table 11b), where DirPA consistently achieves
+     adding Dirichlet priors to CE leads to a marked improve-                                                              higher accuracies and F1-scores across all few-shot tasks
+     ment in kappa and accuracy for k ≥ 5, with 5- and 10-                                                                 and loss functions.
+     shot tasks showing superiority across all three metrics.
+     When paired with FL, DirPA outperforms the standard                                                              Spain For few-shot classification in Spain (Table 12), incorpor-
+     FL baseline for every few-shot scenario in terms of kappa                                                             ating prior augmentation with CE results in consistent—
+     and accuracy, while also achieving higher F1-scores for                                                               and most often substantial—improvements across all three
+     5-, 10-, and 20-shot. On broader parent-level crop types                                                              metrics for both HCAT levels. The sole exception is 5-
+     (Table 10b), adding Dirichlet prior augmentation consist-                                                             shot F1, where the decline is negligible at just 2%. In
+     ently achieves higher accuracies and F1-scores, except                                                                contrast, when paired with FL, DirPA shows less consist-
+     for CE in the 10-shot benchmark, where it matches its                                                                 ent gains, particularly regarding F1-scores. However, for
+     baseline.                                                                                                             1-, 5-, and 20-shot, it substantially enhances both kappa
+                                                                                                                           and accuracy for HCAT level 6 (cf. Table 12a). In the 20-
+                                                                                                                 18
+                                                         high density               stability of the DirPA method, suggesting that the Dirichlet prior
+                                                                                    induces a form of universal regularization and improves model
+                                                                                    robustness. The chance-corrected gains in Cohen’s kappa across
+                                                                                    all countries confirm that these improvements represent a genu-
+                                                                                    ine increase in discriminative power, rather than being a result
+                                                                                    of frequentist exploitation.
+                                                                                         In low-shot regimes, when training sets are inherently bal-
+                                                                                    anced by the k-shot sampling strategy, and data is extremely
+                                                                   low density      scarce, DirPA prevents feature hallucination. While standard
+                                                                                    Softmax forces a hard point-estimate choice, DirPA maps the
+                                                                                    features to a density on the (K − 1)-simplex, as visualized in
+Figure 10. Comparison of predictive output space on the 2-simplex ∆ for       2     Figure 10. This allows the model to capture uncertainty arising
+a three-class classification (c1 , c2 , c3 ). The Softmax function reduces feature  from data scarcity, preventing overconfidence in poor features
+information to a single coordinate on the simplex, producing a point estimate.      and leading to higher kappa scores. As a result, DirPA maxim-
+In contrast, the Dirichlet distribution maps features to a probability density over izes system-wide reliability, achieving large gains in kappa and
+the simplex, thereby capturing epistemic uncertainty.
+                                                                                    accuracy, cf. Figure 8. In contrast, DirPA outperforms random
+                                                                                    oversampling, which in several scenarios even falls below the
+        shot scenario, DirPA demonstrates superiority over its FL                   CE baseline, suggesting that duplicating scarce samples does
+        baseline across all three metrics. Notably, in contrast to                  not resolve the underlying prior shift.
+        other countries, the combination of FL and DirPA appears                         Conversely, in high-shot regimes, where the natural class
+        less effective for parent-level classes (Table 12b), where                  imbalance   begins to re-emerge in the training data (Table 4), the
+        accuracy and F1-score improvements are confined to the                      prior  augmentation   shifts to preventing majority-class domin-
+        1- and 20-shot benchmarks.                                                  ance.  Consequently,   higher performance gains in class-specific
+                                                                                    metrics are observed for higher k (equivalent to lower DB ), mean-
+CE ROS Regarding Cohen’s kappa and accuracy, CE DirPA                               ing bigger prior shifts. Importantly, integrating DirPA does not
+        outperforms random oversampling in most cases, with the                     introduce performance penalties in higher-shot environments.
+        latter often falling below the CE baseline. Random over-                    Confirming our previous findings in Reuss et al. (2026a), all
+        sampling achieves its strongest results when measured in                    evaluated methods converge to a similar performance ceiling in
+        F1-score, outperforming other methods at HCAT level 6                       high-shot scenarios. Ultimately, the efficacy of DirPA is strongly
+        in Latvia for 1- and 5-shot (Table 7a) and Lithuania for                    correlated with the dataset’s structural inequality. Countries with
+        10- and 100-shot (Table 8a). For 1-shot in Slovakia it even                 extreme class imbalance (Table 3), like Belgium (CG = 0.939),
+        shows superior performance across all metrics (Table 10a).                  Slovenia (CG = 0.928), and Estonia (CG = 0.919), benefit most
+        Additional gains are observed at the parent level in Bel-                   from this regularization, where countries with smaller Gini coef-
+        gium for 1- and 10-shot (Table 5b) and Portugal for 1-shot                  ficients, such as Spain and Lithuania, often benefit less in terms
+        (Table 9b) in terms of both accuracy and F1-score. How-                     of kappa, as visualized in Figures 8 and 9. Notably, these gains
+        ever, these results remain limited to specific settings and                 extend across architectures: DirPA consistently improves kappa
+        do not generalize across all metrics or a broader range of                  and accuracy for PRESTO in low-shot regimes, confirming that
+        scenarios.                                                                  the prior augmentation is architecture-agnostic. The consider-
+                                                                                    able increases in Cohen’s kappa combined with decreases in
+PRESTO For CE PRESTO, evaluated on Belgium (Table 5a),
+                                                                                    F1-scores for PRESTO suggest that the CE PRESTO baseline
+        Estonia (Table 6a), Slovenia (Table 11a) and Spain (Table 12a),
+                                                                                    may have achieved relatively higher F1-scores through unstable
+        incorporating prior augmentation consistently improves
+                                                                                    or spurious predictions on individual classes rather than consist-
+        Cohen’s kappa and accuracy for k ≤ 10. Slovenia and
+                                                                                    ent discrimination, which DirPA appears to regularize.
+        Spain retain these gains across all few-shot settings, as
+                                                                                         While initial experiments (Reuss et al., 2026a) did not show
+        does Estonia up to 20-shot. F1-scores at HCAT level 6
+                                                                                    any improvement in F1-scores, our results on the adapted, real-
+        decrease when adding DirPA across all countries and shot
+                                                                                    world dataset split, as outlined in Section 3.2, often demonstrate
+        settings. At the broader HCAT level 3, DirPA improves
+                                                                                    DirPA’s superiority even in terms of F1-scores. This indicates
+        accuracy across most settings and countries, with Estonia
+                                                                                    that for DirPA to effectively improve per-class discriminative
+        (Table 12b) showing stable gains in both accuracy and
+                                                                                    power, the model must be exposed to training samples from
+        F1-score across all few-shot settings.
+                                                                                    all target classes. By ensuring representation of all classes in
+                                                                                    the training set and maximizing overlap between splits, the
+7. Discussion                                                                       method can correctly regularize the feature space based on the
+                                                                                    actual crop types rather than generalizing to unseen categories.
+     The empirical results in Section 6 across eight diverse coun-                  Nevertheless, most consistent improvements are observed in
+tries show a consistent and significant performance gain over                       Cohen’s kappa and overall accuracy. As noted by Reuss et al.
+standard baselines, particularly in low-shot regimes (k ≤ 20), as                   (2026b), this represents a necessary trade-off to achieve super-
+shown in Figures 8 and 9. This underscores the cross-dataset                        ior global performance. The strong regularization required for
+                                                                         19
+overall stability can sometimes lead to over-smoothed bound-                there, making it less conclusive. Lithuania shows the oppos-
+aries for high-resource categories. This minor localized loss is            ite pattern. FL already outperforms the CE baseline, and FL
+outweighed by the improved global classification reliability (κ),           DirPA additionally achieves larger gains over its baseline than
+ensuring the model is more effective at handling the dataset’s full         CE. Difficulty-weighting and prior adjustment are here genu-
+class variability. Overall, F1-scores remain constrained by the             inely complementing each other. Latvia presents a particularly
+dataset’s extreme class imbalance and high cardinality. These               interesting case. The two baselines perform nearly identical,
+lower values reflect the fundamental difficulty of maintaining              yet FL DirPA achieves substantially larger gains than its CE
+high precision and recall across a large number of low-resource,            counterpart, suggesting a strong and specific interaction between
+long-tail classes, in particular in low-shot regimes.                       focal loss and the DirPA adjustment that warrants further invest-
+    A key finding is the superior performance of DirPA across               igation in future work. Slovakia and Portugal show small and
+broader parent classes, particularly in F1-scores. This also un-            largely symmetric gains for both variants with no clear winner,
+derscores the improved system robustness achieved by incorpor-              while Spain, despite having the lowest and constant prior mis-
+ating Dirichlet priors. Even in cases where the model fails to              match (cf. Table 4), shows larger relative gains for CE DirPA.
+distinguish between fine-grained crop types—leading to lower                This is possibly because when training and test distributions are
+fine-grained F1-scores—, it almost consistently better identifies           already closely aligned, the prior adjustment has less corrective
+the parent land cover category. The higher kappa scores and                 work to do and the additional interaction between FL’s difficulty-
+overall accuracies at the fine-grained level, paired with superior          weighting and the prior adjustment provides little further benefit
+parent-level F1-scores, suggest that the system’s errors are often          over CE DirPA.
+restricted to closely related sub-classes within the same correct               While the symmetric Dirichlet (α = α · 1) serves as our
+parent category, rather than being total classification failures.           robust baseline, we also investigated an asymmetric variant (Re-
+Importantly, this emerges without any explicit use of the data-             uss et al., 2026a). Our intuition was to amplify the signal for
+set’s label hierarchy during training, since DirPA operates purely          a selected focus class, which we randomly sample at each step
+at the most granular class level. The evaluation across addi-               s and assign a different value to its concentration parameter α.
+tional class granularities was conducted post hoc, as explained             However, empirical results on Estonia, Belgium, and Slovenia
+in Section 6, and serves solely as an additional evaluation. This           showed that this asymmetric sampling did not yield a perform-
+indicates that DirPA additionally acts as a hierarchical stabilizer,        ance gain over the simpler symmetric version. This suggests that
+not just a class-specific one, a promising but secondary finding            the original method already provides sufficient regularization
+that provides direction for future research. In contrast to the per-        and that the additional complexity of a class-specific focus does
+formance gains for fine-grained classification, when evaluated              not offer further discriminative advantages.
+on HCAT level 3, DirPA most often exhibits the highest per-
+formance gains in F1 with an increasing number of shots. This               8. Conclusion
+disparity in F1-score gains across different hierarchical levels
+reveals that DirPA’s regularization mechanism adapts to data                     This study presents a geographically extended application
+availability. In very low-shot scenarios, it mitigates catastrophic         of the Dirichlet Prior Augmentation method, which aims to
+misclassifications between unrelated land-cover types. As k in-             bridge the prior shift between balanced few-shot training sets
+creases and class features become better defined, it transitions            and imbalanced test data. By augmenting the training data with
+from providing structural stability to refining class boundaries.           dynamically sampled Dirichlet pseudo-priors, DirPA encourages
+This enhances the separation between closely related crop types,            the model to learn feature representations that are robust across a
+thus leading to higher gains in fine-grained F1-scores.                     variety of potential class distributions. Instead of converging to
+    Comparing CE DirPA with FL DirPA does not yield a uni-                  a rigid point estimate based on a fixed prior, the model is regular-
+versal performance advantage across all countries but rather                ized to maintain discriminative power across the (K −1)-simplex,
+highlights a distinct, country-level performance split. The differ-         capturing the uncertainty inherent in few-shot regimes. Notably,
+ences are mostly consistent across both label granularity levels            as DirPA is already applied during the fine-tuning training stage,
+and most pronounced on kappa and accuracy, while F1-scores                  it results in a fixed pipeline requiring no further adjustment after
+show negligible differences between the two loss variants in                deployment at inference time—a major practical advantage for
+almost all countries. In countries with high prior mismatch, such           non-technical users such as agriculturalists.
+as Belgium and Estonia (cf. Bhattacharyya distance, Table 4), CE                 Our evaluation across eight EU countries and various model
+already performs comparably to or better than the FL at baseline            architectures demonstrates the method’s cross-dataset and archi-
+and CE DirPA consistently achieves larger gains over its baseline           tectural robustness, yielding consistent improvements in Cohen’s
+than FL DirPA does over its own. A possible explanation is that             kappa and overall accuracy. In particular for low-shot regimes,
+under strong prior mismatch, the prior adjustment interacts more            DirPA maximizes system-wide reliability. Notably, the most
+effectively with CE, while the combination of FL’s focusing                 substantial gains were observed in countries with extreme class
+parameter γ and the prior adjustment results in less pronounced             imbalance (high Gini coefficients). This confirms that DirPA
+improvements, suggesting that the two mechanisms partially                  effectively mitigates the structural inequalities inherent in real-
+overlap when applying corrections, even if both individually                world few-shot crop classification datasets. Crucially, our exper-
+remain beneficial. Slovenia shows a similar pattern in terms of             iments with a realistic, comprehensive dataset split demonstrate
+gain magnitude, though the two baselines are nearly identical               that DirPA’s ability to enhance F1-scores depends on the model
+                                                                       20
+                 Table A.13. Hardware specifications.                             Table B.14. Pre-training hyperparameters. The hyperparameters utilized during
+                                                                                  pre-training, along with their corresponding valid values.
+Node(s)   GPU                  VRAM    CPU              vCPUs Architecture
+1–3       NVIDIA RTX A6000     48GB    Intel Xeon         12   Ampere                            hyperparameter                               value / value range
+4         NVIDIA A100-SXM4     40GB    AMD EPYC           24   Ampere
+                                                                                                 training/tuning epochs                                  100
+                                                                                                 tuning trials per setup                                  24
+being exposed to all target classes during training, rather than
+                                                                                                 tuning warmup steps (batches)                          5000
+attempting to generalize to zero-shot categories (cf. Reuss et al.,
+2026a). Given the highest gains in higher-shot scenarios, we                                     early stopping patience (epochs)                         15
+found that DirPA maximizes class-specific performance when                                       batch size b                                            256
+                                                                                                                                               h             i
+there is enough data to learn class boundaries.                                                  learning rate β                                 10−4 , 10−2
+    Furthermore, while the method occasionally trades off fine-                                  cosine annealing cycles                                    1
+grained class-specific performance due to the over-smoothing
+                                                                                                 cosine annealing cycles warmup epochs                      1
+of decision boundaries, it notably enhances hierarchical consist-
+ency, ensuring that parent-level land cover classes are correctly                                label smoothing factor                                   0.1
+identified even when sub-class distinctions fail. This superior
+performance provides a compelling argument for incorporating                      Table B.15. General fine-tuning hyperparameters. The hyperparameters utilized
+DirPA into hierarchical crop-type classification frameworks in                    during fine-tuning, along with their corresponding valid values.
+future work.
+    Despite the effectiveness of the DirPA method, challenges                     hyperparameter                                    value / value range
+remain. For instance, its performance gain is highly dependent
+                                                                                  training/tuning epochs                                                               200
+on identifying the optimal values for hyperparameters α and τ,
+cf. Appendix B.2.1. Hence, additional preliminary experiments                     tuning trials per setup   †
+                                                                                                                                                         {32, 40, 72, 80}
+aimed at dynamically learning the Dirichlet concentration para-                   tuning warmup steps (batches)                                                        300
+meter α. However, we were not yet able to achieve significant                     early stopping patience (epochs)                                                       20
+improvements over the fixed-parameter setup. These initial res-                   batch size b                                                                           16
+ults suggest that optimizing α is non-trivial and warrants further                                                                                          h             i
+                                                                                  head learning rate βhead                                                   10−6 , 10−2
+investigation.                                                                                                                                              h             i
+                                                                                  backbone learning rate βbackbone                                           10−7 , 10−3
+                                                                                  backbone freezing (epochs)                                               {0, 2, 5, 8, 15}
+CRediT authorship contribution statement
+                                                                                  focal loss focusing parameter γ                                     {1.0, 1.5, 2.0, 3.0}
+    J. Reuss: Conceptualization, Data curation, Formal analysis,                     † Depending on the algorithm and, hence, tunable parameters, we use a
+Investigation, Methodology, Resources, Software, Validation,                           different number of tuning trials. We set them as follows: 32 (CE), 40 (FL),
+Visualization, Writing – original draft, Writing – review & edit-                      72 (CE with DirPA), 80 (FL with DirPA).
+ing. E. Gikalo: Investigation, Visualization, Writing – original
+draft, Writing – review & editing. M. Körner: Funding acquis-
+                                                                                  Appendix B. Hyperparameter tuning
+ition, Project administration, Supervision, Writing – review &
+editing.                                                                          Appendix B.1. Pre-training
+                                                                                      The performance on the validation set is used to select the
+Acknowledgments                                                                   best hyperparameters and the model to be used for fine-tuning.
+                                                                                  We employ a total of 5000 warm-up steps (corresponding to
+    The project is funded by the German Federal Ministry for                      batches) and keep the top 75th percentile of runs. We use the best
+Economic Affairs and Energy based on a decision by the German                     validation accuracy to determine the best pre-training epoch and
+Bundestag under the funding references 50EE2007B (J. Reuss,                       model state, which is subsequently used to initialize the model
+E. Gikalo, and M. Körner) and 50EE2105 (M. Körner).                               backbone weights before fine-tuning. The exact hyperparameter
+                                                                                  values or value ranges are listed in Table B.14.
+Appendix A. Implementation and hardware details
+                                                                                  Appendix B.2. Fine-tuning
+    We implemented all algorithms within the PyTorch frame-                           For fine-tuning, we use only 300 warm-up steps while again
+work (Paszke et al., 2019) for machine learning and automatic                     keeping the 75th percentile of runs. Furthermore, we treat back-
+differentiation. For all experiments, we used the Adam optimizer.                 bone freezing as a tunable hyperparameter. Finally, the model
+    The experiments were distributed across four virtualized                      state exhibiting the best validation kappa score is used to com-
+machines with different hardware specifications, as detailed in                   pute the final reported model performance metrics on the fine-
+Table A.13.                                                                       tuning test dataset. The exact hyperparameter values or value
+                                                                                  ranges are listed in Tables B.15 and B.16.
+
+                                                                             21
+Table B.16. DirPA fine-tuning hyperparameters. The DirPA hyperparameters
+utilized during fine-tuning, along with their corresponding valid values.
+
+
+       hyperparameter              value / value range
+
+       DirPA concentration α       {0.01, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0}
+       DirPA scaling factor τ               {0.5, 1.0, 2.0, 5.0, 10.0}
+
+Table B.17. Median of selected optimal values of DirPA hyperparameters with
+cross-entropy loss, calculated based on finding the optimal hyperparameter
+values to maximize Cohen’s kappa. The median is calculated over five Optuna
+studies with different random seeds.
+
+                             (a) Concentration parameter α.
+
+           Country      benchmark task (k-shot)                                    Table B.18. Median of selected optimal values of DirPA hyperparameters with
+                                                                                   focal loss, calculated based on finding the optimal hyperparameter values to
+                        1            5         10        20        100             maximize Cohen’s kappa. The median is calculated over five Optuna studies
+                                                                                   with different random seeds.
+           Belgium      0.10         1.00      2.00      0.10      0.50
+           Estonia      0.50         0.10      0.10      0.01      1.00                                       (a) Concentration parameter α.
+           Latvia       0.50         1.00      0.50      3.00      0.75
+           Lithuania    0.75         1.00      1.00      0.75      3.00                       Country     benchmark task (k-shot)
+
+           Portugal     1.00         0.75      0.75      1.00      1.50                                   1           5         10        20     100
+           Slovakia     5.00         0.75      0.50      0.75      1.00
+                                                                                              Belgium     2.00        0.10      0.50      2.00   0.50
+           Slovenia     2.00         2.00      0.10      0.10      1.00
+                                                                                              Estonia     0.10        0.10      0.01      0.10   0.10
+           Spain        0.10         3.00      0.50      2.00      3.00
+                                                                                              Latvia      1.00        0.75      0.01      1.50   1.00
+                             (b) Temperature parameter τ.
+                                                                                              Lithuania   2.00        0.10      0.01      0.10   0.50
+                                                                                              Portugal    0.50        1.00      0.50      0.50   3.00
+           Country       benchmark task (k-shot)                                              Slovakia    3.00        0.75      0.75      1.50   1.00
+                                                                                              Slovenia    0.10        0.01      1.50      0.10   0.10
+                         1           5          10          20     100
+                                                                                              Spain       0.50        1.00      0.50      0.50   0.50
+           Belgium        2.0         5.0        5.0        10.0    5.0
+           Estonia        5.0        10.0        5.0         5.0   10.0                                       (b) Temperature parameter τ.
+           Latvia         5.0        10.0       10.0         5.0    2.0
+           Lithuania     10.0         5.0        5.0         2.0    5.0                       Country     benchmark task (k-shot)
+
+           Portugal       2.0         5.0        2.0         1.0    1.0                                   1           5         10        20     100
+           Slovakia      10.0        10.0        5.0        10.0   10.0
+                                                                                              Belgium     10.0        10.0      10.0      10.0   1.000
+           Slovenia      10.0        10.0       10.0        10.0   10.0
+                                                                                              Estonia     10.0         2.0       5.0      10.0     5.0
+           Spain         10.0         2.0        2.0         5.0    5.0
+                                                                                              Latvia      10.0         1.0       5.0       5.0      2.0
+                                                                                              Lithuania   10.0         5.0       1.0      10.0     2.0
+                                                                                              Portugal    10.0         5.0       1.0       2.0     2.0
+Appendix B.2.1. DirPA hyperparameters analysis
+                                                                                              Slovakia     5.0        10.0      10.0      10.0    10.0
+    Tables B.17 and B.18 show the median values of the DirPA
+                                                                                              Slovenia     2.0        10.0      10.0       5.0    10.0
+hyperparameters α and τ selected for the final training runs
+                                                                                              Spain        5.0        10.0       1.0       1.0      2.0
+across countries and few-shot scenarios. Although a comparison
+of these values does not reveal a consistent numerical pattern
+or trend, optimal values for α are rather low, while for τ, 10
+was most often selected, resulting in a strong prior adjustment.
+Furthermore, an analysis of DirPA hyperparameter importances
+across all investigated countries and loss functions does not
+provide a clear trend. In fact, Tables B.19 and B.20 show that the
+relative importance of α and τ varies severely across countries
+and data regimes. Thus, as optimal settings depend heavily
+on the specific dataset, we conclude that there is no universal
+recommendation for configuring these hyperparameters. We
+therefore recommend using a predefined search space of possible
+values, as detailed in Table B.16, and tuning to find the optimal
+value.
+
+                                                                              22
+                                                                                         Table B.20. Relative importance of DirPA hyperparameters with focal loss,
+Table B.19. Relative importance of DirPA hyperparameters with cross-entropy              calculated based on finding the optimal hyperparameter values to maximize
+loss, calculated based on finding the optimal hyperparameter values to maximize          Cohen’s kappa. The values represent the median over five Optuna studies with
+Cohen’s kappa. The values represent the median over five Optuna studies with             different random seeds. Please note that an additional hyperparameter (FL
+different random seeds. The relative importance is calculated based on a total of        focus parameter γ) was taken into account in these studies. Thus, the relative
+five tunable hyperparameters.                                                            importance of α and τ is calculated against a broader set of parameters (six in
+                                                                                         total) and, therefore, not directly comparable to the ones in Table B.19.
+                          (a) Concentration parameter α.
+                                                                                                                  (a) Concentration parameter α.
+        Country     benchmark task (k-shot)
+                                                                                                Country      benchmark task (k-shot)
+                    1          5              10          20       100
+                                                                                                             1          5              10         20       100
+        Belgium     0.139      0.341          0.189       0.230    0.332
+        Estonia     0.273      0.426          0.437       0.589    0.163                        Belgium      0.114      0.209          0.130      0.344    0.228
+        Latvia      0.121      0.146          0.171       0.205    0.106                        Estonia      0.560      0.319          0.373      0.258    0.121
+        Lithuania   0.086      0.135          0.086       0.069    0.058                        Latvia       0.161      0.245          0.213      0.240    0.390
+        Portugal    0.111      0.140          0.200       0.147    0.086                        Lithuania    0.082      0.284          0.472      0.415    0.219
+        Slovakia    0.070      0.144          0.090       0.179    0.112                        Portugal     0.234      0.106          0.229      0.176    0.312
+        Slovenia    0.290      0.376          0.242       0.351    0.120                        Slovakia     0.046      0.141          0.111      0.094    0.084
+        Spain       0.250      0.205          0.090       0.165    0.191                        Slovenia     0.236      0.360          0.277      0.566    0.383
+                                                                                                Spain        0.341      0.237          0.200      0.168    0.237
+                           (b) Temperature parameter τ.
+                                                                                                                   (b) Temperature parameter τ.
+        Country     benchmark task (k-shot)
+                                                                                                 Country     benchmark task (k-shot)
+                    1           5             10           20      100
+                                                                                                             1           5             10          20      100
+        Belgium     0.111       0.113         0.091        0.410   0.104
+        Estonia     0.057       0.325         0.165        0.123   0.413                         Belgium     0.146       0.254         0.083       0.178   0.171
+        Latvia      0.148       0.109         0.220        0.194   0.118                         Estonia     0.103       0.157         0.119       0.213   0.022
+        Lithuania   0.156       0.226         0.130        0.137   0.141                         Latvia      0.131       0.243         0.163       0.113   0.095
+        Portugal    0.110       0.312         0.079        0.142   0.075                         Lithuania   0.115       0.176         0.093       0.057   0.107
+        Slovakia    0.040       0.298         0.251        0.249   0.224                         Portugal    0.107       0.126         0.048       0.134   0.123
+        Slovenia    0.062       0.193         0.144        0.273   0.369                         Slovakia    0.118       0.207         0.132       0.398   0.334
+        Spain       0.078       0.054         0.041        0.089   0.108                         Slovenia    0.071       0.136         0.081       0.118   0.173
+                                                                                                 Spain       0.118       0.034         0.056       0.076   0.059
+
+
+
+
+                                                                                    23
+Table B.21. Fine-tuning runtimes for final training on Belgium. We present the                      Table B.23. Fine-tuning runtimes for final training on Lithuania. We present
+average training time (in minutes) as mean ± standard deviation over five runs                      the average training time (in minutes) as mean ± standard deviation over five
+(seeds). The fastest run time per few-shot scenario is marked in bold.                              runs (seeds). The fastest run time per few-shot scenario is marked in bold.
+
+algorithm/loss     benchmark task (k-shot)                                                          algorithm/loss      benchmark task (k-shot)
+                   1               5             10               20              100                                   1               5                   10                   20                100
+CE                  13.3 ± 8.4     11.5 ± 4.4      13.6 ± 3.1     12.3 ± 2.5      20.0 ± 3.6        CE                   8.0 ± 2.7      11.5 ± 6.4             8.8 ± 2.0          7.7 ± 3.5          10.4 ± 1.7
+CE DirPA           9.62 ± 0.58     10.4 ± 1.4    10.12 ± 0.99     12.6 ± 2.9      17.5 ± 1.7        CE DirPA            15.5 ± 3.2      12.2 ± 3.4          13.18 ± 0.19         11.1 ± 2.4          10.2 ± 5.4
+FL                    6.7 ± 2.3     6.9 ± 2.7      10.8 ± 4.1     10.6 ± 2.9      13.4 ± 5.1        FL                  14.1 ± 4.7      11.5 ± 3.1            12.5 ± 4.2         13.0 ± 3.5          11.5 ± 2.9
+FL DirPA             6.7 ± 1.5      7.1 ± 3.1       9.5 ± 1.6      8.7 ± 1.5      12.7 ± 1.7        FL DirPA            12.8 ± 3.1      11.4 ± 2.5              9.6 ± 2.4        12.3 ± 1.7        11.86 ± 0.88
+
+
+Table B.22. Fine-tuning runtimes for final training on Estonia. We present the                      Table B.24. Fine-tuning runtimes for final training on Latvia. We present the
+average training time (in minutes) as mean ± standard deviation over five runs                      average training time (in minutes) as mean ± standard deviation over five runs
+(seeds). The fastest run time per few-shot scenario is marked in bold.                              (seeds). The fastest run time per few-shot scenario is marked in bold.
+
+  algorithm/loss       benchmark task (k-shot)                                                      algorithm/loss      benchmark task (k-shot)
+                       1           5              10            20             100                                      1                   5                    10                 20                100
+  CE                    15 ± 13    7.35 ± 0.80    8.9 ± 1.6     9.9 ± 1.6      17.2 ± 5.6           CE                     9.3 ± 1.9      12.2 ± 5.2              11.1 ± 1.2        13.0 ± 2.4        19.4 ± 6.5
+  CE DirPA             9.1 ± 2.6     7.0 ± 1.1    8.5 ± 1.8     8.6 ± 1.2      12.4 ± 2.4           CE DirPA               9.9 ± 1.1      10.4 ± 2.2               8.5 ± 2.7        10.8 ± 3.0        13.7 ± 5.1
+  FL                   9.1 ± 2.7       48 ± 36     37 ± 36       54 ± 35         32 ± 30            FL                  9.11 ± 0.73         9.0 ± 1.1            9.30 ± 0.30        11.5 ± 4.6        17.7 ± 3.6
+  FL DirPA              51 ± 32        52 ± 57     37 ± 35       21 ± 31       19.4 ± 9.0           FL DirPA              9.0 ± 1.4      8.67 ± 0.92              11.1 ± 1.6         9.9 ± 2.5        15.6 ± 1.2
+
+
+                                                                                                    Table B.25. Fine-tuning runtimes for final training on Portugal. We present the
+Appendix B.2.2. Runtime analysis                                                                    average training time (in minutes) as mean ± standard deviation over five runs
+     Tables B.21 to B.28 show a comparison of runtimes with and                                     (seeds). The fastest run time per few-shot scenario is marked in bold.
+without the DirPA method. While these values are not strictly
+comparable, as the experiments were partially conducted in par-                                        algorithm/loss       benchmark task (k-shot)
+
+allel on multiple machines with varying hardware specifications                                                             1                   5            10                20               100
+
+(cf. Table A.13), they still give an indication of the training time                                   CE                   6.1 ± 2.3           7.1 ± 1.3    7.6 ± 2.1         7.1 ± 2.2        11.3 ± 6.1
+                                                                                                       CE DirPA             5.0 ± 3.0           7.4 ± 2.6    6.3 ± 2.1         7.5 ± 1.9         9.9 ± 4.5
+required. Furthermore, the training time is influenced by early                                        FL                    21 ± 28             28 ± 30      36 ± 38           49 ± 59         14.7 ± 5.5
+stopping. This may also result in greater standard deviations.                                         FL DirPA             7.0 ± 3.5            21 ± 32      23 ± 26           34 ± 40         12.9 ± 8.2
+Nevertheless, no clear trend suggests that applying Dirichlet
+priors substantially increases training time. In fact, DirPA often                                  Table B.26. Fine-tuning runtimes for final training on Slovakia. We present the
+                                                                                                    average training time (in minutes) as mean ± standard deviation over five runs
+requires less training time on average than its counterpart.
+                                                                                                    (seeds). The fastest run time per few-shot scenario is marked in bold.
+
+                                                                                                    algorithm/loss      benchmark task (k-shot)
+                                                                                                                        1                   5                10                 20                100
+                                                                                                    CE                  7.89 ± 0.82         10.0 ± 3.6        9.7 ± 1.7         11.0 ± 2.9        16.1 ± 5.8
+                                                                                                    CE DirPA               7.2 ± 1.4         7.1 ± 3.3        8.0 ± 2.0          7.6 ± 2.5        14.1 ± 3.7
+                                                                                                    FL                     9.4 ± 2.5        11.3 ± 2.6       12.1 ± 6.1         12.7 ± 2.7          22 ± 16
+                                                                                                    FL DirPA              6.6 ± 2.6          8.8 ± 4.0        9.5 ± 3.4         11.4 ± 1.4        12.2 ± 2.3
+
+
+                                                                                                    Table B.27. Fine-tuning runtimes for final training on Slovenia. We present the
+                                                                                                    average training time (in minutes) as mean ± standard deviation over five runs
+                                                                                                    (seeds). The fastest run time per few-shot scenario is marked in bold.
+
+                                                                                                    algorithm/loss      benchmark task (k-shot)
+                                                                                                                        1               5                    10                 20                100
+                                                                                                    CE                   6.8 ± 2.2      9.55 ± 0.94          11.4 ± 4.2         10.6 ± 5.6        21.1 ± 6.2
+                                                                                                    CE DirPA            12.5 ± 2.0       12.1 ± 1.2          11.5 ± 1.1         11.9 ± 4.8        14.3 ± 4.4
+                                                                                                    FL                   8.6 ± 4.1       10.5 ± 2.0          11.7 ± 2.9         14.9 ± 8.5        19.4 ± 9.1
+                                                                                                    FL DirPA            10.2 ± 2.3       12.3 ± 3.9          13.3 ± 2.7         13.0 ± 1.4        17.3 ± 3.3
+
+
+                                                                                                    Table B.28. Fine-tuning runtimes for final training on Spain. We present the
+                                                                                                    average training time (in minutes) as mean ± standard deviation over five runs
+                                                                                                    (seeds). The fastest run time per few-shot scenario is marked in bold.
+
+                                                                                                    algorithm/loss      benchmark task (k-shot)
+                                                                                                                        1                   5                    10                 20            100
+                                                                                                    CE                  6.56 ± 0.84         6.42 ± 0.59           7.2 ± 1.3         6.7 ± 1.4      8.3 ± 3.1
+                                                                                                    CE DirPA             16.0 ± 6.1             31 ± 28            42 ± 38           39 ± 32        52 ± 31
+                                                                                                    FL                     8.4 ± 2.6           8.2 ± 2.3          6.6 ± 2.2         7.2 ± 1.7      7.1 ± 1.9
+                                                                                                    FL DirPA             10.2 ± 3.6          10.8 ± 3.9          11.4 ± 5.3         9.2 ± 4.3     10.1 ± 4.4
+
+
+                                                                                               24
+References                                                                Kluger, D.M., Wang, S., Lobell, D.B., 2021. Two shifts for
+                                                                            crop mapping: Leveraging aggregate crop statistics to im-
+Akiba, T., Sano, S., Yanase, T., Ohta, T., Koyama, M., 2019. Op-
+                                                                            prove satellite-based maps in new regions. Remote Sensing
+  tuna: A next-generation hyperparameter optimization frame-
+                                                                            of Environment 262. doi:10.1016/j.rse.2021.112488.
+  work, in: ACM SIGKDD International Conference on Know-
+  ledge Discovery and Data Mining (KDD), pp. 2623–2631.                   Kurian, V., Jacob, V., Kuruvilla, J., 2024. Approach of
+  doi:10.1145/3292500.3330701.                                              transfer learning in remote sensing image classification, in:
+                                                                            International Conference on Trends in Engineering Sys-
+Alem, A., Kumar, S., 2022. Transfer learning models for land
+                                                                            tems and Technologies (ICTEST), pp. 1–3. doi:10.1109/
+  cover and land use classification in remote sensing image.
+                                                                            ICTEST60614.2024.10576178.
+  Applied Artificial Intelligence 36. doi:10.1080/08839514.
+  2021.2014192.                                                           Lin, T.Y., Goyal, P., Girshick, R., He, K., Dollár, P., 2020.
+                                                                            Focal loss for dense object detection. IEEE Transactions
+Bermúdez, J.D., Achanccaray, P., Sanches, I., Cue La Rosa, L.,
+                                                                            on Pattern Analysis and Machine Intelligence 42, 318–327.
+  Happ, P., Feitosa, R., 2017. Evaluation of recurrent neural
+                                                                            doi:10.1109/TPAMI.2018.2858826.
+  networks for crop recognition from multitemporal remote
+  sensing images, in: XXVII Congresso Brasileiro de Carto-                Lipton, Z., Wang, Y.X., Smola, A., 2018. Detecting and correct-
+  grafia e XXVI Exposicarta, pp. 800–804.                                   ing for label shift with black box predictors, in: International
+Bhattacharyya, A., 1946. On a measure of divergence between                 Conference on Machine Learning (ICML), pp. 3122–3130.
+  two multinomial populations. Sankhyā: The Indian Journal               Louis, J., Devignot, O., Pessiot, L., 2022. Sentinel-2 MSI
+  of Statistics (1933-1960) 7, 401–406.                                     level-2A algorithms, products, and performance: Algorithm
+Ceriani, L., Verme, P., 2011. The origins of the gini index:                theoretical basis document. Technical Report S2-PDGS-
+  Extracts from variabilità e mutabilità (1912) by corrado gini.            MPC-ATBD-L2A, Issue 2.10. European Space Agency. URL:
+  The Journal of Economic Inequality 10, 421–443. doi:10.                   https://step.esa.int/thirdparties/sen2cor/2.
+  1007/s10888-011-9188-x.                                                   10.0/docs/S2-PDGS-MPC-L2A-ATBD-V2.10.0.pdf.
+                                                                            visited on Jan. 22, 2026.
+Daumé III, H., Marcu, D., 2005. A bayesian model for super-
+  vised clustering with the dirichlet process prior. Journal of           Mohammadi, S., Belgiu, M., Stein, A., 2024. Few-shot learning
+  Machine Learning Research 6, 1551–1577.                                  for crop mapping from satellite image time series. Remote
+                                                                           Sensing 16. doi:10.3390/rs16061026.
+Enache, S., Louis, J., Pflug, B., de Los Reyes, R., Lafrance,
+  B., Clerc, S., Barrot, G., Alhammoud, B., Poustomis, F.,                Ochal, M., Patacchiola, M., Vazquez, J., Storkey, A., Wang,
+  Iannone, R.Q., Bruniquel, J., Boccia, V., Gascon, F., 2023.               S., 2023. Few-shot learning with class imbalance. IEEE
+  Copernicus sentinel-2 collection-1: A consistent dataset of               Transactions on Artificial Intelligence 4, 1348–1358. doi:10.
+  multi-spectral imagery with enhanced quality, in: Proceed-                1109/TAI.2023.3298303.
+  ings of the IEEE International Geoscience and Remote Sens-              Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan,
+  ing Symposium (IGARSS), pp. 4302–4305. doi:10.1109/                       G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., Des-
+  IGARSS52108.2023.10282362.                                                maison, A., Kopf, A., Yang, E., DeVito, Z., Raison, M., Tejani,
+European Environment Agency (EEA), 2016. Biogeo-                            A., Chilamkurthy, S., Steiner, B., Fang, L., Bai, J., Chintala,
+  graphical regions.      URL: https://sdi.eea.                             S., 2019. PyTorch: An imperative style, high-performance
+  europa.eu/catalogue/srv/api/records/                                      deep learning library, in: Advances in Neural Information
+  11db8d14-f167-4cd5-9205-95638dfd9618.   visited                           Processing Systems (NeurIPS).
+  on Dec. 29, 2025.
+                                                                          Rademacher, P., Doroslovački, M., 2021. Bayesian learning for
+European Space Agency (ESA), 2021. Copernicus sentinel-2                    regression using dirichlet prior distributions of varying localiz-
+  msi level-1c toa reflectance product. collection 1. doi:10.               ation, in: IEEE Statistical Signal Processing Workshop (SSP),
+  5270/S2_-742ikth.                                                         pp. 236–240. doi:10.1109/SSP49050.2021.9513745.
+Finn, C., Abbeel, P., Levine, S., 2017. Model-agnostic meta-              Reuss, J., Gikalo, E., Körner, M., 2026a. Mind the gap: Bridging
+  learning for fast adaptation of deep networks, in: International          prior shift in realistic few-shot crop-type classification. ISPRS
+  Conference on Machine Learning (ICML), pp. 1126–1135.                     Annals of the Photogrammetry, Remote Sensing and Spatial
+                                                                            Information Sciences arXiv:2511.16218. forthcoming.
+Keraani, M.K., Mansour, K., Khlaifia, B., Chehata, N.,
+  2022. Few shot crop mapping using transformers and                      Reuss, J., Macdonald, J., Becker, S., Gikalo, E., Schultka, K.,
+  transfer learning with sentinel-2 time series: Case of                    Richter, L., Körner, M., 2026b. Benchmarking for practice:
+  kairouan tunisia.    The International Archives of the                    Few-shot time-series crop-type classification on the Euro-
+  Photogrammetry, Remote Sensing and Spatial Informa-                       CropsML dataset. ISPRS Open Journal of Photogrammetry
+  tion Sciences XLIII-B3-2022, 899–906. doi:10.5194/                        and Remote Sensing 19. doi:10.1016/j.ophoto.2026.
+  isprs-archives-XLIII-B3-2022-899-2022.                                    100117.
+                                                                     25
+Reuss, J., Macdonald, J., Becker, S., Richter, L., Körner, M.,           Veilleux, O., Boudiaf, M., Piantanida, P., Ben Ayed, I., 2021.
+  2025. The EuroCropsML time series benchmark dataset for                  Realistic evaluation of transductive few-shot learning, in: Ad-
+  few-shot crop type classification in Europe. Scientific Data             vances in Neural Information Processing Systems (NeurIPS),
+  12. doi:10.1038/s41597-025-04952-7.                                      pp. 9290–9302.
+Rouba, M., Larabi, M.E.A., 2023. Improving remote sensing                Wang, A.X., Tran, C., Desai, N., Lobell, D., Ermon, S., 2018.
+  classification with transfer learning: Exploring the impact of          Deep transfer learning for crop yield prediction with remote
+  heterogenous transfer learning. Engineering Proceedings 56.             sensing data, in: Proceedings of the ACM Conference on
+  doi:10.3390/ASEC2023-15505.                                             Computing and Sustainable Societies, pp. 1–5. doi:10.1145/
+                                                                          3209811.3212707.
+Rußwurm, M., Körner, M., 2020. Self-attention for raw optical
+  satellite time series classification. ISPRS Journal of Photo-          Wang, S., Rußwurm, M., Körner, M., Lobell, D.B., 2020. Meta-
+  grammetry and Remote Sensing 169, 421–435. doi:10.1016/                 learning for few-shot time series classification, in: Proceed-
+  j.isprsjprs.2020.06.006.                                                ings of the IEEE International Geoscience and Remote Sens-
+Rußwurm, M., Wang, S., Körner, M., Lobell, D., 2020. Meta-                ing Symposium (IGARSS), pp. 7041–7044. doi:10.1109/
+  learning for few-shot land cover classification, in: Proceed-           IGARSS39084.2020.9441016.
+  ings of the IEEE/CVF Conference on Computer Vision and
+  Pattern Recognition Workshops (CVPRW), pp. 788–796.
+  doi:10.1109/cvprw50498.2020.00108.
+Saini, R., Ghosh, S.K., 2018. Crop classification on single date
+  sentinel-2 imagery using random forest and support vector ma-
+  chine. The International Archives of the Photogrammetry, Re-
+  mote Sensing and Spatial Information Sciences XLII-5, 683–
+  688. doi:10.5194/isprs-archives-XLII-5-683-2018.
+Sainte Fare Garnot, V., Landrieu, L., Giordano, S., Chehata, N.,
+  2020. Satellite image time series classification with pixel-
+  set encoders and temporal self-attention, in: Proceedings
+  of the IEEE/CVF Conference on Computer Vision and Pat-
+  tern Recognition (CVPR), pp. 12322–12331. doi:10.1109/
+  CVPR42600.2020.01234.
+Schneider, M., Broszeit, A., Körner, M., 2021. EuroCrops: A
+  pan-european dataset for time series crop type classification,
+  in: Conference on Big Data from Space (BiDS), Publications
+  Office of the European Union. doi:10.2760/125905.
+Schneider, M., Schelte, T., Schmitz, F., Körner, M., 2023. Euro-
+  crops: The largest harmonized open crop dataset across
+  the european union. Scientific Data 10. doi:10.1038/
+  s41597-023-02517-0.
+Sipka, T., Sulc, M., Matas, J., 2022. The hitchhiker’s guide to
+  prior-shift adaptation, in: IEEE/CVF Winter Conference on
+  Applications of Computer Vision (WACV), pp. 2031–2039.
+  doi:10.1109/WACV51458.2022.00209.
+Tseng, G., Cartuyvels, R., Zvonkov, I., Purohit, M., Rolnick, D.,
+  Kerner, H., 2023. Lightweight, pre-trained transformers for
+  remote sensing timeseries, in: NeurIPS Workshop on Tackling
+  Climate Change with Machine Learning: Blending New and
+  Existing Knowledge Systems. arXiv:2304.14065.
+Tseng, G., Kerner, H., Rolnick, D., 2022. Timl: Task-informed
+  meta-learning for agriculture. arXiv:2202.02124.
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L.,
+  Gomez, A.N., Kaiser, Ł., Polosukhin, I., 2017. Attention is
+  all you need, in: Advances in Neural Information Processing
+  Systems (NeurIPS).
+                                                                    26
+

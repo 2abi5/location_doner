@@ -1,0 +1,1056 @@
+                                        JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                     1
+
+
+
+
+                                                DFYP: A Dynamic Fusion Framework with Spectral Channel
+                                         Attention and Adaptive Operator learning for Crop Yield Prediction
+                                                                         Juli Zhang, Zeyu Yan, Jing Zhang, Qiguang Miao, Quan Wang
+
+
+
+                                           Abstract—Accurate remote sensing-based crop yield prediction                 Deep learning has emerged as a powerful tool for crop yield
+                                        remains a fundamental challenging task due to complex spatial                prediction [4]–[6], enabling automated feature extraction from
+                                        patterns, heterogeneous spectral characteristics, and dynamic                remote sensing imagery and offering substantial improvements
+                                        agricultural conditions. Existing methods often suffer from
+                                        limited spatial modeling capacity, weak generalization across                over traditional statistical and empirical models. However,
+                                        crop types and years. To address these challenges, we propose                despite its promise, deep learning-based yield prediction still
+                                        DFYP, a novel Dynamic Fusion framework for crop Yield                        faces critical challenges in real-world agricultural applications.
+arXiv:2507.05849v1 [cs.CV] 8 Jul 2025
+
+
+
+
+                                        Prediction, which combines spectral channel attention, edge-                 1) Neglect of spatial dependencies: Many models treat spatial
+                                        adaptive spatial modeling and a learnable fusion mechanism to                locations independently [7]–[9], ignoring important correla-
+                                        improve robustness across diverse agricultural scenarios. Specif-
+                                        ically, DFYP introduces three key components: (1) a Resolution-              tions across regions, which reduces accuracy in large-scale
+                                        aware Channel Attention (RCA) module that enhances spectral                  predictions. 2) Limitations of single architectures: CNN-based
+                                        representation by adaptively reweighting input channels based                methods [6], [9], [10] are effective for extracting local features
+                                        on resolution-specific characteristics; (2) an Adaptive Operator             but rely on fixed kernels, limiting adaptability under environ-
+                                        Learning Network (AOL-Net) that dynamically selects operators                mental changes [11]. ViTs [12], on the other hand, excel at
+                                        for convolutional kernels to improve edge-sensitive spatial feature
+                                        extraction under varying crop and temporal conditions; and                   modeling global dependencies, yet are prone to overfitting with
+                                        (3) a dual-branch architecture with a learnable fusion mech-                 high-resolution imagery and often miss fine-grained spatial
+                                        anism, which jointly models local spatial details and global                 details [13], [14]. 3) Lack of generalization across crops and
+                                        contextual information to support cross-resolution and cross-                datasets: Most existing studies are restricted to single-crop
+                                        crop generalization. Extensive experiments on multi-year datasets            or single-region scenarios [15]–[17], limiting their utility in
+                                        MODIS and multi-crop dataset Sentinel-2 demonstrate that
+                                        DFYP consistently outperforms current state-of-the-art baselines             diverse agricultural environments. 4) Inflexible edge feature
+                                        in RMSE, MAE, and R² across different spatial resolutions,                   modeling: Edge structures in remote sensing imagery are
+                                        crop types, and time periods, showcasing its effectiveness and               critical for distinguishing crop boundaries [18]. However,
+                                        robustness for real-world agricultural monitoring.                           conventional CNNs do not adapt well to the temporal or crop-
+                                          Index Terms—Crop yield prediction, CNN, ViTs, Concept drift                specific variability of edge characteristics [19]. Our empirical
+                                                                                                                     study across eight classical edge operators reveals that their
+                                                                                                                     performances fluctuate significantly with crop type (Sentinel-
+                                                                 I. I NTRODUCTION                                    2) and acquisition year (MODIS), which indicates that fixed
+                                                                                                                     operators are suboptimal for robust crop yield prediction.
+                                           Accurate crop yield prediction plays a critical role in ensur-               Real-world crop yield prediction often demands robustness
+                                        ing global food security and informing agricultural decision-                across heterogeneous resolutions, temporal variations, and
+                                        making. However, this task remains highly challenging due                    multiple crop types. Satellite imagery from different sensors
+                                        to the complex interplay of meteorological conditions, soil                  (e.g., MODIS or Sentinel-2) exhibits significant diversity in
+                                        properties, crop types, and cultivation practices [1], [2]. Fur-             spatial, spectral, and temporal properties. Additionally, sea-
+                                        thermore, yield prediction is a nonlinear and dynamic pro-                   sonal changes, crop rotations, and environmental dynamics
+                                        cess [3]—integrating multi-source signals that evolve over                   introduce concept drift [20], [21], challenging model gener-
+                                        time and vary across spatial regions—making robust prediction                alization over time. Existing approaches [6], [9], [10], [15],
+                                        even more difficult.                                                         [22]–[24] are insufficient to handle such diverse agricultural
+                                           This work was supported in part by the National Natural Science Foun-     conditions. These challenges highlight the critical need for
+                                        dations of China under grant No. 62272364, the provincial Key Research       robust, flexible, and generalizable yield prediction frameworks
+                                        and Development Program of Shaanxi under grant No. 2024GH-ZDXM-47.
+                                        (Corresponding authors: Juli Zhang, Qiguang Miao.)                           that can effectively adapt to heterogeneous data resolutions,
+                                           Juli Zhang is with the School of Computer Science and Technology,         spectral variability, and complex spatiotemporal dynamics in
+                                        Xidian University, Xi’an, 710065, China. She is also with the School of      real-world agricultural environments.
+                                        Computing, Australian National University, Canberra, ACT 2601, Australia.
+                                        (email: zhangjuli@xidian.edu.cn, juli.zhang@anu.edu.au).                        To overcome these challenges, we propose DFYP, a Dy-
+                                           Zeyu Yan, Qiguang Miao and Quan Wang are with the School of               namic Fusion framework for Yield Prediction that combines
+                                        Computer Science and Technology, Xidian University, Xi’an, 710065,           Resolution-aware Channel Attention and Adaptive Operator
+                                        China (email: 22009200335@stu.xidian.edu.cn, qgmiao@xidian.edu.cn,
+                                        qwang@xidian.edu.cn).                                                        Learning. The design introduces three key innovations:
+                                           Jing Zhang is with the School of Computing, Australian National Univer-
+                                        sity, Canberra, ACT 2601, Australia (e-mail: zjnwpu@gmail.com).                •   A Dual-branch dynamic fusion architecture is proposed
+                                                                                                                           to optimally balance local and global feature learning
+                                                                                                  0000–0000/00$00.00 © 2021 IEEE
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                           2
+
+
+
+     through a learnable fusion mechanism. This enables the         These limitations highlight the need for hybrid frameworks
+     model to capture both short-range and long-range spatial       that can balance local spatial sensitivity and global contextual
+     dependencies.                                                  modeling for robust yield prediction.
+   • Adaptive Operator Learning Network(AOL-Net) is de-
+     signed for concept drift, which dynamically selects the        B. Hybrid models and The Need for Dynamic Fusion
+     most effective edge operator (e.g., Sobel, Scharr, or a
+                                                                       Building on the complementary nature of CNNs and ViTs,
+     learned operator) based on the input’s temporal and se-
+                                                                    studies have proposed hybrid architectures [14], [46], [48]–
+     mantic characteristics, thus improving spatial robustness
+                                                                    [53] that combine CNNs’ ability to extract local spatial fea-
+     across years and crop types.
+                                                                    tures with the global context modeling capabilities of Trans-
+   • A Resolution-aware Channel Attention (RCA) module is
+                                                                    formers. According to the survey [38], these hybrid models
+     introduced to adaptively reweight spectral bands based
+                                                                    can be categorized into several types: 1) parallel integration:
+     on image resolution. This design enhances the model’s
+                                                                    Conformer( [46], Mobile-Former [54], TCCNet [55], 2) serial
+     ability to generalize across heterogeneous sensors and
+                                                                    combination: CETNet [56], CoATNet [57], CMT [58], 3)
+     crop types by selectively emphasizing the most informa-
+                                                                    hierarchical architectural integration: ViTAE [59], CVT [48],
+     tive spectral features under both high- and low-resolution
+                                                                    DiNAT [60], 4) early stage fusion: DETR [53], MASK For-
+     conditions.
+                                                                    mer [61], LeViT [14], 5) late-stage fusion: Efficient For-
+   The remainder of this paper is constructed as follows.           mer [62], Swin2SR [63], ViTMatte [64], and 6) attention-based
+Section II reviews the related work of crop yield prediction        fusion: HBCT [65], ECA-NET [66], DANet [67], scSE [68],
+and hybrid models, and the need for dynamic fusion. Section         CBAM [69], BoTNet [70]. While these hybrid approaches
+III describes the details of the proposed method. The experi-       combine CNN and ViT features across various stages and
+mental results and discussions are presented in Section IV. We      layers, they generally rely on static integration strategies such
+conclude this work in Section V.                                    as feature concatenation, averaging, or fixed attention mech-
+                                                                    anisms, which do not dynamically adjust the contributions of
+                      II. R ELATED W ORK                            CNN and ViT features based on data-specific characteristics.
+A. Deep Learning for Crop Yied Prediction                           These static approaches, particularly in straightforward con-
+                                                                    catenation, treat each feature equally and fail to account for
+   The repid development of deep learning in computer vision
+                                                                    the varying relevance of local versus global features across
+task [25], [26] has catalyzed its widespread application in
+                                                                    different contexts, reducing their flexibilities. Consequently,
+agricultural domains, particularly for crop yield prediction [6],
+                                                                    the lack of adaptive feature weighting diminishes the effective-
+[9], [10], [15], [22]–[24]. Existing approaches generally fall
+                                                                    ness of hybrid models, especially in complex remote sensing
+into two categories: remote sensing-based approaches [15],
+                                                                    applications where feature importance fluctuates depending on
+[27]–[29], which leverages satellite imagery, unmanned aerial
+                                                                    spatial and spectral conditions.
+vehicle (UAV) data, or vegetation indices; and meteorological-
+                                                                       Our approach introduces a loss-guided fusion mechanism
+based approaches [9], [30]–[33], which model the impact of
+                                                                    that dynamically learns to weight the outputs of the AOL-
+climatic variables using deep neural networks (DNNs).
+                                                                    Net and ViT branches based on training data. This adaptive
+   Among DNN-based models, convolutional neural networks
+                                                                    fusion enables better alignment with complex spatiotemporal
+(CNNs) have shown strong capabilities in automatically ex-
+                                                                    variations in remote sensing imagery.
+tracting spatial features from satellite images [34]–[37]. How-
+ever, CNNs are inherently limited by their local receptive
+fields, which restrict their ability to model long-range spatial    C. Traditional Model Combinations for Yield Prediction
+dependencies [11], [38], reducing effectiveness in large-scale         Beyond hybrid deep models, a variety of classical model
+agricultural landscapes. To address this, ViTs [12], [39]–[42]      combinations have been employed in crop yield prediction.
+have been explored for their strength in capturing global spatial   These approaches typically integrate spatial and temporal
+relationships. Recent studies have demonstrated the potential       modeling in a modular fashion. In CNN-RNN [9] and CNN-
+of ViTs in land cover classification [43] and crop yield pre-       LSTM [71], CNNs are used to extract spatial features from
+diction [44], [45]. Nevertheless, ViTs often require substantial    remote sensing imagery, which are then passed to RNN
+amounts of training data and may struggle to preserve fine-         or LSTM layers for modeling temporal dynamics across
+grained spatial details [46], especially when dealing with          growing seasons. GNN-RNN [30] combines Graph Neural
+high-resolution imagery. This limits their standalone utility in    Networks for spatial representation and recurrent layers for
+complex agricultural environments.                                  modeling temporal dynamics. 3DCNN-convLSTM [72] uti-
+   Recent models have attempted to address these limitations.       lizes 3D-CNNs to simultaneously extract spatial and short-
+For example, DeepField [47] uses a CNN backbone to predict          term temporal features from image sequences, which are then
+yields from temporal image sequences but lacks adaptive             refined through ConvLSTM modules for enhanced sequential
+fusion. MMST-ViT [44] incorporates multi-modal transformer          prediction. 4) ConvLSTM + ViT [73] combines ConvLSTM
+modules but applies them statically without resolution-aware        with ViT to jointly model sequential dynamics and global
+adjustments. These methods all rely solely on CNN or ViT for        spatial context, though such designs often rely on static feature
+modeling, and still have certain limitations in their ability to    integration and lack adaptive fusion mechanisms. GP-based
+model both the spatial and temporal characteristics of the data.    models (Gaussian Process) [8] incorporate a GP regression
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                3
+
+
+
+
+Fig. 1. Overview of the proposed DFYP framework for remote sensing-based crop yield prediction. The input consists of multi-spectral remote sensing
+imagery, which is first processed by the a) Resolution-aware Channel Attention (RCA) module to adaptively enhance spectral channel importance based
+on spatial resolution. The refined features are then fed into two parallel branches: the b) AOL-Net branch, which utilizes an Adaptive Operator Library for
+edge-aware convolution, and the ViT branch, which models long-range dependencies via a c) Vision Transformer.Each branch outputs predictions through
+a fully connected (FC) layer. These predictions are fused via a learnable weighted sum to form the final prediction. The total loss is computed between the
+fused prediction and the ground truth, with gradients backpropagated to both branches for end-to-end optimization.
+
+
+
+layer after feature extraction for uncertainty-aware prediction                A. Problem Definition
+or refined output modeling.                                                       Given a dataset D = {(Xi , Yi )}Ni=1 consisting of remote
+   While effective in specific tasks, these combinations gener-                sensing images and their corresponding crop yield labels, our
+ally require separate training for spatial and temporal modules,               goal is to learn a predictive function fθ that maps input
+limiting end-to-end optimization and complicating backprop-                    features X to crop yield predictions Ŷ :
+agation. Additionally, they often rely on handcrafted feature
+engineering or static architectures that fail to generalize across                                         Ŷ = fθ (X) + ϵ,                            (1)
+datasets with diverse spatial-spectral characteristics. Further-
+more, they tend to exhibit significant performance fluctuations                where X ∈ RC×H×W is an image with C spectral channels
+across different crop types and temporal domains, limiting                     and spatial dimensions H ×W , Ŷ represents the predicted crop
+their robustness in real-world yield prediction scenarios.                     yield, and ϵ denotes the residual error. fθ (X) is our prediction
+   In contrast, DFYP offers a robust end-to-end framework                      function. θ are optimized to minimize the prediction error.
+that combines adaptive spectral reweighting (RCA), dynamic
+edge-aware CNNs (AOL-Net), and Transformer-based global                        B. Overview of the Proposed Approach
+modeling with flexible. Furthermore, the dynamic loss-driven
+                                                                                  To achieve the aforementioned goals, we proposed DYFP.
+fusion leads to improved generalizability across crop types,
+                                                                               As illustrated in Figure 1, DFYP comprises three key mod-
+time periods, and sensor resolutions.
+                                                                               ules: a spectral attention encoder, a dual-branch representation
+                                                                               extractor, and a dynamic fusion module.
+                       III. M ETHODOLOGIES                                        The first component, Resolution-Aware Channel Attention
+   In this work, we aim to develop a unified and robustcrop                    module, aims to adaptively reweight multispectral channels
+yield prediction framework, which can handle remote sensing                    according to their informativeness across different sensors and
+imagery with different resolutions. This framework should                      crop types. By encoding spectral saliency in a resolution-
+achieve three goals: (1) learning resolution-aware spectral                    aware manner, this module improves the robustness of feature
+representations that adapt to differing input characteristics                  representations under heterogeneous input conditions.
+across low- and high-resolution imagery; (2) enhancing spatial                    Next, DFYP employs a dual-branch learning architecture,
+and temporal feature extraction from dynamic agricultural                      consisting of a Adaptive Operator Learning (AOL) branch and
+conditions, and (3) fusing local and global representations via                a parallel Vision Transformer (ViT) branch. The AOL branch
+a learnable mechanism. Our ultimate objective is to build a                    dynamically selects the most appropriate edge enhancement
+model that maintains predictive performance across diverse                     operator for each input. This design improves the model’s
+crops, years, and sensor types, while remaining end-to-end                     robustness to concept drift and helps preserve critical spatial
+trainable and interpretable.                                                   structures across different crop types and seasons. In parallel,
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                             4
+
+
+
+the ViT branch captures long-range spatial dependencies,           and evolving edge structures in remote sensing imagery. These
+which are often missed by purely convolutional models.             edge patterns vary significantly across different geographic
+   Finally, the outputs of both branches are subsequently          regions, crop types, and acquisition periods due to changes
+fused through a learnable mechanism for final prediction,          in vegetation phenology, atmospheric conditions, and spectral
+which adaptively balances local and global information to          characteristics. Although handcrafted edge operators (e.g.,
+produce the final yield prediction. This design ensures that       Sobel, Scharr) can emphasize gradients, their performance is
+DFYP remains flexible across regions, crops, and years, and        highly sensitive to crop types, seasonal changes, and spectral
+maintains stability even under extrem weather conditions such      inconsistencies. Our empirical experiments across multi-year
+as drought or sensor noise.                                        and multi-crop datasets demonstrate that no single operator
+   Detailed descriptions of each module are provided in the        consistently performs well across all conditions. This moti-
+following subsections.                                             vates the need for a dynamic mechanism that adapts edge
+                                                                   enhancement to the input context.
+C. Resolution-aware Channel Attention                                 To address these challenges, we introduce an Adaptive
+                                                                   Operator Learning Network (AOL-Net), a dedicated module
+   To enhance the model’s ability to selectively emphasize
+                                                                   for robust edge-aware feature enhancement. Unlike conven-
+informative spectral features across heterogeneous remote
+                                                                   tional CNNs that rely on static convolutional filters, AOL-Net
+sensing data sources, we introduce the Resolution-aware Chan-
+                                                                   dynamically adjusts the edge encoding mechanism through
+nel Attention (RCA) module. This module is inspired by
+                                                                   a learnable operator fusion strategy, inspired by the residual
+the classic Squeeze-and-Excitation (SE) network [74], which
+                                                                   learning principle. AOL-Net is composed of the following
+models inter-channel dependencies via global pooling and
+                                                                   components:
+gating. However, unlike SE, which applies a uniform strategy
+                                                                   (a) Operator Pool. A predefined library K                       =
+regardless of image modality, RCA explicitly incorporates
+                                                                   {KSobel , KScharr , KLearnable }, where KSobel , KScharr are fixed
+spatial resolution awareness into the attention computation,
+                                                                   classical operators, KLearnable is a trainable kernel initialized
+making it particularly suitable for different multispectral im-
+                                                                   via a convex combination:
+agery such as MODIS (500m) and Sentinel-2 (10m).
+   To handle spectral heterogeneity across resolutions, we de-           Klearnable = λKSobel + (1 − λ)KScharr . 0 ≤ λ ≤ 1          (3)
+sign the channel attention mechanism with a resolution-aware
+pooling strategy tailored for multi-resolution remote sensing      (b) Residual-inspired Fusion. During training, λ is optimized
+imagery. RCA consists of three stages: Squeeze, Excitation,        via backpropagation to automatically interpolate between fixed
+and Reweighting.                                                   operators or revert to them when beneficial. When λ converges
+(a) Squeeze Operation (Resolution-aware Pooling). To ag-           to 0 or 1, AOL effectively reduces to a traditional operator
+gregate global information, we replace the fixed pooling in        Sobel or Scharr, preseving stability. This mechanism mimics
+standard SE blocks with an adaptive pooling mechanism:             residual connections by granting the network the ability to
+                                                                  retain, refine, or bypass edge operations.
+             max Xc (u, v),         if low resolution
+                 u,v                                               (c) Operator Selection Gate. The final operator applied at a
+        zc =       1
+                      P                                      (2)
+              H×W       Xc (u, v), if high resolution             given time step t is determined by a selection function:
+                        u,v
+
+where zc is the aggregated channel descriptor, dynamically                             Kt = arg max S(K, t)                         (4)
+                                                                                                    K∈K
+computed using max pooling for low-resolution images to em-
+                                                                   where S(K, t) represents the historical performance score
+phasize key structures and average pooling for high-resolution
+                                                                   of each operator,
+                                                                                  PT computed based on validation results:
+images to preserve information integrity.
+(b) Excitation Operation (Channel-wise Importance Es-              S(K, t) = T1 τ =1 Accuracy(K, τ ). Kt is then applied to
+timation). Feature zc is passed through two fully connected        the input image to extract edge features: Gt = Kt ∗ X, where
+layers with ReLU and Sigmoid activations to generate channel-      Gt is the resulting edge-enhanced feature map.
+wise importance scores: sc = σ(W2 δ(W1 zc )), where W1 ∈             Instead of soft selection, we employ hard selection:
+  C                     C
+R r ×C and W2 ∈ RC× r , r is a reduction ratio, δ(·) and σ(·)                      λSobel , λScharr , λLearnable ∈ {0, 1},
+denote ReLU and sigmoid functions, respectively.                                                                                    (5)
+                                                                                     λSobel + λScharr + λLearnable = 1
+(c) Channel Reweighting. Finally, the learned weights are
+applied to the original feature map: X̃c = sc · Xc . which         where exactly one coefficient is active per time step. The final
+adaptively enhances important spectral bands while suppress-       operator used for edge detection is:
+ing irrelevant ones.
+                                                                     Kt = λSobel KSobel + λScharr KScharr + λLearnable KLearnable   (6)
+   By integrating resolution-awareness into channel attention,
+RCA improves cross-resolution generalization and enhances          (d) Embedding into Backbone. Kt is used to modulate the
+the robustness of feature representations for yield prediction.    input feature map before convolution, enabling the backbone
+                                                                   to emphasize edge-aware structures during feature extraction.
+D. Adaptive Operator Learning Network
+                                                                                     X ′ = γ · X + (1 − γ) · Gt                     (7)
+   CNNs use convolutional kernels with fixed receptive pat-
+terns, which inherently lack the flexibility to capture diverse                            Y = W ∗ X′ + b                           (8)
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                          5
+
+
+
+where W represents learnable convolution weights, γ is a           Loss Function. We adopt the Mean Squared Error (MSE) as
+learnable parameter that adaptively scales the influence of the    the objective:
+edge operator, and b is a bias term. It ensures that the CNN                                          N
+dynamically incorporates adaptive edge information into its                                       1 X
+                                                                                       Ltotal =         (Ŷi − Yi )2           (13)
+feature extraction process.                                                                       N i=1
+
+                                                                     Substituting Ŷi = αfθ1 (Xi ) + βfθ2 (Xi ), we obtain:
+E. Global Spatial Modeling with Vision Transformer                                       N
+                                                                                      1 X
+   While RCA and AOL-Net modules focus on spectral se-                     Ltotal =         (αfθ1 (Xi ) + βfθ2 (Xi ) − Yi )2   (14)
+lection and edge enhancement respectively, the Vision Trans-                          N i=1
+former (ViT) branch is responsible for modeling long-range         Unlike normalized fusion schemes that enforce α + β = 1,
+spatial dependencies critical to yield prediction. Each RCA-       we relax this constraint to allow both α and β to be learned
+enhanced image is partitioned into fixed-size patches and          independently with (0, 1). This design offers greater flexibility
+embedded into a latent space via a linear projection layer. We     by enabling the model to adaptively prioritize either branch
+adopt positional encodings to preserve spatial ordering and        or maintain a balance between them, depending on the data
+feed the embedded sequence into multiple Transformer layers        distribution. Empirical results have shown that this approach
+to capture non-local context.                                      improves robustness and ensures more stable convergence
+Patch Embedding and Input Representation. The input                during training.
+image X is divided into non-overlapping patches and projected         All modules in DFYP are trained jointly in an end-to-end
+into an embedding space:                                           fashion. During training, the final prediction is obtained by
+                                                                   fusing outputs from both branches, and the overall loss is
+                     Xproj = XWemb + bemb ,                  (9)
+                                                                   backpropagated through the entire architecture, allowing each
+where Wemb and bemb denote the embedding weight matrix and         component to adapt to the input distribution and optimize its
+bias. Positional encodings P are then added to retain spatial      parameters accordingly.
+relationships.
+Transformer Encoding. The position-enhanced embeddings                         IV. E XPERIMENT AND D ISCUSSION
+are passed through multiple Transformer layers, where each         A. Experimental Settings
+layer models interactions via Multi-Head Attention (MHA):
+                                                                   Datasets. We conduct experiments on two remote sens-
+                                         QK T
+                                              
+                                                                   ing datasets: Moderate Resolution Imaging Spectroradiometer
+          Attention(Q, K, V ) = softmax √        V.     (10)       (MODIS) and Sentinel-2 imagery. MODIS is a key instrument
+                                           dk
+                                                                   of the Earth Observing System (EOS) onboard NASA’s Terra
+The output is processed using residual connections and a feed-     satellite, launched in 1999, and Aqua satellite, launched in
+forward network (FFN):                                             2002. In this study, we utilize MODIS-derived data, which
+                 Xout = FFN(X + MHA(X)).                    (11)   includes three components: surface reflectance, surface tem-
+                                                                   perature, and soil cover type, which were accessed via Google
+Final Prediction. After Transformer encoding, the final fea-       Earther Engin. Sentinel-2 images we utilized in this work
+ture representation is passed through an MLP head to generate      were from the dataset described in the literature [75]. In
+yield predictions. This global feature extraction allows the       this work, we focus on soybean yield prediction on MODIS,
+model to learn high-level contextual relationships that are        while we cover four major crops—corn, cotton, soybean, and
+crucial for yield estimation.                                      winter wheat on Sentinel-2. To facilitate a more comprehensive
+                                                                   understanding of our data, we provide detailed descriptions
+                                                                   and preprocessing procedures in the appendix.
+F. Loss-Guided Fusion Mechanism                                    Experimental Setup. To predict yield for a given year t, the
+   After generating crop yield predictions independently from      models are trained using data from tstart to t − 1, with 90% of
+the AOL-Net and ViT branches, we introduce a learnable             the multi-spectral remote sensing data used for training and
+fusion mechanism to combine their outputs.                         10% for validation. For MODIS-based experiments, models
+Fusion Strategy. According to Equation 1, our objective is         are trained using data from tstart = 2003 to t - 1, and evaluated
+to minimize the error between the predicted yield Ŷ and the       on the years t = {2009–2015}. For Sentinel-2 imagery, we use
+actual yield Y . Since our AOL-Net + ViT framework adopts          data from tstart = 2017 and evaluate on t = 2022. All Predictions
+a dynamic fusion strategy, we define fθ (X) as:                    rely solely on pre-season and in-season observations, without
+                                                                   access to post-harvest data. Evaluation is conducted at the
+                 fθ (X) = αfθ1 (X) + βfθ2 (X)               (12)   county level using official yield statistics from the United
+                                                                   States Department of Agriculture (USDA).
+where fθ1 (·) and fθ2 (·) are the outputs of the AOL-Net and       Implementation Details. DFYP is implemented in PyTorch,
+ViT branches, respectively. The fusion weights α, β ∈ (0, 1)       with dataset-specific configurations tailored to the distinct
+are learnable parameters that are jointly optimized with the       properties of MODIS and Sentinel-2. Both experiments adopt
+rest of the network via backpropagation.                           a dual-branch architecture comprising independent CNN and
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                          6
+
+
+
+                                                                  TABLE I
+                                                H YPERPARAMETER SETTINGS FOR OUR EXPERIMENTS
+
+   Dataset          Opt.   LR     Steps   Batch            CNN Channels                  Strides       Depth   Heads   Dim   MLP   Image & Patch
+                                                                                                                                      32 × 32
+   MODIS           Adam    1e-4   25K      64     [in, 128, 256, 256, 512, 512, 512]   [1,2,1,2,1,2]     4       8     256   512
+                                                                                                                                       4×4
+                                                                                                                                     256 × 256
+   Sentinel-2      Adam    1e-4   25K      16           [in, 32, 64, 128, 128]          [2,2,2,1]        6       6     128   256
+                                                                                                                                      16 × 16
+
+  Notes: Opt.: optimizer, LR: learning rate, Dim: embedding dimension, MLP: MLP dimension. ReLU activation is used in CNN layers while GELU is
+  used in Transformer blocks. Early stopping patience of 10 is applied to both datasets. “in” represents input channel dimension.
+
+
+
+ViT modules. MODIS provides coarse-resolution, temporally                      (5) Deepfield [47] integrates the ConvLSTM layers with the
+frequent imagery, whereas Sentinel-2 offers high-resolution,                3-Dimensional CNN (3DCNN) for more accurate and reliable
+multi-spectral data. These differences motivate distinct con-               spatiotemporal feature extraction.
+figurations:                                                                   (6) 3DCNN+ConvLSTM [72] leverages 3D convolutions
+   1) AOL-Net Module: The CNN component is adjusted                         for spatio-spectral feature extraction and integrates attention-
+according to the resolution of each dataset:                                enhanced ConvLSTM to capture temporal dependencies in
+   • For MODIS, a deeper CNN is employed to compensate
+                                                                            multi-temporal multispectral imagery.
+     for limited detail by learning higher-level abstractions.                 (7) ConvLSTM+ViT [73] combines ConvLSTM for short-
+     Each layer consists of a 3×3 convolution, ReLU activa-                 term spatiotemporal modeling with Vision Transformer to
+     tion, batch normalization, and dropout for regularization.             capture long-range spatial dependencies from imagery.
+   • For Sentinel-2, a shallower CNN suffices due to the                       (8) LSTM+GP [8] uses LSTM to model temporal sequences
+     input’s inherent richness. This design avoids potential                of histogram-encoded satellite observations, while a Gaussian
+     overfitting and maintains computational efficiency.                    Process layer captures residual spatial and temporal dependen-
+                                                                            cies for enhanced yield prediction.
+   2) ViT Module. The Vision Transformer branch comprises                      (9) MMST-ViT [44] combines satellite imagery and meteo-
+a linear projection, positional embeddings, multiple MHSA                   rological data through a Vision Transformer—including Multi-
+layers, FFNs, and layer normalization. Its configuration is                 Modal, Spatial, and Temporal Transformers—to capture both
+similarly dataset-aware: For MODIS, a lighter encoder is                    short-term weather variation and long-term climate effects for
+used to model global dependencies without overfitting to                    accurate county-level crop yield prediction.
+coarse details. For Sentinel-2, it utilizes a deeper encoder to                With the exception of MMST-ViT, which requires multi-
+better capture complex spatial relationships inherent in high-              modal data, the remaining methods were rigorously replicated
+resolution imagery.                                                         using the original papers’ provided codes or methodologies.
+   All models are trained using the Adam optimizer with early
+                                                                            We utilize Fig. 2 to demonstrate the comparison results.
+stopping based on validation loss. Hyperparameters for each
+                                                                            Evaluation Metrics. All methods are evaluated using three
+variant are summarized in Table I.
+                                                                            popular metrics: mean absolute error (MAE), root mean
+This dataset-aware design ensures that DFYP effectively cap-                square error (RMSE), and coefficient of determination (R²).
+tures both local textures and global structures under diverse               Importantly, model performance is considered better when the
+remote sensing conditions, maintaining a balance between                    RMSE is lower and the R² is higher.
+representational capacity and generalization.
+Compared Approaches. To prove the superiority of the
+proposed DFYP, we compare it with the following state-of-                   B. Comparison with State-of-the-Art Methods
+the-art (SOTA) approaches:                                                     We utilize Fig. 2 to demonstrate the comparision results.
+   (1) GNN+RNN [30] captures both spatial and temporal                      From Fig. 2, we can observe that our approach consistently
+dependencies for crop yield prediction. It encods yearly envi-              outperforms all baselines across RMSE and MAE on the
+ronmental features with CNNs, aggregates spatial context via                Sentinel-2, and achieve the best R2 except MMST-ViT on cot-
+GraphSAGE, and models inter-annual trends using LSTMs.                      ton, demonstrating its superior effectiveness in high-resolution
+   (2) CNN+LSTM [71] sequentially applies a CNN for spatial                 satellite imagery. On the MODIS dataset, our method also
+feature extraction and an LSTM for temporal modeling using                  achieves the best performance in six out of seven years
+UAV-based RGB time series data.                                             (2009, 2010, 2011, 2012, 2014, 2015) across all metrics. The
+   (3) ConvLSTM [76] models spatiotemporal dependencies                     following sections provide detailed comparisons and further
+by replacing fully connected operations in LSTM with convo-                 analysis of these results.
+lutions, enabling joint learning of spatial and temporal patterns           Analysis on MODIS. Notably, DFYP demonstrates superior
+from gridded time series data.                                              performance and remarkable temporal stability across all three
+   (4) CNN+GP [8] learns spatial features from histogram-                   metrics, significantly outperforming other approaches in most
+transformed remote sensing data using a CNN, and incor-                     years. The stable and consistently high performance of DFYP
+porates a Gaussian Process layer to model spatio-temporal                   can be attributed to its hybrid design: ViT enables the mod-
+correlations and reduce prediction errors.                                  eling of long-range spatial dependencies, while AOL-CNN
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                       7
+
+
+
+
+Fig. 2. Comparision with state-of-the-art methods. Fig. (a, b, c) show the RMSE, MAE and R2 performance on MODIS dataset. Fig. (d, e, f) show the
+performance on Sentinel 2 dataset.
+
+
+
+adaptively enhances edge features across time through operator            unusual weather patterns affecting crop reflectance) may have
+selection. This dual-branch design mitigates the effects of               led to deviations in spectral distributions, affecting ViT’s
+concept drift, sensor noise, and spectral inconsistencies, all            generalization ability. Despite this isolated underperformance,
+of which are prevalent in MODIS due to its coarse spatial                 our model maintains higher temporal stability across multiple
+resolution. In contrast, baseline models such as CNN+GP,                  years, indicating that AOL-CNN+ViT offers stronger general-
+DeepYield, and 3DCNN+ConvLSTM exhibit large fluctua-                      ization capabilities compared to fixed-feature CNNs, LSTMs,
+tions over time, with performance degrading sharply in 2013,              and GP-based approaches.
+highlighting limited robustness to interannual spectral and
+                                                                             Other approaches, such as GNN+RNN demonstrates mod-
+environmental variations.
+                                                                          erate error rates with occasional competitiveness but lacks
+                                                                          temporal consistency, likely due to limited spatial granularity.
+   Among all models, CNN-LSTM slightly outperforms our
+                                                                          ConvLSTM exhibits unstable performance across all metrics,
+method on all three metrics in 2013. This suggests that
+                                                                          struggling to balance spatial and temporal learning, particu-
+recurrent architectures, with their ability to exploit sequential
+                                                                          larly under spectral noise. CNN+GP and LSTM+GP suffer
+continuity, may have been particularly effective in model-
+                                                                          from poor average performance, reflecting the limitations
+ing year-to-year recovery patterns embedded in the temporal
+                                                                          of Gaussian Processes in large-scale, temporally dynamic
+evolution of vegetation indices. This anomaly likely reflects
+                                                                          datasets. DeepYield, while occasionally comparable to better
+the advantage of recurrent architectures in modeling local-
+                                                                          models, lacks robustness and performs inconsistently across
+ized temporal continuity—potentially aligning well with crop
+                                                                          years. 3DCNN+ConvLSTM fails to learn meaningful spa-
+recovery patterns following the severe 2012 drought [77].
+                                                                          tiotemporal dependencies, particularly in 2013, and is consis-
+However, this advantage is short-lived, as CNN+LSTM fails
+                                                                          tently outperformed. ConvLSTM+ViT, although promising in
+to maintain its lead in other years. Our fusion-based archi-
+                                                                          concept, shows limited synergy in practice, potentially due to
+tecture—although generally more robust—may have underfit
+                                                                          suboptimal module interaction or training instability. These ob-
+certain temporally dominant signals present in that season.
+                                                                          servations reinforce that DFYP’s robust design—fusing adap-
+This discrepancy highlights a key trade-off between short-
+                                                                          tive edge-aware CNN with ViT-based global modeling—is
+term temporal modeling and long-range feature extraction.
+                                                                          essential to achieving both accuracy and temporal stability in
+Additionally, MODIS’s lower spatial resolution (250m–1km)
+                                                                          yield prediction from noisy, low-resolution imagery.
+increases spectral mixing, which can obscure crop boundaries,
+reducing the effectiveness of AOL-CNN’s edge detection                    Analysis on Sentinel-2. Figure 2(d), (e), (f) illustrates the
+mechanism. This effect may have been exacerbated in 2013                  yield prediction performance across four major crops—corn,
+if atmospheric disturbances (e.g., cloud cover, sensor noise)             cotton, soybean, and winter wheat—on the Sentinel-2 dataset.
+further degraded spectral quality. Another potential factor is            Our proposed DFYP model achieves the best performance in
+concept drift, where environmental changes in 2013 (e.g.,                 terms of RMSE and MAE across all crops, demonstrating its
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                              8
+
+
+
+superiority in minimizing absolute prediction errors. For the       series of experiments by individually integrating eight clas-
+R2 metric, DFYP consistently outperforms all baselines on           sical edge operators—Sobel [78], Canny [79], Kirsch [80],
+corn, soybean, and winter wheat, while achieving the second-        Laplacian [81], Log [81], Prewitt [82], Roberts [83], and
+best performance on cotton, marginally behind MMST-ViT.             Scharr [84]—into our dual-branch fusion framework. In each
+This overall trend highlights DFYP’s ability to maintain high       case, the selected operator was fixed throughout the training
+predictive accuracy and strong variance explanation across          and testing process, while the rest of the architecture remained
+diverse crop types.                                                 unchanged. The Results are shown in Figure 3.
+   We attribute this superiority to three key factors. First, the
+higher spatial resolution (10m) of Sentinel-2 reduces mixed-
+pixel effects, enabling AOL-CNN to extract more precise
+crop boundaries and structural information. In contrast, mod-
+els trained on lower-resolution inputs suffer from increased
+spectral mixing—where a single pixel contains signals from
+multiple land covers—which degrades their ability to delin-
+eate precise crop boundaries and spatial structures. Second,
+the richer spectral information provided by Sentinel-2’s 13-
+band multispectral data enhances the effectiveness of the SE
+module’s spectral reweighting, allowing it to prioritize the
+most relevant spectral channels for yield prediction. This
+is particularly advantageous compared to CNN-LSTM and
+GP-based models, which process spectral inputs statically
+without adaptive reweighting. Third, ViT’s ability to model
+long-range dependencies is is especially effective with high-
+resolution imagery, capturing large-scale spatial patterns and
+seasonal variation, which local receptive fields in CNNs or
+sequential constraints in LSTMs fail to exploit. Compared
+to this hybrid and adaptive design, baseline models exhibit
+various limitations. ConvLSTM+ViT, though enhanced by ViT,
+lacks edge-specific spatial encoding, weakening its bound-
+ary representation. 3DCNN+ConvLSTM and DeepYield rely               Fig. 3. Performance of operators on MODIS and Sentinel-2. Comparison
+on rigid feature extractors, leading to overfitting or poor         between our adaptive operator library and eight fixed operators
+generalization. CNN+GP, LSTM+GP, and CNN+LSTM show
+moderate performance due to restricted modeling capacity.              On the MODIS dataset (Figures 3 (a), (c) and (e)), fixed
+ConvLSTM ranks lowest across all metrics, underscoring its          operators exhibited noticeable performance fluctuations across
+inability to handle complex spatial-spectral dynamics.              years. RMSE and MAE values varied widely for each operator,
+Summary. The experimental results on both MODIS and                 indicating their sensitivity to temporal drift.No single operator
+Sentinel-2 datasets demonstrate the robustness and adaptability     achieves the best performance across all years and metrics.
+of the proposed DFYP framework across distinct remote               In contrast, AOL consistently maintains lower RMSE, lower
+sensing conditions. On the MODIS dataset, which features            MAE, and higher R2 values, demonstrating its ability to
+coarse spatial resolution and frequent spectral variability,        dynamically select the most effective operator based on data
+DFYP achieves consistent performance over multiple years,           characteristics. The stability of AOL across multiple years
+effectively mitigating temporal drift and sensor noise. On the      suggests that an adaptive selection mechanism is necessary
+Sentinel-2 dataset, characterized by high spatial and spectral      to handle the spectral, structural, and environmental variations
+resolution, DFYP delivers state-of-the-art results across di-       present in remote sensing imagery.
+verse crop types, highlighting its ability to generalize across        On the Sentinel-2 dataset (Figures 3 (b), (d), (f)), per-
+heterogeneous data distributions. These findings underscore         formance differences among fixed operators were less pro-
+the effectiveness of our dual-branch architecture and adaptive      nounced, likely due to the higher spatial resolution and more
+operator design in capturing both local and global patterns         stable edge characteristics. Nevertheless, our work maintains
+under varying spatial, spectral, and temporal conditions. To-       the lowest RMSE and MAE across most of the crop types, and
+gether, they validate DFYP’s potential as a general-purpose         achieves the highest R2 values, especially for corn, soybean
+solution for robust yield prediction in dynamic agricultural        and winterwheat. This demonstrates that AOL can also adapt
+environments.                                                       effectively to cross-crop variability.
+                                                                       Among all the results, Sobel and Scharr emerge as the
+                                                                    most frequently top-performing operators, suggesting their
+C. Effectiveness of the Adaptive Operator Learning                  broader adaptability under varying temporal and environmental
+  Prior to finalizing the design of AOL, we conducted a             conditions. Motivated by this observation, we developed the
+systematic investigation into how different edge enhance-           Adaptive Operator Learning (AOL), which dynamically selects
+ment strategies affect model performance. We conducted a            or learns from these base operators. The experimental results
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                         9
+
+
+
+confirm that our dynamic selection strategy not only stabilizes   sharp performance drops when moving across crop types, our
+model performance but also leads to consistent improvements       method demonstrates minimal fluctuation, indicating strong
+in prediction accuracy over most of years and crops. This         cross-crop generalization.
+validates the necessity of an adaptive edge representation           To gain deeper insights into these observations, we analyze
+mechanism in remote sensing-based yield prediction.               the underlying mechanisms behind DFYP’s robust perfor-
+                                                                  mance. Instead of relying on simple concatenation or fixed-
+D. Network Architecture Analysis                                  weight averaging, DFYP employs a learnable fusion strategy
+                                                                  that dynamically adjusts the contributions of CNN and ViT
+   To validate the rationale behind Dynamic Fusion, we com-
+                                                                  features via trainable coefficients. This enables the model
+pare it with three alternative CNN and ViT fusion methods:
+                                                                  to effectively integrate local textures captured by CNN and
+Hierarchy, CoATNet, and Sequence, as discussed in a compre-
+                                                                  global contextual patterns extracted by ViT. While CNN tends
+hensive review [38]. The Hierarchy method integrates features
+                                                                  to struggle with long-range dependencies due to its limited
+in a layered manner, CoATNet leverages attention mecha-
+                                                                  receptive field, and ViT may lack sufficient fine-grained spatial
+nisms, and Sequence applies a sequential fusion approach.
+                                                                  detail, especially in scenarios with sparse or heterogeneous
+This experiment aims to identify the optimal configuration for
+                                                                  textures, their fusion compensates for each other’s limitations.
+balancing local and global feature extraction.
+                                                                  This advantage is particularly evident on low-resolution im-
+                                                                  agery such as MODIS, where capturing both spatial precision
+                                                                  and contextual scope is critical. These results highlight the
+                                                                  value of an adaptive, data-driven fusion mechanism in improv-
+                                                                  ing generalization for remote sensing-based yield prediction.
+                                                                     Overall, the dynamic fusion design in DFYP achieves a
+                                                                  well-balanced representation across spatial and semantic di-
+                                                                  mensions, enabling it to outperform competing architectures
+                                                                  and generalize effectively across diverse crops, years, and
+                                                                  sensor characteristics.
+
+                                                                  E. Hyperparameter Analysis
+                                                                     To ensure the stability and generalizability of our model,
+                                                                  we conducted a comprehensive hyperparameter sensitivity
+                                                                  analysis focusing on three key parameters: the number of CNN
+                                                                  layers, attention heads, and ViT layers. Table II illustrates the
+                                                                  impact of these parameters on model performance, evaluated
+                                                                  using RMSE.
+                                                                     Our analysis revealed dataset-specific optimal configura-
+                                                                  tions. For the MODIS dataset, the optimal configuration con-
+                                                                  sists of 6 CNN layers, 8 attention heads, and 4 ViT layers,
+                                                                  while the Sentinel-2 dataset performs best with 4 CNN layers,
+                                                                  6 attention heads, and 6 ViT layers. These findings demon-
+                                                                  strate the importance of dataset-specific optimization and the
+Fig. 4. Performance of Different Network Architectures            robustness of our model across different configurations.
+   The results shown in Figure 4 demonstrate that our CNN-
+ViT fusion approach consistently outperforms alternative fu-      F. Ablation Study
+sion strategies for crop yield prediction on both two datasets.      To evaluate the contribution of each component, We con-
+Obviously, our method performed very stably on several            ducted ablation experiments to investigate the individual and
+metrics of the two datasets, which verified its robustness.       joint contributions of CNN, ViT, the Resolution-aware Chan-
+On MODIS, CoATNet shows large fluctuations, particularly          nel Attention (RCA), and the Adaptive Operator Learning
+in 2013 and 2014, where both RMSE and MAE spike,                  (AOL) module: (1) CNN-only (CNN), (2) ViT-only (ViT), (3)
+and R2 significantly drops. Hierarchy and Sequence methods        CNN+ViT Fusion (Fusion), (4) Fusion with AOL (AOL), (5)
+exhibit moderate performance, but still show more volatility      Fusion with RCA, and (6) Full model (Our work).
+across years compared to ours. On the Sentinel-2 dataset,            Table III presents abation results on MODIS, while Figure 5
+our method again outperforms all baselines across all crop        visualizes performance across different crop types in Sentinel-
+types. It achieves the lowest RMSE and MAE, and the               2 and results across different years on MODIS.
+highest R2 for each crop, including corn, cotton, soybean,           From Table III, we can note that our final model DFYP
+and winter wheat. The performance gap is especially notice-       achieves the best performance with an RMSE OF 4.9278,
+able for soybean, where the competing models (particularly        MAE of 3.7563, and R2 of 0.7345. Compared to the baseline
+CoATNet and Sequence) experience significant degradation in       CNN model, DFYP improves the RMSE by 21.86%, reduces
+both RMSE and R2 . Furthermore, while other models show           MAE by 25.90%, and increases R2 by 32.80%. Similar trends
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                        10
+
+
+
+                                                                       TABLE II
+                                  P REDICTION E RROR (RMSE) UNDER D IFFERENT M ODEL PARAMETERS ON MODIS DATASET
+
+                               CNN Layers                                           Attention Heads                                  ViT Layers
+ Year
+            3           4          5          6          7         6            7           8       9      10        2        3          4          5        6
+ 2009    7.2046       4.9645      4.5269    4.5741     5.0481   4.7310         6.5315   4.5741   7.4279   4.8407   8.4290   6.4330    4.5741      6.2175    9.0705
+ 2010    7.1061       5.7917      5.6418    4.8674     5.6889   5.4410         7.9095   4.8674   7.5233   5.3096   8.6463   7.7686    4.8674      8.2297    8.7567
+ 2011    7.6003       4.9587      4.8870    4.9272     5.5756   4.9435         6.6165   4.9272   6.3086   5.0740   7.7478   5.6117    4.9272      6.4087    7.0807
+ 2012    6.0393       5.6719      5.3731    5.0856     5.0538   5.0072        7.2861    5.0856   6.2855   5.1956   6.8399   6.6957    5.0856      6.2732    6.5589
+ 2013    9.9019       5.4120      5.0768    5.1253     5.8255   5.2381        10.4084   5.1253   7.2302   5.4257   8.8453   8.6216    5.1253      7.4302   10.5766
+ 2014    5.9164       5.1649      4.9827    4.7132     4.8971   4.9909         5.9166   4.7132   5.8808   4.8708   7.0814   5.6472    4.7132      5.8529    6.1671
+ 2015    7.4901       5.1520      5.4335    5.2020     5.6517   5.2968         7.8208   5.2020   8.2081   5.2886   8.9127   7.5832    5.2020      9.9667   10.8091
+
+
+
+
+Fig. 5. Ablation study results of different components on the MODIS and Sentinel-2 dataset.
+
+
+
+                                TABLE III                                                methods in 2009, yet achieves the best result in 2014. This
+                A BLATION S TUDY R ESULTS ON MODIS DATA                                  suggests that simple backbone fusion does not fully address the
+                                                                                         temporal drift in remote sensing data. The addition of either
+        CNN      ViT        RCA     AOL      RMSE↓        MAE↓         R2 ↑
+                                                                                         the RCA or AOL module mitigates these fluctuations to some
+        ✓                                     6.3061      5.0689       0.5531            extent. Specifically, integrating AOL yields more significant
+                  ✓                           6.3424      4.8069       0.5651
+        ✓         ✓                           5.9145      4.6377       0.6079            improvements in both accuracy and stability compared to
+        ✓         ✓         ✓                 5.3443      4.1412       0.6841            RCA, emphasizing the greater importance of adaptive edge
+        ✓         ✓                   ✓       5.1726      3.9756       0.7045            features over spectral-channel attention in yield prediction. Ul-
+        ✓         ✓         ✓         ✓       4.9278      3.7563       0.7345
+                                                                                         timately, the full DFYP model—incorporating both RCA and
+                                                                                         AOL—achieves the best performance and the most consistent
+                                                                                         results across years, demonstrating its effectiveness in handling
+are observed when comparing against other ablation variants.                             temporal variability and concept drift in remote sensing-based
+Notably, the inclusion of both AOL and ViT with CNN                                      yield estimation.
+substantially boosts performance, while the addition of RCA                              Discussion on Sentinel-2. On the Sentinel-2 dataset (shown in
+further enhances spatial feature representation.                                         Fig. 5 (d), (e) and (f)), our fusion-based model demonstrates
+Discussion on MODIS. In Figure 5 (a), (b) and (c), our                                   superior performance and stability across all four crop types.
+work consistently achieves the lowest RMSE and MAE, and                                  Notably, the individual CNN and ViT models exhibit substan-
+highest R2 in most years, with minimal year-to-year fluctation.                          tial fluctuations across the three evaluation metrics (RMSE,
+It is worth noting that both CNN and ViT individually exhibit                            MAE, and R2 ), with ViT showing particularly high variance.
+considerable performance fluctuations across years, indicating                           By fusing CNN and ViT, both performance and stability are
+limited temporal robustness. Although the fusion of CNN and                              improved to some extent, suggesting that combining local
+ViT improves overall accuracy, it still suffers from noticeable                          and global features is beneficial. Further enhancements are
+instability—for instance, it performs the worst among all                                observed when either the AOL or RCA module is integrated
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                    11
+
+
+
+                                                              TABLE IV
+                          C OMPARATIVE I MPACT OF AOL, RCA, AND V I T ACROSS MODIS AND S ENTINEL -2 DATASETS .
+
+  Component            MODIS (Low Resolution, Multi-Year)                                Sentinel-2 (High Resolution, Diverse Crops)
+  AOL                  Enhances edge features, compensating for low spatial reso- Most crucial for high-resolution imagery. Improves CNN’s abil-
+                       lution. Reduces temporal inconsistencies across years. Fixed ity to capture fine-grained crop boundaries. Key for preserving
+                       operators struggle with spectral variations.                 local structure.
+  RCA                  Essential for handling limited spectral bands. Reweights spectral Still beneficial, but less impactful due to richer spectral data.
+                       channels to reduce spectral noise. Improves multi-year predic- Aids spectral selection but plays a secondary role in feature
+                       tion stability.                                                   extraction.
+  ViT                  Most effective in low-resolution settings. Captures long-range Beneficial but less dominant, as AOL-Net extracts local features
+                       dependencies, compensating for resolution constraints. Im- well. Supports large-scale pattern recognition but is less critical
+                       proves feature aggregation for multi-year predictions.         in high-res imagery.
+  Conclusion           ViT plays the most crucial role in low-resolution data, compen- AOL is the primary driver of improvement in high-resolution
+                       sating for spatial limitations. AOL stabilizes edges, while RCA data. RCA helps but is less impactful, while ViT provides
+                       mitigates spectral inconsistencies.                             complementary spatial learning.
+
+
+into the fusion model, with both additions leading to noticeable                 This visualization explicitly highlights the advantage of the
+improvements in accuracy and consistency.                                     proposed framework in both accuracy and robustness. The
+   Interestingly, unlike on the MODIS dataset, the performance                reduced spatial error variance suggests that the combination
+gap between the AOL- and RCA-enhanced models is relatively                    of adaptive edge-aware feature extraction (via AOL-CNN)
+small on Sentinel-2, especially in terms of RMSE. However,                    and global context modeling (via ViT) enables DFYP to
+a closer look at the MAE and R2 metrics reveals that AOL                      better handle regional variability and reduce systematic bias.
+still provides more pronounced benefits than RCA, reinforcing                 Moreover, our method maintains stable performance even in
+the value of edge-aware adaptive feature extraction. When                     climatically volatile years (e.g., 2012–2013), demonstrating
+both AOL and RCA are incorporated—yielding our full DFYP                      its resilience to temporal disturbances. This resilience under
+model—the resulting performance and stability reach their                     climatic extremes suggests that DFYP is not only accurate
+highest levels, as evidenced by the consistently superior blue                under ideal conditions, but also robust and generalizable in
+lines across all metrics.                                                     real-world, high-variance agricultural environments.
+Summary. These observations confirms that each compo-
+nent—AOL, RCA, and ViT—enhances model performance,
+with their combination yielding the best results. ViT improves                                            V. C ONCLUSION
+long-range feature extraction in low-resolution data (MODIS),
+AOL enhances edge features in high-resolution data (Sentinel-                     We propose DFYP, a dynamically fused crop yield pre-
+2), and RCA stabilizes spectral feature selection, particularly               diction framework integrates adaptive feature extraction and
+benefiting MODIS. These results highlight the necessity of a                  multimodal fusion to enhance robustness across diverse re-
+dynamically fused framework for robust crop yield prediction                  mote sensing datasets. Our approach introduces three key
+across diverse remote sensing conditions. Supplementary ma-                   innovations: a dual-branch architecture that optimally bal-
+terial is visible for detailed analysis of each component on two              ances local and global feature extraction through learnable
+datasets. We summarize the results of the ablation experiments                weight coefficients, an Adaptive Operator Learning (AOL)
+on the two datasets in Table IV.                                              that selects the most suitable edge detection operator (Sobel,
+                                                                              Scharr, or a learnable kernel) based on historical perfor-
+G. More Results: Spatial Visualization                                        mance to improve spatial feature extraction, and a Resolution-
+   To complement the quantitative metrics aforementioned,                     Aware Channel attention (RCA) module that applies max
+we utilize spatiotemporal error maps to demonstrate a more                    pooling after histogram processing for low-resolution data
+intuitive comparison between our method and existing state-                   (e.g., MODIS) to enhance key spectral features while using
+of-the-art approaches, which are shown in Figure 6. Each map                  average pooling for high-resolution data (e.g., Sentinel-2) to
+visualizes county-level yield prediction errors over time, where              preserve fine spatial details. Extensive experiments on MODIS
+colors range from deep red (severe underestimation, -15 bu/ac)                and Sentinel-2 datasets demonstrate that DFYP consistently
+to deep blue (severe overestimation, +15 bu/ac). Lighter tones                outperforms state-of-the-art models across multiple evaluation
+near the center indicate predictions closer to ground truth.                  metrics. The results validate DFYP’S adaptability to varying
+   Compared to other methods, DFYP consistently exhibits a                    spatial resolutions, environmental conditions, and crop types.
+more neutral and spatially balanced error distribution across                 Additionally, DFYP demonstrates robustness under real-world
+all years, with significantly fewer regions showing extreme                   constraints, making it a practical and scalable solution for
+under- or overestimation. In contrast, baseline models such                   modern agricultural monitoring and decision support.
+as CNN+LSTM, ConvLSTM, and DeepYield display larger                               In future work, we plan to incorporate uncertainty quan-
+spatial error clusters—particularly in regions with complex                   tification to enhance predictive reliability and explore more
+terrain or heterogeneous crop conditions—indicating limited                   efficient edge detection strategies tailored for high-resolution
+generalization capacity under diverse environmental settings.                 remote sensing data.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                      12
+
+
+
+
+Fig. 6. Spatiotemporal Error Maps for Comparative Model Analysis
+
+
+
+                    ACKNOWLEDGMENTS                                System (EOS) onboard NASA’s Terra satellite, launched in
+   This paper has received significant assistance from Dr. Jing    1999, and Aqua satellite, launched in 2002. In this study, we
+Zhang of the Australian National University. At the same           utilize MODIS-derived data, which includes three components:
+time, we would like to express our gratitude to the editor and     surface reflectance, surface temperature, and soil cover type.
+reviewers for their valuable comments on this article.                1) surface reflectance The MOD09A1 product, derived from
+                                                                   the MODIS instrument onboard the Terra satellite, provides
+                       A PPENDIX A                                 surface reflectance data for bands 1–7, which are similar
+               M ORE DATASET D ESCRIPTION                          to those of the Thematic Mapper (TM) sensor but feature
+  In the experiment, we employ two datasets, which together        narrower bandwidths. This characteristic reduces atmospheric
+contain four crops at different resolutions, to evaluate the       effects and enhances data quality. Various indices can be
+performance of the model. The details are provided below.          extracted from reflectance data, such as the water body index,
+MODIS data: The Moderate Resolution Imaging Spectrora-             vegetation index, brightness index, and other classification
+diometer (MODIS) is a key instrument of the Earth Observing        indices, which are widely used in classification methodolo-
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                  13
+
+
+
+
+         (a) Soybean production by statistical provinces in 2020         (b) Geographical distribution of Sentinel-2 image collections
+Fig. 7. Visualization of the Sentinel-2 dataset.
+
+
+
+gies. The reflectance spectra of vegetation, soil, and water        (L1C) imagery with a maximum cloud coverage threshold of
+bodies exhibit significant differences in the visible and near-     20%. Each image in the dataset has a spatial dimension of
+infrared (NIR) bands. For instance, in the RED band (0.620–         224×224 pixels, covering a 9×9 km ground area. Instead
+0.670 µm), vegetation and soil show lower reflectance com-          of standard RGB bands, three specific spectral bands were
+pared to the NIR band (0.700–1.100 µm), and the RED band            selected: B02 (blue), B08 (near-infrared/NIR), and B11 (short-
+is sensitive to vegetation cover and growth. In the BLUE band       wave infrared/SWIR), which are particularly valuable for
+(0.459–0.479 µm), differences between soil and vegetation are       agricultural monitoring. While the native resolutions of these
+pronounced. The NIR band (0.841–0.876 µm) is characterized          bands vary (10m for B02 and B08, 20m for B11), all images
+by high reflectance in vegetation, making it a strong indicator     were resampled to a uniform spatial resolution for consistency.
+for vegetation-related analysis. For water bodies, reflectance is      The dataset spans six years (2017-2022) and covers 2,291
+primarily observed in the green and BLUE bands, while in the        counties across the continental United States, providing ex-
+NIR and MIR regions, water bodies exhibit strong absorption         tensive spatial and temporal coverage for analyzing crop
+of light waves. In contrast, soil either absorbs or reflects        development patterns. Figure 7 presents a spatial overlay of
+incident light depending on its composition and condition.          Sentinel-2 image coverage and county-level soybean yield
+   2) surface temperature Surface temperature is influenced         data from 2020, illustrating the alignment between satellite
+by various factors, including sunlight duration, light intensity,   observations and agricultural production.
+local air temperature, and atmospheric humidity. Vegetation
+cover also plays a significant role, with surface temperatures
+typically higher in areas lacking vegetation compared to
+those with abundant vegetation. The MOD11 product provides
+surface temperature data with varying temporal and spatial
+resolutions; in this study, we utilize the MOD11A2 product.
+   3) soil cover type The MODIS land cover type product
+MCD12Q1 provides global land cover data at a spatial res-
+olution of 500 meters. It includes classifications from five
+different systems, 12 scientific datasets, and a three-layer        Fig. 8. Example image of Sentinel-2 data with different time.
+legend based on the Food and Agriculture Organization’s
+Land Cover Classification System (LCCS). Additionally, it
+contains a quality control layer and a binary land-water mask,
+supporting the creation of land cover maps with six different
+legends.
+Sentinel-2 data: We utilize the Sentinel-2 dataset introduced
+by Lin et al. [75], which provides high-resolution satellite
+imagery for monitoring crop growth across the continental
+United States. This dataset is derived from the Sentinel-2          Fig. 9. Histogrammed image of MODIS data. The upper row shows the
+mission, consisting of twin satellites positioned 180° apart in     visualizaition of 9 channels histogrammed images. The bottom row indicates
+                                                                    6 position images of MODIS data.
+the same orbit, theoretically enabling a 5-day global revisit
+cycle. However, due to data availability constraints and cloud
+coverage considerations, the dataset was constructed with a                                 A PPENDIX B
+14-day sampling interval.                                                                DATA P ROCESSING
+   As described in [75], the dataset was collected using the          To enhance the accuracy of crop yield prediction, we applied
+Sentinel Hub Processing API, accessing Sentinel-2 Level-1C          specific preprocessing methods to datasets with varying reso-
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                         14
+
+
+
+lutions to extract high-quality information. For the Sentinel-       methodologies of our DFYP model for crop yield prediction
+2 dataset from Lin et al. [75], we utilized the data directly        from remote sensing imagery.
+as it was already appropriately processed with standardized
+image dimensions, cloud filtering, and spectral band selection                                      R EFERENCES
+as described in the previous section. While no additional             [1] H. Aghighi, M. Azadbakht, D. Ashourloo, H. S. Shahrabi, and S. Ra-
+preprocessing was required for this dataset, we visualized                diom, “Machine learning regression techniques for the silage maize yield
+sample images to verify data quality and characteristics, as              prediction using time-series images of landsat 8 oli,” IEEE Journal of
+                                                                          Selected Topics in Applied Earth Observations and Remote Sensing,
+shown in Figure 8.                                                        vol. 11, no. 12, pp. 4563–4577, 2018.
+   For MODIS data, which includes surface reflectance (7              [2] D. Elavarasan, D. R. Vincent, V. Sharma, A. Y. Zomaya, and K. Srini-
+bands), surface temperature (2 bands), and land cover type                vasan, “Forecasting yield by integrating agrarian factors and machine
+                                                                          learning models: A survey,” Computers and electronics in agriculture,
+(1 band) from 2009 to 2015, preprocessing was necessary due               vol. 155, pp. 257–282, 2018.
+to the varying temporal resolutions: surface reflectance and          [3] M. Qiao, X. He, X. Cheng, P. Li, Q. Zhao, C. Zhao, and Z. Tian,
+temperature are available every 8 days, while land cover data             “Kstage: A knowledge-guided spatial-temporal attention graph learning
+                                                                          network for crop yield prediction,” Information Sciences, vol. 619, pp.
+are annual. The preprocessing steps are as follows:                       19–37, 2023.
+   1) Annual Classification and Spectral Extraction Firstly, we       [4] J. Liu, J. Shang, B. Qian, T. Huffman, Y. Zhang, T. Dong, Q. Jing, and
+classify the MODIS data by year, extract the required spectral            T. Martin, “Crop yield estimation using time-series modis data and the
+                                                                          effects of cropland masks in ontario, canada,” Remote Sensing, vol. 11,
+data for each year to prepare for further processing. Let B               no. 20, p. 2419, 2019.
+represent the total of stacked channels, N indicate the number        [5] M. A. Jabed and M. A. A. Murad, “Crop yield prediction in agriculture:
+of channels per acquisition of the spectral product, and M be             A comprehensive review of machine learning and deep learning ap-
+                                                                          proaches, with insights for future research and sustainability,” Heliyon,
+the acquisition interval in days. The specific number of spectral         2024.
+bands per year is calculated as follows:                              [6] M. Shahhosseini, G. Hu, S. Khaki, and S. V. Archontoulis, “Corn yield
+                                                                          prediction with ensemble cnn-dnn,” Frontiers in plant science, vol. 12,
+                                          365                             p. 709008, 2021.
+                   bands1year = N × ⌊         ⌋               (15)
+                                          M                           [7] P. Helber, B. Bischke, P. Habelitz, C. Sanchez, D. Pathak, M. Miranda,
+                                                                          H. Najjar, F. Mena, J. Siddamsetty, D. Arenas et al., “Crop yield
+where ⌊.⌋ indicates the rounding down operator.                           prediction: An operational approach to crop yield modeling on field
+   2) Preprocessing and Reclassification of Land Cover Data               and subfield level with machine learning models,” in IGARSS 2023-
+Preprocess the annually extracted land cover data by removing             2023 IEEE International Geoscience and Remote Sensing Symposium.
+                                                                          IEEE, 2023, pp. 2763–2766.
+irrelevant information and reclassifying it based on specific cri-    [8] J. You, X. Li, M. Low, D. Lobell, and S. Ermon, “Deep gaussian process
+teria. For instance, convert the data into a binary classification        for crop yield prediction based on remote sensing data,” in Proceedings
+by assigning a value of 1 to designated land cover types (e.g.,           of the AAAI conference on artificial intelligence, vol. 31, no. 1, 2017.
+                                                                      [9] S. Khaki, L. Wang, and S. V. Archontoulis, “A cnn-rnn framework for
+crop areas) and 0 to others. This transformation generates a              crop yield prediction,” Frontiers in Plant Science, vol. 10, p. 1750, 2020.
+mask for filtering purposes.                                         [10] L. Zhang, L. Zhang, and B. Du, “Deep learning for remote sensing data:
+   3) Mask Generation and Application Based on the reclas-                A technical tutorial on the state of the art,” IEEE Geoscience and remote
+                                                                          sensing magazine, vol. 4, no. 2, pp. 22–40, 2016.
+sified land cover data, generate a specific mask to identify         [11] A. A. Aleissaee, A. Kumar, R. M. Anwer, S. Khan, H. Cholakkal, G.-
+the target areas. Apply this mask to the annually extracted               S. Xia, and F. S. Khan, “Transformers in remote sensing: A survey,”
+spectral data, effectively retaining relevant information within          Remote Sensing, vol. 15, no. 7, p. 1860, 2023.
+                                                                     [12] A. Dosovitskiy, “An image is worth 16x16 words: Transformers for
+target areas and filtering out unrelated regions.                         image recognition at scale,” arXiv preprint arXiv:2010.11929, 2020.
+   4) Channel Combination Specifically, the surface reflectance      [13] L. Ma, Y. Liu, X. Zhang, Y. Ye, G. Yin, and B. A. Johnson, “Deep
+and surface temperature channels for the same area, segmented             learning in remote sensing applications: A meta-analysis and review,”
+                                                                          ISPRS journal of photogrammetry and remote sensing, vol. 152, pp.
+by year, are stacked together, resulting in a combined spectral           166–177, 2019.
+channel with 9 channels. This combined spectral data was             [14] B. Graham, A. El-Nouby, H. Touvron, P. Stock, A. Joulin, H. Jégou, and
+then further processed using the mask to obtain the final pre-            M. Douze, “Levit: a vision transformer in convnet’s clothing for faster
+processed spectral data.                                                  inference,” in Proceedings of the IEEE/CVF international conference on
+                                                                          computer vision, 2021, pp. 12 259–12 269.
+   5) Histogram Transformation In low-to-medium resolution           [15] S. Khaki and L. Wang, “Crop yield prediction using deep neural
+images, local details may be blurry and susceptible to noise.             networks,” Frontiers in plant science, vol. 10, p. 621, 2019.
+By focusing on the global distribution of data, histograms           [16] R. A. Schwalbert, T. Amado, G. Corassa, L. P. Pott, P. V. Prasad,
+                                                                          and I. A. Ciampitti, “Satellite-based soybean yield forecast: Integrating
+effectively capture overall features while minimizing noise               machine learning and weather data for improving crop yield prediction
+impact. We transformed spectral images into histograms by                 in southern brazil,” Agricultural and Forest Meteorology, vol. 284, p.
+calculating pixel frequencies within specified intervals for              107886, 2020.
+                                                                     [17] J. Lu, J. Li, H. Fu, X. Tang, Z. Liu, H. Chen, Y. Sun, and X. Ning, “Deep
+each spectral band, thereby enhancing feature extraction and              learning for multi-source data-driven crop yield prediction in northeast
+robustness. A consistent interval specification was applied               china,” Agriculture, vol. 14, no. 6, p. 794, 2024.
+across all counties, standardizing the dataset and facilitating      [18] X. Zhou, K. Shen, L. Weng, R. Cong, B. Zheng, J. Zhang, and C. Yan,
+                                                                          “Edge-guided recurrent positioning network for salient object detection
+seamless input into the neural network. Figure 9 illustrates              in optical remote sensing images,” IEEE Transactions on Cybernetics,
+the comparison of images before and after histogram trans-                vol. 53, no. 1, pp. 539–552, 2022.
+formation. An example of the processed image is shown in             [19] M. Le and S. Kayal, “Revisiting edge detection in convolutional neural
+                                                                          networks,” in 2021 International Joint Conference on Neural Networks
+Figure 8.                                                                 (IJCNN). IEEE, 2021, pp. 1–9.
+   In this supplementary material, we provide a comprehensive        [20] J. Lu, A. Liu, F. Dong, F. Gu, J. Gama, and G. Zhang, “Learning
+foundation that supports the main paper’s findings, offering              under concept drift: A review,” IEEE transactions on knowledge and
+deeper insights into the data characteristics and processing              data engineering, vol. 31, no. 12, pp. 2346–2363, 2018.
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                                                                                                     15
+
+
+
+[21] J. Gama, I. Žliobaitė, A. Bifet, M. Pechenizkiy, and A. Bouchachia, “A     [44] F. Lin, S. Crawford, K. Guillot, Y. Zhang, Y. Chen, X. Yuan, L. Chen,
+     survey on concept drift adaptation,” ACM computing surveys (CSUR),                S. Williams, R. Minvielle, X. Xiao et al., “Mmst-vit: Climate change-
+     vol. 46, no. 4, pp. 1–37, 2014.                                                   aware crop yield prediction via multi-modal spatial-temporal vision
+[22] A. Kamilaris and F. X. Prenafeta-Boldú, “Deep learning in agriculture: A         transformer,” in Proceedings of the IEEE/CVF International Conference
+     survey,” Computers and electronics in agriculture, vol. 147, pp. 70–90,           on Computer Vision, 2023, pp. 5774–5784.
+     2018.                                                                        [45] I. Pacal, “Enhancing crop productivity and sustainability through dis-
+[23] A. Oikonomidis, C. Catal, and A. Kassahun, “Deep learning for crop                ease identification in maize leaves: Exploiting a large dataset with an
+     yield prediction: a systematic literature review,” New Zealand Journal            advanced vision transformer model,” Expert Systems with Applications,
+     of Crop and Horticultural Science, vol. 51, no. 1, pp. 1–26, 2023.                vol. 238, p. 122099, 2024.
+[24] K. Jhajharia, P. Mathur, S. Jain, and S. Nijhawan, “Crop yield predic-       [46] Z. Peng, W. Huang, S. Gu, L. Xie, Y. Wang, J. Jiao, and Q. Ye,
+     tion using machine learning and deep learning techniques,” Procedia               “Conformer: Local features coupling global representations for visual
+     Computer Science, vol. 218, pp. 406–417, 2023.                                    recognition,” in Proceedings of the IEEE/CVF international conference
+[25] Y. LeCun, Y. Bengio, and G. Hinton, “Deep learning,” nature, vol. 521,            on computer vision, 2021, pp. 367–376.
+     no. 7553, pp. 436–444, 2015.                                                 [47] K. Gavahi, P. Abbaszadeh, and H. Moradkhani, “Deepyield: A com-
+                                                                                       bined convolutional neural network with long short-term memory for
+[26] J. Redmon, “You only look once: Unified, real-time object detection,”
+                                                                                       crop yield forecasting,” Expert Systems with Applications, vol. 184, p.
+     in Proceedings of the IEEE conference on computer vision and pattern
+                                                                                       115511, Dec. 2021.
+     recognition, 2016.
+                                                                                  [48] H. Wu, B. Xiao, N. Codella, M. Liu, X. Dai, L. Yuan, and L. Zhang,
+[27] S. Khaki, H. Pham, and L. Wang, “Simultaneous corn and soybean
+                                                                                       “Cvt: Introducing convolutions to vision transformers,” in Proceedings
+     yield prediction from remote sensing data using deep transfer learning,”
+                                                                                       of the IEEE/CVF international conference on computer vision, 2021,
+     Scientific Reports, vol. 11, no. 1, p. 11132, 2021.
+                                                                                       pp. 22–31.
+[28] T. Lees, G. Tseng, C. Atzberger, S. Reece, and S. Dadson, “Deep              [49] K. Yuan, S. Guo, Z. Liu, A. Zhou, F. Yu, and W. Wu, “Incorporating
+     learning for vegetation health forecasting: a case study in kenya,” Remote        convolution designs into visual transformers,” in Proceedings of the
+     Sensing, vol. 14, no. 3, p. 698, 2022.                                            IEEE/CVF international conference on computer vision, 2021, pp. 579–
+[29] V. S. F. Garnot and L. Landrieu, “Panoptic segmentation of satellite              588.
+     image time series with convolutional temporal attention networks,” in        [50] A. Hassani, S. Walton, N. Shah, A. Abuduweili, J. Li, and H. Shi,
+     Proceedings of the IEEE/CVF International Conference on Computer                  “Escaping the big data paradigm with compact transformers,” arXiv
+     Vision, 2021, pp. 4872–4881.                                                      preprint arXiv:2104.05704, 2021.
+[30] J. Fan, J. Bai, Z. Li, A. Ortiz-Bobea, and C. P. Gomes, “A gnn-rnn           [51] Y. Li, K. Zhang, J. Cao, R. Timofte, and L. Van Gool, “Localvit: Bring-
+     approach for harnessing geospatial and temporal information: applica-             ing locality to vision transformers,” arXiv preprint arXiv:2104.05707,
+     tion to crop yield prediction,” in Proceedings of the AAAI conference             2021.
+     on artificial intelligence, vol. 36, no. 11, 2022, pp. 11 873–11 881.        [52] Z. Zhang, H. Zhang, L. Zhao, T. Chen, and T. Pfister, “Aggregating
+[31] F. Akhavizadegan, J. Ansarifar, L. Wang, I. Huber, and S. V. Archon-              nested transformers,” arXiv preprint arXiv:2105.12723, vol. 2, no. 3,
+     toulis, “A time-dependent parameter estimation framework for crop                 p. 5, 2021.
+     modeling,” Scientific reports, vol. 11, no. 1, p. 11437, 2021.               [53] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov, and
+[32] S. Mourtzinis, P. D. Esker, J. E. Specht, and S. P. Conley, “Advanc-              S. Zagoruyko, “End-to-end object detection with transformers,” in
+     ing agricultural research using machine learning algorithms,” Scientific          European conference on computer vision. Springer, 2020, pp. 213–
+     reports, vol. 11, no. 1, p. 17879, 2021.                                          229.
+[33] M. Turchetta, L. Corinzia, S. Sussex, A. Burton, J. Herrera,                 [54] Y. Chen, X. Dai, D. Chen, M. Liu, X. Dong, L. Yuan, and Z. Liu,
+     I. Athanasiadis, J. M. Buhmann, and A. Krause, “Learning long-                    “Mobile-former: Bridging mobilenet and transformer,” in Proceedings of
+     term crop management strategies with cyclesgym,” Advances in neural               the IEEE/CVF conference on computer vision and pattern recognition,
+     information processing systems, vol. 35, pp. 11 396–11 409, 2022.                 2022, pp. 5270–5279.
+[34] P. Nevavuori, N. Narra, and T. Lipping, “Crop yield prediction with          [55] X. Li, J. Xu, Y. Zhang, R. Feng, R.-W. Zhao, T. Zhang, X. Lu, and
+     deep convolutional neural networks,” Computers and electronics in                 S. Gao, “Tccnet: Temporally consistent context-free network for semi-
+     agriculture, vol. 163, p. 104859, 2019.                                           supervised video polyp segmentation.” in IJCAI, 2022, pp. 1109–1115.
+[35] Y. Chen, Z. Lin, X. Zhao, G. Wang, and Y. Gu, “Deep learning-based           [56] J. Wang, Z. Wang, S. Zhuang, Y. Hao, and H. Wang, “Cross-
+     classification of hyperspectral data,” IEEE Journal of Selected topics            enhancement transformer for action segmentation,” Multimedia Tools
+     in applied earth observations and remote sensing, vol. 7, no. 6, pp.              and Applications, vol. 83, no. 9, pp. 25 643–25 656, 2024.
+     2094–2107, 2014.                                                             [57] Z. Dai, H. Liu, Q. V. Le, and M. Tan, “Coatnet: Marrying convolu-
+[36] S. Tyagi, S. Reddy, R. Anand, and A. Sabharwal, “Enhancing rice crop              tion and attention for all data sizes,” Advances in neural information
+     health: a light weighted cnn-based disease detection system with mobile           processing systems, vol. 34, pp. 3965–3977, 2021.
+     application integration,” Multimedia Tools and Applications, vol. 83,        [58] J. Guo, K. Han, H. Wu, C. Xu, Y. Tang, C. Xu, and Y. Wang, “Cmt:
+     no. 16, pp. 48 799–48 829, 2024.                                                  Convolutional neural networks meet vision transformers. 2022 ieee,” in
+                                                                                       CVF Conference on Computer Vision and Pattern Recognition (CVPR),
+[37] P. Bhatt, S. Sarangi, and S. Pappula, “Comparison of cnn models
+                                                                                       2022, pp. 12 165–12 175.
+     for application in crop health assessment with participatory sensing,”
+                                                                                  [59] Y. Xu, Q. Zhang, J. Zhang, and D. Tao, “Vitae: Vision transformer
+     in 2017 IEEE Global Humanitarian Technology Conference (GHTC).
+                                                                                       advanced by exploring intrinsic inductive bias,” Advances in neural
+     IEEE, 2017, pp. 1–7.
+                                                                                       information processing systems, vol. 34, pp. 28 522–28 535, 2021.
+[38] H. Yunusa, S. Qin, A. H. A. Chukkol, A. A. Yusuf, I. Bello, and
+                                                                                  [60] A. Hassani and H. Shi, “Dilated neighborhood attention transformer,”
+     A. Lawan, “Exploring the synergies of hybrid cnns and vits architectures
+                                                                                       arXiv preprint arXiv:2209.15001, 2022.
+     for computer vision: A survey,” arXiv preprint arXiv:2402.02941, 2024.
+                                                                                  [61] B. Cheng, A. Schwing, and A. Kirillov, “Per-pixel classification is not
+[39] S. W. Zamir, A. Arora, S. Khan, M. Hayat, F. S. Khan, and M.-H. Yang,             all you need for semantic segmentation,” Advances in neural information
+     “Restormer: Efficient transformer for high-resolution image restoration,”         processing systems, vol. 34, pp. 17 864–17 875, 2021.
+     in Proceedings of the IEEE/CVF conference on computer vision and             [62] Y. Li, G. Yuan, Y. Wen, J. Hu, G. Evangelidis, S. Tulyakov, Y. Wang, and
+     pattern recognition, 2022, pp. 5728–5739.                                         J. Ren, “Efficientformer: Vision transformers at mobilenet speed,” Ad-
+[40] A. Vaswani, “Attention is all you need,” Advances in Neural Information           vances in Neural Information Processing Systems, vol. 35, pp. 12 934–
+     Processing Systems, 2017.                                                         12 949, 2022.
+[41] H. Zhang, I. Goodfellow, D. Metaxas, and A. Odena, “Self-attention           [63] M. V. Conde, U.-J. Choi, M. Burchi, and R. Timofte, “Swin2sr: Swinv2
+     generative adversarial networks,” in International conference on machine          transformer for compressed image super-resolution and restoration,” in
+     learning. PMLR, 2019, pp. 7354–7363.                                              European Conference on Computer Vision. Springer, 2022, pp. 669–
+[42] S. Khan, M. Naseer, M. Hayat, S. W. Zamir, F. S. Khan, and M. Shah,               687.
+     “Transformers in vision: A survey,” ACM computing surveys (CSUR),            [64] J. Yao, X. Wang, S. Yang, and B. Wang, “Vitmatte: Boosting image
+     vol. 54, no. 10s, pp. 1–41, 2022.                                                 matting with pre-trained plain vision transformers,” Information Fusion,
+[43] J. Yao, B. Zhang, C. Li, D. Hong, and J. Chanussot, “Extended vision              vol. 103, p. 102091, 2024.
+     transformer (exvit) for land use and land cover classification: A mul-       [65] L. Batalik, F. Dosbaba, M. Hartman, V. Konecny, K. Batalikova, and
+     timodal deep learning framework,” IEEE Transactions on Geoscience                 J. Spinar, “Long-term exercise effects after cardiac telerehabilitation in
+     and Remote Sensing, vol. 61, pp. 1–15, 2023.                                      patients with coronary artery disease: 1-year follow-up results of the
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021                         16
+
+
+
+     randomized study,” Eur J Phys Rehabil Med, vol. 57, no. 5, pp. 807–
+     814, 2021.
+[66] Q. Wang, B. Wu, P. Zhu, P. Li, W. Zuo, and Q. Hu, “Eca-net:
+     Efficient channel attention for deep convolutional neural networks,”
+     in Proceedings of the IEEE/CVF conference on computer vision and
+     pattern recognition, 2020, pp. 11 534–11 542.
+[67] J. Fu, J. Liu, H. Tian, Y. Li, Y. Bao, Z. Fang, and H. Lu, “Dual attention
+     network for scene segmentation,” in Proceedings of the IEEE/CVF
+     conference on computer vision and pattern recognition, 2019, pp. 3146–
+     3154.
+[68] A. G. Roy, N. Navab, and C. Wachinger, “Concurrent spatial and channel
+     ‘squeeze & excitation’in fully convolutional networks,” in Medical
+     Image Computing and Computer Assisted Intervention–MICCAI 2018:
+     21st International Conference, Granada, Spain, September 16-20, 2018,
+     Proceedings, Part I. Springer, 2018, pp. 421–429.
+[69] S. Woo, J. Park, J.-Y. Lee, and I. S. Kweon, “Cbam: Convolutional
+     block attention module,” in Proceedings of the European conference on
+     computer vision (ECCV), 2018, pp. 3–19.
+[70] A. Srinivas, T.-Y. Lin, N. Parmar, J. Shlens, P. Abbeel, and A. Vaswani,
+     “Bottleneck transformers for visual recognition,” in Proceedings of the
+     IEEE/CVF conference on computer vision and pattern recognition, 2021,
+     pp. 16 519–16 529.
+[71] P. Nevavuori, N. Narra, P. Linna, and T. Lipping, “Crop yield prediction
+     using multitemporal uav data and spatio-temporal deep learning models,”
+     Remote Sensing, vol. 12, no. 23, p. 4000, Dec. 2020.
+[72] S. M. M. Nejad, D. Abbasi-Moghadam, A. Sharifi, N. Farmonov,
+     K. Amankulova, and M. Laszlz, “Multispectral crop yield prediction
+     using 3dconvolutional neural networks and attention convolutional lstm
+     approaches,” IEEE Journal of Selected Topics in Applied Earth Obser-
+     vations and Remote Sensing, vol. 16, pp. 254–266, 2023.
+[73] S. M. Mirhoseini Nejad, D. Abbasi-Moghadam, and A. Sharifi, “Con-
+     vlstm–vit: A deep neural network for crop yield prediction using earth
+     observations and remotely sensed data,” IEEE Journal of Selected Topics
+     in Applied Earth Observations and Remote Sensing, vol. 17, pp. 17 489–
+     17 502, 2024.
+[74] J. Hu, L. Shen, and G. Sun, “Squeeze-and-excitation networks,” in
+     Proceedings of the IEEE conference on computer vision and pattern
+     recognition, 2018, pp. 7132–7141.
+[75] F. Lin, K. Guillot, S. Crawford, Y. Zhang, X. Yuan, and N.-F. Tzeng, “An
+     open and large-scale dataset for multi-modal climate change-aware crop
+     yield predictions,” in Proceedings of the 30th ACM SIGKDD Conference
+     on Knowledge Discovery and Data Mining, 2024, pp. 5375–5386.
+[76] F. Guo, J. Yang, H. Li, G. Li, and Z. Zhang, “A convlstm conjunction
+     model for groundwater level forecasting in a karst aquifer considering
+     connectivity characteristics,” Water, vol. 13, no. 19, p. 2759, Oct. 2021.
+[77] S. P. Church, T. Haigh, M. Widhalm, S. G. De Jalon, N. Babin,
+     J. S. Carlton, M. Dunn, K. Fagan, C. L. Knutson, and L. S. Prokopy,
+     “Agricultural trade publications and the 2012 midwestern us drought:
+     A missed opportunity for climate risk communication,” Climate Risk
+     Management, vol. 15, pp. 45–60, 2017.
+[78] I. Sobel, G. Feldman et al., “A 3x3 isotropic gradient operator for image
+     processing,” a talk at the Stanford Artificial Project in, vol. 1968, pp.
+     271–272, 1968.
+[79] J. Canny, “A computational approach to edge detection,” IEEE Transac-
+     tions on Pattern Analysis and Machine Intelligence, vol. PAMI-8, no. 6,
+     pp. 679–698, 1986.
+[80] R. A. Kirsch, “Computer determination of the constituent structure of
+     biological images,” in Computers and Biomedical Research, vol. 4, no. 3.
+     Elsevier, 1971, pp. 315–328.
+[81] D. Marr and E. Hildreth, “Theory of edge detection,” Proceedings of
+     the Royal Society of London. Series B. Biological Sciences, vol. 207,
+     no. 1167, pp. 187–217, 1980.
+[82] J. M. Prewitt, “Object enhancement and extraction,” Picture Processing
+     and Psychopictorics, vol. 10, no. 1, pp. 15–19, 1970.
+[83] P. E. DO CT OR OF, “Machine perception of three-dimensional, so
+     lids,” Ph.D. dissertation, PhD thesis, MASSACHUSETTS INSTITUTE
+     OF TECHNOLOGY, 1961.
+[84] H. Scharr, “Optimal filters for extended optical flow,” in International
+     Workshop on Complex Motion. Springer, 2004, pp. 14–29.
+

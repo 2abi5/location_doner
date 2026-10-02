@@ -1,0 +1,881 @@
+                                        Lu et al.
+
+
+
+
+                                            RESEARCH ARTICLES
+
+
+                                        TasselNet: Counting maize tassels in the wild via
+                                        local counts regression network
+                                        Hao Lu1 , Zhiguo Cao1* , Yang Xiao1 , Bohan Zhuang2 and Chunhua Shen2
+                                        Part of this work was done when the first author was visiting The University of Adelaide, Australia.
+arXiv:1707.02290v1 [cs.CV] 7 Jul 2017
+
+
+
+
+                                            Abstract
+                                            Background: Accurately counting maize tassels is important for monitoring the growth status of maize plants.
+                                            This tedious task, however, is still mainly done by manual efforts. In the context of modern plant phenotyping,
+                                            automating this task is required to meet the need of large-scale analysis of genotype and phenotype. In recent
+                                            years, computer vision technologies have experienced a significant breakthrough due to the emergence of
+                                            large-scale datasets and increased computational resources. Naturally image-based approaches have also
+                                            received much attention in plant-related studies. Yet a fact is that most image-based systems for plant
+                                            phenotyping are deployed under controlled laboratory environment. When transferring the application scenario
+                                            to unconstrained in-field conditions, intrinsic and extrinsic variations in the wild pose great challenges for
+                                            accurate counting of maize tassels, which goes beyond the ability of conventional image processing techniques.
+                                            This calls for further robust computer vision approaches to address in-field variations.
+                                            Results: This paper studies the in-field counting problem of maize tassels. To our knowledge, this is the first
+                                            time that a plant-related counting problem is considered using computer vision technologies under
+                                            unconstrained field-based environment. With 361 field images collected in four experimental fields across China
+                                            between 2010 and 2015 and corresponding manually-labelled dotted annotations, a novel Maize Tassels
+                                            Counting (MTC) dataset is created and will be released with this paper. To alleviate the in-field challenges, a
+                                            deep convolutional neural network-based approach termed Tasselnet is proposed. Tasselnet can achieve good
+                                            adaptability to in-field variations via modelling the local visual characteristics of field images and regressing the
+                                            local counts of maize tassels. Extensive results on the MTC dataset demonstrate that Tasselnet outperforms
+                                            other state-of-the-art approaches by large margins and achieves the overall best counting performance, with a
+                                            mean absolute error of 6.6 and a mean squared error of 9.6 averaged over 8 test sequences.
+                                            Conclusions: Tasselnet can achieve robust in-field counting of maize tassels with a relatively high degree of
+                                            accuracy. Our experimental evaluations also suggest several good practices for practitioners working on
+                                            maize-tassel-like counting problems. It is worth noting that, though the counting errors have been greatly
+                                            reduced by the Tasselnet, in-field counting of maize tassels remains an open and unsolved problem.
+                                            Keywords: Maize tassels; Object counting; Computer vision; Deep learning; Convolutional neural networks
+
+
+                                        Background                                                               stage [1], flowering time [2], and yield potential [3]. In
+                                        We consider the problem of counting maize tassels                        practice, counting maize tassels still mainly depends
+                                        from images captured in the field using computer vi-                     on human efforts, which is inefficient and fallible. Such
+                                        sion. Maize tassels are the male flowers of maize plants.                a tedious task should be replaced by machines in mod-
+                                        The emergence of tassels indicates the arrival of the                    ern plant phenotyping.
+                                        reproductive stage. During this stage, the total tassel                    To meet the need of large-scale and high-throughput
+                                        number is an important cue to monitor the growth sta-                    analysis in plant phenotyping, image-based techniques
+                                        tus of maize plants. It is closely related to the growth                 provide a feasible, low-end, and efficient solution and
+                                        *
+                                         Correspondence: zgcao@hust.edu.cn                                       have thus received much attention recently [2, 3, 4, 5].
+                                        1
+                                         National Key Laboratory of Science and Technology on Multi-Spectral     However, most practitioners and researchers still con-
+                                        Information Processing, School of Automation, Huazhong University of
+                                        Science and Technology, Wuhan, 430074, China                             duct experiments under controlled artificial environ-
+                                        Full list of author information is available at the end of the article   ment. Although indoor experiments do simplify the
+Lu et al.                                                                                                                                                             Page 2 of 14
+
+
+
+
+            Aug 2          Aug 3          Aug 4          Aug 5           Aug 6          Aug 7
+        (a) Shape and size vary significantly as plants grow over time                               (e) Occlusions between leaves and tassels or different tassels
+
+
+
+
+        Jundan No. 20   Nongda No.108   Wuyue No.3   Zhengdan No.958   Jidan No.32   Tianlong No.9
+
+        (b) Appearance variations due to different cultivars                                         (f) Cluttered background caused by wires, poles and weeds
+
+
+
+
+            Cloudy        Sunny 1       Sunny 2         Sunny 3         Rainy         Overcast
+        (c) Illumination variations due to different weather conditions                              (g) Image degradation due to dust or rain drops on the camera lens
+
+
+
+
+                                                                                                          Non-flowering        Partially-flowering      Fully-flowering
+        (d) Pose variations due to wind, imaging and perspective distortions                         (h) Texture variations due to different flowering status
+
+ Figure 1 Intrinsic and extrinsic variations in the maize field. These variations pose significant challenges for in-field counting of
+ maize tassels.
+
+
+
+
+process of image processing and advance our knowl-                                                   variations before deploying plant phenotyping systems
+edge regarding the link between genotype and phe-                                                    in the wild.
+notype, ultimately plant phenotyping must be trans-                                                    Though efforts have been made to tackle above prob-
+ferred to real-world scenarios, such as in the field or                                              lems and have achieved a moderate degree of success,
+greenhouse [6]. Unfortunately, intrinsic and extrinsic                                               the precision of the state-of-the-art tassel detection
+variations in the wild field render the understanding                                                method is still below 50% [3]. This may be largely
+and processing of field-based images a challenging task.                                             due to the inherent limitation of the non-maximum
+Such challenges become more serious in the problem of                                                suppression mechanism within object detection [7]—it
+in-field counting of maize tassels. As shown in Fig. 1,                                              cannot appropriately distinguish overlapping objects.
+these challenges can largely boil down to the variations                                             Such a mechanism poses problems for accurate maize
+in the field-based environment:                                                                      tassels detection because overlaps between different
+   • Maize tassels emerge suddenly and vary signifi-                                                 tassels are common patterns in the field. We have to
+      cantly in shape and size as plants grow over time;                                             ask: is the object detection the best way to count maize
+   • Different cultivars of maize plants exhibit different                                           tassels? From a point of view of Computer Vision,
+      appearance variations, such as colour and texture;                                             the objective of object detection is to localise individ-
+   • Illumination changes dramatically due to different                                              ual instances and output their corresponding bounding
+      weather conditions, especially during the sunny                                                boxes. Since the locations of objects are identified, it
+      day;                                                                                           is easy to derive the number of instances. However,
+   • The wind, imaging angle and perspective distor-                                                 the number of instances actually has nothing to do
+      tions cause various posture variations;                                                        with the location. If one only cares about estimating
+   • Occlusions occur frequently, which renders the dif-                                             the total number of instances, the problem is another
+      ficulty for counting even for a human expert;                                                  important research topic in Computer Vision—object
+   • The cluttered background make visual patterns of                                                counting. In this paper, we show that it is better to
+      maize tassels diverse and misleading;                                                          formulate the task of maize tassels counting as a typ-
+   • The quality of images degrades because of the                                                   ical counting problem, rather than a detection one.
+      dust or rain drops on the camera lens;                                                         In fact, object detection is generally more difficult to
+   • Textural patterns also change essentially due to                                                solve than object counting.
+      different flowering status.                                                                      Nevertheless, object counting remains a known chal-
+It is worth noting that these challenges are not only                                                lenging task [8, 9], in both Plant Science and Com-
+specific to maize tassels but also applicable to a wide                                              puter Vision communities. Three sessions of Leaf
+species of plants. It is inevitable to face these in-field                                           Counting Challenge have been held in conjunction
+Lu et al.                                                                                                                   Page 3 of 14
+
+
+
+
+                                                              Output local
+                                                                counts
+                                                     Tasselnet
+
+
+                                                  Local counts regression
+
+
+                               Feeding densely-sampled sub-             Averaging local counts   Count map after merging and
+        Raw image                                                         into sub-images        normalizing sub-image counts
+                                  images into the network
+
+  Figure 2 The main technical pipeline of in-field counting of maize tassels. Sub-images are first densely sampled from a raw field
+  image. Each sub-image will be fed into our Tasselnet to regress a local count associating with the sub-image. After merging and
+  normalizing all local counts, a count map for the field image can be acquired. The raw image count can thus be computed by
+  integrating the count map.
+
+
+
+
+with the Computer Vision Problems in Plant Phe-                          demonstrated that it is indeed unnecessary to detect
+notyping workshops (CVPPP2014[1] /CVPPP2015[2] /                         or segment individual instances when estimating their
+CVPPP2017[3] ), expecting to showcase visual chal-                       counts. In particular, the key component of modern
+lenges for plant phenotyping. Many efforts are also                      counting-by-regression approaches is the introduction
+made in recent years in Computer Vision to improve                       of the density map by Lempitsky and Zisserman [12].
+the counting precision of crowds [10, 11], cells [12, 13],               Objects in an image are described by a density map
+cars [14, 15], and animals [16]. However, little atten-                  given dot annotations. During the prediction, each ob-
+tion has been paid to plants-related counting tasks. To                  ject will be assigned a density taking up 1, so the total
+our knowledge, only two published papers considered                      number of objects can be reflected by summing over
+counting problems relating to plants. [17] proposed                      the whole density map. Overlapping objects are natu-
+a learning-based approach to count leaves in rosette                     rally taken into account in this paradigm.
+plants. [18] presented a deep simulated learning ap-                        To better address aforementioned challenges, we fol-
+proach to count tomato images. A limitation is that                      low the idea of counting by regression and propose in
+both papers only report their results on potted plants,
+                                                                         this paper a deep convolutional neural network [24]
+which is far different from field-based scenarios. In
+                                                                         (CNN)-based approach for maize tassels counting,
+contrast, our experiments use images captured exactly
+                                                                         which is referred to Tasselnet. Deep networks are fa-
+under unconstrained in-field environment, leading to
+                                                                         mous due to their excellent non-linear modelling abil-
+a more challenging situation and a more reasonable
+experimental evaluation.                                                 ity and large model capacity, which is important for
+  According to the taxonomy of [19], existing object                     capturing diverse and complex visual patterns in the
+counting approaches can be classified into three cat-                    field. Notice that plants are like self-changing systems,
+egories: counting by clustering, counting by detec-                      the physical size of maize tassels in images vary sig-
+tion, and counting by regression. The counting-by-                       nificantly over time. This is what makes the prob-
+clustering approaches often rely on the extraction of                    lem of maize tassels counting different from other con-
+motion features (see [20] for example), which is not ap-                 ventional counting problems in Computer Vision (the
+plicable to the plants because the motion of plants is                   physical size of pedestrians, cells or cars in images
+almost unobservable within limited time. In addition,                    remains unchanged or almost identical), and conse-
+the counting-by-detection approaches [21, 22] tend to                    quently, renders difficulties to describe the density map
+suffer in crowded scenes with significant occlusions,                    of maize tassels. To address this, in contrast to [12]
+so this type of method is also not a good choice for                     and [15] that either regress the global density map or
+our problem. In fact, the transductive principle sug-                    the local density map, we propose to regress the local
+gests never to solve a harder problem than the tar-                      count computed from the density map. After merging
+get application necessitates [23]. As a consequence, re-                 and normalizing all local counts, our model outputs a
+cent counting-by-regression models [10, 12, 14] have                     count map similar to the ground-truth density map.
+[1]
+    https://www.plant-phenotyping.org/CVPPP2014                          The final count of maize tassels is computed by sum-
+[2]
+    https://www.plant-phenotyping.org/CVPPP2015                          ming over the whole count map. Fig. 2 illustrates our
+[3]
+    https://www.plant-phenotyping.org/CVPPP2017                          main technical pipeline.
+Lu et al.                                                                                                            Page 4 of 14
+
+
+
+
+                               Zhengzhou, Henan
+
+
+
+                                                                                    Gucheng, Hebei
+
+
+
+
+                                  Jalaid, Sinkiang                                 Taian, Shandong
+
+ Figure 3 Image acquisition devices in the maize field. Our devices are currently set up in four different places.
+
+
+
+
+  To validate the effectiveness of the proposed ap-                        our knowledge, this is the first time that a plant-
+proach, a novel Maize Tassel Counting (MTC) dataset                        related counting problem is considered under un-
+is constructed and will be released together with this                     constrained field conditions;
+paper. Our MTC dataset contains 361 images cho-                          • A challenging MTC dataset with 361 field images
+sen from 16 image sequences. These sequences are col-                      and corresponding manually-labelled dotted an-
+lected from 2010 to 2015, covering 4 different exper-                      notations;
+imental fields across China. All challenges described                    • Tasselnet: an effective deep CNN-based solution
+in Fig. 1 are involved in this dataset. The number of                      for in-field counting of maize tassels via local
+maize tassels in images varies between 0 and around                        counts regression.
+100. Following the standard annotation used in objec-
+tion counting problems [12], a single dot is manually                  Methods
+assigned for each maize tassel. We hope such a dataset                 Experimental fields and imaging devices
+could be used as a benchmark for evaluating in-field                   16 independent time-series image sequences are col-
+counting approaches and could draw attention from                      lected from four different experimental fields across
+practitioners working in this area to attach importance                China between 2010 and 2015. Four experimental fields
+to these in-field challenges.                                          are located in Zhengzhou, Henan Province, China,
+                                                                       Taian, Shandong Province, China, Gucheng, Hebei
+  Extensive evaluations are performed on the MTC
+                                                                       Province, China, and Jalaid, Sinkiang Autonomous
+dataset. Experimental results demonstrate that Tas-
+                                                                       Region, China, respectively. Six cultivars of maize
+selnet outperforms other state-of-the-art methods and                  plants are involved, including Jundan No.20, Nongda
+significantly reduces the counting errors by large mar-                No.108, Wuyue No.3, Zhengdan No.32, Jidan No.20,
+gins. Moreover, based on the experimental results, we                  and Tianlong No.9. Fig. 3 shows the experimental
+also suggest several good practices for in-field counting              fields and imaging devices. The main components of
+problems.                                                              the imaging device include a high-resolution CCD dig-
+  The contributions of this paper are multi-fold:                      ital camera (E450 Olympus), a low-resolution moni-
+   • A novel counting problem of maize tassels whose                   toring device, a 3G wireless data transmission system,
+     sizes are self-changing over time. To the best of                 as well as several solar panels used for power supply.
+Lu et al.                                                                                                       Page 5 of 14
+
+
+
+
+                                                            Table 1 Training set (train), validation set (val) and test set
+When an image is captured, it will be transmitted into      (test) settings of the MTC dataset. N um refers to the number of
+a remote server, and then users can access the image        images in each sequence.
+data. Readers can refer to [25] for a detailed intro-        Sequence          N um    Cultivar            train   val   test
+duction of our imaging device. The focal length of the       Zhengzhou2010      37     Jundan No.20          X     X
+camera is fixed to 16mm. Images were taken every one         Zhengzhou2011      24     Jundan No.20                      X
+hour from 9:00 to 16:00 from a five-meters-height ver-       Zhengzhou2012      22     Zhengdan No.958      X      X
+tical view (four meters for Gucheng sequences). The          Taian2010 1        30     Wuyue No.3           X      X
+original image resolutions are 3648×2736 pixels for          Taian2010 2        32     Wuyue No.3                        X
+Zhengzhou and Taian sequences, 4272×2848 pixels for          Taian2011 1        21     Nongda No.108        X      X
+Gucheng sequences, and 3456×2304 pixels for Jalaid           Taian2011 2        19     Nongda No.108                     X
+sequences.                                                   Taian2012 1        41     Zhengdan No.958      X      X
+                                                             Taian2012 2        23     Zhengdan No.958                   X
+Maize tassels counting dataset                               Taian2013 1         8     Zhengdan No.958      X      X
+Given 16 independent time series image sequences, im-        Taian2013 2         8     Zhengdan No.958                   X
+                                                             Gucheng2012        15     Jidan No.32          X      X
+ages captured from the tasselling stage to the flowering
+                                                             Gucheng2014        45     Zhengdan No.958                   X
+stage are considered in our MTC dataset. In particu-
+                                                             Jalaid2015 1       12     Tianlong No.9        X      X
+lar, according to the variability each sequence presents,
+                                                             Jalaid2015 2       12     Tianlong No.9                     X
+8∼45 images are manually chosen from each sequence.
+                                                             Jalaid2015 3       12     Tianlong No.9                     X
+If extrinsic conditions, such as weather conditions or
+the wind, change dramatically, more images will be
+chosen in one day, otherwise only 1 or 2 images are
+chosen. Such a sampling strategy is used with the mo-       goal is to seek some kind of regression function F so
+tivation to avoid repetitive samples as much as possi-      that T ≈ F (I). Standard solutions are to regress ex-
+ble, because images captured in one day usually do not      plicitly the raw counts in an image [10] (T is the global
+exhibit many variations. However, the ability to model      counts) or to regress implicitly the density map of an
+various data variabilities is much more important than      image [12] (T becomes a density map, and the counts
+blindly fitting a large number of repetitive samples for    can be acquired by integrating over the entire density
+an effective computer vision approach. Thus, 361 field      map). However, as what we will show in our experi-
+images in all are chosen to construct the MTC dataset.      ments, both solutions are not effective for maize tas-
+The MTC dataset is divided into the training set, vali-     sels counting. The reason may boil down to the het-
+dation set and test set. The training set and validation    erogeneity of maize tassels. As shown in Fig. 4, maize
+set share the same image sequences, while the test set      tassels exhibit uncertain poses and varying sizes, mak-
+uses different image sequences to enable a reasonable       ing them hard to be described by only a global im-
+evaluation. Such an intentional setting is motivated by     age representation or a density map given only dotted
+the fact that images in one sequence are often highly       annotations. Indeed, this is what makes maize tassels
+correlated, it is thus inappropriate to place them into     counting different from other standard counting prob-
+both the training and test stages. Table 1 summarises       lems.
+the information of the MTC dataset. Overall, we have          Inspired by a recent idea of redundant counting [26],
+186 images for training and validation and 175 images       we propose to regress the local counts Tl to address
+for test.                                                   the counting problem of maize tassels. Tl refers to
+  We also follow the standard annotation paradigm           the object counts within a small sub-image Is . The
+that manually provides each tassel with a dot anno-         proposed local regression has several benefits: i) Lo-
+tation [12]. Indeed, dotting is regarded as a natural       cal characteristics are easier to be modelled than the
+way to count for humans. It not only gives the raw          global ones; ii) By regressing the local counts, we avoid
+counts of the image but also proffer the information        the hard problem of dense per-pixel learning (com-
+how objects spatially distribute. Fig. 4 shows four ex-     pared to estimating the local density map); iii) By
+ample images with the dotted annotations.                   sampling small image patches, we can have access to
+                                                            a large number of training data, allowing us to train
+Local counts regression network                             a high-capacity model. In particular, we consider the
+In this section we describe our proposed local counts       regression function F should be powerful enough so
+regression network and show how to use it to address        that it can appropriately capture those heterogeneous
+effectively the in-field counting problem of maize tas-     in-field variations. Inspired by the recent success of
+sels.                                                       deep convolutional neural networks (CNNs) in visual
+  The high-level idea of counting by regression is sim-     recognition [24, 27], we choose to formulate F in a
+ple: given an image I and a regression target T , the       deep CNN-based framework. The goal is thus to re-
+Lu et al.                                                                                                        Page 6 of 14
+
+
+
+
+                             (a)                                                           (b)
+
+
+
+
+                             (c)                                                           (d)
+
+ Figure 4 Example images in the MTC dataset with dotted annotations. Images are from the (a) Zhengzhou2010, (b) Gucheng2012,
+ (c) Taian2011 1 and (d) Jalaid2015 1 sequences, respectively.
+
+
+
+
+cover Tl with a set of non-linear transformations F             ground-truth dot image Y , a density map D can be de-
+given Is , i.e., Tl ≈ F (Is ). Fig. 5 compares the con-         fined as D = G∗Y , where G denotes a two-dimensional
+ceptual difference of different regression goals. During        Gaussian kernel parametrised by σ, and ∗ indicates the
+the prediction, sub-images are densely sampled from             convolution operation. Obviously, D is generated by
+a test image, and F will assign a local count to each           performing Gaussian smoothing on Y . Fig. 6 shows an
+sub-image patch. The final count of the image can be            example of D given corresponding dotted annotations.
+recovered by aggregating all sub-image counts into a            It is worth noting that the summation of the density
+count map with the same size of the test image, and a           map is a decimal. The reason is that, when dots are
+per-pixel normalisation step is performed to each pixel         close to the image boundary, their Gaussian probabil-
+by dividing the number of sub-images that cast a pre-           ity will be partly outside the image, but this definition
+diction in it.                                                  naturally takes a fraction of an objection into account.
+                                                                  However, in contrast to [12, 15], we do not regard
+Regression target Different regression targets imply            D as our regression target (we will show later in our
+different regression strategies, so how to define the re-       experiments that the density map is too harsh as the
+gression target is the first and the most important             regression target) but use the local counts integrated
+step. In this paper, we first follow the standard way           from the density map. If let D(x, y) be the pixel-level
+that generates the ground truth density by placing a            count of D at the location (x, y), then the regression
+Gaussian at each dot annotation [12]. Formally, given a         target of local counts Tli for the i-th sub-image Isi can
+Lu et al.                                                                                                                Page 7 of 14
+
+
+
+
+                   62                                                    a basic input size of 32 × 32 sub-image. The number
+                                                                         of parameters within the LeNet-like, AlexNet-like and
+                                         Global count regression         VGG-VD16-Net-like architectures are about 1.4 × 105 ,
+                                                                         2.5 × 105 and 2.4 × 106 , respectively.
+                                         Density map regression
+                                                                         Loss function The learning of the regression network
+                          3.43         Local density map regression      should be driven by a loss function. In this paper, we
+                                                                         evaluate three typical loss functions used in regression
+                                          Local count regression         problems. They are `1 loss, `2 loss, and Huber loss. `1
+                                                                         loss and `2 loss take the form
+ Figure 5 Conceptual differences of different regression targets.
+ The global count regression directly regresses the number of                                M
+                                                                                         1 X
+ image counts in an image. (Local) density map regression                     L1 (θ) =         kF (Ici |θ) − Tli k1 ,            (2)
+ treats the two-dimensional (local) density map as the                                   M i=1
+ regression target. Our proposed local count regression
+ regresses the local count computed from the local density
+ map. (Best viewed in colour.)
+                                                                                             M
+                                                                                         1 X
+                                                                              L2 (θ) =         kF (Ici |θ) − Tli k22 ,           (3)
+                                                                                         M i=1
+
+                                                                         where L1 and L2 denote the `1 and `2 loss functions,
+                                                                         respectively. θ is the network parameter, and M is the
+                                                                         number of training sub-images. Empirically, `1 loss is
+                                                                         considered more robust to noise than `2 loss. Apart
+                                                                         from these two standard choices, another widely-used
+                                                                         loss function in robust regression is the Huber loss,
+ Figure 6 An example of manually-annotated dot image (left)
+ and its corresponding ground truth density map (right).                 which is defined as
+                                                                                        (     PM
+                                                                                            1
+                                                                                                     kai k2 ,     if |ai | ≤ δ
+                                                                              Lδ (a ) = 1 PMi=1 i 2 1 2
+                                                                                   i       2M                                  , (4)
+be defined:                                                                                M    i=1 δ|a | − 2 δ , otherwise
+
+
+                                                                         ai = F (Ici |θ) − Tli , and δ is a user-defined constant.
+                X
+      Tli =              D(x, y) ,                                 (1)
+              (x,y)∈Si                                                   Huber loss can be viewed as an integration of `1 and
+                                                                         `2 losses. We will show later in our experiments that `1
+where Si denotes the set of pixel locations of Isi .                     loss is the most effective one for maize tassels counting.
+
+Network architecture The network architecture closely                    Merging and normalizing sub-image counts During
+relates to to the model capacity, and the model capac-                   the prediction, Tasselnet will scan the image in a slid-
+ity is also a key factor that affects the counting perfor-               ing window manner with a stride of se . Each window
+mance. Motivated by the leading role of CNNs in Com-                     corresponds to a sub-image with size of r × r. For each
+puter Vision, in this paper we evaluate three typical                    sub-image, Tasselnet regresses a local count indicat-
+CNNs architectures: a low-capacity 4-layer model iden-                   ing the number of tassels within the sub-image. As-
+tical to the seminal LeNet architecture [28], a medium-                  sume that K sub-images in all are processed. Since
+capacity 7-layer model similar to the AlexNet archi-                     each sub-image may be counted multiple times due
+tecture [24], as well as a high-capacity 16-layer model                  to the densely-sampled mechanism, the final count of
+sharing the same spirit of the VGG-VG16-Net [27].                        maize tassels cannot be directly computed by simply
+  We follow the modern CNN design principle used                         summing over all K local counts. To address this, here
+in [27]: adopting only small 3 × 3 convolution kernels                   we develop a merging strategy to map K local counts
+with 1-pixel padding to preserve the size of the tensor,                 back to the original test image. Assume that the k-th
+doubling the number of feature maps in the higher lay-                   sub-image count is ck , we average ck into every pixel
+ers to compensate the loss of the spatial information                    of the k-th sub-image, so the count of each pixel takes
+after the max pooling operation, synthesizing learnt                     up crk2 (the sum of pixel-level counts still equals to ck ).
+features with two extra fully-connected layers, and us-                  In this way, a count map C with the same resolution
+ing the ReLU function after each convolutional/full-                     of the test image can be consequently constructed by
+connected layer. Fig. 7 shows three architectures with                   mapping the r × r local count maps back to the same
+Lu et al.                                                                                                                                Page 8 of 14
+
+
+
+
+                                                                                                           Input layer
+
+                                                                                                           Convolutional kernel with ReLU function
+
+                                                                                                           Max pooling layer
+
+                                                                                                           Feature maps
+            LeNet-like architucture for Tasselnet
+                                                                                                           Output layer
+
+
+
+
+                         AlexNet-like architucture for Tasselnet
+
+
+
+
+                                                        VGG-VD16-Net-like architucture for Tasselnet
+
+ Figure 7 Three typical CNN architectures used in Tasselnet.
+
+
+
+                                                                               Table 2 Default parameters setting used in our experiments.
+location where the sub-image is sampled. Fig. 2 illus-
+                                                                                  Parameter      Remark                                Value
+trates this process. Finally, by constructing a normal-
+                                                                                                 network architecture                  AlexNet-like
+isation image P that records how many times each
+                                                                                                 loss function                         `1
+pixel is counted, the final count of the image c can be                           r              sub-image size                        32
+computed as                                                                       sr             sampling stride during training       r/4
+                                                                                  se             sampling stride during prediction     r/4
+            X C(x, y)
+      c=                     ,                                         (5)        σ              Gaussian kernel parameter             8
+            x,y
+                  P (x, y)
+
+where C(x, y) and P (x, y) denote the value of C and                           another 10 epochs. Thus, we train Tasselnet for 25
+P at the location (x, y).                                                      epochs in all. To allow the gradient to back-propagate
+                                                                               easily from the output layer to the input layer, we add
+Implementation and learning details We implement                               a batch normalisation layer [31] after each convolu-
+Tasselnet based on MatConvNet [29]. Original high-                             tional layer before ReLU. The training time of Tassel-
+resolution images are resized to their 1/8 sizes to                            net varies from half a day to 2 days depending on the
+reduce computational burden. During training, we                               number of training samples and the network architec-
+densely crop r × r sub-images with a stride of sr from                         ture used. The prediction time for each image takes
+186 images belonging to the training and validation se-                        about 2.5 seconds (Matlab 2016a, OS: Ubuntu 14.04
+quences of MTC dataset. We perform a random shuf-                              64-bit, CPU: Intel E5-2630 2.40GHz, GPU: Nvidia
+fling of these sub-images, 90% sub-images are used for                         GeForce GTX TITAN X, RAM: 64 GB).
+training, and the rest for validation. Before feeding the                        Table 2 summarises the default parameters used in
+image samples into the network, each sub-image is pre-                         our experiments. When sr = 8, 355,473 and 31,167
+processed by mean subtraction (the mean is computed                            sub-images are densely sampled and ready for training
+from the training subset).                                                     and validation, respectively.
+   The parameters of the convolution kernels are ini-
+tialised with the improved Xaiver method [30]. The                             Results and discussion
+standard stochastic gradient descent is used to opti-                          We evaluate the effectiveness of Tasselnet on each test
+mise the network parameters. The learning rate is ini-                         sequence of MTC dataset, respectively. It is worth not-
+tially set to 0.01, and is decreased by a factor of 10 after                   ing that Jalaid2015 2 and Jalaid2015 3 are two very
+5 epochs and further decreased by a factor of 10 after                         challenging sequences. As shown in Fig. 8, images in
+Lu et al.                                                                                                                       Page 9 of 14
+
+
+
+
+                                 (a)                                                                   (b)
+
+ Figure 8 Two example images from the Jalaid2015 2 and Jalaid2015 3 sequences. Images in two sequences exhibit dramatic
+ illumination variations, dazzling visual characteristics, as well as extremely crowded distributions, which renders great difficulties for
+ counting even for a human expert.
+
+
+
+
+the Jalaid2015 2 sequence suffer from dramatic illu-                    Choices of different network architectures, number of
+mination variations (Jalaid locates in a high-latitude                  training samples, loss functions, Gaussian kernel
+area), and maize tassels in the Jalaid2015 2 sequence                   parameters, and sub-image sizes
+exhibit extremely crowded distributions. Extensive ex-                  Here we perform extensive evaluations to justify our
+periments are conducted to investigate key factors that                 design choices. Notice that, in a principal way, the in-
+affect the counting performance and to compare Tas-                     clusion of specific design choices should be justified
+selnet against other state-of-the-art approaches. Based                 on the validation set. However, since we enforce the
+on the experimental results, we also suggest several                    test set to be different sequences, the validation set
+good practices for practitioners working on in-filed                    thus exhibits a substantially different data distribu-
+counting problems.                                                      tion. Validating our design choices based on the vali-
+                                                                        dation set seems suboptimal to the test set. Instead,
+                                                                        as a preliminary study, we direct report the counting
+Evaluation metric                                                       performance on the test set to see how the variations
+The mean absolute error (MAE) and the mean squared                      of these design choices affect the final counting perfor-
+error (MSE) are used as the evaluation metrics to as-                   mance. Although with a little abuse, we demonstrate
+sess the counting performance. They take the form                       later that the performance of Tasselnet with any de-
+                                                                        sign choice shows a notable improvement over other
+                 1 X
+                     N                                                  baseline approaches by large margins. Below we follow
+      M AE =         |ti − ci | ,                               (6)     the default parameters setting unless a specific design
+                 N 1
+                                                                        choice is declared.
+
+                                                                        Network architecture. We first evaluate how the
+             v                                                          model capacity influence the results. As aforemen-
+             u   N
+             u1 X                                                       tioned, three network architectures of LeNet-like,
+      M SE = t     (ti − ci )2 ,                                (7)     AlexNet-like and VGG-VD16-Net-like Tasselnet are
+               N 1
+                                                                        considered. The learning curves of three models are
+                                                                        shown in Fig. 9. It is clear that, the deeper the model
+where N denotes the number of test images, ti is the                    uses, the lower the training error achieves. However, a
+ground truth count for the i-th image (computed by                      lower training error does not imply a lower validation
+summing over the whole density map), and ci is the                      error for our problem—the validation error of VGG-
+inferred image count for the i-th image (computed as                    VD16-Net-like model shows obvious fluctuations and
+per Eq. (5)). M AE quantifies the accuracy of the es-                   is also higher than the AlexNet-like model. Numerical
+timates, and M SE assesses the robustness of the es-                    results on the test set are shown in Table 3. Experimen-
+timates. The lower these two measures are, the better                   tal results demonstrate that the AlexNet-like architec-
+the counting performance is.                                            ture achieves the overall best counting performance,
+Lu et al.                                                                                                                                    Page 10 of 14
+
+
+
+
+Table 3 Comparison of different network architectures for maize tassels counting on the MTC dataset. The lowest error is boldfaced.
+Network                                                                             Sequences                                                      Overall
+                           Zhengzhou2011 Taian2010 2          Taian2011 2      Taian2012 2   Taian2013 2 Gucheng2014 Jalaid2015 2 Jalaid2015 3
+                           MAE      MSE        MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE
+LeNet                      4.4      5.4        6.3 8.0   2.9 3.7   6.4 7.9  4.9 5.8 3.8  5.0 16.3 17.0 28.7 33.0 7.2 11.3
+AlexNet                    4.9      6.1        5.2 6.6 2.5 2.9 4.8 5.8 4.0 5.0      5.3  6.5 16.0 16.6 20.7 25.2 6.6 9.6
+VGG-VD16-Net               2.1      2.7        10.6 12.4 13.1 15.9 5.5 10.0 4.3 5.4 10.0 11.3 10.7 11.2 20.8 24.9 9.3 12.4
+
+Table 4 Counting performance with different number of training samples (Ntrain ) on the MTC dataset. The lowest error is boldfaced.
+   Ntrain                                                                         Sequences                                                      Overall
+                         Zhengzhou2011 Taian2010 2          Taian2011 2   Taian2012 2    Taian2013 2 Gucheng2014 Jalaid2015 2 Jalaid2015 3
+                         MAE       MSE    MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE
+   2.37 × 104            6.3       7.9    8.5 11.0 5.1 6.1 7.5 9.8 8.0 11.6 6.9 8.5 16.5 18.4 33.0 39.4 9.5 14.2
+   9.13 × 104            4.9       5.9    6.9 8.6  4.2 5.3 6.5 7.9 5.7 7.0  5.5 7.2 18.4 19.5 34.2 40.0 8.5 13.4
+   3.56 × 105            4.9       6.1    5.2 6.6  2.5 2.9 4.8 5.8 4.0 5.0  5.3 6.5 16.0 16.6 20.7 25.2 6.6 9.6
+   1.41 × 106            3.9       4.8    4.6 5.8  2.7 3.0 3.8 4.4 4.2 5.2  4.3 5.3 16.0 16.7 29.1 33.4 6.5 10.8
+
+
+
+              0.45
+                                                                                         Table 4. We observe that the number of training sam-
+                                                   LeNet-train
+               0.4
+                                                   LeNet-val
+                                                                                         ples indeed plays a vital role: M AE decreases from 9.5
+              0.35                                 AlexNet-train                         to 6.5 with increased training number of sub-images.
+                                                   AlexNet-val                           In addition, the overall performance between sr = 8
+               0.3                                 VGG-VD16-Net-train
+                                                                                         and sr = 4 is almost identical, implying that a moder-
+        MAE
+
+
+
+
+                                                   VGG-VD16-Net-val
+              0.25
+                                                                                         ate number of training sub-images can already capture
+               0.2                                                                       well the in-field variations.
+              0.15
+                                                                                         Loss function. Here we compare the effect of differ-
+               0.1
+                                                                                         ent loss functions. As aforementioned, `1 loss, `2 loss,
+              0.05
+                     0         5         10            15      20         25
+                                                                                         and Huber loss are evaluated. Huber loss contains a
+                                              epochs                                     free parameter δ, so we further add three variants of
+                                                                                         Huber loss when δ = 0.1, δ = 1, and δ = 10. The lower
+ Figure 9 Training (train) and validation (val) errors in terms                          δ is, the more Huber loss looks like `1 loss. The higher
+ of M AE versus the number of epochs on LeNet-like,                                      δ is, the more it looks like `2 loss. Results are shown
+ AlexNet-like and VGG-VD16-like Tasselnet architectures.
+                                                                                         in Table 5. We observe that, there is no single loss can
+                                                                                         achieve consistently better results than other competi-
+                                                                                         tors over all test sequences. This may have something
+with a M AE of 6.6 and a M SE of 9.6. The inferiority                                    to do with the problem nature of maize tassels count-
+of LeNet and VGG-VD16-Net may boil down to the                                           ing and specific data distributions of test sequences.
+low model capacity and the over-fitting on the train-                                    Huber loss with delta = 10 shows better performance
+ing data. This can be clearly observed in Fig. 9. The                                    on the two challenging sequences, which suggests that
+low model capacity of LeNet-like architecture shows a                                    Huber loss is indeed robust to noise but at a cost of
+relatively high training error, which implies the data                                   sacrificing the ability to fit normal data samples (poor
+may be in the state of under-fitting. The VGG-VD16-                                      performance on the Taian2013 2 and Gucheng2014 se-
+Net-like architecture fits the training data well while                                  quences). Huber loss also has a problem that there is
+exhibits a higher validation error (compared to the                                      no principal way to choose an appropriate δ (the per-
+AlexNet-like architecture), which suggests the model                                     formance degrades when delta = 0.1). The counting
+may not generalize well on the test data. Based on                                       performance of `1 loss and `2 loss is comparable, but
+these results, a moderately complex model seems suf-                                     `1 is generally more stable.
+ficient for maize tassels counting.
+                                                                                         Gaussian kernel parameter. The sensitivity of Gaus-
+Number of training samples. Here we investigate how                                      sian kernel parameter σ is further evaluated. Con-
+the number of training samples affects the counting                                      cretely, we set σ = 4, σ = 8, and σ = 12, respectively.
+performance. We vary the sampling stride sr using the                                    The results are listed in Table 6. We observe that the
+range of values 2n , n = 5, 4, 3, 2, leading to 2.37 × 104 ,                             optimal σ for each test sequence is different. The rea-
+9.13 × 104 , 3.56 × 105 , and 1.41 × 106 training sub-                                   son perhaps is that a fixed σ cannot describe appropri-
+images, respectively. Experimental results are listed in                                 ately maize tassels of different sizes (due to different
+Lu et al.                                                                                                                      Page 11 of 14
+
+
+
+
+Table 5 Comparison of different loss functions for maize tassels counting on the MTC dataset. The lowest error is boldfaced.
+ Loss                                                              Sequences                                                      Overall
+                  Zhengzhou2011 Taian2010 2    Taian2011 2   Taian2012 2   Taian2013 2 Gucheng2014 Jalaid2015 2 Jalaid2015 3
+                  MAE     MSE    MAE MSE MAE MSE MAE MSE MAE MSE MAE                          MSE    MAE MSE MAE MSE MAE MSE
+ Huber(δ = 0.1)   5.2     6.2    7.1 8.2 4.8 5.4 5.9 7.2 7.6 8.7  7.2                          8.4   14.2 15.4 29.7 34.6 8.5 12.2
+ Huber(δ = 1)     3.9     4.9    4.1 5.1 4.7 5.5 3.8 4.4 8.7 11.1 9.6                         11.1   11.1 12.2 22.3 26.5 7.5 10.5
+ Huber(δ = 10)    4.2     5.1    4.4 5.5 4.7 5.4 3.5 4.2 9.0 11.4 10.0                        11.5   9.6 11.0 18.5 23.3 7.3 10.0
+ `2               4.0     4.8    3.9 4.9 4.9 5.6 3.3 3.9 7.7 9.4  9.4                         10.8   10.3 11.4 23.5 27.3 7.3 10.3
+ `1               4.9     6.1    5.2 6.6 2.5 2.9 4.8 5.8 4.0 5.0 5.3                          6.5    16.0 16.6 20.7 25.2 6.6 9.6
+
+Table 6 Comparison of different Gaussian kernel parameter σ for maize tassels counting on the MTC dataset. The lowest error is
+boldfaced.
+     σ                                                        Sequences                                                    Overall
+               Zhengzhou2011 Taian2010 2   Taian2011 2   Taian2012 2   Taian2013 2 Gucheng2014 Jalaid2015 2 Jalaid2015 3
+               MAE    MSE    MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE
+     σ=4       5.2    6.5    4.9 6.4 2.3 3.3 5.5 6.4 4.5 6.0 4.2 5.4 18.6 19.5 27.4 32.6 7.0 11.3
+     σ=8       4.9    6.1    5.2 6.6 2.5 2.9 4.8 5.8 4.0 5.0 5.3 6.5 16.0 16.6 20.7 25.2 6.6 9.6
+     σ = 12    4.6    5.5    7.9 8.7 4.0 4.7 6.6 7.9 5.9 6.9 4.0 4.7 15.2 15.9 27.1 30.9 7.6 10.9
+
+Table 7 Comparison of different sub-image sizes for maize tassels counting on the MTC dataset. The lowest error is boldfaced.
+     r×r                                                       Sequences                                                       Overall
+               Zhengzhou2011 Taian2010 2   Taian2011 2   Taian2012 2   Taian2013 2 Gucheng2014 Jalaid2015 2 Jalaid2015 3
+               MAE    MSE    MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE MAE MSE
+     16 × 16   4.6    5.6    10.1 11.4 10.1 13.0 7.5 11.5 6.1 7.5  8.2 10.1 15.7 16.5 26.9 31.7 9.9 13.4
+     32 × 32   4.9    6.1    5.2 6.6   2.5 2.9   4.8 5.8  4.0 5.0  5.3  6.5 16.0 16.6 20.7 25.2 6.6 9.6
+     64 × 64   4.7    5.7    5.5 6.5   3.8 4.5   3.4 4.0  5.4 6.3  4.2 5.4 16.7 17.6 27.3 31.9 6.8 10.8
+     96 × 96   4.4    5.2    4.2 5.3   3.6 4.2   2.9 3.5  7.5 10.1 4.9  5.8 15.9 17.7 30.5 35.2 6.9 11.5
+
+
+
+cultivars). Although the optimal counting performance                      • JointSeg [32]: JointSeg is the state-of-the-art tas-
+cannot be achieved with a specific σ, the counting per-                      sel segmentation method. The number of object
+formance with different σ does not vary significantly,                       counts can be easily inferred from the segmen-
+which suggests that the mechanism of local counts re-                        tation results. We further perform some morpho-
+gression is not that sensitive to specific choices of σ.                     logical operations as post-correction to reduce the
+Empirically, one can set an appropriate σ by observ-                         segmentation noises. This approach can be viewed
+ing the Gaussian smoothing responses on the training                         as a counting-by-segmentation baseline. It is not
+set. The responses should fit the median size of maize                       specially designed for a counting problem, but the
+tassels.                                                                     comparison somewhat justify whether our prob-
+                                                                             lem could be addressed by a simple image pro-
+Sub-image sizes. The influence of different sub-image
+                                                                             cessing technique.
+sizes is also analysed. We compare the performance of
+                                                                           • mTASSEL [3]: mTASSEL is the state-of-the-art
+four settings, including r = 16, r = 32, r = 64, and
+                                                                             tassel detection approach designed specifically for
+r = 96. Table 7 lists the results. According to the re-
+                                                                             maize tassels. mTASSEL uses multi-view repre-
+sults, we again observe that the optimal performance
+                                                                             sentations to characterise the visual characteris-
+for each test sequence does not correlate well with
+                                                                             tics of tassels to achieve robust detection. This is
+sub-image sizes. We think this has something to do
+                                                                             a counting-by-detection baseline.
+with specific tassel sizes in each sequences. In practice,
+drawing upon a relatively small (but not too small)                        • GlobalReg [33]: GlobalReg directly regresses the
+sub-image sizes is preferable. This is not just because                      global count of images. Off-the-shelf fully-connected
+one can densely sample a sufficient number of training                       deep activations extracted from a pre-trained
+samples but also because the variations within a small                       model are used as a holistic image representation.
+receptive field are easily modelled.                                         Then the global image feature is linearly mapped
+                                                                             into a global object count by ridge regression. This
+Comparison with the state of the art                                         is a global counting-by-regression baseline.
+To place Tasselnet in the context of the state of the art,                 • DensityReg [12]: DensityReg is the seminal work
+several well-established baseline approaches are chosen                      that proposes the idea of density map regression.
+for comparison, they are:                                                    It predicts a count density for every pixel by opti-
+Lu et al.                                                                                                                         Page 12 of 14
+
+
+
+
+            0.99                    1.47                      10.82                  10.58                 17.99                  16.77
+
+
+
+
+            30.10                   32.58                     47.80                  42.40                 50.77                  50.02
+
+
+
+
+            57.34                   57.27                     47.77                  48.12                 21.08                  19.89
+
+
+
+
+            5.84                    13.81                     31.43                  9.97                 100.14                  80.38
+
+ Figure 10 Qualitative results of ground truth density maps overlaid on original images and counting maps predicted by Tasselnet.
+ The number shown below each sub-figure denotes the tassel count integrated over the density/count map. The last row shows three
+ unsuccessful predictions.
+
+
+Table 8 Mean absolute errors (MAE) and mean squared errors (MSE) for maize tassels counting on the MTC dataset. The lowest error
+is boldfaced.
+   Method                                                             Sequences                                                     Overall
+                    Zhengzhou2011 Taian2010 2   Taian2011 2     Taian2012 2   Taian2013 2 Gucheng2014 Jalaid2015 2 Jalaid2015 3
+                    MAE    MSE    MAE MSE MAE MSE MAE MSE MAE MSE MAE                           MSE    MAE MSE MAE MSE MAE MSE
+   JointSeg         20.9   23.2   46.6 47.9 16.4 19.7 25.1 29.8 6.5 8.0   7.3                   10.5   27.8 29.1 53.2 61.3 24.2 31.6
+   mTASSEL           9.8   14.9   18.6 22.1 11.6 12.7 5.3 7.8 13.1 16.6 31.1                    35.3   16.2 18.0 46.6 51.0 19.6 26.1
+   GlobalReg        19.0   21.5   23.0 24.7 14.1 16.8 13.5 15.7 19.6 25.2 19.5                  21.7   11.2 13.7 42.1 45.4 19.7 23.3
+   DensityReg       16.1   20.2   9.9 10.7 9.2 11.7 10.8 12.7 20.2 23.7 9.4                     10.5   7.2 7.9 23.5 26.9 11.9 14.8
+   CCNN             21.3   23.3   28.9 31.6 12.4 16.0 12.6 15.3 18.9 23.7 21.6                  24.1   9.6 12.4 39.5 46.4 21.0 25.5
+   Tasselnet        4.9    6.1    5.2 6.6 2.5 2.9 4.8 5.8 4.0 5.0 5.3                           6.5    16.0 16.6 20.7 25.2 6.6 9.6
+
+
+
+     mising a so-called MESA distance. This is a global                           all best counting performance—M AE and M SE
+     density-based counting-by-regression baseline.                               are significantly lower than other competitors.
+  • Counting-CNN (CCNN) [15]: CCNN is a state-                                  • The poor performance of JointSeg and mTASSEL
+     of-the-art object counting approach. It treats the                           implies that the problem of in-field counting of
+     local density map as the regression target and also                          maize tassels cannot be solved by simple colour-
+     uses a AlexNet-like CNN architecture. This is a lo-
+                                                                                  cue-based image segmentation or standard object
+     cal density-based counting-by-regression baseline.
+                                                                                  detection.
+Qualitative and quantitative results are shown in
+Fig. 10 and Table 8, respectively. Results of Tassel-                           • Even a simple global regression can achieve com-
+net are reported using the default parameters setting.                            parable counting performance against mTASSEL
+According to the results, we can make the following                               in which the bounding-box-level annotations are
+observations:                                                                     utilized. This suggests it is better to formulate the
+  • Tasselnet outperforms other baseline approaches                               problem of maize tassels counting in a counting-
+     in 7 out of 8 test sequences and achieves the over-                          by-regression manner.
+Lu et al.                                                                                                                  Page 13 of 14
+
+
+
+
+   • Regressing the global density map can also re-            4    It is safe to use a moderately complex deep model.
+     duce the counting error effectively. However, it          5    Try `1 loss first to achieve a robust regression.
+     is hard to extend this idea to the deep CNN-
+     based paradigm, because there is currently no            Conclusions
+     dataset with thousands of labelled images samples        In this paper, we rethink the problem nature of in-
+     to make the learning of deep networks tractable,         field counting of maize tassels and novelly formulates
+     especially in the plant-related scenarios. Hence,        the problem as an object counting task. A tailored
+     DensityReg cannot enjoy the bonus brought by             MTC dataset with 361 field images captured during
+     deep CNN, and the performance may be limited             6 years and corresponding manually-labelled dotted
+     by the power of feature representation.                  annotations is constructed. An effective deep CNN-
+   • The performance of CCNN even falls behind the            based solution, Tasselnet, is also presented to count
+     global regression baseline. In experiments we ob-        effectively maize tassels via local counts regression. We
+     serve that CCNN performs poorly when given an            show that local counts regression is particularly suit-
+     image with just a few tassels of different types.        able for counting problems whose ground truth density
+     Compared to regressing local counts as in Tassel-        maps cannot be precisely defined. Extensive experi-
+     net, CCNN needs to fit harsher pixel-level ground        ments are conducted to justify the effectiveness of our
+     truth density, so it likely suffers in the vague defi-   proposition. Results show that Tasselnet achieves the
+     nition of density map due to different tassel sizes.     state-of-the-art performance and outperforms previous
+     This may explain why local density regression            baseline approaches by large margins.
+     does not work when given varying object sizes like          For future work, we will continue to enrich the MTC
+     maize tassels.                                           dataset, because the training data are always the key
+   • Qualitative results in Fig. 10 show that Tassel-         to the good performance, especially the data diversity.
+     net can give reasonable approximations to the            In addition, we will explore the feasibility to improve
+     ground truth density maps. In most cases, the es-        the counting performance in the context of domain
+     timated counts are similar to the ground truth           adaptation, because the adaptation of object count-
+     counts. However, there also exists some circum-          ing problems still remains an open question. In-field
+     stances that Tasselnet cannot give an accurate           counting of maize tassels is a challenging problem,
+     prediction. The last row in Fig. 10 shows three          not only because the unconstrained natural environ-
+     failure cases: i) When the image is captured under       ment but also because the self-changing rule of plants
+     extremely strong illuminations, highlight regions        growth. We hope this paper could attract interests of
+     of leaves will contribute to several fake responses;     both Plant Science and Computer Vision communities
+     ii) If maize tassels present long-tailed shapes in       and inspires further studies to advance our knowledge
+     images, the long-tailed parts only receive partial       and understanding towards the problem.
+     local counts, resulting in a under-estimate situa-
+     tion; iii) The extremely crowded scene is also be-
+                                                              Declarations
+     yond the ability of Tasselnet. To alleviate these is-    Ethics approval and consent to participate
+     sues, one may consider to add extra training data        Not applicable
+     that contain the extremely crowded scenarios. Al-        Consent for publication
+     ternatively, since the training sequences and test       Not applicable
+     sequences exhibit more or less different data dis-       Competing interests
+     tributions, it may be possible to use domain adap-       The authors declare that they have no competing interests.
+     tation [34] to fill the last few percent of difference
+                                                              Availability of data and materials
+     between sequences. We leave these as the future          The MTC dataset and other supporting materials will be made available
+     explorations of this work.                               online.
+  As a summary of our evaluations, we suggest the             Funding
+following good practices for maize-tassel-like in-field       This work was supported in part by the Special Scientific Research Fund of
+counting problems:                                            Meteorological Public Welfare Profession of China under Grant
+                                                              GYHY200906033 and in part by the National Natural Science Foundation
+ 1 Try the idea of counting by regression if the ob-          of China under Grant 61502187.
+     jects exhibit significant occlusions.
+                                                              Author’s contributions
+ 2 Try local counts regression if the physical size of        HL proposed the idea of counting maize tassels via local counts regression,
+     objects varies dramatically.                             implemented the technical pipeline, conducted the experiments, analysed
+ 3 Use a relatively small sub-image size so that a suf-       the results, and drafted the manuscript. ZG, YX and CS co-supervised the
+                                                              study and contributed in writing the manuscript. BZ helped to design the
+     ficient number of training samples could be sam-         experiments and provided technical support for efficient model training.
+     pled.                                                    All authors read and approved the final manuscript.
+Lu et al.                                                                                                                                Page 14 of 14
+
+
+
+
+Acknowledgements                                                                   Vision Conference Workshops (BMVCW), 2015.
+The authors would like to thank Xiu-Shen Wei for helpful discussions.          18. Maryam Rahnemoonfar and Clay Sheppard. Deep count: Fruit
+                                                                                   counting based on deep simulated learning. Sensors, 17(4):905, 2017.
+Author details                                                                 19. Chen Change Loy, Ke Chen, Shaogang Gong, and Tao Xiang. Crowd
+1
+  National Key Laboratory of Science and Technology on Multi-Spectral              counting and profiling: Methodology and evaluation. In Modeling,
+Information Processing, School of Automation, Huazhong University of               Simulation and Visual Analysis of Crowds, pages 347–382. Springer,
+Science and Technology, Wuhan, 430074, China. 2 School of Computer                 New York, 2013.
+Science, The University of Adelaide, Adelaide, SA 5005, Australia.             20. Vincent Rabaud and Serge Belongie. Counting crowded moving
+                                                                                   objects. In Proc. IEEE Conference on Computer Vision and Pattern
+References                                                                         Recognition (CVPR), volume 1, pages 705–711. IEEE, 2006.
+ 1. Mengni Ye, Zhiguo Cao, and Zhenghong Yu. An image-based                    21. Min Li, Zhaoxiang Zhang, Kaiqi Huang, and Tieniu Tan. Estimating
+    approach for automatic detecting tasseling stage of maize using                the number of people in crowded scenes by mid based foreground
+    spatio-temporal saliency. In Proc. Eighth International Symposium on           segmentation and head-shoulder detection. In Proc. International
+    Multispectral Image Processing and Pattern Recognition, pages                  Conference on Pattern Recognition (2008), pages 1–4. IEEE, 2008.
+    89210Z–89210Z. International Society for Optics and Photonics, 2013.       22. Piotr Dollar, Christian Wojek, Bernt Schiele, and Pietro Perona.
+ 2. Wei Guo, Tokihiro Fukatsu, and Seishi Ninomiya. Automated                      Pedestrian detection: An evaluation of the state of the art. IEEE
+    characterization of flowering dynamics in rice using field-acquired            Transactions on Pattern Analysis and Machine Intelligence,
+    time-series RGB images. Plant Methods, 11(1):7, 2015.                          34(4):743–761, 2012.
+ 3. Hao Lu, Zhiguo Cao, Yang Xiao, Zhiwen Fang, Yanjun Zhu, and                23. Vladimir Naumovich Vapnik and Vlamimir Vapnik. Statistical learning
+    Ke Xian. Fine-grained maize tassel trait characterization with                 theory, volume 1. Wiley, New York, 1998.
+    multi-view representations. Computers and Electronics in Agriculture,      24. Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. Imagenet
+    118:143–158, 2015.                                                             classification with deep convolutional neural networks. In Advances in
+ 4. Wanneng Yang, Zilong Guo, Chenglong Huang, Lingfeng Duan,                      Neural Information Processing Systems (NIPS), pages 1097–1105,
+    Guoxing Chen, Ni Jiang, Wei Fang, Hui Feng, Weibo Xie, Xingming                2012.
+    Lian, et al. Combining high-throughput phenotyping and genome-wide         25. Hao Lu, Zhiguo Cao, Yang Xiao, Zhiwen Fang, and Yanjun Zhu.
+    association studies to reveal natural genetic variation in rice. Nature        Toward good practices for fine-grained maize cultivar identification
+    Communications, 5, 2014.                                                       with filter-specific convolutional activations. IEEE Transactions on
+ 5. Joseph L Gage, Nathan D Miller, Edgar P Spalding, Shawn M                      Automation Science and Engineering, 2016.
+    Kaeppler, and Natalia de Leon. TIPS: a system for automated                26. Joseph Paul Cohen, Henry Z Lo, and Yoshua Bengio. Count-ception:
+    image-based phenotyping of maize tassels. Plant Methods, 13(1):21,             Counting by fully convolutional redundant counting. arXiv, 2017.
+    2017.                                                                      27. Karen Simonyan and Andrew Zisserman. Very deep convolutional
+ 6. Fabio Fiorani and Ulrich Schurr. Future scenarios for plant                    networks for large-scale image recognition. CoRR, abs/1409.1556,
+    phenotyping. Annual review of plant biology, 64:267–291, 2013.                 2014.
+ 7. Pedro F Felzenszwalb, Ross B Girshick, David McAllester, and Deva          28. Yann LeCun, Léon Bottou, Yoshua Bengio, and Patrick Haffner.
+    Ramanan. Object detection with discriminatively trained part-based             Gradient-based learning applied to document recognition. Proceedings
+    models. IEEE Transactions on Pattern Analysis and Machine                      of the IEEE, 86(11):2278–2324, 1998.
+    Intelligence, 32(9):1627–1645, 2010.                                       29. Andrea Vedaldi and Karel Lenc. MatConvNet: Convolutional neural
+ 8. Massimo Minervini, Hanno Scharr, and Sotirios A Tsaftaris. Image               networks for matlab. In Proc. ACM International Conference on
+    analysis: the new bottleneck in plant phenotyping [applications corner].       Multimedia, pages 689–692, 2015.
+    IEEE Signal Processing Magazine, 32(4):126–131, 2015.                      30. Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Delving
+ 9. Saad Ali, Ko Nishino, Dinesh Manocha, and Mubarak Shah. Modeling,              deep into rectifiers: Surpassing human-level performance on imagenet
+    simulation and visual analysis of crowds: a multidisciplinary                  classification. In Proc. IEEE International Conference on Computer
+    perspective. In Saad Ali, Ko Nishino, Dinesh Manocha, and Mubarak              Vision (ICCV), pages 1026–1034, 2015.
+    Shah, editors, Modeling, Simulation and Visual Analysis of Crowds,         31. Sergey Ioffe and Christian Szegedy. Batch normalization: Accelerating
+    volume 11, pages 1–19. Springer, New York, 2013.                               deep network training by reducing internal covariate shift. In Proc.
+10. Antoni B Chan, Zhang-Sheng John Liang, and Nuno Vasconcelos.                   International Conference on Machine Learning (ICML), 2015.
+    Privacy preserving crowd monitoring: Counting people without people        32. Hao Lu, Zhiguo Cao, Yang Xiao, Yanan Li, and Yanjun Zhu.
+    models or tracking. In Proc. IEEE Conference on Computer Vision and            Region-based colour modelling for joint crop and maize tassel
+    Pattern Recognition (CVPR), pages 1–7. IEEE, 2008.                             segmentation. Biosystems Engineering, 147:139–150, 2016.
+11. Cong Zhang, Hongsheng Li, Xiaogang Wang, and Xiaokang Yang.                33. Karunya Tota and Haroon Idrees. Counting in dense crowds using deep
+    Cross-scene crowd counting via deep convolutional neural networks. In          features, 2015.
+    Proc. IEEE Conference on Computer Vision and Pattern Recognition           34. Hao Lu, Zhiguo Cao, Yang Xiao, and Yanjun Zhu. Two-dimensional
+    (CVPR), pages 833–841, 2015.                                                   subspace alignment for convolutional activations adaptation. Pattern
+12. Victor Lempitsky and Andrew Zisserman. Learning to count objects in            Recognition, 71:320–336, 2017.
+    images. In Advances in Neural Information Processing Systems
+    (NIPS), pages 1324–1332, 2010.
+13. Weidi Xie, J Alison Noble, and Andrew Zisserman. Microscopy cell
+    counting and detection with fully convolutional regression networks.
+    Computer Methods in Biomechanics and Biomedical Engineering:
+    Imaging & Visualization, pages 1–10, 2016.
+14. Carlos Arteta, Victor Lempitsky, J Alison Noble, and Andrew
+    Zisserman. Interactive object counting. In Proc. European Conference
+    on Computer Vision (ECCV), pages 504–518. Springer, 2014.
+15. Daniel Onoro-Rubio and Roberto J López-Sastre. Towards
+    perspective-free object counting with deep learning. In Proc. European
+    Conference on Computer Vision (ECCV), pages 615–629. Springer,
+    2016.
+16. Carlos Arteta, Victor Lempitsky, and Andrew Zisserman. Counting in
+    the wild. In Proc. European Conference on Computer Vision (ECCV),
+    pages 483–498. Springer, 2016.
+17. Mario Valerio Giuffrida, Massimo Minervini, and Sotirios A Tsaftaris.
+    Learning to count leaves in rosette plants. In Proc. British Machine
+

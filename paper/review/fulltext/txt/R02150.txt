@@ -1,0 +1,548 @@
+                                                      DINOv3 Meets YOLO26 for Weed Detection in Vegetable Crops
+
+                                                                   Boyang Deng and Yuzhen Lu* (luyuzhen@msu.edu)
+                                                      Department of Biosystems & Agricultural Engineering, Michigan State University
+                                                                                East Lansing, MI 48824
+
+
+                                                                 Abstract                                tional broadcast herbicide use causes environmental con-
+arXiv:2603.00160v1 [cs.CV] 25 Feb 2026
+
+
+
+
+                                                                                                         tamination [18] and is increasingly limited by widespread
+                                         Developing robust models for precision vegetable weeding        herbicide resistance, which has been documented in 273
+                                         is currently constrained by the scarcity of large-scale, an-    weed species worldwide [20]. Weed management is partic-
+                                         notated weed-crop datasets. To address this limitation, this    ularly challenging for vegetables, which have limited com-
+                                         study proposes a foundational crop-weed detection model         petitiveness with weeds and herbicide options for weed con-
+                                         by integrating heterogeneous datasets and leveraging self-      trol [4]. These challenges, combined with slow bioher-
+                                         supervised learning. A total of 618,642 crop-weed images        bicide development [17], continued dependence on short-
+                                         were initially collected and subsequently refined to 199,388    residual pre-emergence (PRE) programs [24], and unsus-
+                                         filtered images for fine-tuning a DINOv3 vision transformer     tainable manual labor [1], often result in inadequate weed
+                                         (ViT-small) through a sequential curation strategy. The fine-   control [48] and highlight the need for precision, chemical-
+                                         tuned DINOv3 backbone was then integrated into YOLO26,          reduced weed management strategies.
+                                         serving either as a primary backbone or part of a dual-            There is growing interest in implementing precision
+                                         backbone architecture. A feature alignment loss was in-         weed control that integrates machine vision, artificial intel-
+                                         troduced in the dual backbone framework to enhance fea-         ligence (AI), and automation/robotics into weed manage-
+                                         ture fusion with minimal computational overhead. Exper-         ment [5, 43]. Machine-vision-guided spray systems have
+                                         imental results show that the proposed DINOv3-finetuned         been reported to achieve up to 90% precision with sub-
+                                         ViT-small-based YOLO26-large achieved up to a +5.4%             stantially reduced chemical inputs [41]. Other precision
+                                         mAP50 gain on in-domain images collected in the 2025 sea-       weeding strategies are being explored to mitigate chemi-
+                                         son. Moreover, it demonstrated strong cross-domain gen-         cal dependency. Intelligent mechanical implements such as
+                                         eralization with mAP50 improvements of +14.0% on the            spring tines and rotary hoes serve as effective complements
+                                         2021–2023 season dataset and +11.9% on the 2024 season          to chemical control [45], while laser weeding offers highly
+                                         dataset, compared to the standard YOLO26-large. Although        localized, plant-level treatments via focused light beams
+                                         the DINOv3-YOLO26-large model has 45.6% more param-             [30]. However, automated or robotic weeders equipped
+                                         eters and a 2.9× increase in inference latency, it maintains    with these actuators rely on accurate, reliable crop-weed de-
+                                         real-time performance at ∼28.5 frames per second (fps).         tection to function correctly. Inaccurate plant localization or
+                                         The curated dataset and software programs developed in          classification can result in unintended crop damage or a fail-
+                                         this study will be made publicly available.                     ure to suppress weed competition, thereby diminishing the
+                                                                                                         benefits of precision weeding systems.
+
+                                         1. Introduction                                                     For machine vision-based weed management, traditional
+                                                                                                         image-processing approaches that rely on geometric, mor-
+                                         Weeds represent a persistent biological risk to global crop     phological, and color features [38, 39] often fail under com-
+                                         production, and weed management remains a major chal-           plex field conditions. The introduction of AI and deep
+                                         lenge for yields, food security, and economic sustainabil-      learning has significantly enhanced system reliability and
+                                         ity [3, 22]. As the most damaging biotic stressor, weeds        enabled accurate identification of multiple crop and weed
+                                         cause an estimated 34% yield loss in major crops [27] and       types, with YOLO-based one-stage object detectors becom-
+                                         over 70% yield loss in vegetable crops [7], resulting in ap-    ing popular for their efficiency and strong detection perfor-
+                                         proximately $32 billion in annual global economic losses        mance [40]. In crop–weed detection, YOLO models con-
+                                         [26]. Interactions between weeds and other biotic and abi-      sistently outperform traditional methods. [34] reported that
+                                         otic stressors, such as insect pests and nutrient deficiency,   YOLOv3 improved lettuce detection F1 scores from 0.79
+                                         can intensify crop yield and quality losses [26, 32]. Conven-   to 0.89 over an SVM-based pipeline. [44] found YOLOv3,
+YOLOv5, and Faster R-CNN achieved similar mAP50 (ap-            tion where a DINOv3-pretrained ViT replaces the standard
+proximately 92%), with YOLOv5 reaching the highest F1           YOLO backbone to directly transfer foundation-level repre-
+(0.89). [9] further evalauted 18 YOLO variants (v3–v7)          sentations into the detection pipeline, and 2) a dual-branch
+with mAP50 of 88–95% on a 12-class weed dataset. Using          configuration, in which a DINOv3-pretrained ViT serves as
+YOLOv10, [15] reported 80.0% mAP@50 for crop-weed               an auxiliary backbone alongside the native YOLO back-
+detection and 84.5% real-time weed hit rate in in-field let-    bone and features extracted from both branches are fused
+tuce spraying. However, generalization across diverse en-       at multiple stages to combine global semantic awareness
+vironments remains difficult. For instance, [12] showed         (from DINOv3) with lightweight spatially efficient repre-
+YOLOv8, YOLOX, and DINO performed well within the               sentations (from YOLO). To ensure effective interaction be-
+same season (mAP50 95.7–98.7%), but cross-season accu-          tween the two branches, a feature alignment loss is intro-
+racy dropped to 81.5% for YOLOv8.                               duced to harmonize YOLO-based and DINO-based features
+    The rapid evolution of advanced AI models is creating       during joint optimization. The proposed models were eval-
+new opportunities to enhance plant perception in precision      uated on datasets across multiple growth seasons to assess
+weeding systems. Released in January 2026, YOLO26 in-           robustness in real-world field variability.
+troduces non-maximum suppression (NMS)-free inference               By adapting foundation-model-enhanced architectures
+and removes Distribution Focal Loss, significantly reduc-       to crop-weed imagery, this study aims to: 1) reduce re-
+ing latency on edge devices [36]. Its ProgLoss and Small-       liance on large volumes of manually annotated data, 2) im-
+Target-Aware Label Assignment (STAL) mechanisms fur-            prove cross-season and cross-condition generalization, and
+ther improve the detection of small or partially occluded       3) maintain lightweight inference suitable for practical field
+weeds in dense crop rows. Meanwhile, the emerging self-         deployment. Accordingly, the specific objectives of this
+supervised framework DINOv3 employs a high-capacity             study were as follows to:
+ViT teacher model trained on 1.7 billion curated images,        • Propose a structured data curation pipeline for integrating
+and with Gram anchoring loss to address feature collapse           crop and weed imagery from multiple public sources to
+in dense prediction tasks [37], it achieves superior perfor-       fine-tune DINOv3 ViT-small.
+mance across diverse computer vision benchmarks even            • Propose the DINOv3-YOLO26 framework by integrat-
+without further fine-tuning. In parallel, transformer-based        ing the DINOv3-finetuned ViT-small into the YOLO26-
+real-time detectors have demonstrated competitive perfor-          large, including single- and dual-branch architectures,
+mance compared to the YOLO family. Very recently, RT-              with multi-stage feature fusion and a feature alignment
+DETRv4 [28] addresses the limited semantic representation          loss.
+of lightweight detectors by introducing a Deep Semantic In-     • Evaluate model performance and robustness by assessing
+jector (DSI) to transfer high-level semantic knowledge from        the DINOv3-finetuned ViT-small on plan classification,
+a frozen DINOv3 teacher to a real-time CNN student during          the proposed DINOv3-YOLO26 architectures on crop-
+training. Similarly, DEIMv2 [21] integrates DINOv3 as the          weed detection tasks, and generalization capability across
+backbone within a DETR framework, and employs a Spatial            multi-season crop-weed datasets.
+Tuning Adapter (STA) to convert single-scale ViT outputs
+into multi-scale feature representations, effectively resolv-   2. Materials and Methods
+ing the resolution mismatch in small object detection. These
+advances highlight the progress of real-time detectors and      2.1. Dataset
+the strong visual representation capability of the DINOv3-      Three weed datasets were collected from diverse vegetable
+pretrained ViT model, offering potential to enhance detec-      fields over multiple seasons from 2021 to 2025 in previ-
+tion accuracy and robustness. Therefore, this study pro-        ous research [10, 11, 14, 15], including the 3SeasonWeed-
+poses to combine YOLO26 with a DINOv3-pretrained ViT            Det10, Weed&CropDet2024, and Weed&LettuceDet2025
+backbone to improve weed detection in precision agricul-        datasets. The majority of the 2021–2023 data constitute
+ture scenarios.                                                 the 3SeasonWeedDet10 dataset [10], which contains 8,436
+   The goal of this study is to develop a robust crop–weed      images and 27,963 weed instances across 10 weed classes.
+detection model by integrating the strong visual representa-    In addition, 2,539 unlabeled images, featuring ambigu-
+tive power of DINOv3 with the lightweight, high-efficiency      ous or unknown species without annotations, are included.
+YOLO26 detector. Building on carefully curated multi-           The Weed&CropDet2024 dataset [11] was collected at the
+source datasets, we propose a DINOv3-YOLO26 frame-              Michigan State University Horticulture Teaching and Re-
+work that leverages the rich semantic features learned by       search Center (Hort, MI), and the Weed&LettuceDet2025
+DINOv3 while preserving the computational efficiency and        dataset was collected both at the same site and at the Uni-
+real-time suitability of YOLO26. Two architectural con-         versity of Arizona Yuma Agricultural Center (Yuma, AZ).
+figurations are explored: 1) a single-backbone configura-       These datasets include both weeds and vegetable crops
+such as lettuce, radish, and beets. The 2024 dataset com-         fine-tuning pipeline, including data curation, model train-
+prises 8,664 images, of which 1,002 are labeled, containing       ing, and linear probing-based evaluation [19] for crop-weed
+37,010 annotated instances. The 2025 dataset consists of          classification.
+28,382 images, with 4216 labeled images containing 37,010
+instances. Additional details are provided in [11, 15].
+                                                                  2.2. DINOv3 Fine-Tuning
+    With the continuous refinement of data curation strate-
+gies aiming at improving robotic weeding vision systems,          DINOv3 trains a ViT-7B model using 1.7 billion unlabeled
+our image acquisition process evolved substantially over          images and introduces a novel Gram Anchoring loss to
+time. The 2021–2023 dataset primarily consists of weed im-        mitigate the feature collapse issue within dense prediction
+agery acquired using hand-held smartphones, whereas the           tasks, including detection, segmentation, and depth estima-
+2024 dataset was captured by a mobile platform from the           tion [37]. Through its three training phases, i.e., pretrain-
+perspective of a typical robotic weeder. However, due to a        ing, Gram anchoring, and high-resolution adaptation, it can
+camera elevation exceeding 50 cm to cover a 75 × 85 cm            learn robust and transferable visual representations. These
+working area, along with suboptimal lighting conditions,          characteristics make it well-suited for data-efficient weed
+the 2024 dataset images exhibit noticeable motion blur and        detection, enabling effective adaptation with limited anno-
+reduced illumination. Further improvements were imple-            tation. Moreover, its generalized representations provide
+mented in 2025, with a refined camera configuration [15]          robustness across varying plant species and field conditions.
+positioned approximately 23.5 cm above the ground, result-            As demonstrated by [33, 37], systematic data curation
+ing in clearer close-range plant imagery. The 2025 lettuce-       often yields superior performance compared to direct uti-
+field images were carefully reviewed, corrected, and fully        lization of raw data. Accordingly, a standardized data cu-
+annotated to include all visible weeds and crops. The result-     ration pipeline was implemented to integrate imagery from
+ing refined dataset, Weed&LettuceDet2025, contains 2,296          diverse sources for DINOv3 fine-tuning. First, all previ-
+images with 11,408 annotated instances, including 3,372           ously curated bounding-box images were directly incor-
+lettuces and 8,036 weeds.                                         porated into the training process. These bounding boxes
+    For cross-domain weed detection performance assess-           that are centered on a single plant naturally align with the
+ment (Figure 2), 300 images were randomly selected                DINO objective of matching local and global representa-
+from each of the 3SeasonWeedDet10 (2021–2023) and                 tions, thereby facilitating learning. Inspired by [33], the
+Weed&CropDet2024 datasets. These images were re-                  public crop-weed collection and ALive plant images were
+examined and relabeled, resulting in 2,463 and 10,843 an-         independently refined using a hierarchical K-means-based
+notated instances, respectively. The 2024 dataset typically       pipeline [42]. The three-level pyramid consisted of 512,
+exhibits a higher instance density per image due to the larger    2,048, and 8,192 clusters, balancing performance and com-
+working. The refined 2025 lettuce images were subse-              putational efficiency. Subsequently, one-tenth of the clus-
+quently used to train the DINO-YOLO26 detection model,            tered images were sampled from the pyramid to reduce the
+followed by in-domain evaluation on the 2025 dataset and          scale of the unlabeled data. These selected images were
+cross-domain evaluation on the 2021–2024 datasets.                then tiled into 518 × 518 patches with 20% overlap. Back-
+    To further enhance DINOv3 fine-tuning, additional pub-        ground patches were filtered based on vegetation (green)
+lic and self-curated datasets were incorporated. First,           ratio requiring at least 20% green pixel coverage, follow-
+78,723 RGB images from 36 crop-weed datasets reviewed             ing [2]. This refinement process produced 47,204 images
+in [12] were aggregated into a unified public collection.         from the public weed collection, 59,426 from ALive, and
+Second, 436,438 crop images were obtained from ALive              29,499 from the self-curated unlabeled weed dataset, total-
+[31], which integrates 14 agricultural crop classification        ing 136,129 images. Combining with 63,209 bounding-box
+datasets. Third, our 2021–2025 dataset contributed 40,272         images, the final dataset for DINOv3 fine-tuning comprised
+unlabeled crop-weed images, along with 63,209 bounding-           199,338 images.
+box-cropped images extracted from all labeled images                  For fine-tuning, the ViT-small model was selected due to
+(excluding those reserved for weed detection). In total,          its lightweight design as the smallest ViT model released in
+618,642 images were curated from these three sources for          [37], as well as to accommodate the limited computational
+DINOv3 finetuning and will be further processed according         resources in this study. After training, linear probing was
+to the data curation pipeline described in the next section.      done to evaluate the ViT-small backbone on plant classifi-
+Notably, fine-tuning DINOv3 using bounding-box-cropped            cation using multi-species bounding-box images from the
+images rather than direct weed detection improves tolerance       2021–2025 dataset. The combined dataset included 8,427
+to annotation noise, facilitating the future integration of ex-   images across 23 classes. In parallel with the subsequent
+ternal labeled datasets from other sources with minimal ad-       detection experiment, this experiment directly evaluates the
+ditional verification effort. Figure 1 illustrates the DINOv3     quality of the learned global visual representations.
+                                    Figure 1. The pipeline of DINOv3 training and evaluation.
+
+
+
+
+                         Figure 2. The training pipeline of the DINO-YOLO framework for weed detection.
+
+
+2.3. DINO-YOLO26 Framework                                         ment [36]. The MuSGD optimizer is employed to enhance
+                                                                   training stability and accelerate convergence. Furthermore,
+YOLO26 [23] represents the latest evolution in the YOLO            YOLO26 incorporates STAL and Progressive Loss Balanc-
+family, designed to streamline real-time detection on edge         ing (ProgLoss) to improve small object detection. In this
+devices such as weeding robots. By removing Distribu-              study, the large variant of YOLO26 was selected because its
+tion Focal Loss (DFL) and introducing native NMS-free in-          model size is comparable to ViT-small, providing a favor-
+ference, it significantly cuts latency and simplifies deploy-      able trade-off between detection speed and accuracy [21].
+    DEYOLO [8] employs a dual-branch backbone to ex-             forming a 23-class dataset comprising 8427 bounding-box
+tract RGB and infrared image features separately, using se-      images. A 7:3 split was used for training and testing, and
+mantic and spatial enhancement modules to fuse modal-            linear probing was conducted for 30 epochs with a batch
+ities, dynamically recalibrating channels and sharpening         size of 128. The learning rate was set to 0.05, while other
+spatial features to emphasize salient information. Inspired      hyperparameters followed the default DINOv3 linear prob-
+by DEYOLO [8] and the approach in [21], which integrates         ing configuration.
+a DINOv3-trained ViT-small into a DETR structure using
+STA to convert single-scale ViT outputs into multi-scale         2.4.2. DINOv3 Fine-Tuning
+features, this study adopts the ViT-small as the backbone        The ViT-small model was trained using DINOv3 on
+of the YOLO26 detector.                                          199,338 curated weed images, substantially fewer than the
+    Specifically, a similar dual-branch backbone architecture    1.7 billion images used for the ViT-7B model, and with
+is proposed to integrate DINOv3 ViT features with YOLO           significantly fewer parameters. To match the scale of ViT-
+representations. In one variant, ViT with STA serves as the      small, both the DINO and iBOT heads employed 4,096 pro-
+integrated backbone for YOLO26, maintaining the original         totypes, a bottleneck dimension of 384, a hidden dimension
+ViT output feature dimensions of 384. Subsequently, 1 × 1        of 2,048, and the drop path rate of the student model set
+convolutional layers are appended after the ViT backbone         to 0.1. During pretraining, a batch size of 144 was used for
+to produce feature dimensions compatible with the YOLO           50,000 steps, then reduced to 96 for 10,000 Gram anchoring
+detection head (e.g., 512 channels for the YOLO-large ver-       steps, and further reduced to 4 for 5,000 High-Resolution
+sion). Additionally, a dual-branch YOLO26 backbone is            Adaptation steps. The reduced batch size was necessary
+designed to combine the original YOLO26 backbone with            due to the high memory demand of multiple high-resolution
+the ViT-small. To enable multi-scale information fusion,         cropping operations. All other hyperparameters followed
+features from YOLO backbone stages P3, P4, and P5 are            the official DINOv3 recipe.
+fused with ViT layers 5, 8, and 11, respectively, consistent
+                                                                 2.4.3. YOLO26 Training Strategy
+with the layer selection strategy in [21]. To ensure effective
+interaction between the two branches, a feature alignment        For detection, models were trained on the 2025 lettuce
+loss is introduced to harmonize YOLO-based and ViT-based         dataset using a 75:5:25 split for training, validation, and
+features, defined as follows:                                    testing, respectively. In training YOLO26, ProgLoss un-
+                                                                 expectedly underperformed compared to the DFL box re-
+                                     (i)      (j)                gression loss on our dataset. Additionally, removing the at-
+                       X
+             LAlign =       M SE(XYOLO − XViT )            (1)
+                                                                 tention mechanism from the final C3k2 block improved de-
+   where i is the output layer index of the YOLO backbone        tection accuracy. Consequently, a modified YOLO26 head
+(P3, P4, P5), j is the corresponding ViT layer index (5, 8,      was proposed as a stronger baseline, and subsequent DINO-
+11). This loss is added to the original YOLO loss with an        YOLO26 integrations were built on this modified architec-
+empirical weighting factor of 1.0 without dominating the         ture. Although MuSGB is recommended in YOLO2026,
+detection loss.                                                  standard SGD yielded slightly better performance on the
+                                                                 lettuce dataset. Moreover, because the ViT backbone does
+2.4. Experiments                                                 not align with the assumptions of the Muon optimizer [29],
+This study was implemented using PyTorch (v2.5.1),               SGD was employed for all subsequent training.
+Torchvision (v0.20.1), CUDA (v12.1). All experiments
+                                                                 2.4.4. DINO–YOLO26 Integration
+were conducted on an NVIDIA RTX A6000 GPU with 48
+GB memory. Figure 2 presents the overall training and eval-      The DINO-YOLO26 models were evaluated using both
+uation pipeline used to compare the DINO-YOLO26 vari-            official and fine-tuned ViT-small weights. Empirical re-
+ants against the standard YOLO26 baseline.                       sults showed that only initializing YOLO26 heads with pre-
+                                                                 trained COCO weights led to inferior performance com-
+2.4.1. Linear Probing Evaluation                                 pared to training from scratch on the weed dataset; con-
+Preliminary experiments showed that DINOv3-trained ViTs          sequently, all experiments were trained from scratch. Fur-
+achieved over 96% average accuracy for both official and         thermore, unfreezing the ViT backbone yielded superior re-
+fine-tuned ViT models using a 7:3 train-test split on binary     sults compared to freezing it; hence, the ViT backbone pa-
+lettuce-weed classification with the 2025 lettuce bounding-      rameters remained trainable throughout detection training.
+box images, with differences below 0.5%. Even under              The input resolution was increased to 800 × 800 from the
+a few-shot scenario (1:9 split), accuracy remained around        default 640 × 640 to better accommodate high-resolution
+94%, again with minimal differences. To better differenti-       (900–1400) imagery while maintaining computational effi-
+ate the capability of the fine-tuned model, all original crop-   ciency. Given that the architectural concept and STA mod-
+weed classes (excluding the generic weed class) were used,       ule were adapted from [21], a consistent training duration of
+68 epochs was employed. To ensure compatibility with DI-           label, exceeded a confidence threshold of 0.25, and had an
+NOv3’s feature space, Z-norm preprocessing was applied             intersection-over-union (IoU) of at least 0.5. The number
+in the modified architecture, instead of the standard pixel        of classes, N, was set to two: one crop class (lettuce) and a
+scaling used in the baseline YOLO26. All other hyperpa-            generic “weed” class that included all weed species.
+rameters adhered to the default YOLO26 configuration.
+2.4.5. Cross-Domain Evaluation                                     3. Results
+To assess the cross-domain generalization, additional eval-        3.1. Plant Classification by DINOv3
+uations were conducted using 300 randomly sampled im-
+                                                                   Table 1 shows the linear probing accuracy of the DINOv3-
+ages from the 2021–2023 season dataset (3SeasonWeed-
+                                                                   trained ViT-small on multi-species plant classification.
+Det10) [10]) and 300 images from the 2024 dataset
+                                                                   While the original ViT provides a robust feature extrac-
+(Weed&CropDet2024) [11]). Since the 3SeasonWeed-
+                                                                   tion foundation with an average accuracy of 87.67%, fine-
+Det10 dataset contains only weed images and the crops
+                                                                   tuning the ViT on weed imagery improves the performance
+in the Weed&CropDet2024 dataset (beets, radishes, and
+                                                                   to 89.94% after gram anchoring, surpassing the baseline
+turnips) differ from the lettuce in the 2025 season data,
+                                                                   by +2.27%. Crop classes typically achieve ∼10% higher
+single-class ”Weed” detection was performed for both
+                                                                   accuracy than weeds, highlighting the greater variability
+datasets to ensure consistency.
+                                                                   and challenge associated with weed recognition. Interest-
+2.5. Metrics                                                       ingly, after high-resolution adaptation, the accuracy drops
+                                                                   to 82.50%, suggesting a reduction in the global visual rep-
+For the binary crop-weed classification task in linear prob-       resentation capability. This decrease may be due to the lim-
+ing, Top-1 accuracy was used to evaluate the DINOv3-               ited batch size of 4 in this training phase, constrained by the
+trained ViT-small model before and after fine-tuning on the        48 GB GPU memory used in this study. However, subse-
+curated weed dataset, calculated as follows:                       quently, ViT weights from each training phase were evalu-
+                                                                   ated as the DINO-YOLO backbone for weed detection. The
+                            #T P + #T N                            high-resolution trained ViT achieved the best performance
+  Accuracy (%) =                                            (2)    and was therefore adopted in following DINO*-YOLO26*.
+                     #T P + #T N + #F P + #F N
+                                                                       Table 2 summarizes the results of the ablation study on
+Where #T P, #F P, #T N, and #F N denote the numbers                Weed&LettuceDet2025. The default DINOv3-trained ViT-
+of true positives, false positives, true negatives, and false      small was utilized to focus on model modification contribu-
+negatives, respectively, based on the predicted and ground-        tions. The original YOLO26 model (backbone and head) re-
+truth labels for each bounding-box image.                          ceived the lower bound of performance with 84.9% mAP50
+    Plant detection performance was evaluated using stan-          and 63.2% mAP50:95 . The modified YOLO heads trained
+dard object detection metrics, including precision, recall,        with DFL loss achieved improvements of +3.4% mAP50
+and mAPs (mAP50 , and mAP50:95 ). Precision is the ratio           and +3.3% mAP50:95 , providing empirical evidence that
+of correctly positive predictions to the total predicted posi-     DFL is advantageous for weed datasets and that remov-
+tives, and recall is the ratio of correctly positive predictions   ing the attention block of the last C3k2 module enhances
+to the total number of true positives. The mAP50 was com-          model accuracy. The ViT-based backbone outperformed
+puted as the mean average precision across the two classes         the YOLO26 backbone, attaining the highest precision of
+of crop and weed at an IoU threshold of 0.5, while mAP50:95        89.7% and mAP50 of 91.9%, and with the further addi-
+was computed across a range of IoU thresholds from 0.5 to          tion of STA, it received the highest mAP50:95 of 72.6%,
+0.95 in steps of 0.05. These metrics are calculated below:         which is a +9.4% gain in mAP50:95 compared to the origi-
+                                                                   nal YOLO26 model. For the dual-branch backbone models,
+                               #T P
+         Precision (%) =                × 100%              (3)    although assignment loss can improve results to match the
+                            #T P + #F P                            single ViT-backbone results, the single backbone DINO-
+                             #T P                                  ViTs outperform their dual-branch backbone versions in
+           Recall (%) =               × 100%                (4)    model complexity and latency, which may indicate that the
+                          #T P + #F N
+                                                                   feature fusion for dual backbones needs further exploration.
+                                N
+                        1 X                                        3.2. Crop-Weed Detection
+              mAP (%) =       APi × 100%                    (5)
+                        N i=1
+                                                                   Table 2 shows incorporating STA into the single ViT
+   Where #T P, #F P, #T N, and #F N have the same                  backbone variant (DINO-YOLO26*) yielded the highest
+definitions as before except used for detection. A detec-          mAP50:95 . To verify the robustness of this improvement,
+tion was counted as correct if it matched the ground-truth         three additional replications were conducted for models
+Table 1. Linear probing accuracy of the DINOv3-trained ViT-Small backbone. The finetuning is based on the DINOv3 -trained official
+ViT-small model, consisting of three consecutive phases: pretraining, gram anchoring, and high-res adaptation. Crop refers to the average
+accuracy across all crop classes, while weed refers to the mean accuracy for all weeds.
+
+                         Backbone Configuration             Crop (%)          Weed (%)             Average (%)
+                         Official ViT-Small                    92.2               83.1                87.7
+                         + Pretraining                         95.0               83.7                89.3
+                         + Gram Anchoring                      96.6               83.3                89.9
+                         + High-Res Adaptation                 88.6               76.4                82.5
+
+Table 2. Ablation study to evaluate the contributions of different components in the DINO-YOLO framework. Y-H refers to the YOLO26-
+large head, and Y-H* indicates the modified YOLO26-large head. Y-B denotes the original YOLO26-large backbone. ViT represents the
+DINOv3-pretrained ViT-small. STA is the auxiliary branch added to the ViT, and Align refers to the feature alignment loss used in the
+dual-branch backbones. Lat. stands for latency, and Param. denotes model parameters.
+
+                Components                                                               Metrics
+ Y-H    Y-H*     Y-B   ViT    STA     Align   Precision (%)     Recall (%)    mAP50 (%)       mAP50:95 (%)    Lat. (ms)    Param. (M)
+  ✓               ✓                                80.8            79.7           84.9             63.2          12.0          24.8
+          ✓       ✓                                86.3            84.3           89.8             68.9          12.4          24.5
+          ✓             ✓                          89.7            87.2           91.9             71.6          35.1          36.1
+          ✓             ✓       ✓                  87.7            87.8           91.5             72.6          36.1          36.7
+          ✓       ✓     ✓                          89.6            86.5           91.3             71.0          41.6          50.2
+          ✓       ✓     ✓               ✓          88.0            87.9           91.8             71.6          41.9          50.2
+          ✓       ✓     ✓       ✓                  89.2            87.0           91.6             71.0          42.8          51.0
+          ✓       ✓     ✓       ✓       ✓          89.3            87.0           91.7             71.0          42.9          51.0
+
+
+
+with and without STA. As summerized in Table 3, the                    dataset by more than 10% across all metrics, which may
+base DINO-YOLO26* achieved 92.3% mAP50 and 72.3%                       be attributable to the former consisting of high-resolution
+mAP50:95 , whereas the STA-enhanced version obtained                   smartphone images compared to the latter with blurred,
+92.0% mAP50 and 72.4% mAP50:95 . The negligible per-                   lower-quality images.
+formance difference suggests that the STA module offers
+no statistically significant performance gain while slightly              The modified YOLO26 (YOLO26*) surpassed the base-
+increasing inference latency. Therefore, subsequent exper-             line YOLO26, while DINO-YOLO26* consistently outper-
+iments adopt the DINO-YOLO26 architecture without the                  formed both across all datasets. Compared to the origi-
+STA module.                                                            nal YOLO26, DINO-YOLO26* achieved superior perfor-
+                                                                       mance, with gains of +5.4% mAP50 and +6.2% mAP50:95
+    Although DINO-YOLO26* contains only 45.6% more
+                                                                       on the 2021–2023 dataset, +10.9% mAP50 and +4.9%
+parameters than the original YOLO26, its inference time
+                                                                       mAP50:95 on the 2024 dataset, and +9.3% mAP50 and
+is approximately 2.9 times longer (12.0 ms vs. 35.1 ms).
+                                                                       +5.3% mAP50:95 on the 2025 lettuce dataset. Interest-
+This increase reflects the computational intensity of the self-
+                                                                       ingly, although the fine-tuned ViT-small model (DINO*-
+attention-based ViT framework, which remains a key ef-
+                                                                       YOLO26*) yielded marginally lower in-domain perfor-
+ficiency bottleneck for future optimization. Nevertheless,
+                                                                       mance compared to the official DINOv3-pretrained ViT-
+DINO-YOLO26* maintains real-time performance (∼28.5
+                                                                       small (DINO-YOLO26*), it demonstrated enhanced cross-
+fps), comparable to previous YOLO architectures such as
+                                                                       domain generalization, achieving +4.7% and +1.0% mAP50
+YOLOv8 under similar input configurations [13].
+                                                                       improvements in the 2021–2023 and 2024 datasets, respec-
+   Table 3 further presents the detection performance across           tively. This suggests that task-specific fine-tuning may en-
+weed datasets collected in different seasons, highlighting             hance robustness to domain variation. Finally, the statisti-
+the impact of domain shift. The in-domain 2025 let-                    cal analysis of mAP50 and mAP50:95 confirms that DINO-
+tuce dataset yielded the highest accuracy, with YOLO2026               based YOLO26 models significantly outperform the orig-
+reaching 86.9% mAP50 and 66.2% mAP50:95 , significantly                inal YOLO26 consistently; however, performance differ-
+outperforming cross-domain results. In cross-domain eval-              ences within the DINO-YOLO26 or YOLO26 variants are
+uations, the 2021–2023 dataset outperformed the 2024                   mostly statistically insignificant.
+Table 3. Performance comparison of YOLO26 and DINOv3-YOLO26 models across different year datasets. Three replications are used.
+YOLO26* indicates the modified YOLO26 model trained with DFL loss, and DINO* denotes that the DINO-ViT model is fine-tuned on
+the weed dataset. Superscripts denote the Compact Letter Display (CLD) generated from Tukey’s HSD multiple comparison test, where
+groups sharing a letter are not significantly different.
+
+             Dataset        Model                 Precision (%)      Recall (%)     mAP50 (%)       mAP50:95 (%)
+                            YOLO26                      81.8            81.0           86.9b            66.2b
+             2025           YOLO26*                     86.8            84.1           90.3a            69.4ab
+                            DINO-YOLO26*                89.6            87.2           92.3a            72.3a
+                            DINO*-YOLO26*               88.6            87.7           92.2a            71.4a
+                            YOLO26                      42.8            30.8           29.6c            14.6b
+             2024           YOLO26*                     44.4            34.9           33.9b            16.2c
+                            DINO-YOLO26*                53.6            38.8           40.5a            19.5a
+                            DINO*-YOLO26*               53.7            40.1           41.5a            19.8a
+                            YOLO26                      55.1            42.9           42.5c            25.7b
+             2021–2023      YOLO26*                     58.4            44.8           46.3c            28.2b
+                            DINO-YOLO26*                63.9            49.9           51.8b            31.0a
+                            DINO*-YOLO26*               65.2            54.4           56.5a            33.1a
+
+
+4. Discussion                                                      [37], DINOv3 fine-tuning of the ViT-small backbone led to
+                                                                   stronger cross-domain performance but only marginal in-
+This study presents a promising hybrid detection frame-            domain gains, indicating further analysis is needed. Fur-
+work, DINO-YOLO26, which surpasses standard YOLO26                 thermore, the dual-branch backbones achieved accuracy
+in crop-weed detection by utilizing a DINOv3-trained ViT           comparable to single ViT backbones, suggesting that fur-
+model. This improvement aligns with existing literature            ther investigation into advanced feature fusion mechanisms
+indicating that DINO-based YOLO models excel in small              is warranted, such as cross-attention feature fusion [6] or
+object detection and data-efficient tasks by leveraging the        fusion strategies employed in multi-modal detection frame-
+global receptive field of transformers [35]. Although the          works utilizing dual-branch architectures [8, 46].
+hybrid architecture increases the total model parameters
+by 45.6%, it exhibits approximately 2.9× slower inference
+speeds. This latency bottleneck is primarily attributed to         5. Conclusion
+the self-attention mechanism inherent in the ViT, which
+demonstrates quadratic computational complexity with re-           This study proposes a novel DINO-YOLO26 framework
+spect to token length (image size) [16, 25]. Future work           for enhanced crop-weed detection by replacing the origi-
+could bridge the latency gap between ViT and the origi-            nal YOLO backbone with a DINOv3-pretrained ViT. Large-
+                                                                   scale public datasets were curated, yielding 199,338 im-
+nal YOLO by implementing model compression strategies,
+                                                                   ages for fine-tuning DINOv3-pretrained ViT-small. The
+such as token pruning [47] or knowledge distillation as used       fine-tuned DINOv3 was integrated into YOLO26-large with
+in the original DINOv3 [37]. Additionally, future work may         both single and dual-branch backbone designs, with a fea-
+explore the feasibility of utilizing the default YOLO back-        ture alignment loss introduced to facilitate feature fusion
+bone for self-training methods like DINOv3.                        in the dual-branch architecture. Results show that DINO-
+   The high-resolution training phase of DINOv3 yielded            YOLO26* improved mAP50 by 5.4% (86.9 vs. 92.3%) and
+inferior weed classification results compared to earlier           mAP50:95 by 5.2% (66.1 vs. 71.4%). The fine-tuned ViT-
+phases, a discrepancy likely attributable to the constrained       based YOLO26-large (DINO*-YOLO26*) exhibited en-
+                                                                   hanced cross-domain weed detection generalization, with
+batch size of 4. The limited computational resources in
+                                                                   mAP50 gains of 14.0% on the 2021–2023 season dataset
+this study may have hindered the efficacy of DINOv3 train-         and 11.9% on the 2024 dataset, indicating improved robust-
+ing, particularly during high-resolution adaptation, result-       ness to domain variations. Although the proposed model
+ing in reduced accuracy. Future research aims to scale com-        increases parameter count by 45.6% and inference time by
+putational capacity to approach the original batch size of         2.9×, it still maintains real-time efficiency at approximately
+4096 as in [21]. Unlike the broad improvements reported in         28.5 fps.
+References                                                            [14] Boyang Deng, Yuzhen Lu, and Daniel Brainard. Semi-
+                                                                           supervised weed detection in vegetable fields: in-domain and
+ [1] Aaron Becerra-Alvarez. Weed management priorities in spe-             cross-domain experiments. IFAC-PapersOnLine, 59(23):96–
+     cialty seed production of the pacific northwest. HortTechnol-         101, 2025. 2
+     ogy, 35(5):719–723, 2025. 1
+                                                                      [15] Boyang Deng, Yuzhen Lu, Mark Siemens, and Daniel
+ [2] Leire Benito-Del-Valle, Artzai Picón, Daniel Mugica,                 Brainard. Field test and evaluation of an integrated micro-
+     Manuel Ramos, Eva Portillo, Javier Romero, Carlos Javier              dosing smart sprayer for precision weeding in vegetables.
+     Jimenez, and Ramón Navarra-Mestre.           Vision founda-          Precision Agriculture (under review), 2026. 2, 3
+     tion models in agriculture: Toward domain-specific adap-
+                                                                      [16] Alexey Dosovitskiy. An image is worth 16x16 words:
+     tation for weed herbicide trials assessment. arXiv preprint
+                                                                           Transformers for image recognition at scale. arXiv preprint
+     arXiv:2511.04288, 2025. 3
+                                                                           arXiv:2010.11929, 2020. 8
+ [3] Joshua Benjamin, Oluwadamilola Idowu, Oreoluwa Khadi-
+                                                                      [17] Stephen O Duke, Alyssa Twitty, Claire Baker, David Sands,
+     jat Babalola, Emmanuel Victor Oziegbe, David Olayinka
+                                                                           Louis Boddy, Marı́a Lucı́a Travaini, Gustavo Sosa, Alexan-
+     Oyedokun, Aanuoluwapo Mike Akinyemi, and Aminat Ade-
+                                                                           der LA Polidore, Amit J Jhala, Jack M Kloeber, et al. New
+     bayo. Cereal production in africa: the threat of certain pests
+                                                                           approaches to herbicide and bioherbicide discovery. Weed
+     and weeds in a changing climate—a review. Agriculture &
+                                                                           Science, 72(5):444–464, 2024. 1
+     Food Security, 13(1):18, 2024. 1
+                                                                      [18] Olga Fishkis, Jessica Weller, Jörn Lehmhus, Franz Pöllinger,
+ [4] Nathan S Boyd, Marcelo L Moretti, and Lynn M etc. Sos-
+                                                                           Jörn Strassemeyer, and Heinz-Josef Koch. Ecological and
+     noskie. Occurrence and management of herbicide resistance
+                                                                           economic evaluation of conventional and new weed control
+     in annual vegetable production systems in north america.
+                                                                           techniques in row crops. Agriculture, Ecosystems & Envi-
+     Weed Science, 70(5):515–528, 2022. 1
+                                                                           ronment, 360:108786, 2024. 1
+ [5] Daniel C Brainard, Erin R Haramoto, Ramon G Leon,
+     James J Kells, Lee R Van Wychen, Pratap Devkota, Jugu-           [19] Jeff Z HaoChen, Colin Wei, Adrien Gaidon, and Tengyu Ma.
+     lam Mithila, and Jacob N Barney. A survey of weed research            Provable guarantees for self-supervised deep learning with
+     priorities: key findings and future directions. Weed Science,         spectral contrastive loss. Advances in neural information
+     71(4):330–343, 2023. 1                                                processing systems, 34:5000–5011, 2021. 3
+ [6] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas       [20] Ian Heap.        The international herbicide-resistant weed
+     Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-            database, 2026. Accessed January 11, 2026. 1
+     end object detection with transformers. In European confer-      [21] Shihua Huang, Yongjie Hou, Longfei Liu, Xuanlong Yu, and
+     ence on computer vision, pages 213–229. Springer, 2020. 8             Xi Shen. Real-time object detection meets dinov3. arXiv
+ [7] Seethal Rose Chacko, SK Raj, and RK Krishnasree. Inte-                preprint arXiv:2509.20787, 2025. 2, 4, 5, 8
+     grated weed management in vegetables. Journal of Pharma-         [22] Zeyue Huang, Min Lin, and Guoqi Chen. Common agri-
+     cognosy and Phytochemistry, 10(2):2694–2700, 2021. 1                  cultural weeds among alien invasive plants in china: Species
+ [8] Yishuo Chen, Boran Wang, Xinyu Guo, Wenbin Zhu, Ji-                   lists and their practical managing strategies. Heliyon, 11(2),
+     asheng He, Xiaobin Liu, and Jing Yuan. Deyolo: Dual-                  2025. 1
+     feature-enhancement yolo for cross-modality object detec-        [23] Glenn Jocher, Jing Qiu, and Ayush Chaurasia. Ultralytics
+     tion. In International Conference on Pattern Recognition,             yolo, 2026. 4
+     pages 236–252. Springer, 2024. 5, 8                              [24] Eric Jones, Clarence Winter, Philip Rozeboom, Jill Alms,
+ [9] Fengying Dang, Dong Chen, Yuzhen Lu, and Zhaojian                     and David Vos. Overlapping residual herbicides may be nec-
+     Li. Yoloweeds: A novel benchmark of yolo object de-                   essary for effective weed management, 2025. Accessed Jan-
+     tectors for multi-class weed detection in cotton production           uary 28, 2026. 1
+     systems. Computers and Electronics in Agriculture, 205:          [25] Salman Khan, Muzammal Naseer, Munawar Hayat,
+     107655, 2023. 2                                                       Syed Waqas Zamir, Fahad Shahbaz Khan, and Mubarak
+[10] Boyang Deng and Yuzhen Lu. Weed image augmentation by                 Shah. Transformers in vision: A survey. ACM computing
+     controlnet-added stable diffusion for multi-class weed detec-         surveys (CSUR), 54(10s):1–41, 2022. 8
+     tion. Computers and Electronics in Agriculture, 232:110123,      [26] Adrianna Kubiak, Agnieszka Wolna-Maruwka, Alicja
+     2025. 2, 6                                                            Niewiadomska, and Agnieszka A Pilarska. The problem of
+[11] Boyang Deng and Yuzhen Lu. Improvements and evaluation                weed infestation of agricultural plantations vs. the assump-
+     of a smart sprayer prototype for weed control in vegetable            tions of the european biodiversity strategy. Agronomy, 12(8):
+     crops. Journal of the ASABE, page 0, 2026. 2, 3, 6                    1808, 2022. 1
+[12] Boyang Deng, Yuzhen Lu, and Jiajun Xu. Weed database de-         [27] Narendra Kumar, Chaitanya P Nath, Kali K Hazra, Chan-
+     velopment: An updated survey of public weed datasets and              dra S Praharaj, Sati S Singh, and Narendra P Singh. Long-
+     cross-season weed detection adaptation. Ecological Infor-             term impact of zero-till residue management in post-rainy
+     matics, 81:102546, 2024. 2, 3                                         seasons after puddled rice and cropping intensification on
+[13] Boyang Deng, Yuzhen Lu, and Daniel Brainard. Develop-                 weed seedbank, above-ground weed flora and crop produc-
+     ment and preliminary evaluation of a machine vision-guided            tivity. Ecological engineering, 176:106540, 2022. 1
+     smart sprayer prototype toward precision vegetable weeding.      [28] Zijun Liao, Yian Zhao, Xin Shan, Yu Yan, Chang Liu, Lei
+     Journal of Field Robotics, 2025. 7                                    Lu, Xiangyang Ji, and Jie Chen. Rt-detrv4: Painlessly
+     furthering real-time object detection with vision foundation           et al.      Automatic data curation for self-supervised
+     models. arXiv preprint arXiv:2510.25257, 2025. 2                       learning: A clustering-based approach. arXiv preprint
+[29] Jingyuan Liu, Jianlin Su, Xingcheng Yao, Zhejun Jiang,                 arXiv:2405.15613, 2024. 3
+     Guokun Lai, Yulun Du, Yidao Qin, Weixin Xu, Enzhe Lu,             [43] Chengming Wang, Caixia Song, Tong Xu, and Runze Jiang.
+     Junjie Yan, et al. Muon is scalable for llm training. arXiv            Precision weeding in agriculture: A comprehensive review
+     preprint arXiv:2502.16982, 2025. 5                                     of intelligent laser robots leveraging deep learning tech-
+[30] Georgie Mutuyimana, Jie Hong, Xinbei Wei, Rosine Uwase,                niques. Agriculture, 15(11):1213, 2025. 1
+     and Yang Yang. Laser weeding technology: A promising              [44] Pei Wang, Yin Tang, Fan Luo, Lihong Wang, Chengsong Li,
+     sustainable weed control method. Weed Research, 65(6):                 Qi Niu, and Hui Li. Weed25: A deep learning dataset for
+     e70037, 2025. 1                                                        weed identification. Frontiers in Plant Science, 13:1053329,
+[31] Umair Nawaz, Awais Muhammad, Hanan Gani, Muzammal                      2022. 1
+     Naseer, Fahad Shahbaz Khan, Salman Khan, and Rao An-              [45] Meiqi Xiang, Minghao Qu, Gang Wang, Zhongyang Ma,
+     wer. Agriclip: Adapting clip for agriculture and livestock             Xuegeng Chen, Zihao Zhou, Jiangtao Qi, Xiaomei Gao,
+     via domain-specialized cross-model alignment. In Proceed-              Hailan Li, and Honglei Jia. Crop detection technologies, me-
+     ings of the 31st International Conference on Computational             chanical weeding executive parts and working performance
+     Linguistics, pages 9630–9639, 2025. 3                                  of intelligent mechanical weeding: a review. Frontiers in
+[32] Robert F Norris and Marcos Kogan. Interactions between                 Plant Science, 15:1361002, 2024. 1
+     weeds, arthropod pests, and their natural enemies in man-         [46] Zixiang Zhao, Haowen Bai, Jiangshe Zhang, Yulun Zhang,
+     aged ecosystems. Weed Science, 48(1):94–158, 2000. 1                   Shuang Xu, Zudi Lin, Radu Timofte, and Luc Van Gool.
+[33] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy                  Cddfuse: Correlation-driven dual-branch feature decompo-
+     Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez,                 sition for multi-modality image fusion. In Proceedings of
+     Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al.             the IEEE/CVF conference on computer vision and pattern
+     Dinov2: Learning robust visual features without supervision.           recognition, pages 5906–5916, 2023. 8
+     arXiv preprint arXiv:2304.07193, 2023. 3                          [47] Mingjian Zhu, Yehui Tang, and Kai Han. Vision transformer
+[34] Kavir Osorio, Andrés Puerto, Cesar Pedraza, David Jamaica,            pruning. arXiv preprint arXiv:2104.08500, 2021. 8
+     and Leonardo Rodrı́guez. A deep learning approach for             [48] Robert L Zimdahl and Nicholas T Basinger. Fundamentals
+     weed detection in lettuce crops using multispectral images.            of weed science. Elsevier, 2024. 1
+     AgriEngineering, 2(3):471–488, 2020. 1
+[35] Malaisree P, Youwai S, Kitkobsin T, Janrungautai S, Amorn-
+     dechaphon D, and Rojanavasu P. Dino-yolo: Self-supervised
+     pre-training for data-efficient object detection in civil engi-
+     neering applications, 2025. 8
+[36] Ranjan Sapkota and Manoj Karkee. Ultralytics yolo evo-
+     lution: An overview of yolo26, yolo11, yolov8 and yolov5
+     object detectors for computer vision and pattern recognition.
+     arXiv preprint arXiv:2510.09653, 2025. 2, 4
+[37] Oriane Siméoni, Huy V Vo, Maximilian Seitzer, Federico
+     Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov,
+     Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa,
+     et al. Dinov3. arXiv preprint arXiv:2508.10104, 2025. 2,
+     3, 8
+[38] David C Slaughter, DK Giles, and Daniel Downey. Au-
+     tonomous robotic weed control systems: A review. Com-
+     puters and electronics in agriculture, 61(1):63–78, 2008. 1
+[39] JF Thompson, JV Stafford, and PCH Miller. Potential for au-
+     tomatic weed detection and selective herbicide application.
+     Crop protection, 10(4):254–259, 1991. 1
+[40] Ajantha Vijayakumar and Subramaniyaswamy Vairavasun-
+     daram. Yolo-based object detection models: A review and
+     its applications. Multimedia Tools and Applications, 83(35):
+     83535–83574, 2024. 1
+[41] Vinay Vijayakumar, Yiannis Ampatzidis, John K Schueller,
+     and Tom Burks. Smart spraying technologies for precision
+     weed management: A review. Smart Agricultural Technol-
+     ogy, 6:100337, 2023. 1
+[42] Huy V Vo, Vasil Khalidov, Timothée Darcet, Théo
+     Moutakanni, Nikita Smetanin, Marc Szafraniec, Hugo Tou-
+     vron, Camille Couprie, Maxime Oquab, Armand Joulin,
+
