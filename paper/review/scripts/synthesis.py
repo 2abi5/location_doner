@@ -125,7 +125,7 @@ for r in rows:
                factors=[p for p in r["shift"].split("+") if p], group=g, mit=mit, fam=family(r["model"]),
                mod=modality(r["modality"]), year=year(r["rid"]), id=idv, ood=ood, oracle=ora, adapted=ada,
                labels=num(r["labels"]), derived=is_derived(r), model=r["model"], abstract=r["rid"] in ABSTRACT,
-               preprint=is_preprint(r["rid"]), metric=r["metric"])
+               preprint=is_preprint(r["rid"]), metric=r["metric"], desc=r["shift_desc"] + " " + r["note"])
     only = mit.endswith("-only")
     rec["primary"] = (idv is not None and ood is not None and not only)
     if rec["primary"]:
@@ -368,13 +368,13 @@ TASK_LABEL = {"D": "Disease, pest, abiotic stress", "W": "Weed and crop discrimi
 fig, axes = plt.subplots(2, 1, figsize=(6.3, 5.4), gridspec_kw={"height_ratios": [6, 5]})
 strip(axes[0], study_values(prim, "ret", lambda c: c["cat"]), SHIFT_LABEL, "(a) By shift type")
 strip(axes[1], study_values(prim, "ret", lambda c: c["task"]), TASK_LABEL, "(b) By task")
-axes[1].set_xlabel("Retention  m_OOD / m_ID  (one value per study; bounded metrics)")
+axes[1].set_xlabel(r"Retention  $m_\mathrm{OOD}\,/\,m_\mathrm{ID}$  (one value per study; bounded metrics)")
 fig.tight_layout(h_pad=1.2)
 fig.savefig(f"{FIG}/fig2_retention.png", dpi=600, bbox_inches="tight"); fig.savefig(f"{FIG}/fig2_retention.svg", bbox_inches="tight")
 plt.close(fig)
 
 # ID vs OOD scatter (comparison level, bounded metrics)
-fig, ax = plt.subplots(figsize=(3.6, 3.5))
+fig, ax = plt.subplots(figsize=(4.9, 3.5))
 colors = {"acquisition": "#B03A2E", "location": "#2E86C1", "time": "#229954", "sensor": "#7D3C98", "biological": "#CA6F1E", "compound": "#566573"}
 for cat, col in colors.items():
     pts = [(c["id"], c["ood"]) for c in prim if "ret" in c and c["cat"] == cat]
@@ -387,7 +387,8 @@ for k, ls in ((1.0, "-"), (0.9, "--"), (0.7, ":"), (0.5, "-.")):
     ax.text(1.0, k, f"{k:g}", fontsize=6.5, color="grey", ha="left", va="center")
 ax.set_xlim(0, 1.04); ax.set_ylim(0, 1.04)
 ax.set_xlabel("In-distribution value (0-1 scale)"); ax.set_ylabel("Out-of-distribution value (0-1 scale)")
-ax.legend(fontsize=6.3, frameon=False, loc="upper left", title="Shift (comparisons)", title_fontsize=6.5)
+ax.legend(fontsize=6.3, frameon=False, loc="upper left", bbox_to_anchor=(1.06, 1.0), title="Shift (comparisons)",
+          title_fontsize=6.5)
 ax.spines[["top", "right"]].set_visible(False)
 fig.tight_layout()
 fig.savefig(f"{FIG}/fig3_id_ood.png", dpi=600, bbox_inches="tight"); fig.savefig(f"{FIG}/fig3_id_ood.svg", bbox_inches="tight")
@@ -407,7 +408,7 @@ for i, (lab, v) in enumerate(data):
 ax.axvline(0, color="grey", lw=0.6); ax.axvline(1, color="grey", lw=0.6, ls="--")
 ax.set_yticks(range(len(data))); ax.set_yticklabels([f"{d[0]}  (n = {len(d[1])})" for d in data], fontsize=7.5)
 ax.invert_yaxis()
-ax.set_xlabel("Gap recovered  g = (m_adapted - m_source) / (m_ID - m_source)  (one value per study)")
+ax.set_xlabel(r"Gap recovered  $g = (m_\mathrm{adapted} - m_\mathrm{source})\,/\,(m_\mathrm{ID} - m_\mathrm{source})$  (one value per study)")
 ax.spines[["top", "right"]].set_visible(False)
 fig.tight_layout()
 fig.savefig(f"{FIG}/fig4_gap_recovered.png", dpi=600, bbox_inches="tight"); fig.savefig(f"{FIG}/fig4_gap_recovered.svg", bbox_inches="tight")
@@ -433,4 +434,83 @@ ax.spines[["top", "right"]].set_visible(False)
 fig.tight_layout()
 fig.savefig(f"{FIG}/fig5_appraisal.png", dpi=600, bbox_inches="tight"); fig.savefig(f"{FIG}/fig5_appraisal.svg", bbox_inches="tight")
 plt.close(fig)
-print(json.dumps({k: R[k] for k in ("n_included", "n_studies_primary", "n_studies_bounded", "n_comparisons_bounded", "ret_overall")}, indent=1))
+# ---------------------------------------------------------------- confounding checks (computed after the figures so the
+# bootstrap draws above are unchanged)
+from math import comb
+
+
+def sign_test(diffs):
+    """Exact two-sided sign test; ties dropped."""
+    k, n = sum(d < 0 for d in diffs), sum(d != 0 for d in diffs)
+    if n == 0:
+        return None
+    tail = sum(comb(n, i) for i in range(0, min(k, n - k) + 1)) / 2 ** n
+    return min(1.0, 2 * tail)
+
+
+# task x shift cross-tabulation (one value per study x cell)
+tx = study_values(prim, "ret", lambda c: f"{c['task']}|{c['cat']}")
+R["ret_by_task_shift"] = {k: summarise(v) for k, v in tx.items()}
+# within-study contrasts: studies reporting two shift categories; difference of the study's medians (first - second)
+ws = defaultdict(lambda: defaultdict(list))
+for c in prim:
+    if "ret" in c:
+        ws[c["rid"]][c["cat"]].append(c["ret"])
+contr = {}
+for a, b in (("compound", "single"), ("location", "time")):
+    diffs = []
+    for rid, v in ws.items():
+        if a == "compound":
+            singles = [np.median(x) for k, x in v.items() if k != "compound"]
+            if "compound" in v and singles:
+                diffs.append(float(np.median(v["compound"]) - np.median(singles)))
+        elif a in v and b in v:
+            diffs.append(float(np.median(v[a]) - np.median(v[b])))
+    contr[f"{a} - {b}"] = dict(n=len(diffs), median_diff=float(np.median(diffs)) if diffs else None,
+                               n_first_lower=sum(d < 0 for d in diffs), p_sign=sign_test(diffs))
+wf = defaultdict(lambda: defaultdict(list))
+for c in prim:
+    if "ret" in c:
+        wf[c["rid"]][c["fam"]].append(c["ret"])
+for a, b in (("transformer / attention", "convolutional"), ("classical ML", "convolutional")):
+    diffs = [float(np.median(v[a]) - np.median(v[b])) for v in wf.values() if a in v and b in v]
+    contr[f"{a} - {b}"] = dict(n=len(diffs), median_diff=float(np.median(diffs)) if diffs else None,
+                               n_first_lower=sum(d < 0 for d in diffs), p_sign=sign_test(diffs))
+R["within_study_contrasts"] = contr
+# abstract-only versus full-text studies within task
+R["ret_abstract_vs_fulltext_by_task"] = {
+    f"{t}|{'abstract' if flag else 'full text'}": summarise(study_values([c for c in prim if c["task"] == t and c["abstract"] == flag], "ret")[None])
+    for t in ("D", "M", "W") for flag in (True, False)}
+R["id_median_abstract"] = float(np.median(study_values([c for c in prim if c["abstract"]], "id")[None]))
+R["id_median_fulltext"] = float(np.median(study_values([c for c in prim if not c["abstract"] and "ret" in c], "id")[None]))
+# included studies without a primary (ID and OOD, source-only) comparison
+R["n_included_without_primary"] = len((INCLUDED | {"X00001"}) - {c["rid"] for c in prim})
+R["n_studies_regression_only"] = len({c["rid"] for c in prim} - {c["rid"] for c in prim if "ret" in c})
+# post hoc: laboratory-to-field disease studies trained on PlantVillage versus other source data
+pvflag = lambda c: re.search(r"plantvillage|\bPV\b", c["desc"], re.I) is not None
+R["posthoc_disease_acq_plantvillage"] = summarise(study_values([c for c in lab2field if pvflag(c)], "ret")[None])
+R["posthoc_disease_acq_other_source"] = summarise(study_values([c for c in lab2field if not pvflag(c)], "ret")[None])
+R["posthoc_studies_plantvillage_source"] = len({c["rid"] for c in prim if "ret" in c and pvflag(c)})
+# full-text retrieval by publisher (DOI prefix): retrieval relied on open-access copies
+def publisher(rid):
+    p = pool[rid]; doi = (p.get("doi") or "").lower(); v = (p.get("venue") or "").lower()
+    if "arxiv" in v or doi.startswith("10.48550"):
+        return "arXiv"
+    return {"10.1016": "Elsevier", "10.1109": "IEEE", "10.3390": "MDPI", "10.3389": "Frontiers", "10.1007": "Springer"}.get(doi[:7], "other")
+
+
+studies_all = [r["rid"] for r in nondup]
+R["retrieval_by_publisher"] = {}
+for pub_ in ("Elsevier", "IEEE", "Springer", "MDPI", "Frontiers", "arXiv", "other"):
+    ids = [rid for rid in studies_all if publisher(rid) == pub_]
+    R["retrieval_by_publisher"][pub_] = dict(n=len(ids), retrieved=sum(rid in retrieved for rid in ids))
+cl = {c["rid"] for c in prim if "ret" in c and c["fam"] == "classical ML"}
+R["classical_ml_studies"] = len(cl)
+R["classical_ml_satellite_mapping"] = len({c["rid"] for c in prim if "ret" in c and c["fam"] == "classical ML"
+                                          and c["task"] == "M" and c["mod"] == "satellite / airborne"})
+R["publication"] = dict(Counter("preprint" if is_preprint(rid) else "peer-reviewed" for rid in INCLUDED | {"X00001"}))
+R["n_comparisons_by_basis"] = dict(Counter("abstract" if c["abstract"] else "full text" for c in comp))
+R["share_g_below_0_study_by_mitigation"] = float(np.mean(np.concatenate([np.array(v) for v in study_values(comp, "g", lambda c: mit_norm(c["mit"])).values()]) < 0))
+json.dump(R, open(f"{OUT}/results.json", "w"), indent=1, default=float)
+print(json.dumps({k: R[k] for k in ("n_included", "n_studies_primary", "n_studies_bounded", "n_comparisons_bounded", "ret_overall",
+                                    "within_study_contrasts", "n_included_without_primary", "n_studies_regression_only")}, indent=1))
